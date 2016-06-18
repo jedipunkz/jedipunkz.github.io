@@ -1,0 +1,1120 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>tools on ジェダイさんのブログ</title>
+    <link>http://jedipunkz.github.io/categories/tools/</link>
+    <description>Recent content in tools on ジェダイさんのブログ</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Sat, 13 Dec 2014 00:00:00 +0000</lastBuildDate>
+    <atom:link href="http://jedipunkz.github.io/categories/tools/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Aviator でモダンに OpenStack を操作する</title>
+      <link>http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/</link>
+      <pubDate>Sat, 13 Dec 2014 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;自分は Ruby を普段使うのでいつも Fog というライブラリを使って OpenStack, AWS
+を操作していました。Fog を使うとクラウドの操作が Ruby のネイティブコードで行え
+るのでシステムコマンド打つよりミス無く済みます。&lt;/p&gt;
+
+&lt;p&gt;Fog より後発で Aviator というライブラリが登場してきたので少し使ってみたのです
+がまだ未完成なところがあるものの便利な点もあって今後に期待だったので紹介します。&lt;/p&gt;
+
+&lt;h2 id=&#34;認証情報を-yaml-ファイルに記す&#34;&gt;認証情報を yaml ファイルに記す&lt;/h2&gt;
+
+&lt;p&gt;接続に必要な認証情報を yaml ファイルで記述します。名前を &amp;lsquo;aviator.yml&amp;rsquo; として
+保存。この時に下記のように環境毎に認証情報を別けて書くことができます。こうする
+ことでコードの中で開発用・サービス用等と使い分けられます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-yaml&#34;&gt;production:
+  provider: openstack
+  auth_service:
+    name: identity
+    host_uri: &amp;lt;Auth URL&amp;gt;
+    request: create_token
+    validator: list_tenants
+  auth_credentials:
+    username: &amp;lt;User Name&amp;gt;
+    password: &amp;lt;Password&amp;gt;
+    tenant_name: &amp;lt;Tenant Name&amp;gt;
+
+development:
+  provider: openstack
+  auth_service:
+    name: identity
+    host_uri: &amp;lt;Auth URL&amp;gt;
+    request: create_token
+    validator: list_tenants
+  auth_credentials:
+    username: &amp;lt;User Name&amp;gt;
+    password: &amp;lt;Password&amp;gt;
+    tenant_name: &amp;lt;Tenant Name&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;シンタックス確認
++++&lt;/p&gt;
+
+&lt;p&gt;次に aviator のシンタックスを確認します。Fog に無い機能で、コマンドラインでシ
+ンタックスを確認できてしかも指定可能はパラメータと必須なパラメータと共にサンプ
+ルコードまで提供してくれます。公式サイトに&amp;rsquo;サーバ作成&amp;rsquo;のメソッドが掲載されてい
+るので、ここでは仮想ディスクを作るシンタックスを確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% gem install aviator
+% aviator describe openstack volume # &amp;lt;-- 利用可能な機能を確認
+Available requests for openstack volume_service:
+v1 public list_volume_types
+v1 public list_volumes
+v1 public delete_volume
+v1 public create_volume
+v1 public get_volume
+v1 public update_volume
+  v1 public root
+% aviator describe openstack volume v1 public create_volume # &amp;lt;-- シンタックスを確認
+:Request =&amp;gt; create_volume
+
+Parameters:
+ +---------------------+-----------+
+ | NAME                | REQUIRED? |
+ +---------------------+-----------+
+ | availability_zone   |     N     |
+ | display_description |     Y     |
+ | display_name        |     Y     |
+ | metadata            |     N     |
+ | size                |     Y     |
+ | snapshot_id         |     N     |
+ | volume_type         |     N     |
+ +---------------------+-----------+
+
+Sample Code:
+  session.volume_service.request(:create_volume) do |params|
+    params.volume_type = value
+    params.availability_zone = value
+    params.snapshot_id = value
+    params.metadata = value
+    params.display_name = value
+    params.display_description = value
+    params.size = value
+  end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;このように create_volume というメソッドが用意されていて、指定出来るパラメータ・
+必須なパラメータが確認できます。必須なモノには &amp;ldquo;Y&amp;rdquo; が REQUIRED に付いています。
+またサンプルコードが出力されるので、めちゃ便利です。&lt;/p&gt;
+
+&lt;p&gt;では create_volume のシンタックスがわかったので、コードを書いてみましょう。&lt;/p&gt;
+
+&lt;p&gt;コードを書いてみる
++++&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;#!/usr/bin/env ruby
+
+require &#39;aviator&#39;
+require &#39;json&#39;
+
+volume_session = Aviator::Session.new(
+              :config_file =&amp;gt; &#39;/home/thirai/aviator/aviator.yml&#39;,
+              :environment =&amp;gt; :production,
+              :log_file    =&amp;gt; &#39;/home/thirai/aviator/aviator.log&#39;
+            )
+
+volume_session.authenticate
+
+volume_session.volume_service.request(:create_volume) do |params|
+  params.display_description = &#39;testvol&#39;
+  params.display_name = &#39;testvol01&#39;
+  params.size = 1
+end
+puts volume_session.volume_service.request(:list_volumes).body
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;6行目で先ほど作成した認証情報ファイル aviator.yml とログ出力ファイル
+aviator.log を指定します。12行目で実際に OpenStack にログインしています。&lt;/p&gt;
+
+&lt;p&gt;14-18行目はサンプルコードそのままです。必須パラメータの display_description,
+display_name, size のみを指定し仮想ディスクを作成しました。最後の puts &amp;hellip; は
+実際に作成した仮想ディスク一覧を出力しています。&lt;/p&gt;
+
+&lt;p&gt;結果は下記のとおりです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{ volumes: [{ status: &#39;available&#39;, display_name: &#39;testvol01&#39;, attachments: [],
+availability_zone: &#39;az3&#39;, bootable: &#39;false&#39;, created_at:
+description = &#39;testvol&#39;, volume_type:
+&#39;standard&#39;, snapshot_id: nil, source_volid: nil, metadata:  }, id:
+&#39;3a5f616e-a732-4442-a419-10369111bd4c&#39;, size: 1 }] }
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;まとめ
++++&lt;/p&gt;
+
+&lt;p&gt;サンプルコードやパラメータ一覧等がひと目でわかる aviator はとても便利です。ま
+だ利用できるクラウドプラットフォームが OpenStack しかないのと、Neutron の機能
+がスッポリ抜けているので、まだ利用するには早いかもです&amp;hellip;。逆に言えばコントリ
+ビューションするチャンスなので、もし気になった方がいたら開発に参加してみるのも
+いいかもしれません。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Emacs &#43; Mew で Gmail を読み書きする</title>
+      <link>http://jedipunkz.github.io/blog/2013/08/12/emacs-mew-gmail/</link>
+      <pubDate>Mon, 12 Aug 2013 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2013/08/12/emacs-mew-gmail/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;今日も軽めの話題を。&lt;/p&gt;
+
+&lt;p&gt;Gmail を Emacs + Mew で読み書きする方法を何故かいつも忘れてしまうので自分のた
+めにもメモしておきます。Gmail はブラウザで読み書き出来るのに！と思われるかもし
+れませんが、Emacs で文章が書けるのは重要なことです。:D&lt;/p&gt;
+
+&lt;h2 id=&#34;対象-os&#34;&gt;対象 OS&lt;/h2&gt;
+
+&lt;p&gt;比較的新しい&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Debian Gnu/Linux&lt;/li&gt;
+&lt;li&gt;Ubuntu&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;を使います。&lt;/p&gt;
+
+&lt;h2 id=&#34;手順&#34;&gt;手順&lt;/h2&gt;
+
+&lt;p&gt;Emacs, Mew, stunnel4 をインストールします。Emacs は好きな物を入れてください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo apt-get install emacs24-nox stunnel4 mew mew-bin ca-certificates
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;openssl コマンドで mail.pem を生成します。生成したものを /etc/stunnel 配下に設
+置します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% openssl req -new -out mail.pem -keyout mail.pem -nodes -x509 -days 365
+% sudo cp mail.pem /etc/stunnel/
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;stunnel はインストール直後、起動してくれないので ENABLE=1 に修正します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo ${EDITOR} /etc/default/stunnel4
+ENABLE=1 # 0 -&amp;gt; 1 へ変更
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;stunenl.conf のサンプルを /etc/stunnel 配下に設置します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo cp /usr/share/doc/stunnel4/examples/stunnel.conf-sample /etc/stunnel/stunnel.conf
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;$HOME/.mew.el ファイルを生成します。自分のアカウント情報などを入力します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-lisp&#34;&gt;; Stunnel
+(setq mew-prog-ssl &amp;quot;/usr/bin/stunnel4&amp;quot;)
+; IMAP for Gmail
+(setq mew-proto &amp;quot;%&amp;quot;)
+(setq mew-imap-server &amp;quot;imap.gmail.com&amp;quot;)
+(setq mew-imap-user &amp;quot;example@gmail.com&amp;quot;)
+(setq mew-imap-auth  t)
+(setq mew-imap-ssl t)
+(setq mew-imap-ssl-port &amp;quot;993&amp;quot;)
+(setq mew-smtp-auth t)
+(setq mew-smtp-ssl t)
+(setq mew-smtp-ssl-port &amp;quot;465&amp;quot;)
+(setq mew-smtp-user &amp;quot;example@gmail.com&amp;quot;)
+(setq mew-smtp-server &amp;quot;smtp.gmail.com&amp;quot;)
+(setq mew-fcc &amp;quot;%Sent&amp;quot;) ; 送信メイルを保存する
+(setq mew-imap-trash-folder &amp;quot;%[Gmail]/ゴミ箱&amp;quot;)
+(setq mew-use-cached-passwd t)
+(setq mew-ssl-verify-level 0)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;$HOME/.emacs.d/init.el に Mew の記述を追記します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-lisp&#34;&gt;(autoload &#39;mew &amp;quot;mew&amp;quot; nil t)
+(autoload &#39;mew-send &amp;quot;mew&amp;quot; nil t)
+(setq mew-fcc &amp;quot;+outbox&amp;quot;) ; 送信メールを保存
+(setq exec-path (cons &amp;quot;/usr/bin&amp;quot; exec-path))
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Emacs + Mew を起動します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% emacs -e mew
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;以上です。他の distro だと ca-certificate とか無いので、大変だなぁといつも思っ
+てしまいます。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>pry のススメ</title>
+      <link>http://jedipunkz.github.io/blog/2013/03/06/pry/</link>
+      <pubDate>Wed, 06 Mar 2013 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2013/03/06/pry/</guid>
+      <description>&lt;p&gt;OpenStack をコードで管理するためのフレームワークは幾つか存在するのだけど Ruby
+で記述出来る Fog が良い！と隣に座ってるアプリエンジニアが言うので僕も最近少し
+触ってます。&lt;/p&gt;
+
+&lt;p&gt;Fog を使った OpenStack を管理するコードを書くことも大事なのだけど、Fog のコン
+トリビュートってことで幾つかの機能を付け足して (Quantum Router 周り) ってこと
+をやってました。まだ取り込まれてないけど。&lt;/p&gt;
+
+&lt;p&gt;その開発の中で pry の存在を教えてもらいその便利さに驚いたので少し説明します。
+バリバリ開発系の人は既に知っているだろうけど、インフラ系エンジニアの僕にとって
+は感激モノでした。&lt;/p&gt;
+
+&lt;p&gt;pry は irb 代替な Ruby のインタラクティブシェルです。下記の URL から持ってこれ
+ます。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/pry/pry&#34;&gt;https://github.com/pry/pry&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;シンタックスハイライトされたり json のレスポンスが綺麗に成形されたり irb 的に
+使うだけでも便利なのだけど &amp;lsquo;?&amp;rsquo; や &amp;lsquo;$&amp;rsquo; でコードのシンタックスを確認したりコード
+内容を確認したり出来るのがアツい！&lt;/p&gt;
+
+&lt;p&gt;ちょうど今回追加した Fog の機能を使って説明していみます。&lt;/p&gt;
+
+&lt;p&gt;Fog のコードを require して OpenStack に接続するための情報を設定し OpenStack
+Quantum に接続します。これで準備完了。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;[38] pry(main)&amp;gt; require &#39;/home/jedipunkz/fog/lib/fog.rb&#39;
+[49] pry(main)&amp;gt; @connection_hash = {
+[49] pry(main)*   :openstack_username =&amp;gt; &#39;demo&#39;,
+[49] pry(main)*   :openstack_api_key =&amp;gt; &#39;demo&#39;,
+[49] pry(main)*   :openstack_tenant =&amp;gt; &#39;service&#39;,
+[49] pry(main)*   :openstack_auth_url =&amp;gt;
+&#39;http://172.16.1.11:5000/v2.0/tokens&#39;,
+[49] pry(main)*   :provider =&amp;gt; &#39;OpenStack&#39;,
+[49] pry(main)* }
+[50] pry(main)&amp;gt; @quantum = Fog::Network.new(@connection_hash)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;試しに Router 一覧を取得します。list_routers メソッドです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;[54] pry(main)&amp;gt; @quantum.list_routers()
+=&amp;gt; #&amp;lt;Excon::Response:0x00000003da3560
+ @body=
+  &amp;quot;{\&amp;quot;routers\&amp;quot;: [{\&amp;quot;status\&amp;quot;: \&amp;quot;ACTIVE\&amp;quot;, \&amp;quot;external_gateway_info\&amp;quot;: {\&amp;quot;network_id\&amp;quot;: \&amp;quot;b8ef37a9-9ed1-4b6d-862d-fe9e381a2f2a\&amp;quot;}, \&amp;quot;name\&amp;quot;: \&amp;quot;router-admin\&amp;quot;, \&amp;quot;admin_state_up\&amp;quot;: true, \&amp;quot;tenant_id\&amp;quot;: \&amp;quot;5e9544d4823a44d59f3591144049f691\&amp;quot;, \&amp;quot;id\&amp;quot;: \&amp;quot;35c65e2c-5cd8-4eb5-87a8-c370988c101a\&amp;quot;}]}&amp;quot;,
+ @data=
+  {:body=&amp;gt;
+    {&amp;quot;routers&amp;quot;=&amp;gt;
+      [{&amp;quot;status&amp;quot;=&amp;gt;&amp;quot;ACTIVE&amp;quot;,
+        &amp;quot;external_gateway_info&amp;quot;=&amp;gt;
+         {&amp;quot;network_id&amp;quot;=&amp;gt;&amp;quot;b8ef37a9-9ed1-4b6d-862d-fe9e381a2f2a&amp;quot;},
+        &amp;quot;name&amp;quot;=&amp;gt;&amp;quot;router-admin&amp;quot;,
+        &amp;quot;admin_state_up&amp;quot;=&amp;gt;true,
+        &amp;quot;tenant_id&amp;quot;=&amp;gt;&amp;quot;5e9544d4823a44d59f3591144049f691&amp;quot;,
+        &amp;quot;id&amp;quot;=&amp;gt;&amp;quot;35c65e2c-5cd8-4eb5-87a8-c370988c101a&amp;quot;}]},
+   :headers=&amp;gt;
+    {&amp;quot;Content-Type&amp;quot;=&amp;gt;&amp;quot;application/json&amp;quot;,
+     &amp;quot;Content-Length&amp;quot;=&amp;gt;&amp;quot;259&amp;quot;,
+     &amp;quot;Date&amp;quot;=&amp;gt;&amp;quot;Wed, 06 Mar 2013 06:53:22 GMT&amp;quot;},
+   :status=&amp;gt;200,
+   :remote_ip=&amp;gt;&amp;quot;172.16.1.11&amp;quot;},
+ @headers=
+  {&amp;quot;Content-Type&amp;quot;=&amp;gt;&amp;quot;application/json&amp;quot;,
+   &amp;quot;Content-Length&amp;quot;=&amp;gt;&amp;quot;259&amp;quot;,
+   &amp;quot;Date&amp;quot;=&amp;gt;&amp;quot;Wed, 06 Mar 2013 06:53:22 GMT&amp;quot;},
+ @remote_ip=&amp;quot;172.16.1.11&amp;quot;,
+ @status=200&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;綺麗に色付けされてレスポンスがあります。&lt;/p&gt;
+
+&lt;p&gt;次に &amp;lsquo;cd @quantum&amp;rsquo; して cd します。そして &amp;lsquo;? メソッド名&amp;rsquo; するとメソッドのシン
+タックスを確認出来ます。試しに Router を生成する create_router メソッドを見て
+みます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;[56] pry(main)&amp;gt; cd @quantum
+[59] pry(#&amp;lt;Fog::Network::OpenStack::Real&amp;gt;):1&amp;gt; ? create_router
+
+From: /home/jedipunkz/fog/lib/fog/openstack/requests/network/create_router.rb @ line 6:
+Owner: Fog::Network::OpenStack::Real
+Visibility: public
+Signature: create_router(name, options=?)
+Number of lines: 1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;そして &amp;lsquo;$ メソッド名&amp;rsquo; するとコードが確認出来ます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;[64] pry(#&amp;lt;Fog::Network::OpenStack::Real&amp;gt;):1&amp;gt; $ create_router
+
+From: /home/jedipunkz/fog/lib/fog/openstack/requests/network/create_router.rb @ line 6:
+Owner: Fog::Network::OpenStack::Real
+Visibility: public
+Number of lines: 27
+
+def create_router(name, options = {})
+  data = {
+    &#39;router&#39; =&amp;gt; {
+      &#39;name&#39; =&amp;gt; name,
+    }
+  }
+
+  vanilla_options = [
+    :admin_state_up,
+    :tenant_id,
+    :network_id,
+    :external_gateway_info,
+    :status,
+    :subnet_id
+  ]
+
+  vanilla_options.reject{ |o| options[o].nil? }.each do |key|
+    data[&#39;router&#39;][key] = options[key]
+  end
+
+  request(
+    :body     =&amp;gt; Fog::JSON.encode(data),
+    :expects  =&amp;gt; [201],
+    :method   =&amp;gt; &#39;POST&#39;,
+    :path     =&amp;gt; &#39;routers&#39;
+  )
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;あとは &amp;lsquo;puts @quantum&amp;rsquo; 等するとオブジェクトの内容が確認出来たり、&amp;rsquo;ls @quantum&amp;rsquo;
+すると @quantum オブジェクトのメソッド一覧が確認出来たり。&lt;/p&gt;
+
+&lt;p&gt;開発の効率が上がるなぁと感激。&lt;/p&gt;
+
+&lt;p&gt;春なので OpenStack もそろろろ次期リリースの時期。それぞれのコンポーネントの機
+能が拡張されているようなので Fog 等のフレームワークにコントリビュートする機会
+もますます増えそう。Fog やその他のクラウドフレームワークはなんだかんだ言って
+AWS のフューチャがメインなので OpenStack の機能追加に追いついていない感がある。
+もし興味持っている人が居たら是非一緒に OpenStack 界隈を盛り上げましょう。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Spiceweasel で knife バッチ処理</title>
+      <link>http://jedipunkz.github.io/blog/2013/02/01/spiceweasel-knife-bootstrap/</link>
+      <pubDate>Fri, 01 Feb 2013 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2013/02/01/spiceweasel-knife-bootstrap/</guid>
+      <description>
+
+&lt;p&gt;Spiceweasel &lt;a href=&#34;https://github.com/mattray/spiceweasel#cookbooks&#34;&gt;https://github.com/mattray/spiceweasel#cookbooks&lt;/a&gt; を使ってみた。&lt;/p&gt;
+
+&lt;p&gt;Spiceweasel は Chef の cookbook のダウンロード, role/cookbook の chef server
+へのアップロード, ブートストラップ等をバッチ処理的に行なってくれる(もしくはコ
+マンドラインを出力してくれる)ツールで、自分的にイケてるなと感じたのでブログに
+書いておきます。&lt;/p&gt;
+
+&lt;p&gt;クラウドフェデレーション的サービスというかフロントエンドサービスというか、複数
+のクラウドを扱えるサービスは増えてきているけど、chef を扱えるエンジニアであれ
+ば、この Spiceweasel で簡単・一括デプロイ出来るので良いのではないかと。&lt;/p&gt;
+
+&lt;p&gt;早速だけど chef-repo にこんな yamp ファイルを用意します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;cookbooks:
+- apt:
+- nginx:
+
+roles:
+- base:
+
+nodes:
+- 172.24.17.3:
+    run_list: role[base]
+    options: -i ~/.ssh/testkey01 -x root -N webset01
+- 172.24.17.4:
+    run_list: role[base]
+    options: -i ~/.ssh/testkey01 -x root -N webset02
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上から説明すると&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&amp;lsquo;apt&amp;rsquo;, &amp;lsquo;nginx&amp;rsquo; の cookbook を opscode レポジトリからダウンロード&lt;/li&gt;
+&lt;li&gt;&amp;lsquo;apt&amp;rsquo;, &amp;lsquo;nginx&amp;rsquo; の cookbook を chef-server へアップロード&lt;/li&gt;
+&lt;li&gt;roles/base.rb を chef-server へアップロード&lt;/li&gt;
+&lt;li&gt;2つのノードに対して bootstrap 仕掛ける&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;ってことをやるためのファイルです。予め chef-repo と roles は用意してあげる必要
+があります。この辺りは knife の操作のための準備と全く同じ。また Spiceweasel は、
+この yaml フィアル内の各パラメータや指定した role の内容の依存関係をチェックし
+てくれます。&lt;/p&gt;
+
+&lt;p&gt;では、このファイルに対して&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% spiceweasel &amp;lt;yaml ファイル名&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;すると、結果として下記のようなバッチが取得出来る。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;knife cookbook site download apt  --file cookbooks/apt.tgz
+tar -C cookbooks/ -xf cookbooks/apt.tgz
+rm -f cookbooks/apt.tgz
+knife cookbook upload apt
+knife cookbook site download test  --file cookbooks/test.tgz
+tar -C cookbooks/ -xf cookbooks/test.tgz
+rm -f cookbooks/test.tgz
+knife cookbook upload test
+knife role from file base.rb
+knife bootstrap 172.24.17.3 -i ~/.ssh/testkey01 -x root -N webset01 -r &#39;role[base]&#39;
+knife bootstrap 172.24.17.4 -i ~/.ssh/testkey01 -x root -N webset02 -r &#39;role[base]&#39;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;尚且つ -e オプションを指定すると、実際にこれらのバッチを実行出来る。cookbooks
+ディレクトリに予めレシピが存在すればダウンロードのバッチは省略されるぽいし、-d
+を指定すると逆にノード削除バッチ処理、-r でリビルドのためのバッチ処理が得られ
+る。&lt;/p&gt;
+
+&lt;p&gt;削除系・リビルド系は現時点では不具合が見られました。実行すると他の環境にも影響
+出るので注意が必要。&lt;/p&gt;
+
+&lt;p&gt;個人的にはプライベートレポジトリの cookbooks も取ってこれるようになると嬉しい。
+まぁ、Berkshelf 使えばいいのだけど。&lt;a href=&#34;http://berkshelf.com/&#34;&gt;http://berkshelf.com/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;開発者の Matt Ray さんの資料によれば Chef for OpenStack もこの Spiceweasel を
+使う方向で修正が掛かったらしい。個人的には一番興味あるところ。ちなみに Chef
+for OpenStack は folsom ベースが現在 &amp;lsquo;active development&amp;rsquo; 状態らしい。&lt;/p&gt;
+
+&lt;p&gt;Opscode のサイトで紹介されているサンプルは古いバージョンでの指定方法らしく、注
+意が必要です。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://wiki.opscode.com/display/chef/Spiceweasel&#34;&gt;http://wiki.opscode.com/display/chef/Spiceweasel&lt;/a&gt;&lt;/p&gt;
+
+&lt;h4 id=&#34;所感&#34;&gt;所感&lt;/h4&gt;
+
+&lt;p&gt;chef, knife 周りはいろんな関連技術があるので技術を選定する上で迷ってしまうこと
+が多いのだけど、この Spiceweasel には可能性を感じました。って言うのは、Chef が
+実装出来ていないインテグレーションやオーケストレーションっていう所まで踏み込め
+る可能性があるから。ノード間の関連付けが出来るんです。Swift-Storage と
+Swift-Proxy の関連付け、または Load-Balancer と HTTP-Server の関連付け等。継続
+的デリバリなインテグレーションって Chef を使ってどう実現するんだ？って思ってい
+た時があったのですが、こういったラッパーツールの登場で解決されそうな気がします。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Emacs でファイルブラウザ emacs-nav を利用</title>
+      <link>http://jedipunkz.github.io/blog/2012/05/04/emacs-nav/</link>
+      <pubDate>Fri, 04 May 2012 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2012/05/04/emacs-nav/</guid>
+      <description>&lt;p&gt;Hacker News で取り上げられていた emacs-nav を使ってみた。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://code.google.com/p/emacs-nav/&#34;&gt;http://code.google.com/p/emacs-nav/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;インストール方法は簡単で&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% wget http://emacs-nav.googlecode.com/files/emacs-nav-20110220a.tar.gz
+% tar zxvf emacs-nav-20110220a.tar.gz
+% mv emacs-nav-20110220a ~/.emacs.d/emacs-nav
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;して&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;;; emacs-nav
+(add-to-list &#39;load-path &amp;quot;~/.emacs.d/emacs-nav/&amp;quot;)
+(require &#39;nav)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;するだけ。&lt;/p&gt;
+
+&lt;p&gt;見た目はこんな感じ。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.com/pix/emacs-nav.png&#34;&gt;&lt;/p&gt;
+
+&lt;p&gt;起動は M-x nav と入力。ウィンドウの左にファイルブラウザが開いてファイルを選択
+出来る。これだけだと、使うメリットを感じないが、面白いのがマウスで選択出来ると
+ころ。TextMate のブラウザのような感じだ。&lt;/p&gt;
+
+&lt;p&gt;今だと anything.el が便利すぎて、こちらを利用する価値を見出せるか分からないけ
+ど、暫く使ってみようと思う。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Mosh を使う</title>
+      <link>http://jedipunkz.github.io/blog/2012/04/14/ssh-mosh/</link>
+      <pubDate>Sat, 14 Apr 2012 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2012/04/14/ssh-mosh/</guid>
+      <description>&lt;p&gt;今週/先週？、Hacker News で取り上げられた &lt;a href=&#34;http://mosh.mit.edu/&#34;&gt;Mosh&lt;/a&gt; を自宅
+と会社で使い始めた。SSH 代替なソフトウェアで、SSP (State Synchronization
+Protocol)over UDP で動作している。MIT が開発したそうだ。&lt;/p&gt;
+
+&lt;p&gt;動作は、クライアントがシーケンス番号と共にデータグラムをサーバに送信し、同期し
+続ける。クライアントがローミングし IP アドレスが代わる等した時、以前より大きい
+シーケンス番号と共に正当なパケットが送信されたとサーバが認識した場合のみ、サー
+バは新しいソース IP アドレスを新たなクライアントだと認識する。もちろん、この場
+合のローミングは NAT 越しの IP 再アサイン時やクライアントのネットワークインター
+フェース切り替えやノート PC を新たな無線アクセスポイント配下へ移動した場合も同
+様に動作する。めちゃ便利やん。Mosh は SSP を2経路持ち、1つはクライアントからサー
+バへユーザの打ったキーの同期を取る。もう一方はサーバからクライアントへで、スク
+リーンの状態をクライアントへ同期を取るためだ。&lt;/p&gt;
+
+&lt;p&gt;つまり、ノート PC やその他モバイル機器の IP アドレスが変わったとしても接続性は
+担保され、また ノート PC のスリープ解除後にも接続性は確保され続ける。また、UDP
+で動作しているので、フルスクリーンの vim や emacs 等での再描画の遅延等も起こり
+にくそうだ。あと Ctrl-C 。TCP だと、キータイプがサーバプログラムに伝わらない状
+況はプログラムプロセスが混雑しているとよくあるのだが、SSP over UDP での Ctrl-C
+はそういうことが無いそうだ。&lt;/p&gt;
+
+&lt;p&gt;また、認証機構は SSH に任せているので sshd は引き続き稼働させておく必要がある。
+mosh は接続する先のユーザが一般ユーザ権限で動作させるプログラムでしかない。つ
+まり mosh daemon は必要ないようだ。&lt;/p&gt;
+
+&lt;p&gt;実際にインストールしてみた。Mac の場合、homebrew で&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% brew update
+% brew install mobile-shell
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;で完了。私はサーバに Debian と Ubuntu を使っているのだが、Debian の場合は
+testing, unstable でパッケージが容易されている。が、testing のパッケージを使っ
+た所、動作が不安定だった。文字を削除しても一文字消えない等。よって、github か
+ら最新のソースを取得。(unstable のパッケージでもイイかもしれない、私は試してな
+いです。)&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% sudo apt-get install protobuf-compiler libprotobuf-dev pkg-config \
+  libboost-dev libncurses5-dev
+% cd gitwork
+% git clone https://github.com/keithw/mosh.git
+% cd mosh
+% ./autogen.sh &amp;amp;&amp;amp; ./configure &amp;amp;&amp;amp; make
+% sudo make install
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Ubuntu の場合は、&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% sudo apt-get install python-software-properties
+% sudo add-apt-repository ppa:keithw/mosh
+% sudo apt-get update
+% sudo apt-get install mosh
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;だ。その他の destribution, OS の場合は下記のリンクを参照してみてください。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://mosh.mit.edu/#getting&#34;&gt;http://mosh.mit.edu/#getting&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;次にクライアント &amp;lt;-&amp;gt; サーバ間の経路が変わっても接続したままになるのか、テスト
+してみた。&lt;/p&gt;
+
+&lt;p&gt;MacBook wireless nic &amp;lt;-&amp;gt; server を MacBook ethernet nic &amp;lt;-&amp;gt; server に接続しな
+おしてみた。また、その接続しなおしのタイミングの間、&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% while(true) do echo &amp;quot;is mosh alive ?&amp;quot; ;sleep 3; done
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;とシェル上で実行し続けた。結果、サーバに再接続され、また上のシェルプロセスも継
+続され続けた！これには驚いた。&lt;/p&gt;
+
+&lt;p&gt;ということで、使い始めて1週間だが今のところ快適。&lt;/p&gt;
+
+&lt;p&gt;会社の方に protobuf は Google が自社ネットワーク内のトラフィック軽減のために開
+発したものだ、と言っていた。こんなところでも Google の技術力がすんごいことに改
+めて気がついたよ。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>switching screen-&gt;tmux</title>
+      <link>http://jedipunkz.github.io/blog/2012/04/01/switching-screen-tmux/</link>
+      <pubDate>Sun, 01 Apr 2012 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2012/04/01/switching-screen-tmux/</guid>
+      <description>&lt;p&gt;長年 Gnu screen 愛用者だったのだけど完全に tmux に移行しました。&lt;/p&gt;
+
+&lt;p&gt;愛用している iterm2 との相性も良く、好都合な点が幾つかあり移行する価値がありました。&lt;/p&gt;
+
+&lt;p&gt;ただ、サーバサイドでの利用は諦めました。問題だったコピペ問題をクリアしている tmux のバージョンが
+Debian sid から取得出来たのだけど、まだまだ完成度高くなく..。&lt;/p&gt;
+
+&lt;p&gt;よって、Mac に tmux をインストールして作業するようになりました。インストール方法はこれ。&lt;/p&gt;
+
+&lt;p&gt;予め &lt;a href=&#34;https://github.com/mxcl/homebrew/wiki/installation&#34;&gt;https://github.com/mxcl/homebrew/wiki/installation&lt;/a&gt; に
+したがって homebrew をインストールする必要あり。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% brew update
+% brew install tmux
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;インストールしたら .tmux.conf の作成に入る。prefix キーは C-t にしたかった。screen 時代から
+これを使っていて指がそう動くから。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;# prefix key
+set-option -g prefix C-t
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;またステータスライン周りの設定。色なども自分で選択すると良い。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;# view
+set -g status-interval 5
+set -g status-left-length 16
+set -g status-right-length 50
+# status
+set -g status-fg white
+set -g status-bg black
+set -g status-left-length 30
+set -g status-left &#39;#[fg=white,bg=black]#H#[fg=white]:#[fg=white][#S#[fg=white]][#[default]&#39;
+set -g status-right &#39;#[fg=white,bg=red,bold] [%Y-%m-%d(%a) %H:%M]#[default]&#39;
+# window-status-current
+setw -g window-status-current-fg white
+setw -g window-status-current-bg red
+setw -g window-status-current-attr bold#,underscore
+# pane-active-border
+set -g pane-active-border-fg black
+set -g pane-active-border-bg blue
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;UTF-8 有効化やキーバインド設定等は&amp;hellip;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;# Option
+set-window-option -g utf8 on
+#set-window-option -g mode-keys vi
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;私は emacs 使いなので vi モードは無効にした。これで emacs モードが有効になる。&lt;/p&gt;
+
+&lt;p&gt;マウス選択を有効にすると、便利かもしれない。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;#set-option -g mouse-select-pane on
+#set-option -g mouse-resize-pane
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;が、PANE (ペイン) を横分割した際にこれらの設定を入れているとマウスでのコピーペーストが出来ない
+ため、私は無効にした。&lt;/p&gt;
+
+&lt;p&gt;その他の設定。.tmux.conf を tmux 開いたまま設定リロードだったり、ペインの移動キーバインド等。
+特に hjkl キーの vi キーバインドをペイン移動のためにアサインするため、その他のキーを下記のように
+設定している。ウィンドウの移動は C-n, C-p にも追加でアサイン (default は n, p) し、ペインの移動
+には hjkl をアサインした。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;bind C-r source-file ~/.tmux.conf
+bind C-n next-window
+bind C-p previous-window
+bind c new-window
+bind | split-window -h
+
+bind C-k kill-pane
+bind K kill-window
+bind i display-panes
+bind y copy-mode
+
+bind h select-pane -L
+bind j select-pane -D
+bind k select-pane -U
+bind l select-pane -R
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ウィンドウの中にペインの概念が入ったことで、作業効率が非常に上がったし、Mac 上のアプリなので、Mac を
+開いた瞬間に作業に入れる。(今までは debian 上の screen で生活していた) debian 上の tmux に移行する必要
+があるかどうか、これから使い込んでみたいと思う。その時にまたレビューします。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>github.com で octopress 構築</title>
+      <link>http://jedipunkz.github.io/blog/2012/03/20/github-dot-com-de-octopress-gou-zhu/</link>
+      <pubDate>Tue, 20 Mar 2012 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2012/03/20/github-dot-com-de-octopress-gou-zhu/</guid>
+      <description>&lt;p&gt;pages.github.com は github.com の WEB ホスティングサービスです。これを利用して octopress のブログを
+構築する方法をメモしていきます。&lt;/p&gt;
+
+&lt;p&gt;まず、github.com に &amp;ldquo;${好きな名前}.github.com&amp;rdquo; という名前のレポジトリを github.com 上で作成します。
+レポジトリの作成は普通のレポジトリ作成と同じ方法で行えます。しばらくすると
+&amp;ldquo;${好きな名前}.github.com のページがビルド出来ました&amp;rdquo; という内容でメールが送られてきます。&lt;/p&gt;
+
+&lt;p&gt;pages.github.com によると、レポジトリページで &amp;ldquo;GitHub Page&amp;rdquo; にチェックを入れろと書いてありますが、情報が古いようです。
+2012/03/20 現在、この操作の必要はありませんでした。&lt;/p&gt;
+
+&lt;p&gt;次に octopress の環境構築。&lt;/p&gt;
+
+&lt;p&gt;octopress は、jekyll ベースのブログツールです。markdown 形式で記事を書くのですが、emacs や vim 等
+好きなエディタを使って記事を書けるので便利です。最近 &amp;ldquo;Blogging with Emacs&amp;rdquo; なんてブログをよく目にしたと
+思うのですが、まさにソレですよね。エンジニアにとっては嬉しいブログ環境です。&lt;/p&gt;
+
+&lt;p&gt;まずは、rvm の環境構築を。octopress は ruby 1.9.2 以上が必要なので用意するのですが rvm を使うと
+手軽に用意出来るので、今回はその方法を記します。&lt;/p&gt;
+
+&lt;p&gt;参考 URL は &lt;a href=&#34;http://octopress.org/docs/setup/rvm/&#34;&gt;http://octopress.org/docs/setup/rvm/&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;まずは準備から。私の環境は Ubuntu Server 10.04 LTS なのですが、下記のパッケージが必用になります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% sudo apt-get install gcc make zlib1g-dev libssl-dev
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;下記のコマンドを実行すると、rvm がインストールされます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% bash -s stable &amp;lt; &amp;lt;(curl -s https://raw.github.com/wayneeseguin/rvm/master/binscripts/rvm-installer)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に使っている shell に合わせて rc ファイルを設定します。&lt;/p&gt;
+
+&lt;p&gt;bash なら&amp;hellip;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% echo &#39;[[ -s &amp;quot;$HOME/.rvm/scripts/rvm&amp;quot; ]] &amp;amp;&amp;amp; . &amp;quot;$HOME/.rvm/scripts/rvm&amp;quot; # Load RVM function&#39; &amp;gt;&amp;gt; ~/.bash_profile
+% source ~/.bash_profile
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;zsh なら&amp;hellip;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% echo &#39;[[ -s $HOME/.rvm/scripts/rvm ]] &amp;amp;&amp;amp; source $HOME/.rvm/scripts/rvm&#39; &amp;gt;&amp;gt; ~/.zshrc
+% source ~/.zshrc
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ruby 1.9.2 をインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% rvm install 1.9.2 &amp;amp;&amp;amp; rvm use 1.9.2
+% rvm rubygems latest
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に octopress のインストールと環境設定です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% mkdir ${好きな名前}.github.com
+% cd  ${好きな名前}.github.com
+% git clone git://github.com/imathis/octopress.git octopress
+% cd octopress
+% gem install bundler
+% bundle install
+% rake install # classic テーマのインストール
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここまで出来たら github.com へデプロイするだけです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% rake setup_github_pages
+Enter the read/write url for your repository:
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;と表示されるので、作成した github.com ページの情報を入力します。私の場合は&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;git@github.com:chobiwan/chobiwan.github.com.git
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;この操作で、.git 内の情報諸々を更新してくれます。実行した後に覗いて見て下さい。&lt;/p&gt;
+
+&lt;p&gt;です。最後にブログ生成とデプロイを実行します。この作業で ${好きな名前}.github.com へのデプロイが
+実行されます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% rake gen_deploy
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;暫く時間がかかりますが (数分) 、${好きな名前}.github.com のサイトにアクセスできるようになっている
+はずです。&lt;/p&gt;
+
+&lt;p&gt;次に、必要最低限の設定を行います。_config.yml ファイル内の下記の情報を満たしていきましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;url:                # For rewriting urls for RSS, etc
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;title =              # Used in the header and title tags
+title =           # A description used in the header
+    simple_search:      # Search engine for simple site search
+description =        # A default meta description for your site
+    subscribe_rss:      # Url for your blog&amp;rsquo;s feed, defauts to /atom.xml
+    subscribe_email:    # Url to subscribe by email (service required)
+    email:              # Email address for the RSS feed if you want it.&lt;/p&gt;
+
+&lt;p&gt;ではいよいよ、最初の投稿を。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% rake new_post[&amp;quot;title&amp;quot;]
+% rake new_post\[&amp;quot;title&amp;quot;\] # zsh の場合
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;source/_posts/2012-03-20-test-post.markdown という日付付きファイルが生成されるので、このファイルを
+好きなエディタで編集します。&lt;/p&gt;
+
+&lt;p&gt;markdown 形式で記すことが出来ます。上記の操作でテンプレートらしきファイルになっているので
+&amp;ldquo;&amp;mdash;&amp;rdquo; の配下から記事を書いていきます。また categories 等の情報は自分で修正出来ます。&lt;/p&gt;
+
+&lt;p&gt;書き終わったら、ブログを生成してデプロイです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% rake gen_deploy
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;先ほど作った ${好きな名前}.github.com へアクセスしてみましょう。octopress のブログが完成している
+はずです。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>WordPress を nginx &#43; fastcgi で高速化</title>
+      <link>http://jedipunkz.github.io/blog/2012/03/07/wordpress-wo-nginx-plus-fastcgi-degao-su-hua/</link>
+      <pubDate>Wed, 07 Mar 2012 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2012/03/07/wordpress-wo-nginx-plus-fastcgi-degao-su-hua/</guid>
+      <description>&lt;p&gt;ブログを始めるにあたり、wordpress 環境を構築する必要が出てきました。いつもの apache2 + mysql5 + PHP じゃつまらないので、nginx と fastcgi を使って少しだけ高速化してみました。メモですけど、ここに手順を記していきます。&lt;/p&gt;
+
+&lt;p&gt;※ wordpress から octopress に移行しました&amp;hellip; (2012/03/07)&lt;/p&gt;
+
+&lt;p&gt;ただ、今回は nginx や mysql の基本的なオペレーション手順は割愛させてもらいます。&lt;/p&gt;
+
+&lt;p&gt;私の環境について&amp;hellip;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% lsb_release -a
+No LSB modules are available.
+Distributor ID: Debian
+Description:    Debian GNU/Linux 6.0.3 (squeeze)
+Release:        6.0.3
+Codename:       squeeze
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;インストールしたもの&amp;hellip;
+メタパッケージを指定したのでその他必要なモノはインストールされます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% sudo apt-get update
+% sudo apt-get install spawn-fcgi php5 php5-mysql php5-cgi mysql-server nginx 
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;まずはお決まりの gzip 圧縮転送。IE の古いモノ以外は対応しているので心配なし。今回のテーマと関係無いですけど、一応入れておきます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% diff -u /etc/nginx/nginx.conf.org /etc/nginx/nginx.conf
+--- /etc/nginx/nginx.conf.org   2012-01-14 15:27:45.000000000 +0900
++++ /etc/nginx/nginx.conf       2012-01-14 15:28:58.000000000 +0900
+@@ -22,6 +22,10 @@
+     tcp_nodelay        on;
+
+     gzip  on;
++    gzip_http_version 1.0;
++    gzip_vary         on;
++    gzip_comp_level   6;
++    gzip_types        text/html text/xml text/css application/xhtml+xml application/xml application/rss+xml application/atom_xml application/x-javascript application/x-httpd-php;
+     gzip_disable &amp;quot;MSIE [1-6]\.(?!.*SV1)&amp;quot;;
+
+     include /etc/nginx/conf.d/*.conf;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;spawn-fcgi を稼働させるスクリプトを生成する。/usr/bin/php-fastcgi として下記の内容で保存する。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;#! /bin/sh
+/usr/bin/spawn-fcgi -a 127.0.0.1 -p 9000 -C 6 -u www-data -f /usr/bin/php5-cgi
+
+
+% sudo chmod 755 /usr/bin/php-fastcgi
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次にこれを実行する起動スクリプトの用意と実行。/etc/init.d/php-fastcgi&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;#!/bin/bash
+
+### BEGIN INIT INFO
+# Required-Start:    $local_fs $remote_fs $network $syslog
+# Required-Stop:     $local_fs $remote_fs $network $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: php-fastcgi script
+# Description:       php-fastcgi script
+### END INIT INFO
+
+# env
+SCRIPT=/usr/bin/php-fastcgi
+USER=www-data
+RETVAL=0
+PIDFILE=/var/run/php5-cgi.pid
+
+# start or stop
+case &amp;quot;$1&amp;quot; in
+  start)
+    su - $USER -c $SCRIPT
+    pidof php5-cgi &amp;gt; $PIDFILE
+    RETVAL=$?
+  ;;
+  stop)
+    killall -9 php5-cgi
+    echo &#39;&#39; &amp;gt; $PIDFILE
+    RETVAL=$?
+  ;;
+  restart)
+    killall -9 php5-cgi
+    su - $USER -c $SCRIPT
+    pidof php5-cgi &amp;gt; $PIDFILE
+    RETVAL=$?
+  ;;
+  *)
+    echo &amp;quot;Usage: php-fastcgi {start|stop|restart}&amp;quot;
+    exit 1
+  ;;
+esac
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;起動すると php-cgi のプロセスが立ち上がり localhost:9000 で LISTEN された状態になっているはずです。nginx はここへのプロキシのような動作をすることになります。
+下記の手順で起動と起動スクリプトへの組み込みを行なってください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% sudo chmod 755 /etc/init.d/php-fastcgi
+% sudo update-rc.d php-fastcgi defaults
+% sudo service php-fastcgi start
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に nginx の virtualhost を掘ります。変数 ${FQDN_HOSTNAME}, ${DOCUMENT_ROOT}は自分
+の環境情報に読み替えてください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;server {
+        listen  80;
+        server_name     ${FQDN_HOSTNAME}
+        access_log      /var/log/nginx/${FQDN_HOSTNAME}.access.log;
+        error_log       /var/log/nginx/${FQDN_HOSTNAME}.error.log;
+        location / {
+                root   ${DOCUMENT_ROOT};
+                index  index.html index.php;
+        } 
+        location ~ \.php$ {
+                include /etc/nginx/fastcgi_params;
+                fastcgi_pass 127.0.0.1:9000;
+                fastcgi_index index.php;
+                fastcgi_param SCRIPT_FILENAME ${DOCUMENT_ROOT}$fastcgi_script_name;
+        }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;nginx を stop/start してこれらの設定を有効にします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% sudo service nginx stop
+% sudo service nginx start
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;以上です。&lt;/p&gt;
+
+&lt;p&gt;その他にも proxy cache を有効にして wordpress の静的な出力をキャッシュするチューニング方法もあるそうなので、次回試してみます。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>conky statusbar</title>
+      <link>http://jedipunkz.github.io/blog/2012/03/07/conky-statusbar/</link>
+      <pubDate>Wed, 07 Mar 2012 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2012/03/07/conky-statusbar/</guid>
+      <description>&lt;p&gt;&lt;a href=&#34;http://files.chobiwan.me/pix/conky_capture.png&#34;&gt;&lt;img src=&#34;http://files.chobiwan.me/pix/conky_capture.png&#34; alt=&#34;&#34; title=&#34;conky_capture&#34; width=&#34;721&#34; height=&#34;274&#34; class=&#34;alignnone size-full wp-image-60&#34; /&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;上の画像は conky というツールのキャプチャです。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://conky.sourceforge.net/&#34; target=&#34;_blank&#34;&gt;conky&lt;/a&gt; は x window で使える linux マシンのステータスを文字・グラフ描画で表現してくれるツールです。&lt;/p&gt;
+
+&lt;p&gt;透明にしたりグラフ表示を派手にすることも出来るのだけど、わたしは上図のようにステータスバーとして使ってます。Window Manager に openbox という素っ気ないものを使うようにしてるので、これ自体がファイラーもステータスバーも無いんです。なので conky を利用して &amp;lsquo;時間&amp;rsquo;, &amp;lsquo;バッテリ残量&amp;rsquo;, &amp;lsquo;AC アダプタ有無&amp;rsquo;, &amp;lsquo;ネットワーク使用量&amp;rsquo; 等を表示してます。&lt;/p&gt;
+
+&lt;p&gt;deviantart に &lt;a href=&#34;http://rent0n86.deviantart.com/art/My-horizontal-conkyrc-122604863&#34; target=&#34;_blank&#34;&gt;rent0n86&lt;/a&gt; さんという方が投稿した作品があって、それをこちょこちょ自分用にいじって使ってます。&lt;/p&gt;
+
+&lt;p&gt;debian gnu/linux な GUI 環境があれば&amp;hellip;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;% sudo apt-get conky-all
+% cd $HOME
+% wget https://raw.github.com/chobiwan/dotfiles/master/.conkyrc
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;で、この環境を作れます。&lt;/p&gt;
+
+&lt;p&gt;表示する内容は環境に合わせて修正すると楽しいです。幅は minimum_size パラメータで合わせてください。&lt;/p&gt;
+
+&lt;p&gt;パラメータ一覧は、&lt;a href=&#34;http://wiki.conky.be/index.php?title=Configuration_Settings&#34; target=&#34;_blank&#34;&gt;公式 Wiki サイト&lt;/a&gt; に正しい情報が載っています。&lt;/p&gt;
+
+&lt;p&gt;話変わるけど、enlightenment 17 が完成度高くならない理由ってなんなのでしょうかね？ 16 を愛用していただけに残念。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>gitosis ssh&#43;git サーバ</title>
+      <link>http://jedipunkz.github.io/blog/2012/03/07/gitosis-ssh-plus-git-saba/</link>
+      <pubDate>Wed, 07 Mar 2012 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2012/03/07/gitosis-ssh-plus-git-saba/</guid>
+      <description>&lt;p&gt;github.com は便利なのだけどプライベートなレポジトリを作るのにお金払うのはもったいないので自宅サーバに SSH 経由の Git サーバを構築した。その時の手順をメモしておきます。&lt;/p&gt;
+
+&lt;p&gt;gitosis という便利なツールがあって、これを使うとあっという間に環境構築できます。私の環境は debian Gnu/Linux Squeeze なのですが apt-get で必要なモノを入れました。gitosis は git で持ってきます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;remote% sudo apt-get update
+remote% sudo apt-get install git git-core python python-setuptools
+remote% cd $HOME/usr/src
+remote% git clone git://eagain.net/gitosis.git
+remote% cd gitosis
+remote% sudo python setup.py install
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;SSH でアクセスする先のユーザを作ります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;remote% sudo adduser --shell /bin/sh -gecos --group \
+        --disable-password --home /home/git git
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;作業端末で rsa な SSH 公開鍵を生成して ${remote} サーバは転送する。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;local% ssh-keygen -t rsa
+... インタラクティブに答える
+local% scp .ssh/id_dsa.pub ${remote}:/tmp/
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;転送した鍵を元に ${remote} サーバ上で git レポジトリを初期化する。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;remote% sudo -H -u git gitosis-init &amp;lt; /tmp/id_rsa.pub
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;もし実行権が付いていなかったら&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;remote% sudo chmod 755 /home/git/repositories/gitosis-admin.git/hooks/post-update
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;これで環境構築完了。ただ、このままだとローカルの作業端末からレポジトリの生成が出来ない。&lt;/p&gt;
+
+&lt;p&gt;ローカルの作業端末でレポジトリを生成する手順は、
+gitosis-admin.git を clone してきて、gitosis.conf を修正し commit/push する。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;local% git clone git@${remote}:gitosis-admin.git
+local% vi gitosis.conf
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;今回はテストで test グループに test レポジトリを作るための config を書いてみる。members は複数人書ける。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;[gitosis]
+
+[group gitosis-admin]
+writable = gitosis-admin
+members = chobiwan@${local}
+
+[group test]
+writable = test
+members = chobiwan@${local}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;修正した内容を ${remote} サーバへ git push して反映させる。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;local% git add .
+local% git commit -m &amp;quot;added test repo&amp;quot;
+local% git push origin master
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;これで &amp;lsquo;test&amp;rsquo; レポジトリをローカルの作業端末から作ってコミットする準備完了。
+試しにファイルを add, commit, push してみる。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;local% mkdir ~/gitwork
+local% cd ~/gitwork
+local% touch README
+local% git add README
+local% git commit -m &amp;quot;my first commi&amp;quot;
+local% git remote add origin git@obi.chobiwan.me:test.git
+local% git push origin master
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;(2012/05/01 追記)
+新規ユーザの追加方法は下記の通り。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;local% ssh-keygen -t rsa
+local% cd ~/gitwork
+local% git clone git@${remote}:gitosis-admin.git
+local% cp ~/.ssh/id_rsa.pub ./gitosis-admin/keydir/user@hostname.pub
+local% vi ./gitosis-admin/gitosis.conf
+       &amp;lt;参加したいリポジトリの membersに user@hostname.pub を追加(スペース区切り)
+local% git gitosis-admin &amp;amp;&amp;amp; git add . &amp;amp;&amp;amp; git commit -m &amp;quot;added a user&amp;quot;
+local% git push origin master
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;公開鍵のアップやレポジトリ・グループの生成の仕方を覚えれば、OK なのかなぁと。
+次はレポジトリのバックアップとレカバリについてまとめていきたい。リカバリできないと死ねるから。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

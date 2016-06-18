@@ -1,0 +1,969 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Ironic でベアメタル OpenStack ！..の一歩手前</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Ironic でベアメタル OpenStack ！..の一歩手前"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 アドベントカレンダーの季節がやって参りました。 Ironic を使って OpenStack でベアメタルサーバを扱いたい！ということで色々とやっ ている最中 (今週から始めました..) なのですが、まだまだ incubator プロジェクト ということもあって実装が追い付いていなかったりドキュメントも揃っていなかったり とシンドい状況ｗ ここ2日程で集めた情報を整理するためにも 2013年 OpenStack アド ベントカレンダーに参加させてもらいますー。 参考資料のまとめ まずは公式 wiki ページ。逆に言うとここに記されている以上の情報は無いんじゃ？あ とはコード読め！の世界かも..。 https://wiki.openstack.org/wiki/Ironic devtest_undercloud です。上の資料の中でも手順の中で度々こちらにジャンプしている。 同じく incubator プロジェクトの TrippleO のデベロッパ用ドキュメントになっている。 上記の公式 wiki の情報を合わせ読むことで Ironic を使ったデプロイの手順に仕上がります。 http://docs.openstack.org/developer/tripleo-incubator/devtest_undercloud.html ソースコードとドキュメント。あとでドキュメント作成方法を記しますが、こちらを取 得して作成します。 https://github.com/openstack/ironic ドキュメントサイト。まだ情報が揃っていません。よって上の github から取得したモ ノからドキュメントを作る方法を後で書きます。 http://docs.openstack.org/developer/ironic/ launchpad サイト。全てのバグ情報やブループリント等が閲覧出来ます。まだ絶賛開発 中なので読む必要があると思います。 https://launchpad.net/ironic ドキュメントを作る &#43;&#43;&#43; 公式 ドキュメントサイトは一応、上記の通りあるのですが、ドキュメントも絶賛執筆 中ということで所々抜けがあります。また公式ドキュメントサイトがどのスパンで更新 されているか分からないので、いち早く情報をゲットしたい場合ドキュメントを作る必 要があると思います。ということで、その作り方を記していきます。尚、公式 wiki サ イトにも手順が載っていますが Vagrant と Apache を用いた方法になっているので、 普通に Ubuntu サーバが手元にある環境を想定して読み替えながら説明していきます。 必要なパッケージのインストールを行います。 % sudo apt-get update % sudo apt-get install -y git python-dev swig libssl-dev python-pip \ libmysqlclient-dev libxml2-dev libxslt-dev libxslt1-dev python-mysqldb \ libpq-dev % sudo pip install virtualenv setuptools-git flake8 tox % sudo easy_install nose ソースコード・ドキュメントを取得します。 % git clone git://github.com/openstack/ironic.git Sphinx で構成されているのでビルドします。 % cd ironic % tox -evenv -- echo &#39;done&#39; % source .tox/venv/bin/activate &gt; python setup.ph build_sphinx &gt; deactivate ironic/doc/build/html ディレクトリ配下に HTML のドキュメントが生成されたはずで す。これを手元の端末に持ってきて開けばブラウザで最新のドキュメントが閲覧出来ま す。 ironic を有効にした devstack による構築 devstack を使って ironic を機能させていきます。私は下記の localrc を用いて ironic の試験をしていました。またブランチは &lsquo;master&rsquo; を使います。 % git clone https://github.com/openstack-dev/devstack.git % cd devstack % ${EDITOR} localrc # 下記の通り HOST_IP=&lt;your_machine_ip_addr&gt; LOGFILE=stack.sh.log ADMIN_PASSWORD=nomoresecrete MYSQL_PASSWORD=$ADMIN_PASSWORD RABBIT_PASSWORD=$ADMIN_PASSWORD SERVICE_PASSWORD=$ADMIN_PASSWORD SERVICE_TOKEN=admintoken disable_service n-obj # ironic enable_service ir-api enable_service ir-cond # use neutron disable_service n-net enable_service q-svc enable_service q-agt enable_service q-dhcp enable_service q-l3 enable_service q-meta enable_service q-lbaas enable_service neutron ENABLE_TENANT_TUNNELS=True # heat ENABLED_SERVICES&#43;=,heat,h-api,h-api-cfn,h-api-cw,h-eng ## It would also be useful to automatically download and register VM images that Heat can launch."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Ironic でベアメタル OpenStack ！..の一歩手前" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 アドベントカレンダーの季節がやって参りました。 Ironic を使って OpenStack でベアメタルサーバを扱いたい！ということで色々とやっ ている最中 (今週から始めました..) なのですが、まだまだ incubator プロジェクト ということもあって実装が追い付いていなかったりドキュメントも揃っていなかったり とシンドい状況ｗ ここ2日程で集めた情報を整理するためにも 2013年 OpenStack アド ベントカレンダーに参加させてもらいますー。 参考資料のまとめ まずは公式 wiki ページ。逆に言うとここに記されている以上の情報は無いんじゃ？あ とはコード読め！の世界かも..。 https://wiki.openstack.org/wiki/Ironic devtest_undercloud です。上の資料の中でも手順の中で度々こちらにジャンプしている。 同じく incubator プロジェクトの TrippleO のデベロッパ用ドキュメントになっている。 上記の公式 wiki の情報を合わせ読むことで Ironic を使ったデプロイの手順に仕上がります。 http://docs.openstack.org/developer/tripleo-incubator/devtest_undercloud.html ソースコードとドキュメント。あとでドキュメント作成方法を記しますが、こちらを取 得して作成します。 https://github.com/openstack/ironic ドキュメントサイト。まだ情報が揃っていません。よって上の github から取得したモ ノからドキュメントを作る方法を後で書きます。 http://docs.openstack.org/developer/ironic/ launchpad サイト。全てのバグ情報やブループリント等が閲覧出来ます。まだ絶賛開発 中なので読む必要があると思います。 https://launchpad.net/ironic ドキュメントを作る &#43;&#43;&#43; 公式 ドキュメントサイトは一応、上記の通りあるのですが、ドキュメントも絶賛執筆 中ということで所々抜けがあります。また公式ドキュメントサイトがどのスパンで更新 されているか分からないので、いち早く情報をゲットしたい場合ドキュメントを作る必 要があると思います。ということで、その作り方を記していきます。尚、公式 wiki サ イトにも手順が載っていますが Vagrant と Apache を用いた方法になっているので、 普通に Ubuntu サーバが手元にある環境を想定して読み替えながら説明していきます。 必要なパッケージのインストールを行います。 % sudo apt-get update % sudo apt-get install -y git python-dev swig libssl-dev python-pip \ libmysqlclient-dev libxml2-dev libxslt-dev libxslt1-dev python-mysqldb \ libpq-dev % sudo pip install virtualenv setuptools-git flake8 tox % sudo easy_install nose ソースコード・ドキュメントを取得します。 % git clone git://github.com/openstack/ironic.git Sphinx で構成されているのでビルドします。 % cd ironic % tox -evenv -- echo &#39;done&#39; % source .tox/venv/bin/activate &gt; python setup.ph build_sphinx &gt; deactivate ironic/doc/build/html ディレクトリ配下に HTML のドキュメントが生成されたはずで す。これを手元の端末に持ってきて開けばブラウザで最新のドキュメントが閲覧出来ま す。 ironic を有効にした devstack による構築 devstack を使って ironic を機能させていきます。私は下記の localrc を用いて ironic の試験をしていました。またブランチは &lsquo;master&rsquo; を使います。 % git clone https://github.com/openstack-dev/devstack.git % cd devstack % ${EDITOR} localrc # 下記の通り HOST_IP=&lt;your_machine_ip_addr&gt; LOGFILE=stack.sh.log ADMIN_PASSWORD=nomoresecrete MYSQL_PASSWORD=$ADMIN_PASSWORD RABBIT_PASSWORD=$ADMIN_PASSWORD SERVICE_PASSWORD=$ADMIN_PASSWORD SERVICE_TOKEN=admintoken disable_service n-obj # ironic enable_service ir-api enable_service ir-cond # use neutron disable_service n-net enable_service q-svc enable_service q-agt enable_service q-dhcp enable_service q-l3 enable_service q-meta enable_service q-lbaas enable_service neutron ENABLE_TENANT_TUNNELS=True # heat ENABLED_SERVICES&#43;=,heat,h-api,h-api-cfn,h-api-cw,h-eng ## It would also be useful to automatically download and register VM images that Heat can launch." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/12/05/ironic-openstack-beremetal/" />
+
+
+<meta property="og:updated_time" content="2013-12-05T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Ironic でベアメタル OpenStack ！..の一歩手前">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 アドベントカレンダーの季節がやって参りました。 Ironic を使って OpenStack でベアメタルサーバを扱いたい！ということで色々とやっ ている最中 (今週から始めました..) なのですが、まだまだ incubator プロジェクト ということもあって実装が追い付いていなかったりドキュメントも揃っていなかったり とシンドい状況ｗ ここ2日程で集めた情報を整理するためにも 2013年 OpenStack アド ベントカレンダーに参加させてもらいますー。 参考資料のまとめ まずは公式 wiki ページ。逆に言うとここに記されている以上の情報は無いんじゃ？あ とはコード読め！の世界かも..。 https://wiki.openstack.org/wiki/Ironic devtest_undercloud です。上の資料の中でも手順の中で度々こちらにジャンプしている。 同じく incubator プロジェクトの TrippleO のデベロッパ用ドキュメントになっている。 上記の公式 wiki の情報を合わせ読むことで Ironic を使ったデプロイの手順に仕上がります。 http://docs.openstack.org/developer/tripleo-incubator/devtest_undercloud.html ソースコードとドキュメント。あとでドキュメント作成方法を記しますが、こちらを取 得して作成します。 https://github.com/openstack/ironic ドキュメントサイト。まだ情報が揃っていません。よって上の github から取得したモ ノからドキュメントを作る方法を後で書きます。 http://docs.openstack.org/developer/ironic/ launchpad サイト。全てのバグ情報やブループリント等が閲覧出来ます。まだ絶賛開発 中なので読む必要があると思います。 https://launchpad.net/ironic ドキュメントを作る &#43;&#43;&#43; 公式 ドキュメントサイトは一応、上記の通りあるのですが、ドキュメントも絶賛執筆 中ということで所々抜けがあります。また公式ドキュメントサイトがどのスパンで更新 されているか分からないので、いち早く情報をゲットしたい場合ドキュメントを作る必 要があると思います。ということで、その作り方を記していきます。尚、公式 wiki サ イトにも手順が載っていますが Vagrant と Apache を用いた方法になっているので、 普通に Ubuntu サーバが手元にある環境を想定して読み替えながら説明していきます。 必要なパッケージのインストールを行います。 % sudo apt-get update % sudo apt-get install -y git python-dev swig libssl-dev python-pip \ libmysqlclient-dev libxml2-dev libxslt-dev libxslt1-dev python-mysqldb \ libpq-dev % sudo pip install virtualenv setuptools-git flake8 tox % sudo easy_install nose ソースコード・ドキュメントを取得します。 % git clone git://github.com/openstack/ironic.git Sphinx で構成されているのでビルドします。 % cd ironic % tox -evenv -- echo &#39;done&#39; % source .tox/venv/bin/activate &gt; python setup.ph build_sphinx &gt; deactivate ironic/doc/build/html ディレクトリ配下に HTML のドキュメントが生成されたはずで す。これを手元の端末に持ってきて開けばブラウザで最新のドキュメントが閲覧出来ま す。 ironic を有効にした devstack による構築 devstack を使って ironic を機能させていきます。私は下記の localrc を用いて ironic の試験をしていました。またブランチは &lsquo;master&rsquo; を使います。 % git clone https://github.com/openstack-dev/devstack.git % cd devstack % ${EDITOR} localrc # 下記の通り HOST_IP=&lt;your_machine_ip_addr&gt; LOGFILE=stack.sh.log ADMIN_PASSWORD=nomoresecrete MYSQL_PASSWORD=$ADMIN_PASSWORD RABBIT_PASSWORD=$ADMIN_PASSWORD SERVICE_PASSWORD=$ADMIN_PASSWORD SERVICE_TOKEN=admintoken disable_service n-obj # ironic enable_service ir-api enable_service ir-cond # use neutron disable_service n-net enable_service q-svc enable_service q-agt enable_service q-dhcp enable_service q-l3 enable_service q-meta enable_service q-lbaas enable_service neutron ENABLE_TENANT_TUNNELS=True # heat ENABLED_SERVICES&#43;=,heat,h-api,h-api-cfn,h-api-cw,h-eng ## It would also be useful to automatically download and register VM images that Heat can launch.">
+
+
+<meta itemprop="dateModified" content="2013-12-05T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="402">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f&text=Ironic%20%e3%81%a7%e3%83%99%e3%82%a2%e3%83%a1%e3%82%bf%e3%83%ab%20OpenStack%20%ef%bc%81..%e3%81%ae%e4%b8%80%e6%ad%a9%e6%89%8b%e5%89%8d&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f&title=Ironic%20%e3%81%a7%e3%83%99%e3%82%a2%e3%83%a1%e3%82%bf%e3%83%ab%20OpenStack%20%ef%bc%81..%e3%81%ae%e4%b8%80%e6%ad%a9%e6%89%8b%e5%89%8d" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f&title=Ironic%20%e3%81%a7%e3%83%99%e3%82%a2%e3%83%a1%e3%82%bf%e3%83%ab%20OpenStack%20%ef%bc%81..%e3%81%ae%e4%b8%80%e6%ad%a9%e6%89%8b%e5%89%8d" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f&title=Ironic%20%e3%81%a7%e3%83%99%e3%82%a2%e3%83%a1%e3%82%bf%e3%83%ab%20OpenStack%20%ef%bc%81..%e3%81%ae%e4%b8%80%e6%ad%a9%e6%89%8b%e5%89%8d" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/12/05/ironic-openstack-beremetal/">Ironic でベアメタル OpenStack ！..の一歩手前</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-12-05'>
+            December 5, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f&text=Ironic%20%e3%81%a7%e3%83%99%e3%82%a2%e3%83%a1%e3%82%bf%e3%83%ab%20OpenStack%20%ef%bc%81..%e3%81%ae%e4%b8%80%e6%ad%a9%e6%89%8b%e5%89%8d&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f&title=Ironic%20%e3%81%a7%e3%83%99%e3%82%a2%e3%83%a1%e3%82%bf%e3%83%ab%20OpenStack%20%ef%bc%81..%e3%81%ae%e4%b8%80%e6%ad%a9%e6%89%8b%e5%89%8d" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f&title=Ironic%20%e3%81%a7%e3%83%99%e3%82%a2%e3%83%a1%e3%82%bf%e3%83%ab%20OpenStack%20%ef%bc%81..%e3%81%ae%e4%b8%80%e6%ad%a9%e6%89%8b%e5%89%8d" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f&title=Ironic%20%e3%81%a7%e3%83%99%e3%82%a2%e3%83%a1%e3%82%bf%e3%83%ab%20OpenStack%20%ef%bc%81..%e3%81%ae%e4%b8%80%e6%ad%a9%e6%89%8b%e5%89%8d" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f05%2fironic-openstack-beremetal%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>アドベントカレンダーの季節がやって参りました。</p>
+
+<p>Ironic を使って OpenStack でベアメタルサーバを扱いたい！ということで色々とやっ
+ている最中 (今週から始めました..) なのですが、まだまだ incubator プロジェクト
+ということもあって実装が追い付いていなかったりドキュメントも揃っていなかったり
+とシンドい状況ｗ ここ2日程で集めた情報を整理するためにも 2013年 OpenStack アド
+ベントカレンダーに参加させてもらいますー。</p>
+
+<h2 id="参考資料のまとめ">参考資料のまとめ</h2>
+
+<p>まずは公式 wiki ページ。逆に言うとここに記されている以上の情報は無いんじゃ？あ
+とはコード読め！の世界かも..。</p>
+
+<p><a href="https://wiki.openstack.org/wiki/Ironic">https://wiki.openstack.org/wiki/Ironic</a></p>
+
+<p>devtest_undercloud です。上の資料の中でも手順の中で度々こちらにジャンプしている。
+同じく incubator プロジェクトの TrippleO のデベロッパ用ドキュメントになっている。
+上記の公式 wiki の情報を合わせ読むことで Ironic を使ったデプロイの手順に仕上がります。</p>
+
+<p><a href="http://docs.openstack.org/developer/tripleo-incubator/devtest_undercloud.html">http://docs.openstack.org/developer/tripleo-incubator/devtest_undercloud.html</a></p>
+
+<p>ソースコードとドキュメント。あとでドキュメント作成方法を記しますが、こちらを取
+得して作成します。</p>
+
+<p><a href="https://github.com/openstack/ironic">https://github.com/openstack/ironic</a></p>
+
+<p>ドキュメントサイト。まだ情報が揃っていません。よって上の github から取得したモ
+ノからドキュメントを作る方法を後で書きます。</p>
+
+<p><a href="http://docs.openstack.org/developer/ironic/">http://docs.openstack.org/developer/ironic/</a></p>
+
+<p>launchpad サイト。全てのバグ情報やブループリント等が閲覧出来ます。まだ絶賛開発
+中なので読む必要があると思います。</p>
+
+<p><a href="https://launchpad.net/ironic">https://launchpad.net/ironic</a></p>
+
+<p>ドキュメントを作る
++++</p>
+
+<p>公式 ドキュメントサイトは一応、上記の通りあるのですが、ドキュメントも絶賛執筆
+中ということで所々抜けがあります。また公式ドキュメントサイトがどのスパンで更新
+されているか分からないので、いち早く情報をゲットしたい場合ドキュメントを作る必
+要があると思います。ということで、その作り方を記していきます。尚、公式 wiki サ
+イトにも手順が載っていますが Vagrant と Apache を用いた方法になっているので、
+普通に Ubuntu サーバが手元にある環境を想定して読み替えながら説明していきます。</p>
+
+<p>必要なパッケージのインストールを行います。</p>
+
+<pre><code class="language-bash">% sudo apt-get update
+% sudo apt-get install -y git python-dev swig libssl-dev python-pip \
+  libmysqlclient-dev libxml2-dev libxslt-dev libxslt1-dev python-mysqldb \
+  libpq-dev
+% sudo pip install virtualenv setuptools-git flake8 tox
+% sudo easy_install nose
+</code></pre>
+
+<p>ソースコード・ドキュメントを取得します。</p>
+
+<pre><code class="language-bash">% git clone git://github.com/openstack/ironic.git
+</code></pre>
+
+<p>Sphinx で構成されているのでビルドします。</p>
+
+<pre><code class="language-bash">% cd ironic
+% tox -evenv -- echo 'done'
+% source .tox/venv/bin/activate
+&gt; python setup.ph build_sphinx
+&gt; deactivate
+</code></pre>
+
+<p>ironic/doc/build/html ディレクトリ配下に HTML のドキュメントが生成されたはずで
+す。これを手元の端末に持ってきて開けばブラウザで最新のドキュメントが閲覧出来ま
+す。</p>
+
+<h2 id="ironic-を有効にした-devstack-による構築">ironic を有効にした devstack による構築</h2>
+
+<p>devstack を使って ironic を機能させていきます。私は下記の localrc を用いて
+ironic の試験をしていました。またブランチは &lsquo;master&rsquo; を使います。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/openstack-dev/devstack.git
+% cd devstack
+% ${EDITOR} localrc # 下記の通り
+
+HOST_IP=&lt;your_machine_ip_addr&gt;
+
+LOGFILE=stack.sh.log
+
+ADMIN_PASSWORD=nomoresecrete
+MYSQL_PASSWORD=$ADMIN_PASSWORD
+RABBIT_PASSWORD=$ADMIN_PASSWORD
+SERVICE_PASSWORD=$ADMIN_PASSWORD
+SERVICE_TOKEN=admintoken
+
+disable_service n-obj
+
+# ironic
+enable_service ir-api
+enable_service ir-cond
+
+# use neutron
+disable_service n-net
+enable_service q-svc
+enable_service q-agt
+enable_service q-dhcp
+enable_service q-l3
+enable_service q-meta
+enable_service q-lbaas
+enable_service neutron
+
+ENABLE_TENANT_TUNNELS=True
+
+# heat
+ENABLED_SERVICES+=,heat,h-api,h-api-cfn,h-api-cw,h-eng
+## It would also be useful to automatically download and register VM images that Heat can launch.
+# 64bit image (~660MB)
+IMAGE_URLS+=&quot;,http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-x86_64-cfntools.qcow2&quot;
+# 32bit image (~640MB)
+IMAGE_URLS+=&quot;,http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-i386-cfntools.qcow2&quot;
+
+# syslog
+SYSLOG=True
+SYSLOG_HOST=$HOST_IP
+SYSLOG_PORT=514
+</code></pre>
+
+<p>stack.sh を実行します。</p>
+
+<pre><code class="language-bash">% ./stack.sh
+</code></pre>
+
+<p>Ironic を有効にした OpenStack 環境が出来上がったはずです。</p>
+
+<h2 id="diskimage-builder-を使ったイメージ作成">diskimage-builder を使ったイメージ作成</h2>
+
+<p>ベアメタルサーバをデプロイするためのイメージを作成します。元々は TrippleO のプ
+ロジェクト内に存在していましたが、現在は git レポジトリが別れています。</p>
+
+<p>先ほど devstack を導入したホストでイメージを作ります。作成には結構時間が掛かります。</p>
+
+<pre><code class="language-bash">% cd ~     
+% git clone https://github.com/openstack/diskimage-builder.git
+% git clone https://github.com/openstack/tripleo-incubator.git
+% git clone https://github.com/openstack/tripleo-image-elements.git
+% git clone https://github.com/openstack/tripleo-heat-templates.git
+% export UNDERCLOUD_DIB_EXTRA_ARGS='ironic-api ironic-conductor'
+% export ELEMENTS_PATH=/home/thirai/tripleo-image-elements/elements
+% ./diskimage-builder/bin/disk-image-create -a amd64 -o ~/undercloud boot-stack \
+  nova-baremetal os-collect-config stackuser dhcp-all-interfaces \
+  neutron-dhcp-agent ${UNDERCLOUD_DIB_EXTRA_ARGS:-} ubuntu 2&gt;&amp;1 | tee /tmp/undercloud.log 
+</code></pre>
+
+<p>イメージが ~/undercloud.qcow2 が生成されたはずです。作成したイメージを Glance に登録します。</p>
+
+<pre><code class="language-bash">% ~/tripleo-incubator/scripts/load-image undercloud.qcow2
+</code></pre>
+
+<p>undercloud.yaml と ironic.yaml をマージします。</p>
+
+<pre><code class="language-bash">% cd ~/tripleo-heat-templates
+% make undercloud-vm-ironic.yaml
+</code></pre>
+
+<p>パスワードの生成と環境変数への読み込みを行います。</p>
+
+<pre><code class="language-bash">% cd ~/tripleo-incubator/scripts/
+% export PATH=$PATH:.
+% ./setup-undercloud-passwords
+% source tripleo-undercloud-passwords
+</code></pre>
+
+<p>UNDERCLOUD_IRONIC_PASSWORD 環境変数にも読み込みます。</p>
+
+<pre><code class="language-bash">% export UNDERCLOUD_IRONIC_PASSWORD=$(~/tripleo-incubator/scripts/os-make-password)
+</code></pre>
+
+<p>さて、イメージを利用したベアメタルへの稼働ですが、&hellip;</p>
+
+<pre><code class="language-bash">if [ &quot;$DHCP_DRIVER&quot; = &quot;bm-dnsmasq&quot; ]; then
+    UNDERCLOUD_NATIVE_PXE=&quot;&quot;
+else
+    UNDERCLOUD_NATIVE_PXE=&quot;;NeutronNativePXE=True&quot;
+fi
+
+heat stack-create -f ./tripleo-heat-templates/undercloud-vm-ironic.yaml \
+-P &quot;PowerUserName=$(whoami);\
+AdminToken=${UNDERCLOUD_ADMIN_TOKEN};\
+AdminPassword=${UNDERCLOUD_ADMIN_PASSWORD};\
+GlancePassword=${UNDERCLOUD_GLANCE_PASSWORD};\
+HeatPassword=${UNDERCLOUD_HEAT_PASSWORD};\
+NeutronPassword=${UNDERCLOUD_NEUTRON_PASSWORD};\
+NovaPassword=${UNDERCLOUD_NOVA_PASSWORD};\
+BaremetalArch=${NODE_ARCH}$UNDERCLOUD_NATIVE_PXE&quot; \
+IronicPassword=${UNDERCLOUD_IRONIC_PASSWORD}&quot; \
+undercloud
+</code></pre>
+
+<p>コケました。&hellip;エラーは下記の通り。</p>
+
+<pre><code>TRACE heat.engine.resource Error: Creation of server teststack01-WikiDatabase-5nyiqluilnxn failed: No valid host was found. Exceeded max
+scheduling attempts 3 for instance 733b69df-2b54-44ae-9d61-de766746f21a (500)#0122013-12-03 16:04:14.513 10022 TRACE heat.engine.resource
+</code></pre>
+
+<p>No Valid Host とな&hellip;。うーん。確かに IPMI を積んだベアメタルマシンの情報って
+どこにも記していないんだよなぁ。しかも heat のテンプレート
+(underclound-vm-ironic.yaml) 見てもよく理解していない自分がいる&hellip;(´・ω・`)</p>
+
+<p>というか手順にはその周りのこと何も書いていないのでぇすがぁ！&hellip;</p>
+
+<p>ということで、まだまだコントリビュートするチャンス満載の状態なので、よかったら
+皆さん参加されませんか !?!?</p>
+
+<p><a href="https://wiki.openstack.org/wiki/HowToContribute">https://wiki.openstack.org/wiki/HowToContribute</a></p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/11/27/sensu-chef-deploy-2/"
+                class="button big previous">sensu-chef で監視システム Sensu を管理 #2</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/12/09/coreos-etcd-cluster/"
+                class="button big next">CoreOS etcd のクラスタとその応用性</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/12\/05\/ironic-openstack-beremetal\/';
+    var disqus_title = 'Ironic でベアメタル OpenStack ！..の一歩手前';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/12\/05\/ironic-openstack-beremetal\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

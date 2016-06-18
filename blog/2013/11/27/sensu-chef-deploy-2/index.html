@@ -1,0 +1,943 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>sensu-chef で監視システム Sensu を管理 #2</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="sensu-chef で監視システム Sensu を管理 #2"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 以前、Sensu を Chef で管理する方法について書きました。 http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/ これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも 公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、 sensu-chef を再確認したのですが、だいぶ更新されていました。 下記が sensu-chef です。 https://github.com/sensu/sensu-chef この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使 い方を書いていきます。 下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。 {% img /pix/sensu.png %} 使い方 sensu-chef を取得する。chef-repo になっています。 % git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu bundle にて Gemfile に記述の在る gem パッケージをインストールします。 % cd ~/chef-repo-sensu % bundle install .chef/ 配下の設定は割愛します。chef サーバの情報に合わせて設定します。 ssl 鍵を生成して data bags に投入します。 % cd examples/ssl % ./ssl_certs.sh generate % cd ../../ % knife data bag create sensu % knife data bag from file sensu examples/ssl/ssl.json % ./examples/ssl/ssl_certs.sh clean Roles を作成します。chef-repo なのに何も入っていませんでした&hellip;汗 ここで面白いのは &lsquo;sensu-client&rsquo; は sensu で言う subscribers の名前にそのまま利 用されるところです。つまり &lsquo;sensu-client&rsquo; の名前が記された sensu サーバ上の監 視項目 (checks) がこの sensu クライアントに割り当てられます。 % mkdir roles % ${EDITOR} roles/sensu-server.rb name &quot;sensu-server&quot; description &quot;role applied to sensu server.&quot; run_list &#39;recipe[sensu::default]&#39;, &#39;recipe[sensu::rabbitmq]&#39;, &#39;recipe[sensu::redis]&#39;, &#39;recipe[sensu::server_service]&#39;, &#39;recipe[sensu::api_service]&#39;, &#39;recipe[sensu::dashboard_service]&#39;, &#39;recipe[chef-client::service]&#39; % ${EDITOR} roles/sensu-client.rb name &quot;sensu-client&quot; description &quot;role applied to sensu client.&quot; run_list &#39;recipe[sensu::default]&#39;, &#39;recipe[sensu::client_service]&#39;, &#39;recipe[chef-client::service]&#39; Cheffile に &lsquo;chef-client&rsquo; の Cookbook 名を追記します。 site &#39;http://community.opscode.com/api/v1&#39; cookbook &#39;sensu&#39;, path: &#39;./&#39; cookbook &#39;sensu-test&#39;, path: &#39;./test/cookbooks/sensu-test&#39; cookbook &#39;chef-client&#39; # &lt;---- 追記 librarian-chef を実行して Cookbooks を取得します。 % librarian-chef install Rabbitmq, Redis, API の IP アドレスを設定します。IP アドレスは例です。 % ${EDITOR} cookbooks/sensu/attributes/default.rb default.sensu.rabbitmq.host = &quot;172.24.19.11&quot; default.sensu.redis.host = &quot;172.24.19.11&quot; default.sensu.api.host = &quot;172.24.19.11&quot; sensu-server 用の Recipe に監視項目を追記します。ここでは cron デーモンの稼働 状況を監視してみました。 % ${EDITOR} cookbooks/sensu/recipes/server_service.rb # 下記を追記 sensu_check &quot;cron_process&quot; do command &quot;check-procs.rb -p cron -C 1&quot; handlers [&quot;default&quot;] subscribers [&quot;sensu-client&quot;] interval 30 additional(:notification =&gt; &quot;Cron is not running&quot;, :occurrences =&gt; 5) end sensu-client 用の Recipe に client.json (クライアント用設定ファイル) の記述と 上記監視項目に合った plugins 設定の追記を行います。 % ${EDITOR} cookbooks/sensu/recipes/client_service.rb # 下記を追記 sensu_client node.name do address node.ipaddress subscriptions node.roles &#43; [&quot;all&quot;] end cookbook_file &#39;check-procs.rb&#39; do source &#39;check-procs.rb&#39; mode 0755 path &#39;/etc/sensu/plugins/check-procs.rb&#39; end 上記 check-procs.rb は community サイトからダウンロードする必要があるのですが cookbook_file で対応したので files/ ディレクトリ配下に置いておきます。 % mkdir -p cookbooks/sensu/files/default % wget -o cookbooks/sensu/files/default/check-procs.rb \ https://github.com/sensu/sensu-community-plugins/raw/master/plugins/processes/check-procs.rb 上記の check-procs.rb は行頭に &lsquo;#!/usr/bin/env ruby&rsquo; が記されているのですが Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby にあるので行頭 の1行を書き換えます。 % diff cookbooks/sensu/files/default/check-procs.rb.org cookbooks/sensu/files/default/check-procs.rb - #!/usr/bin/env ruby &#43; #!/opt/sensu/embedded/bin/ruby Roles, Cookbooks を Chef サーバにアップロードします。 % knife cookbook upload -o ./cookbooks -a % knife role from file roles/*.rb いよいよブートストラップします!"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="sensu-chef で監視システム Sensu を管理 #2" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 以前、Sensu を Chef で管理する方法について書きました。 http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/ これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも 公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、 sensu-chef を再確認したのですが、だいぶ更新されていました。 下記が sensu-chef です。 https://github.com/sensu/sensu-chef この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使 い方を書いていきます。 下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。 {% img /pix/sensu.png %} 使い方 sensu-chef を取得する。chef-repo になっています。 % git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu bundle にて Gemfile に記述の在る gem パッケージをインストールします。 % cd ~/chef-repo-sensu % bundle install .chef/ 配下の設定は割愛します。chef サーバの情報に合わせて設定します。 ssl 鍵を生成して data bags に投入します。 % cd examples/ssl % ./ssl_certs.sh generate % cd ../../ % knife data bag create sensu % knife data bag from file sensu examples/ssl/ssl.json % ./examples/ssl/ssl_certs.sh clean Roles を作成します。chef-repo なのに何も入っていませんでした&hellip;汗 ここで面白いのは &lsquo;sensu-client&rsquo; は sensu で言う subscribers の名前にそのまま利 用されるところです。つまり &lsquo;sensu-client&rsquo; の名前が記された sensu サーバ上の監 視項目 (checks) がこの sensu クライアントに割り当てられます。 % mkdir roles % ${EDITOR} roles/sensu-server.rb name &quot;sensu-server&quot; description &quot;role applied to sensu server.&quot; run_list &#39;recipe[sensu::default]&#39;, &#39;recipe[sensu::rabbitmq]&#39;, &#39;recipe[sensu::redis]&#39;, &#39;recipe[sensu::server_service]&#39;, &#39;recipe[sensu::api_service]&#39;, &#39;recipe[sensu::dashboard_service]&#39;, &#39;recipe[chef-client::service]&#39; % ${EDITOR} roles/sensu-client.rb name &quot;sensu-client&quot; description &quot;role applied to sensu client.&quot; run_list &#39;recipe[sensu::default]&#39;, &#39;recipe[sensu::client_service]&#39;, &#39;recipe[chef-client::service]&#39; Cheffile に &lsquo;chef-client&rsquo; の Cookbook 名を追記します。 site &#39;http://community.opscode.com/api/v1&#39; cookbook &#39;sensu&#39;, path: &#39;./&#39; cookbook &#39;sensu-test&#39;, path: &#39;./test/cookbooks/sensu-test&#39; cookbook &#39;chef-client&#39; # &lt;---- 追記 librarian-chef を実行して Cookbooks を取得します。 % librarian-chef install Rabbitmq, Redis, API の IP アドレスを設定します。IP アドレスは例です。 % ${EDITOR} cookbooks/sensu/attributes/default.rb default.sensu.rabbitmq.host = &quot;172.24.19.11&quot; default.sensu.redis.host = &quot;172.24.19.11&quot; default.sensu.api.host = &quot;172.24.19.11&quot; sensu-server 用の Recipe に監視項目を追記します。ここでは cron デーモンの稼働 状況を監視してみました。 % ${EDITOR} cookbooks/sensu/recipes/server_service.rb # 下記を追記 sensu_check &quot;cron_process&quot; do command &quot;check-procs.rb -p cron -C 1&quot; handlers [&quot;default&quot;] subscribers [&quot;sensu-client&quot;] interval 30 additional(:notification =&gt; &quot;Cron is not running&quot;, :occurrences =&gt; 5) end sensu-client 用の Recipe に client.json (クライアント用設定ファイル) の記述と 上記監視項目に合った plugins 設定の追記を行います。 % ${EDITOR} cookbooks/sensu/recipes/client_service.rb # 下記を追記 sensu_client node.name do address node.ipaddress subscriptions node.roles &#43; [&quot;all&quot;] end cookbook_file &#39;check-procs.rb&#39; do source &#39;check-procs.rb&#39; mode 0755 path &#39;/etc/sensu/plugins/check-procs.rb&#39; end 上記 check-procs.rb は community サイトからダウンロードする必要があるのですが cookbook_file で対応したので files/ ディレクトリ配下に置いておきます。 % mkdir -p cookbooks/sensu/files/default % wget -o cookbooks/sensu/files/default/check-procs.rb \ https://github.com/sensu/sensu-community-plugins/raw/master/plugins/processes/check-procs.rb 上記の check-procs.rb は行頭に &lsquo;#!/usr/bin/env ruby&rsquo; が記されているのですが Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby にあるので行頭 の1行を書き換えます。 % diff cookbooks/sensu/files/default/check-procs.rb.org cookbooks/sensu/files/default/check-procs.rb - #!/usr/bin/env ruby &#43; #!/opt/sensu/embedded/bin/ruby Roles, Cookbooks を Chef サーバにアップロードします。 % knife cookbook upload -o ./cookbooks -a % knife role from file roles/*.rb いよいよブートストラップします!" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/11/27/sensu-chef-deploy-2/" />
+
+
+<meta property="og:updated_time" content="2013-11-27T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="sensu-chef で監視システム Sensu を管理 #2">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 以前、Sensu を Chef で管理する方法について書きました。 http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/ これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも 公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、 sensu-chef を再確認したのですが、だいぶ更新されていました。 下記が sensu-chef です。 https://github.com/sensu/sensu-chef この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使 い方を書いていきます。 下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。 {% img /pix/sensu.png %} 使い方 sensu-chef を取得する。chef-repo になっています。 % git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu bundle にて Gemfile に記述の在る gem パッケージをインストールします。 % cd ~/chef-repo-sensu % bundle install .chef/ 配下の設定は割愛します。chef サーバの情報に合わせて設定します。 ssl 鍵を生成して data bags に投入します。 % cd examples/ssl % ./ssl_certs.sh generate % cd ../../ % knife data bag create sensu % knife data bag from file sensu examples/ssl/ssl.json % ./examples/ssl/ssl_certs.sh clean Roles を作成します。chef-repo なのに何も入っていませんでした&hellip;汗 ここで面白いのは &lsquo;sensu-client&rsquo; は sensu で言う subscribers の名前にそのまま利 用されるところです。つまり &lsquo;sensu-client&rsquo; の名前が記された sensu サーバ上の監 視項目 (checks) がこの sensu クライアントに割り当てられます。 % mkdir roles % ${EDITOR} roles/sensu-server.rb name &quot;sensu-server&quot; description &quot;role applied to sensu server.&quot; run_list &#39;recipe[sensu::default]&#39;, &#39;recipe[sensu::rabbitmq]&#39;, &#39;recipe[sensu::redis]&#39;, &#39;recipe[sensu::server_service]&#39;, &#39;recipe[sensu::api_service]&#39;, &#39;recipe[sensu::dashboard_service]&#39;, &#39;recipe[chef-client::service]&#39; % ${EDITOR} roles/sensu-client.rb name &quot;sensu-client&quot; description &quot;role applied to sensu client.&quot; run_list &#39;recipe[sensu::default]&#39;, &#39;recipe[sensu::client_service]&#39;, &#39;recipe[chef-client::service]&#39; Cheffile に &lsquo;chef-client&rsquo; の Cookbook 名を追記します。 site &#39;http://community.opscode.com/api/v1&#39; cookbook &#39;sensu&#39;, path: &#39;./&#39; cookbook &#39;sensu-test&#39;, path: &#39;./test/cookbooks/sensu-test&#39; cookbook &#39;chef-client&#39; # &lt;---- 追記 librarian-chef を実行して Cookbooks を取得します。 % librarian-chef install Rabbitmq, Redis, API の IP アドレスを設定します。IP アドレスは例です。 % ${EDITOR} cookbooks/sensu/attributes/default.rb default.sensu.rabbitmq.host = &quot;172.24.19.11&quot; default.sensu.redis.host = &quot;172.24.19.11&quot; default.sensu.api.host = &quot;172.24.19.11&quot; sensu-server 用の Recipe に監視項目を追記します。ここでは cron デーモンの稼働 状況を監視してみました。 % ${EDITOR} cookbooks/sensu/recipes/server_service.rb # 下記を追記 sensu_check &quot;cron_process&quot; do command &quot;check-procs.rb -p cron -C 1&quot; handlers [&quot;default&quot;] subscribers [&quot;sensu-client&quot;] interval 30 additional(:notification =&gt; &quot;Cron is not running&quot;, :occurrences =&gt; 5) end sensu-client 用の Recipe に client.json (クライアント用設定ファイル) の記述と 上記監視項目に合った plugins 設定の追記を行います。 % ${EDITOR} cookbooks/sensu/recipes/client_service.rb # 下記を追記 sensu_client node.name do address node.ipaddress subscriptions node.roles &#43; [&quot;all&quot;] end cookbook_file &#39;check-procs.rb&#39; do source &#39;check-procs.rb&#39; mode 0755 path &#39;/etc/sensu/plugins/check-procs.rb&#39; end 上記 check-procs.rb は community サイトからダウンロードする必要があるのですが cookbook_file で対応したので files/ ディレクトリ配下に置いておきます。 % mkdir -p cookbooks/sensu/files/default % wget -o cookbooks/sensu/files/default/check-procs.rb \ https://github.com/sensu/sensu-community-plugins/raw/master/plugins/processes/check-procs.rb 上記の check-procs.rb は行頭に &lsquo;#!/usr/bin/env ruby&rsquo; が記されているのですが Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby にあるので行頭 の1行を書き換えます。 % diff cookbooks/sensu/files/default/check-procs.rb.org cookbooks/sensu/files/default/check-procs.rb - #!/usr/bin/env ruby &#43; #!/opt/sensu/embedded/bin/ruby Roles, Cookbooks を Chef サーバにアップロードします。 % knife cookbook upload -o ./cookbooks -a % knife role from file roles/*.rb いよいよブートストラップします!">
+
+
+<meta itemprop="dateModified" content="2013-11-27T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="393">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f&text=sensu-chef%20%e3%81%a7%e7%9b%a3%e8%a6%96%e3%82%b7%e3%82%b9%e3%83%86%e3%83%a0%20Sensu%20%e3%82%92%e7%ae%a1%e7%90%86%20%232&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f&title=sensu-chef%20%e3%81%a7%e7%9b%a3%e8%a6%96%e3%82%b7%e3%82%b9%e3%83%86%e3%83%a0%20Sensu%20%e3%82%92%e7%ae%a1%e7%90%86%20%232" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f&title=sensu-chef%20%e3%81%a7%e7%9b%a3%e8%a6%96%e3%82%b7%e3%82%b9%e3%83%86%e3%83%a0%20Sensu%20%e3%82%92%e7%ae%a1%e7%90%86%20%232" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f&title=sensu-chef%20%e3%81%a7%e7%9b%a3%e8%a6%96%e3%82%b7%e3%82%b9%e3%83%86%e3%83%a0%20Sensu%20%e3%82%92%e7%ae%a1%e7%90%86%20%232" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/11/27/sensu-chef-deploy-2/">sensu-chef で監視システム Sensu を管理 #2</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-11-27'>
+            November 27, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f&text=sensu-chef%20%e3%81%a7%e7%9b%a3%e8%a6%96%e3%82%b7%e3%82%b9%e3%83%86%e3%83%a0%20Sensu%20%e3%82%92%e7%ae%a1%e7%90%86%20%232&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f&title=sensu-chef%20%e3%81%a7%e7%9b%a3%e8%a6%96%e3%82%b7%e3%82%b9%e3%83%86%e3%83%a0%20Sensu%20%e3%82%92%e7%ae%a1%e7%90%86%20%232" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f&title=sensu-chef%20%e3%81%a7%e7%9b%a3%e8%a6%96%e3%82%b7%e3%82%b9%e3%83%86%e3%83%a0%20Sensu%20%e3%82%92%e7%ae%a1%e7%90%86%20%232" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f&title=sensu-chef%20%e3%81%a7%e7%9b%a3%e8%a6%96%e3%82%b7%e3%82%b9%e3%83%86%e3%83%a0%20Sensu%20%e3%82%92%e7%ae%a1%e7%90%86%20%232" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f27%2fsensu-chef-deploy-2%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>以前、Sensu を Chef で管理する方法について書きました。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/">http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/</a></p>
+
+<p>これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef
+Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも
+公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ
+た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、
+sensu-chef を再確認したのですが、だいぶ更新されていました。</p>
+
+<p>下記が sensu-chef です。</p>
+
+<p><a href="https://github.com/sensu/sensu-chef">https://github.com/sensu/sensu-chef</a></p>
+
+<p>この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は
+Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使
+い方を書いていきます。</p>
+
+<p>下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。</p>
+
+<p>{% img /pix/sensu.png %}</p>
+
+<h2 id="使い方">使い方</h2>
+
+<p>sensu-chef を取得する。chef-repo になっています。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu
+</code></pre>
+
+<p>bundle にて Gemfile に記述の在る gem パッケージをインストールします。</p>
+
+<pre><code class="language-bash">% cd ~/chef-repo-sensu
+% bundle install
+</code></pre>
+
+<p>.chef/ 配下の設定は割愛します。chef サーバの情報に合わせて設定します。</p>
+
+<p>ssl 鍵を生成して data bags に投入します。</p>
+
+<pre><code class="language-bash">% cd examples/ssl
+% ./ssl_certs.sh generate
+% cd ../../
+% knife data bag create sensu
+% knife data bag from file sensu examples/ssl/ssl.json
+% ./examples/ssl/ssl_certs.sh clean
+</code></pre>
+
+<p>Roles を作成します。chef-repo なのに何も入っていませんでした&hellip;汗
+ここで面白いのは &lsquo;sensu-client&rsquo; は sensu で言う subscribers の名前にそのまま利
+用されるところです。つまり &lsquo;sensu-client&rsquo; の名前が記された sensu サーバ上の監
+視項目 (checks) がこの sensu クライアントに割り当てられます。</p>
+
+<pre><code class="language-ruby">% mkdir roles
+% ${EDITOR} roles/sensu-server.rb
+name &quot;sensu-server&quot;
+description &quot;role applied to sensu server.&quot;
+run_list 'recipe[sensu::default]',
+         'recipe[sensu::rabbitmq]',
+         'recipe[sensu::redis]',
+         'recipe[sensu::server_service]',
+         'recipe[sensu::api_service]',
+         'recipe[sensu::dashboard_service]',
+         'recipe[chef-client::service]'
+
+% ${EDITOR} roles/sensu-client.rb
+name &quot;sensu-client&quot;
+description &quot;role applied to sensu client.&quot;
+run_list 'recipe[sensu::default]',
+         'recipe[sensu::client_service]',
+         'recipe[chef-client::service]'
+</code></pre>
+
+<p>Cheffile に &lsquo;chef-client&rsquo; の Cookbook 名を追記します。</p>
+
+<pre><code class="language-ruby">site 'http://community.opscode.com/api/v1'
+
+cookbook 'sensu', path: './'
+cookbook 'sensu-test', path: './test/cookbooks/sensu-test'
+cookbook 'chef-client' # &lt;---- 追記
+</code></pre>
+
+<p>librarian-chef を実行して Cookbooks を取得します。</p>
+
+<pre><code class="language-bash">% librarian-chef install
+</code></pre>
+
+<p>Rabbitmq, Redis, API の IP アドレスを設定します。IP アドレスは例です。</p>
+
+<pre><code class="language-bash">% ${EDITOR} cookbooks/sensu/attributes/default.rb
+default.sensu.rabbitmq.host = &quot;172.24.19.11&quot;
+default.sensu.redis.host = &quot;172.24.19.11&quot;
+default.sensu.api.host = &quot;172.24.19.11&quot;
+</code></pre>
+
+<p>sensu-server 用の Recipe に監視項目を追記します。ここでは cron デーモンの稼働
+状況を監視してみました。</p>
+
+<pre><code class="language-bash">% ${EDITOR} cookbooks/sensu/recipes/server_service.rb # 下記を追記
+</code></pre>
+
+<pre><code class="language-ruby">sensu_check &quot;cron_process&quot; do
+  command &quot;check-procs.rb -p cron -C 1&quot;
+  handlers [&quot;default&quot;]
+  subscribers [&quot;sensu-client&quot;]
+  interval 30
+  additional(:notification =&gt; &quot;Cron is not running&quot;, :occurrences =&gt; 5)
+end
+</code></pre>
+
+<p>sensu-client 用の Recipe に client.json (クライアント用設定ファイル) の記述と
+上記監視項目に合った plugins 設定の追記を行います。</p>
+
+<pre><code class="language-bash">% ${EDITOR} cookbooks/sensu/recipes/client_service.rb # 下記を追記
+</code></pre>
+
+<pre><code class="language-ruby">sensu_client node.name do
+  address node.ipaddress
+  subscriptions node.roles + [&quot;all&quot;]
+end
+
+cookbook_file 'check-procs.rb' do
+  source 'check-procs.rb'
+  mode 0755
+  path '/etc/sensu/plugins/check-procs.rb'
+end
+</code></pre>
+
+<p>上記 check-procs.rb は community サイトからダウンロードする必要があるのですが
+cookbook_file で対応したので files/ ディレクトリ配下に置いておきます。</p>
+
+<pre><code class="language-bash">% mkdir -p cookbooks/sensu/files/default
+% wget -o cookbooks/sensu/files/default/check-procs.rb \
+  https://github.com/sensu/sensu-community-plugins/raw/master/plugins/processes/check-procs.rb
+</code></pre>
+
+<p>上記の check-procs.rb は行頭に &lsquo;#!/usr/bin/env ruby&rsquo; が記されているのですが
+Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby にあるので行頭
+の1行を書き換えます。</p>
+
+<pre><code class="language-diff">% diff cookbooks/sensu/files/default/check-procs.rb.org cookbooks/sensu/files/default/check-procs.rb
+- #!/usr/bin/env ruby
++ #!/opt/sensu/embedded/bin/ruby
+</code></pre>
+
+<p>Roles, Cookbooks を Chef サーバにアップロードします。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o ./cookbooks -a
+% knife role from file roles/*.rb
+</code></pre>
+
+<p>いよいよブートストラップします!</p>
+
+<p>まずは sensu-server を。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;server_ip_addr&gt; -N sensu-server -r 'role[sensu-server]' \
+  -x ubuntu --sudo
+</code></pre>
+
+<p>次に監視対象である sensu-client を。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;client_ip_addr&gt; -N sensu-client01 -r 'role[sensu-client]' \
+  -x ubuntu --sudo
+</code></pre>
+
+<p>http://<sensu-server の IP アドレス>:8080/ にアクセスすると Sensu の管理画面が
+表示されます。認証アカウントは cookbooks/sensu/attributes/default.rb に記述が
+ありますので確認して下さい。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>インフラリソースのフルオートメーション化について情報リサーチしていますが監視も
+重要なインフラリソースの一部です。Sensu サーバ・クライアントの自動デプロイが出
+来たのでこれで一つパーツが揃ったことに。Sensu は API を持っていますのでアプリ
+から検知することも簡単に出来ますよ。API については下記を参照してください。</p>
+
+<p><a href="http://sensuapp.org/docs/0.12/api">http://sensuapp.org/docs/0.12/api</a></p>
+
+<p>また以前抱えていた問題もスッキリクリアになって、これでまた前進できた感があります。</p>
+
+<h2 id="参考サイト">参考サイト</h2>
+
+<ul>
+<li><a href="http://sensuapp.org/docs/0.12">http://sensuapp.org/docs/0.12</a></li>
+<li><a href="http://blog.glidenote.com/blog/2013/11/26/sensu/">http://blog.glidenote.com/blog/2013/11/26/sensu/</a></li>
+<li><a href="https://github.com/sensu/sensu-chef">https://github.com/sensu/sensu-chef</a></li>
+</ul>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/11/26/vyatta-timemachine-netatalk/"
+                class="button big previous">Vyatta で Mac 用 TimeMachine サーバ兼ファイルサーバを構築！</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/12/05/ironic-openstack-beremetal/"
+                class="button big next">Ironic でベアメタル OpenStack ！..の一歩手前</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/11\/27\/sensu-chef-deploy-2\/';
+    var disqus_title = 'sensu-chef で監視システム Sensu を管理 #2';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/11\/27\/sensu-chef-deploy-2\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

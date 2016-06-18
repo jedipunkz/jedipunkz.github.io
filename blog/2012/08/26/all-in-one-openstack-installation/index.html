@@ -1,0 +1,927 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>OpenStack ESSEX オールインワン インストール</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="OpenStack ESSEX オールインワン インストール"/>
+<meta name="twitter:description" content="OpenStack のインストールってしんどいなぁ、って感じて devstack http://devstack.org/ とかで構築して中を覗いていたのですが、そもそも devstack って再起動してしまえば何も起動してこないし、swift がインストールされないしで。 やっぱり公式のマニュアル見ながらインストールするしかないかぁって&hellip;。感じてい たのですが&hellip;。 http://docs.openstack.org/essex/openstack-compute/starter/os-compute-starterguide-trunk.pdf このマニュアルの前提は、ネットワーク2セグメント・server1, server2 の計2台が前 提なのですが、環境作るのがしんどいので、オールインワンな構築がしたい！サーバ1台で OpenStack ESSEX を インストールしたい！で、シェルスクリプトを作ったのでそれを使ったインストール方法を紹介します。 ぼくの Thinkpad に OpenStack ESSEX をインストールしてブラウザで localhost に接続して いる画面です。ちゃんと KVM VM が起動して noVNC で接続できています。自己満足やぁ。 前提条件 Ubuntu Server 12.04 LTS amd64 がインストールされていること Intel-VT もしくは AMD−Vなマシン NIC が一つ以上ついているマシン /dev/sda6, /dev/sda7 (デバイス名は何でもいい) の2つが未使用で空いていること です。 構成 1 NIC を前提に eth0 と eth0:0 の2つを想定すると、こんな構成になります。eth0:0 は完全にダミーで IP アドレスは何でもいいです。br100 ブリッジデバイス上で VM が NW I/F を持ちます。floating range ってのは OpenStack で言うグローバル IP レン ジ。グローバルである必要は無いですが eth0 と同じレンジの IP アドレスを VM に付 与出来ます。/dev/sda6 が nova-volumes で /dev/sda7 が swift 。なので OS インス トール時に2つのデバイスを未使用で空けておいてください。 &#43;--&#43;--&#43;--&#43; |VM|VM|VM| 192.168.4.32/27 &#43;--&#43;--&#43;--&#43;.."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="OpenStack ESSEX オールインワン インストール" />
+<meta property="og:description" content="OpenStack のインストールってしんどいなぁ、って感じて devstack http://devstack.org/ とかで構築して中を覗いていたのですが、そもそも devstack って再起動してしまえば何も起動してこないし、swift がインストールされないしで。 やっぱり公式のマニュアル見ながらインストールするしかないかぁって&hellip;。感じてい たのですが&hellip;。 http://docs.openstack.org/essex/openstack-compute/starter/os-compute-starterguide-trunk.pdf このマニュアルの前提は、ネットワーク2セグメント・server1, server2 の計2台が前 提なのですが、環境作るのがしんどいので、オールインワンな構築がしたい！サーバ1台で OpenStack ESSEX を インストールしたい！で、シェルスクリプトを作ったのでそれを使ったインストール方法を紹介します。 ぼくの Thinkpad に OpenStack ESSEX をインストールしてブラウザで localhost に接続して いる画面です。ちゃんと KVM VM が起動して noVNC で接続できています。自己満足やぁ。 前提条件 Ubuntu Server 12.04 LTS amd64 がインストールされていること Intel-VT もしくは AMD−Vなマシン NIC が一つ以上ついているマシン /dev/sda6, /dev/sda7 (デバイス名は何でもいい) の2つが未使用で空いていること です。 構成 1 NIC を前提に eth0 と eth0:0 の2つを想定すると、こんな構成になります。eth0:0 は完全にダミーで IP アドレスは何でもいいです。br100 ブリッジデバイス上で VM が NW I/F を持ちます。floating range ってのは OpenStack で言うグローバル IP レン ジ。グローバルである必要は無いですが eth0 と同じレンジの IP アドレスを VM に付 与出来ます。/dev/sda6 が nova-volumes で /dev/sda7 が swift 。なので OS インス トール時に2つのデバイスを未使用で空けておいてください。 &#43;--&#43;--&#43;--&#43; |VM|VM|VM| 192.168.4.32/27 &#43;--&#43;--&#43;--&#43;.." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2012/08/26/all-in-one-openstack-installation/" />
+
+
+<meta property="og:updated_time" content="2012-08-26T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="OpenStack ESSEX オールインワン インストール">
+<meta itemprop="description" content="OpenStack のインストールってしんどいなぁ、って感じて devstack http://devstack.org/ とかで構築して中を覗いていたのですが、そもそも devstack って再起動してしまえば何も起動してこないし、swift がインストールされないしで。 やっぱり公式のマニュアル見ながらインストールするしかないかぁって&hellip;。感じてい たのですが&hellip;。 http://docs.openstack.org/essex/openstack-compute/starter/os-compute-starterguide-trunk.pdf このマニュアルの前提は、ネットワーク2セグメント・server1, server2 の計2台が前 提なのですが、環境作るのがしんどいので、オールインワンな構築がしたい！サーバ1台で OpenStack ESSEX を インストールしたい！で、シェルスクリプトを作ったのでそれを使ったインストール方法を紹介します。 ぼくの Thinkpad に OpenStack ESSEX をインストールしてブラウザで localhost に接続して いる画面です。ちゃんと KVM VM が起動して noVNC で接続できています。自己満足やぁ。 前提条件 Ubuntu Server 12.04 LTS amd64 がインストールされていること Intel-VT もしくは AMD−Vなマシン NIC が一つ以上ついているマシン /dev/sda6, /dev/sda7 (デバイス名は何でもいい) の2つが未使用で空いていること です。 構成 1 NIC を前提に eth0 と eth0:0 の2つを想定すると、こんな構成になります。eth0:0 は完全にダミーで IP アドレスは何でもいいです。br100 ブリッジデバイス上で VM が NW I/F を持ちます。floating range ってのは OpenStack で言うグローバル IP レン ジ。グローバルである必要は無いですが eth0 と同じレンジの IP アドレスを VM に付 与出来ます。/dev/sda6 が nova-volumes で /dev/sda7 が swift 。なので OS インス トール時に2つのデバイスを未使用で空けておいてください。 &#43;--&#43;--&#43;--&#43; |VM|VM|VM| 192.168.4.32/27 &#43;--&#43;--&#43;--&#43;..">
+
+
+<meta itemprop="dateModified" content="2012-08-26T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="426">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f&text=OpenStack%20ESSEX%20%e3%82%aa%e3%83%bc%e3%83%ab%e3%82%a4%e3%83%b3%e3%83%af%e3%83%b3%20%e3%82%a4%e3%83%b3%e3%82%b9%e3%83%88%e3%83%bc%e3%83%ab&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f&title=OpenStack%20ESSEX%20%e3%82%aa%e3%83%bc%e3%83%ab%e3%82%a4%e3%83%b3%e3%83%af%e3%83%b3%20%e3%82%a4%e3%83%b3%e3%82%b9%e3%83%88%e3%83%bc%e3%83%ab" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f&title=OpenStack%20ESSEX%20%e3%82%aa%e3%83%bc%e3%83%ab%e3%82%a4%e3%83%b3%e3%83%af%e3%83%b3%20%e3%82%a4%e3%83%b3%e3%82%b9%e3%83%88%e3%83%bc%e3%83%ab" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f&title=OpenStack%20ESSEX%20%e3%82%aa%e3%83%bc%e3%83%ab%e3%82%a4%e3%83%b3%e3%83%af%e3%83%b3%20%e3%82%a4%e3%83%b3%e3%82%b9%e3%83%88%e3%83%bc%e3%83%ab" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2012/08/26/all-in-one-openstack-installation/">OpenStack ESSEX オールインワン インストール</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-08-26'>
+            August 26, 2012</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f&text=OpenStack%20ESSEX%20%e3%82%aa%e3%83%bc%e3%83%ab%e3%82%a4%e3%83%b3%e3%83%af%e3%83%b3%20%e3%82%a4%e3%83%b3%e3%82%b9%e3%83%88%e3%83%bc%e3%83%ab&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f&title=OpenStack%20ESSEX%20%e3%82%aa%e3%83%bc%e3%83%ab%e3%82%a4%e3%83%b3%e3%83%af%e3%83%b3%20%e3%82%a4%e3%83%b3%e3%82%b9%e3%83%88%e3%83%bc%e3%83%ab" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f&title=OpenStack%20ESSEX%20%e3%82%aa%e3%83%bc%e3%83%ab%e3%82%a4%e3%83%b3%e3%83%af%e3%83%b3%20%e3%82%a4%e3%83%b3%e3%82%b9%e3%83%88%e3%83%bc%e3%83%ab" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f&title=OpenStack%20ESSEX%20%e3%82%aa%e3%83%bc%e3%83%ab%e3%82%a4%e3%83%b3%e3%83%af%e3%83%b3%20%e3%82%a4%e3%83%b3%e3%82%b9%e3%83%88%e3%83%bc%e3%83%ab" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f08%2f26%2fall-in-one-openstack-installation%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>OpenStack のインストールってしんどいなぁ、って感じて devstack
+<a href="http://devstack.org/">http://devstack.org/</a> とかで構築して中を覗いていたのですが、そもそも devstack
+って再起動してしまえば何も起動してこないし、swift がインストールされないしで。
+やっぱり公式のマニュアル見ながらインストールするしかないかぁって&hellip;。感じてい
+たのですが&hellip;。</p>
+
+<p><a href="http://docs.openstack.org/essex/openstack-compute/starter/os-compute-starterguide-trunk.pdf">http://docs.openstack.org/essex/openstack-compute/starter/os-compute-starterguide-trunk.pdf</a></p>
+
+<p>このマニュアルの前提は、ネットワーク2セグメント・server1, server2 の計2台が前
+提なのですが、環境作るのがしんどいので、オールインワンな構築がしたい！サーバ1台で OpenStack ESSEX を
+インストールしたい！で、シェルスクリプトを作ったのでそれを使ったインストール方法を紹介します。</p>
+
+<p><img src="http://jedipunkz.github.com/pix/openstack_thinkpad.jpg"></p>
+
+<p>ぼくの Thinkpad に OpenStack ESSEX をインストールしてブラウザで localhost に接続して
+いる画面です。ちゃんと KVM VM が起動して noVNC で接続できています。自己満足やぁ。</p>
+
+<h2 id="前提条件">前提条件</h2>
+
+<ul>
+<li>Ubuntu Server 12.04 LTS amd64 がインストールされていること</li>
+<li>Intel-VT もしくは AMD−Vなマシン</li>
+<li>NIC が一つ以上ついているマシン</li>
+<li>/dev/sda6, /dev/sda7 (デバイス名は何でもいい) の2つが未使用で空いていること</li>
+</ul>
+
+<p>です。</p>
+
+<h2 id="構成">構成</h2>
+
+<p>1 NIC を前提に eth0 と eth0:0 の2つを想定すると、こんな構成になります。eth0:0
+は完全にダミーで IP アドレスは何でもいいです。br100 ブリッジデバイス上で VM が
+NW I/F を持ちます。floating range ってのは OpenStack で言うグローバル IP レン
+ジ。グローバルである必要は無いですが eth0 と同じレンジの IP アドレスを VM に付
+与出来ます。/dev/sda6 が nova-volumes で /dev/sda7 が swift 。なので OS インス
+トール時に2つのデバイスを未使用で空けておいてください。</p>
+
+<pre><code>+--+--+--+
+|VM|VM|VM|  192.168.4.32/27
++--+--+--+..
++----------+ +--------+
+|          | | br100  | 192.168.4.33/27 -&gt; floating range : 10.200.8.32/27
+|          | +--------+
+|          | | eth0:0 | 192.168.3.1       disk devices
+|   Host   | +--------+   (dummy)  +------------------------+
+|          |                       | /dev/sda6 nova-volumes |
+|          | +--------+            +------------------------+
+|          | |  eth0  | ${HOST_IP} | /dev/sda7 swift        |
++----------+ +--------+            +------------------------+
+|              nw I/Fs
++----------+
+|   CPE    |
++----------+
+</code></pre>
+
+<h2 id="インストール手順">インストール手順</h2>
+
+<p>インストール手順は簡単です。</p>
+
+<pre><code>% sudo -i
+# git clone git://github.com/jedipunkz/openstack_install.git
+</code></pre>
+
+<p>して取得したスクリプトを環境に合わせて環境変数設定します。スクリプト上部のこれ
+らの内容を、環境に合わせて設定。${HOST_IP} と ${NOVA_VOLUMES_DEV},
+${SWIFT_DEV} だけ気をつければ OK です。その他は内部ネットワークの設定なので何
+でもつながります。</p>
+
+<pre><code># -----------------------------------------------------------------
+# Environment Parameter
+# -----------------------------------------------------------------
+HOST_IP='10.200.8.15'
+HOST_MASK='255.255.255.0'
+HOST_NETWORK='10.200.8.0'
+HOST_BROADCAST='10.200.8.255'
+GATEWAY='10.200.8.1'
+MYSQL_PASS='secret'
+FIXED_RANGE='192.168.4.1/27'
+FLOATING_RANGE='10.200.8.32/27'
+FLAT_NETWORK_DHCP_START='192.168.4.33'
+ISCSI_IP_PREFIX='192.168.4'
+NOVA_VOLUMES_DEV='/dev/sda6'
+SWIFT_DEV='/dev/sda7'
+</code></pre>
+
+<p>で実行。</p>
+
+<pre><code># chmod +x openstack_install/openstack_install.sh
+# ./openstak_install/openstack_install.sh allinone
+( wait some minutes...)
+</code></pre>
+
+<p>マシンによりますが、10分弱すると OpenStack が構築されているはずです。</p>
+
+<h2 id="os-イメージと-ssh-キーペアのインストール">OS イメージと SSH キーペアのインストール</h2>
+
+<p>上記の手順で OpenStack は構築されるのですが、VM を起動するには OS イメージが必
+要ですよね。これは自分で用意するしかないです。ただ、これは簡単で下記の手順で出
+来ます。</p>
+
+<h4 id="os-イメージ作成">OS イメージ作成</h4>
+
+<p>サンプルで Ubuntu Server 12.04 LTS amd64 なイメージをここで作ってみます。</p>
+
+<pre><code># kvm-image create -f qcow2 server.img 5G
+# wget http://gb.releases.ubuntu.com//precise/ubuntu-12.04-server-amd64.iso
+# kvm -m 256 -cdrom ubuntu-12.04-server-amd64.iso -drive file=server.img,if=virtio,index=0 -boot d -net nic -net user -nographic -vnc :0
+</code></pre>
+
+<p>手元の端末の VNC ツールで ${HOST_IP}:0 に接続し OS のインストールを済ませます。
+その後、下記のコマンドで HDD から起動してあげて&hellip;</p>
+
+<pre><code># kvm -m 256 -drive file=server.img,if=virtio,index=0 -boot c -net nic -net user -nographic -vnc :0
+</code></pre>
+
+<p>再度、VNC で VM に接続して..</p>
+
+<pre><code># sudo rm -rf /etc/udev/rules.d/70-persistent-net.rules
+# shutdown -h now
+</code></pre>
+
+<p>上記の操作をしたら OS イメージ作成は終わり。その他のディストリビューションでの
+イメージ作成については公式マニュアルに書いてあります。</p>
+
+<h4 id="glance-に-os-イメージをインストール">Glance に OS イメージをインストール</h4>
+
+<p>作成した OS イメージを Glance に追加します。先ほどのスクリプトで生成された
+/root/.openstack が Glance に接続するために必要なので zsh の場合 source してから&hellip;</p>
+
+<pre><code># source /root/.openstack
+# glance add name=&quot;Ubuntu Server 12.04LTS&quot; is_public=true container_format=ovf disk_format=qcow2 &lt; server.img
+</code></pre>
+
+<p>で追加出来ます。.openstack は bash でも取得できるのでその際は</p>
+
+<pre><code># . /root/.openstack
+</code></pre>
+
+<p>してください。root ユーザ以外でも操作出来ます。</p>
+
+<h4 id="ssh-キーペアの生成とインストール">SSH キーペアの生成とインストール</h4>
+
+<p>VM に割り当てる SSH キーペアを作ってインストールする手順です。</p>
+
+<pre><code># ssh-keygen
+# nova keypair-add --pub_key .ssh/id_rsa.pub mykey
+# nova keypair-list
+</code></pre>
+
+<h4 id="horizon-へ接続">Horizon へ接続</h4>
+
+<p>いよいよ Horizon へ接続です。Horizon は OpenStack ESSEX から取り込まれた Web
+UI です。VM の作成・削除、ネットワークの設定等がブラウザで操作出来ます。</p>
+
+<pre><code>http://${HOST_IP
+</code></pre>
+
+<p>に接続してユーザ : &lsquo;admin&rsquo;, パスワード &lsquo;admin&rsquo; でログインしてください。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>OpenStack はしんどいｗ ですが来月 <sup>2012</sup>&frasl;<sub>09</sub> リリース予定の Folsom は &lsquo;Easy
+Setup&rsquo; がフューチャされてるそうです。期待。手動で構築していると glance のとこ
+ろで ID 地獄にハマりますｗ 今回の手順で all in one な環境ができたら、色々覗い
+てみてコンポーネント毎に Node を切り出すってことも考えないといけないと思います。
+それぞれは HTTP ベースの API で接続できれば OK なので切り出すこと自体は簡単。
+冗長を組む方法は.. これから調べます。keystone, glance を拡張・冗長させるって出
+来るのか？難しそう。CloudStack と違って rabbitmq-server でキューイングしてくれ
+るので、Node が増えた時の対処は考えれれているよう。</p>
+
+<p>あと、OS イメージではなくて AMI で VM を作る方法もあるのですが AMI の作成方法は Web
+を見ていると沢山載っていますので参考にして作ってみてください。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2012/08/18/opscode-bootstrap-chef-server/"
+                class="button big previous">Opscode Bootstrap を使った Chef-Server 構築</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2012/08/29/7th-openstack-meetup/"
+                class="button big next">第7回 OpenStack 勉強会参加レポート</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2012\/08\/26\/all-in-one-openstack-installation\/';
+    var disqus_title = 'OpenStack ESSEX オールインワン インストール';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2012\/08\/26\/all-in-one-openstack-installation\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

@@ -1,0 +1,947 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>VyOS で VXLAN を使ってみる</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="VyOS で VXLAN を使ってみる"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 VyOS に VXLAN が実装されたと聞いて少し触ってみました。この情報を知ったきっかけ は @upaa さんの下記の資料です。 参考資料 : http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan VyOS は御存知の通り実体は Debian Gnu/Linux 系の OS でその上に OSS なミドル ウェアが搭載されていて CLI でミドルウェアのコンフィギュレーション等が行えるモ ノになっています。Linux で VXLAN といえば OVS を使ったモノがよく知られています が VyOS の VXLAN 機能は Linux Kernel の実装を使っているようです。 要件 トンネルを張るためのセグメントを用意 VyOS 1.1.1 (現在最新ステーブルバージョン) が必要 Ubuntu Server 14.04 LTS (同じく Linux VXLAN 搭載バージョン) 構成 特徴 マネージメント用セグメント 10.0.1.0/24 を用意 GRE と同じくトンネル終端が必要なのでそのためのセグメント 10.0.2.0/24 を用意 各 eth1 は IP reachable である必要があるので予め IP アドレスの設定と疎通を確認 VXLAN を喋れる Ubuntu 14.04 LTS x 1 台と VyOS 1.1.1 x 2 台で相互に疎通確認 &#43;-------------&#43;-------------&#43;------------ Management 10.0.1.0/24 |10.0.0.254 |10.0.0.253 |10.0.0.1 |eth0 |eth0 |eth0 &#43;----------&#43; &#43;----------&#43; &#43;----------&#43; | vyos01 | | vyos02 | | ubuntu | &#43;-&#43;--------&#43; &#43;----------&#43; &#43;----------&#43; | |eth1 | |eth1 | |eth1 | |10.0.2.254 | |10.0.2.253 | |10.0.2.1 | &#43;-----------)-&#43;-----------)-&#43;---------- Tunneling 10.0.2.0/24 | | | &#43;-------------&#43;-------------&#43;------------ VXLAN(eth1にlink) 10.0.1.0/24 10.0.1.254 10.0.1.253 10.0.1.1 設定を投入 vyos01 の設定を行う。VXLAN の設定に必要なものは&hellip; VNI (VXLAN Network Ideintity)という識別子 Multicast Group Address 互いに IP reachable なトンネルを張るためのインターフェース です。これらを意識して下記の設定を vyos01 に投入します。 $ configure % set interfaces vxlan vxlan0 % set interfaces vxlan vxlan0 group 239.1.1.1 % set interfaces vxlan vxlan0 vni 42 % set interfaces vxlan vxlan0 address &#39;10.0.1.254/24&#39; % set interfaces vxlan vxlan0 link eth1 設定を確認します % exit $ show int ...&lt;省略&gt;..."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="VyOS で VXLAN を使ってみる" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 VyOS に VXLAN が実装されたと聞いて少し触ってみました。この情報を知ったきっかけ は @upaa さんの下記の資料です。 参考資料 : http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan VyOS は御存知の通り実体は Debian Gnu/Linux 系の OS でその上に OSS なミドル ウェアが搭載されていて CLI でミドルウェアのコンフィギュレーション等が行えるモ ノになっています。Linux で VXLAN といえば OVS を使ったモノがよく知られています が VyOS の VXLAN 機能は Linux Kernel の実装を使っているようです。 要件 トンネルを張るためのセグメントを用意 VyOS 1.1.1 (現在最新ステーブルバージョン) が必要 Ubuntu Server 14.04 LTS (同じく Linux VXLAN 搭載バージョン) 構成 特徴 マネージメント用セグメント 10.0.1.0/24 を用意 GRE と同じくトンネル終端が必要なのでそのためのセグメント 10.0.2.0/24 を用意 各 eth1 は IP reachable である必要があるので予め IP アドレスの設定と疎通を確認 VXLAN を喋れる Ubuntu 14.04 LTS x 1 台と VyOS 1.1.1 x 2 台で相互に疎通確認 &#43;-------------&#43;-------------&#43;------------ Management 10.0.1.0/24 |10.0.0.254 |10.0.0.253 |10.0.0.1 |eth0 |eth0 |eth0 &#43;----------&#43; &#43;----------&#43; &#43;----------&#43; | vyos01 | | vyos02 | | ubuntu | &#43;-&#43;--------&#43; &#43;----------&#43; &#43;----------&#43; | |eth1 | |eth1 | |eth1 | |10.0.2.254 | |10.0.2.253 | |10.0.2.1 | &#43;-----------)-&#43;-----------)-&#43;---------- Tunneling 10.0.2.0/24 | | | &#43;-------------&#43;-------------&#43;------------ VXLAN(eth1にlink) 10.0.1.0/24 10.0.1.254 10.0.1.253 10.0.1.1 設定を投入 vyos01 の設定を行う。VXLAN の設定に必要なものは&hellip; VNI (VXLAN Network Ideintity)という識別子 Multicast Group Address 互いに IP reachable なトンネルを張るためのインターフェース です。これらを意識して下記の設定を vyos01 に投入します。 $ configure % set interfaces vxlan vxlan0 % set interfaces vxlan vxlan0 group 239.1.1.1 % set interfaces vxlan vxlan0 vni 42 % set interfaces vxlan vxlan0 address &#39;10.0.1.254/24&#39; % set interfaces vxlan vxlan0 link eth1 設定を確認します % exit $ show int ...&lt;省略&gt;..." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2014/12/16/vyos-vxlan/" />
+
+
+<meta property="og:updated_time" content="2014-12-16T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="VyOS で VXLAN を使ってみる">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 VyOS に VXLAN が実装されたと聞いて少し触ってみました。この情報を知ったきっかけ は @upaa さんの下記の資料です。 参考資料 : http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan VyOS は御存知の通り実体は Debian Gnu/Linux 系の OS でその上に OSS なミドル ウェアが搭載されていて CLI でミドルウェアのコンフィギュレーション等が行えるモ ノになっています。Linux で VXLAN といえば OVS を使ったモノがよく知られています が VyOS の VXLAN 機能は Linux Kernel の実装を使っているようです。 要件 トンネルを張るためのセグメントを用意 VyOS 1.1.1 (現在最新ステーブルバージョン) が必要 Ubuntu Server 14.04 LTS (同じく Linux VXLAN 搭載バージョン) 構成 特徴 マネージメント用セグメント 10.0.1.0/24 を用意 GRE と同じくトンネル終端が必要なのでそのためのセグメント 10.0.2.0/24 を用意 各 eth1 は IP reachable である必要があるので予め IP アドレスの設定と疎通を確認 VXLAN を喋れる Ubuntu 14.04 LTS x 1 台と VyOS 1.1.1 x 2 台で相互に疎通確認 &#43;-------------&#43;-------------&#43;------------ Management 10.0.1.0/24 |10.0.0.254 |10.0.0.253 |10.0.0.1 |eth0 |eth0 |eth0 &#43;----------&#43; &#43;----------&#43; &#43;----------&#43; | vyos01 | | vyos02 | | ubuntu | &#43;-&#43;--------&#43; &#43;----------&#43; &#43;----------&#43; | |eth1 | |eth1 | |eth1 | |10.0.2.254 | |10.0.2.253 | |10.0.2.1 | &#43;-----------)-&#43;-----------)-&#43;---------- Tunneling 10.0.2.0/24 | | | &#43;-------------&#43;-------------&#43;------------ VXLAN(eth1にlink) 10.0.1.0/24 10.0.1.254 10.0.1.253 10.0.1.1 設定を投入 vyos01 の設定を行う。VXLAN の設定に必要なものは&hellip; VNI (VXLAN Network Ideintity)という識別子 Multicast Group Address 互いに IP reachable なトンネルを張るためのインターフェース です。これらを意識して下記の設定を vyos01 に投入します。 $ configure % set interfaces vxlan vxlan0 % set interfaces vxlan vxlan0 group 239.1.1.1 % set interfaces vxlan vxlan0 vni 42 % set interfaces vxlan vxlan0 address &#39;10.0.1.254/24&#39; % set interfaces vxlan vxlan0 link eth1 設定を確認します % exit $ show int ...&lt;省略&gt;...">
+
+
+<meta itemprop="dateModified" content="2014-12-16T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="644">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f&text=VyOS%20%e3%81%a7%20VXLAN%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%82%8b&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f&title=VyOS%20%e3%81%a7%20VXLAN%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%82%8b" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f&title=VyOS%20%e3%81%a7%20VXLAN%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%82%8b" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f&title=VyOS%20%e3%81%a7%20VXLAN%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%82%8b" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2014/12/16/vyos-vxlan/">VyOS で VXLAN を使ってみる</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-12-16'>
+            December 16, 2014</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f&text=VyOS%20%e3%81%a7%20VXLAN%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%82%8b&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f&title=VyOS%20%e3%81%a7%20VXLAN%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%82%8b" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f&title=VyOS%20%e3%81%a7%20VXLAN%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%82%8b" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f&title=VyOS%20%e3%81%a7%20VXLAN%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%82%8b" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f12%2f16%2fvyos-vxlan%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。@jedipunkz です。</p>
+
+<p>VyOS に VXLAN が実装されたと聞いて少し触ってみました。この情報を知ったきっかけ
+は @upaa さんの下記の資料です。</p>
+
+<p>参考資料 : <a href="http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan">http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan</a></p>
+
+<p>VyOS は御存知の通り実体は Debian Gnu/Linux 系の OS でその上に OSS なミドル
+ウェアが搭載されていて CLI でミドルウェアのコンフィギュレーション等が行えるモ
+ノになっています。Linux で VXLAN といえば OVS を使ったモノがよく知られています
+が VyOS の VXLAN 機能は Linux Kernel の実装を使っているようです。</p>
+
+<h2 id="要件">要件</h2>
+
+<ul>
+<li>トンネルを張るためのセグメントを用意</li>
+<li>VyOS 1.1.1 (現在最新ステーブルバージョン) が必要</li>
+<li>Ubuntu Server 14.04 LTS (同じく Linux VXLAN 搭載バージョン)</li>
+</ul>
+
+<h2 id="構成">構成</h2>
+
+<p>特徴</p>
+
+<ul>
+<li>マネージメント用セグメント 10.0.1.0/24 を用意</li>
+<li>GRE と同じくトンネル終端が必要なのでそのためのセグメント 10.0.2.0/24 を用意</li>
+<li>各 eth1 は IP reachable である必要があるので予め IP アドレスの設定と疎通を確認</li>
+<li>VXLAN を喋れる Ubuntu 14.04 LTS x 1 台と VyOS 1.1.1 x 2 台で相互に疎通確認</li>
+</ul>
+
+<pre><code>+-------------+-------------+------------ Management 10.0.1.0/24
+|10.0.0.254   |10.0.0.253   |10.0.0.1
+|eth0         |eth0         |eth0
++----------+  +----------+  +----------+ 
+|  vyos01  |  |  vyos02  |  |  ubuntu  |
++-+--------+  +----------+  +----------+ 
+| |eth1       | |eth1       | |eth1
+| |10.0.2.254 | |10.0.2.253 | |10.0.2.1
+| +-----------)-+-----------)-+---------- Tunneling 10.0.2.0/24
+|             |             |
++-------------+-------------+------------ VXLAN(eth1にlink) 10.0.1.0/24
+10.0.1.254     10.0.1.253    10.0.1.1
+</code></pre>
+
+<h2 id="設定を投入">設定を投入</h2>
+
+<p>vyos01 の設定を行う。VXLAN の設定に必要なものは&hellip;</p>
+
+<ul>
+<li>VNI (VXLAN Network Ideintity)という識別子</li>
+<li>Multicast Group Address</li>
+<li>互いに IP reachable なトンネルを張るためのインターフェース</li>
+</ul>
+
+<p>です。これらを意識して下記の設定を vyos01 に投入します。</p>
+
+<pre><code class="language-bash">$ configure
+% set interfaces vxlan vxlan0
+% set interfaces vxlan vxlan0 group 239.1.1.1
+% set interfaces vxlan vxlan0 vni 42
+% set interfaces vxlan vxlan0 address '10.0.1.254/24'
+% set interfaces vxlan vxlan0 link eth1
+</code></pre>
+
+<p>設定を確認します</p>
+
+<pre><code class="language-bash">% exit
+$ show int
+...&lt;省略&gt;...
+    vxlan vxlan0 {
+     address 10.0.1.254/24
+     group 239.1.1.1
+     link eth1
+     vni 42
+}
+</code></pre>
+
+<p>VyOS の CLI を介さず直 Linux の設定を iproute2 で確認してみましょう。
+VNI, Multicast Group Address と共に &lsquo;link eth1&rsquo; で設定したトンネルを終端するための物理 NIC が確認できます。</p>
+
+<pre><code class="language-bash">vyos@vyos01# ip -d link show vxlan0
+5: vxlan0: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
+    link/ether 86:24:26:b2:11:5c brd ff:ff:ff:ff:ff:ff promiscuity 0
+    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ttl 16 ageing 300
+</code></pre>
+
+<p>vyos02 の設定を同様に行います。</p>
+
+<pre><code class="language-bash">$ congigure
+% set interfaces vxlan vxlan0 address '10.0.1.253/24'
+% set interfaces vxlan vxlan0 vni 42
+% set interfaces vxlan vxlan0 group 239.1.1.1
+% set interfaces vxlan vxlan0 link eth1
+</code></pre>
+
+<p>設定の確認を行います。</p>
+
+<pre><code class="language-bash">... 省略 ...
+vxlan vxlan0 {
+     address 10.0.1.254/24
+     group 239.1.1.1
+     link eth1
+     vni 42
+}
+</code></pre>
+
+<p>同じく Linux の iproute2 で確認します。</p>
+
+<pre><code class="language-bash">vyos@vyos01# ip -d link show vxlan0
+5: vxlan0: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
+    link/ether 86:24:26:b2:11:5c brd ff:ff:ff:ff:ff:ff promiscuity 0
+    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ttl 16 ageing 300
+</code></pre>
+
+<p>ubuntu ホストの設定を行っていきます。</p>
+
+<p>Ubuntu Server 14.04 LTS であればパッチを当てること無く Linux Kernel の VXLAN 機能を使うことができます。
+設定内容は VyOS と同等です。VyOS がこの Linux の実装を使っているのがよく分かります。</p>
+
+<pre><code class="language-bash">sudo modprobe vxlan
+sudo ip link add vxlan0 type vxlan id 42 group 239.1.1.1 dev eth1
+sudo ip link set up vxlan0
+sudo ip a add 10.0.1.1/24 dev vxlan0
+</code></pre>
+
+<p>同じく Linux iproute2 で確認を行います。</p>
+
+<pre><code class="language-bash"> ip -d link show vxlan0
+5: vxlan0: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
+    link/ether d6:ff:c1:27:69:a0 brd ff:ff:ff:ff:ff:ff promiscuity 0
+    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ageing 300
+</code></pre>
+
+<h2 id="疎通確認">疎通確認</h2>
+
+<p>疎通確認を行います。</p>
+
+<p>ubuntu -&gt; vyos01 の疎通確認です。ICMP で疎通が取れることを確認できます。</p>
+
+<pre><code class="language-bash">thirai@ubuntu:~$ ping 10.0.1.254 -c 3
+PING 10.0.1.254 (10.0.1.254) 56(84) bytes of data.
+64 bytes from 10.0.1.254: icmp_seq=1 ttl=64 time=0.272 ms
+64 bytes from 10.0.1.254: icmp_seq=2 ttl=64 time=0.336 ms
+64 bytes from 10.0.1.254: icmp_seq=3 ttl=64 time=0.490 ms
+
+--- 10.0.1.254 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 1999ms
+rtt min/avg/max/mdev = 0.272/0.366/0.490/0.091 ms
+</code></pre>
+
+<p>次に ubuntu -&gt; vyos02 の疎通確認です。</p>
+
+<pre><code class="language-bash">thirai@ubuntu:~$ ping 10.0.1.253 -c 3
+PING 10.0.1.253 (10.0.1.253) 56(84) bytes of data.
+64 bytes from 10.0.1.253: icmp_seq=1 ttl=64 time=0.272 ms
+64 bytes from 10.0.1.253: icmp_seq=2 ttl=64 time=0.418 ms
+64 bytes from 10.0.1.253: icmp_seq=3 ttl=64 time=0.451 ms
+
+--- 10.0.1.253 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 1998ms
+rtt min/avg/max/mdev = 0.272/0.380/0.451/0.079 ms
+</code></pre>
+
+<p>この時点で ubuntu ホストの fdb (forwarding db) の内容を確認します。</p>
+
+<pre><code class="language-bash">$ bridge fdb show dev vxlan0
+00:00:00:00:00:00 dst 239.1.1.1 via eth1 self permanent
+4e:69:a4:a7:ef:1c dst 10.0.2.253 self
+86:24:26:b2:11:5c dst 10.0.2.254 self
+</code></pre>
+
+<p>vyos01, vyos02 のトンネル終端 IP アドレスと Mac アドレスが確認できます。ubuntu ホストから見ると
+送信先は vyos0[12] の VXLAN インターフェースではなく、あくまでもトンネル終端を行っているインターフェース
+になることがわかります。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>VyOS ver 1.1.0 には VXLAN を物理インターフェースに link する機能に不具合がありそうなので今ら ver 1.1.1 を使うしか
+なさそう。とは言え、ver 1.1.1 なら普通に動作しました。</p>
+
+<p>VyOS は仮想ルータという位置付けなので今回紹介したようにインターフェースを VXLAN ネットワークに所属させる
+機能があるのみです。VXLAN Trunk を行うような設定はありません。これはハイパーバイザ上で動作させることを前提
+に設計されているので仕方ないです..というかスイッチで行うべき機能ですよね..。VM を接続して云々するには OVS
+のようなソフトウェアスイッチを使えばできます。</p>
+
+<p>また fdb は時間が経つと情報が消えます。これは VXLAN のメッシュ構造なトンネルがその都度張られているのかどうか
+気になるところです。ICMP の送信で一発目のみマルチキャストでその後ユニキャストになることを確認しましたが、その
+一発目のマルチキャストでトンネリングがされるものなのでしょうか&hellip;。あとで調べてみます。OVS のように CLI で
+トンネルがどのように張られているか確認する手段があれば良いのですが。</p>
+
+<p>以上です。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/"
+                class="button big previous">Aviator でモダンに OpenStack を操作する</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2015/06/25/minio/"
+                class="button big next">オブジェクトストレージ minio を使ってみる</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2014\/12\/16\/vyos-vxlan\/';
+    var disqus_title = 'VyOS で VXLAN を使ってみる';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2014\/12\/16\/vyos-vxlan\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

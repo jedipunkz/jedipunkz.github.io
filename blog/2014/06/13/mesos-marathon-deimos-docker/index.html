@@ -1,0 +1,1009 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Mesos &#43; Marathon &#43; Deimos &#43; Docker を試してみた!</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Mesos &#43; Marathon &#43; Deimos &#43; Docker を試してみた!"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 以前 Mesos, Docker について記事にしました。 http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/ http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/ Twitter で Docker 関連のオーケストレーションツールについて呟いていたら @everpeace さんから こんな情報をもらいました。 @jedipunkz 元々meos-dockerっていうmesos executorがあったんですけど、mesosがcontainer部分をpluggableにしたので、それに合わせてdeimosっていうmesos用のexternal containerizer が作られました。 &mdash; Shingo Omura (@everpeace) 2014, 6月 12 Deimos !!! 知らなかった。Mesos の Docker プラグインらしく下記の場所にありました。 https://github.com/mesosphere/deimos 色々調べいたら、こんな資料が見つかりました。どうやらまだ公開されて4日しか経っていないようです。 http://mesosphere.io/learn/run-docker-on-mesosphere/ Mesos &#43; Marathon &#43; Deimos &#43; Docker をオールインワン構成で構築する手順が書かれています。 内容はほぼ同じですが、一応自分がやってみて理解したことをまとめたいので下記に記していきます。 構築してみる 手順をまとめてスクリプトにしました。パッケージは Ubuntu 13.10 用のようですが 14.04 のホスト で実行出来ました。14.04 のパッケージはまだ見つかっていません。 #!/bin/bash # disable ipv6 echo &#39;net.ipv6.conf.all.disable_ipv6 = 1&#39; | sudo tee -a /etc/sysctl.conf echo &#39;net.ipv6.conf.default.disable_ipv6 = 1&#39; | sudo tee -a /etc/sysctl.conf sudo sysctl -p # install related tools sudo apt-get update sudo apt-get -y install curl python-setuptools python-pip python-dev python-protobuf # install zookeeper sudo apt-get -y install zookeeperd echo 1 | sudo dd of=/var/lib/zookeeper/myid # install docker sudo apt-get -y install docker.io sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker sudo sed -i &#39;$acomplete -F _docker docker&#39; /etc/bash_completion.d/docker.io sudo docker pull libmesos/ubuntu # install mesos curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.deb -o /tmp/mesos.deb sudo dpkg -i /tmp/mesos.deb sudo mkdir -p /etc/mesos-master echo in_memory | sudo dd of=/etc/mesos-master/registry curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.egg -o /tmp/mesos.egg sudo easy_install /tmp/mesos.egg # install marathon curl -fL http://downloads.mesosphere.io/marathon/marathon_0.5.0-xcon2_noarch.deb -o /tmp/marathon.deb sudo dpkg -i /tmp/marathon.deb # restart each services sudo service docker.io restart sudo service zookeeper restart sudo service mesos-master restart sudo service mesos-slave restart # install deimos sudo pip install deimos sudo mkdir -p /etc/mesos-slave ## Configure Deimos as a containerizer echo /usr/bin/deimos | sudo dd of=/etc/mesos-slave/containerizer_path echo external | sudo dd of=/etc/mesos-slave/isolation プロセスの確認 実行が終わると各プロセスが確認出来ます。オプションでどのプロセスが何を見ているか大体 わかりますので見ていきます。 mesos-master mesos-master は zookeeper を参照して 5050 番ポートで起動しているようです。 % ps ax | grep mesos-master 1224 ?"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Mesos &#43; Marathon &#43; Deimos &#43; Docker を試してみた!" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 以前 Mesos, Docker について記事にしました。 http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/ http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/ Twitter で Docker 関連のオーケストレーションツールについて呟いていたら @everpeace さんから こんな情報をもらいました。 @jedipunkz 元々meos-dockerっていうmesos executorがあったんですけど、mesosがcontainer部分をpluggableにしたので、それに合わせてdeimosっていうmesos用のexternal containerizer が作られました。 &mdash; Shingo Omura (@everpeace) 2014, 6月 12 Deimos !!! 知らなかった。Mesos の Docker プラグインらしく下記の場所にありました。 https://github.com/mesosphere/deimos 色々調べいたら、こんな資料が見つかりました。どうやらまだ公開されて4日しか経っていないようです。 http://mesosphere.io/learn/run-docker-on-mesosphere/ Mesos &#43; Marathon &#43; Deimos &#43; Docker をオールインワン構成で構築する手順が書かれています。 内容はほぼ同じですが、一応自分がやってみて理解したことをまとめたいので下記に記していきます。 構築してみる 手順をまとめてスクリプトにしました。パッケージは Ubuntu 13.10 用のようですが 14.04 のホスト で実行出来ました。14.04 のパッケージはまだ見つかっていません。 #!/bin/bash # disable ipv6 echo &#39;net.ipv6.conf.all.disable_ipv6 = 1&#39; | sudo tee -a /etc/sysctl.conf echo &#39;net.ipv6.conf.default.disable_ipv6 = 1&#39; | sudo tee -a /etc/sysctl.conf sudo sysctl -p # install related tools sudo apt-get update sudo apt-get -y install curl python-setuptools python-pip python-dev python-protobuf # install zookeeper sudo apt-get -y install zookeeperd echo 1 | sudo dd of=/var/lib/zookeeper/myid # install docker sudo apt-get -y install docker.io sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker sudo sed -i &#39;$acomplete -F _docker docker&#39; /etc/bash_completion.d/docker.io sudo docker pull libmesos/ubuntu # install mesos curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.deb -o /tmp/mesos.deb sudo dpkg -i /tmp/mesos.deb sudo mkdir -p /etc/mesos-master echo in_memory | sudo dd of=/etc/mesos-master/registry curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.egg -o /tmp/mesos.egg sudo easy_install /tmp/mesos.egg # install marathon curl -fL http://downloads.mesosphere.io/marathon/marathon_0.5.0-xcon2_noarch.deb -o /tmp/marathon.deb sudo dpkg -i /tmp/marathon.deb # restart each services sudo service docker.io restart sudo service zookeeper restart sudo service mesos-master restart sudo service mesos-slave restart # install deimos sudo pip install deimos sudo mkdir -p /etc/mesos-slave ## Configure Deimos as a containerizer echo /usr/bin/deimos | sudo dd of=/etc/mesos-slave/containerizer_path echo external | sudo dd of=/etc/mesos-slave/isolation プロセスの確認 実行が終わると各プロセスが確認出来ます。オプションでどのプロセスが何を見ているか大体 わかりますので見ていきます。 mesos-master mesos-master は zookeeper を参照して 5050 番ポートで起動しているようです。 % ps ax | grep mesos-master 1224 ?" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/" />
+
+
+<meta property="og:updated_time" content="2014-06-13T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Mesos &#43; Marathon &#43; Deimos &#43; Docker を試してみた!">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 以前 Mesos, Docker について記事にしました。 http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/ http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/ Twitter で Docker 関連のオーケストレーションツールについて呟いていたら @everpeace さんから こんな情報をもらいました。 @jedipunkz 元々meos-dockerっていうmesos executorがあったんですけど、mesosがcontainer部分をpluggableにしたので、それに合わせてdeimosっていうmesos用のexternal containerizer が作られました。 &mdash; Shingo Omura (@everpeace) 2014, 6月 12 Deimos !!! 知らなかった。Mesos の Docker プラグインらしく下記の場所にありました。 https://github.com/mesosphere/deimos 色々調べいたら、こんな資料が見つかりました。どうやらまだ公開されて4日しか経っていないようです。 http://mesosphere.io/learn/run-docker-on-mesosphere/ Mesos &#43; Marathon &#43; Deimos &#43; Docker をオールインワン構成で構築する手順が書かれています。 内容はほぼ同じですが、一応自分がやってみて理解したことをまとめたいので下記に記していきます。 構築してみる 手順をまとめてスクリプトにしました。パッケージは Ubuntu 13.10 用のようですが 14.04 のホスト で実行出来ました。14.04 のパッケージはまだ見つかっていません。 #!/bin/bash # disable ipv6 echo &#39;net.ipv6.conf.all.disable_ipv6 = 1&#39; | sudo tee -a /etc/sysctl.conf echo &#39;net.ipv6.conf.default.disable_ipv6 = 1&#39; | sudo tee -a /etc/sysctl.conf sudo sysctl -p # install related tools sudo apt-get update sudo apt-get -y install curl python-setuptools python-pip python-dev python-protobuf # install zookeeper sudo apt-get -y install zookeeperd echo 1 | sudo dd of=/var/lib/zookeeper/myid # install docker sudo apt-get -y install docker.io sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker sudo sed -i &#39;$acomplete -F _docker docker&#39; /etc/bash_completion.d/docker.io sudo docker pull libmesos/ubuntu # install mesos curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.deb -o /tmp/mesos.deb sudo dpkg -i /tmp/mesos.deb sudo mkdir -p /etc/mesos-master echo in_memory | sudo dd of=/etc/mesos-master/registry curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.egg -o /tmp/mesos.egg sudo easy_install /tmp/mesos.egg # install marathon curl -fL http://downloads.mesosphere.io/marathon/marathon_0.5.0-xcon2_noarch.deb -o /tmp/marathon.deb sudo dpkg -i /tmp/marathon.deb # restart each services sudo service docker.io restart sudo service zookeeper restart sudo service mesos-master restart sudo service mesos-slave restart # install deimos sudo pip install deimos sudo mkdir -p /etc/mesos-slave ## Configure Deimos as a containerizer echo /usr/bin/deimos | sudo dd of=/etc/mesos-slave/containerizer_path echo external | sudo dd of=/etc/mesos-slave/isolation プロセスの確認 実行が終わると各プロセスが確認出来ます。オプションでどのプロセスが何を見ているか大体 わかりますので見ていきます。 mesos-master mesos-master は zookeeper を参照して 5050 番ポートで起動しているようです。 % ps ax | grep mesos-master 1224 ?">
+
+
+<meta itemprop="dateModified" content="2014-06-13T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="582">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f&text=Mesos%20%2b%20Marathon%20%2b%20Deimos%20%2b%20Docker%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f%21&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f&title=Mesos%20%2b%20Marathon%20%2b%20Deimos%20%2b%20Docker%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f%21" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f&title=Mesos%20%2b%20Marathon%20%2b%20Deimos%20%2b%20Docker%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f%21" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f&title=Mesos%20%2b%20Marathon%20%2b%20Deimos%20%2b%20Docker%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f%21" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/">Mesos &#43; Marathon &#43; Deimos &#43; Docker を試してみた!</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-06-13'>
+            June 13, 2014</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f&text=Mesos%20%2b%20Marathon%20%2b%20Deimos%20%2b%20Docker%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f%21&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f&title=Mesos%20%2b%20Marathon%20%2b%20Deimos%20%2b%20Docker%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f%21" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f&title=Mesos%20%2b%20Marathon%20%2b%20Deimos%20%2b%20Docker%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f%21" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f&title=Mesos%20%2b%20Marathon%20%2b%20Deimos%20%2b%20Docker%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f%21" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f13%2fmesos-marathon-deimos-docker%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。@jedipunkz です。</p>
+
+<p>以前 Mesos, Docker について記事にしました。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/">http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/</a>
+<a href="http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/">http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/</a></p>
+
+<p>Twitter で Docker 関連のオーケストレーションツールについて呟いていたら @everpeace さんから
+こんな情報をもらいました。</p>
+
+<p><blockquote class="twitter-tweet" lang="ja"><p><a href="https://twitter.com/jedipunkz">@jedipunkz</a> 元々meos-dockerっていうmesos executorがあったんですけど、mesosがcontainer部分をpluggableにしたので、それに合わせてdeimosっていうmesos用のexternal containerizer が作られました。</p>&mdash; Shingo Omura (@everpeace) <a href="https://twitter.com/everpeace/statuses/476998842383347712">2014, 6月 12</a></blockquote>
+<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script></p>
+
+<p>Deimos !!! 知らなかった。Mesos の Docker プラグインらしく下記の場所にありました。</p>
+
+<p><a href="https://github.com/mesosphere/deimos">https://github.com/mesosphere/deimos</a></p>
+
+<p>色々調べいたら、こんな資料が見つかりました。どうやらまだ公開されて4日しか経っていないようです。</p>
+
+<p><a href="http://mesosphere.io/learn/run-docker-on-mesosphere/">http://mesosphere.io/learn/run-docker-on-mesosphere/</a></p>
+
+<p>Mesos + Marathon + Deimos + Docker をオールインワン構成で構築する手順が書かれています。</p>
+
+<p>内容はほぼ同じですが、一応自分がやってみて理解したことをまとめたいので下記に記していきます。</p>
+
+<h2 id="構築してみる">構築してみる</h2>
+
+<p>手順をまとめてスクリプトにしました。パッケージは Ubuntu 13.10 用のようですが 14.04 のホスト
+で実行出来ました。14.04 のパッケージはまだ見つかっていません。</p>
+
+<pre><code class="language-bash">#!/bin/bash
+# disable ipv6
+echo 'net.ipv6.conf.all.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf
+echo 'net.ipv6.conf.default.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+
+# install related tools
+sudo apt-get update
+sudo apt-get -y install curl python-setuptools python-pip python-dev python-protobuf
+
+# install zookeeper
+sudo apt-get -y install zookeeperd
+echo 1 | sudo dd of=/var/lib/zookeeper/myid
+
+# install docker
+sudo apt-get -y install docker.io
+sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker
+sudo sed -i '$acomplete -F _docker docker' /etc/bash_completion.d/docker.io
+sudo docker pull libmesos/ubuntu
+
+# install mesos
+curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.deb -o /tmp/mesos.deb
+sudo dpkg -i /tmp/mesos.deb
+sudo mkdir -p /etc/mesos-master
+echo in_memory  | sudo dd of=/etc/mesos-master/registry
+curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.egg -o /tmp/mesos.egg
+sudo easy_install /tmp/mesos.egg
+
+# install marathon
+curl -fL http://downloads.mesosphere.io/marathon/marathon_0.5.0-xcon2_noarch.deb -o /tmp/marathon.deb
+sudo dpkg -i /tmp/marathon.deb
+
+# restart each services
+sudo service docker.io restart
+sudo service zookeeper restart
+sudo service mesos-master restart
+sudo service mesos-slave restart
+
+# install deimos
+sudo pip install deimos
+sudo mkdir -p /etc/mesos-slave
+
+## Configure Deimos as a containerizer
+echo /usr/bin/deimos  | sudo dd of=/etc/mesos-slave/containerizer_path
+echo external     | sudo dd of=/etc/mesos-slave/isolation
+</code></pre>
+
+<h2 id="プロセスの確認">プロセスの確認</h2>
+
+<p>実行が終わると各プロセスが確認出来ます。オプションでどのプロセスが何を見ているか大体
+わかりますので見ていきます。</p>
+
+<h4 id="mesos-master">mesos-master</h4>
+
+<p>mesos-master は zookeeper を参照して 5050 番ポートで起動しているようです。</p>
+
+<pre><code class="language-bash">% ps ax | grep mesos-master
+ 1224 ?        Ssl    0:30 /usr/local/sbin/mesos-master --zk=zk://localhost:2181/mesos --port=5050 --log_dir=/var/log/mesos --registry=in_memory
+</code></pre>
+
+<h4 id="mesos-slave">mesos-slave</h4>
+
+<p>mesos-slave は同じく zookeeper を参照して containerizer を deimos として稼働していることが
+わかります。</p>
+
+<pre><code class="language-bash">% ps ax | grep mesos-slave
+ 1225 ?        Ssl    0:12 /usr/local/sbin/mesos-slave --master=zk://localhost:2181/mesos --log_dir=/var/log/mesos --containerizer_path=/usr/bin/deimos --isolation=external
+</code></pre>
+
+<h4 id="zookeeper">zookeeper</h4>
+
+<p>zookeeper は OpenJDK7 で稼働している Java プロセスです。</p>
+
+<pre><code class="language-bash">% ps ax | grep zookeeper
+ 1073 ?        Ssl    1:07 /usr/bin/java -cp /etc/zookeeper/conf:/usr/share/java/jline.jar:/usr/share/java/log4j-1.2.jar:/usr/share/java/xercesImpl.jar:/usr/share/java/xmlParserAPIs.jar:/usr/share/java/netty.jar:/usr/share/java/slf4j-api.jar:/usr/share/java/slf4j-log4j12.jar:/usr/share/java/zookeeper.jar -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=false -Dzookeeper.log.dir=/var/log/zookeeper -Dzookeeper.root.logger=INFO,ROLLINGFILE org.apache.zookeeper.server.quorum.QuorumPeerMain /etc/zookeeper/conf/zoo.cfg
+</code></pre>
+
+<h4 id="docker">docker</h4>
+
+<p>docker が起動していることも確認できます。設定は特にしていないです。</p>
+
+<pre><code class="language-bash">% ps axuw | grep docker
+root       831  0.0  0.3 364776 14924 ?        Sl   01:30   0:01 /usr/bin/docker.io -d
+</code></pre>
+
+<h2 id="marathon-の-webui-にアクセス">Marathon の WebUI にアクセス</h2>
+
+<p>Marathon の WebUI にアクセスしてみましょう。</p>
+
+<p><img src="http://jedipunkz.github.com/pix/deimos_01.png"></p>
+
+<p>まだ何も Tasks が実行されていないので一覧には何も表示されないと思います。</p>
+
+<h2 id="tasks-の実行">Tasks の実行</h2>
+
+<p>Marathon API に対してクエリを発行することで Mesos の Tasks として Docker コンテナを稼働させることが出来ます。
+下記のファイルを ubuntu.json として保存。</p>
+
+<pre><code class="language-json">{
+    &quot;container&quot;: {
+    &quot;image&quot;: &quot;docker:///libmesos/ubuntu&quot;
+  },
+  &quot;id&quot;: &quot;ubuntu&quot;,
+  &quot;instances&quot;: &quot;1&quot;,
+  &quot;cpus&quot;: &quot;.5&quot;,
+  &quot;mem&quot;: &quot;512&quot;,
+  &quot;uris&quot;: [ ]
+}
+</code></pre>
+
+<p>下記の通り localhost:8080 が Marathon API の Endpoint になっているのでここに対して作成した JSON を POST します。</p>
+
+<pre><code class="language-bash">% curl -X POST -H &quot;Content-Type: application/json&quot; localhost:8080/v2/apps -d@ubuntu.json
+</code></pre>
+
+<p>Tasks の一覧を取得してみます。</p>
+
+<pre><code class="language-bash">% curl -X GET -H &quot;Content-Type: application/json&quot; localhost:8080/v2/apps
+{&quot;apps&quot;:[{&quot;id&quot;:&quot;ubuntu&quot;,&quot;cmd&quot;:&quot;&quot;,&quot;env&quot;:{},&quot;instances&quot;:1,&quot;cpus&quot;:0.5,&quot;mem&quot;:512.0,&quot;executor&quot;:&quot;&quot;,&quot;constraints&quot;:[],&quot;uris&quot;:[],&quot;ports&quot;:[13049],&quot;taskRateLimit&quot;:1.0,&quot;container&quot;:{&quot;image&quot;:&quot;docker:///libmesos/ubuntu&quot;,&quot;options&quot;:[]},&quot;version&quot;:&quot;2014-06-13T01:45:58.693Z&quot;,&quot;tasksStaged&quot;:1,&quot;tasksRunning&quot;:0}]}
+</code></pre>
+
+<p>Tasks の一覧が JSON で返ってきます。id : ubuntu, インスタンス数 : 1, CPU 0.5, メモリー : 512MB で
+Task が稼働していることが確認出来ます。</p>
+
+<p>ここで WebUI 側も見てみましょう。</p>
+
+<p><img src="http://jedipunkz.github.com/pix/deimos_05.png"></p>
+
+<p>一つ Task が稼働していることが確認出来ると思います。</p>
+
+<p><img src="http://jedipunkz.github.com/pix/deimos_04.png"></p>
+
+<p>その Task をクリックすると詳細が表示されます。</p>
+
+<p>次に Tasks のスケーリングを行ってみましょう。
+下記の通り ubuntu.json を修正し instances : 2 とする。これによってインスタンス数が2に増えます。</p>
+
+<pre><code class="language-json">{
+    &quot;container&quot;: {
+    &quot;image&quot;: &quot;docker:///libmesos/ubuntu&quot;
+  },
+  &quot;id&quot;: &quot;ubuntu&quot;,
+  &quot;instances&quot;: &quot;2&quot;,
+  &quot;cpus&quot;: &quot;.5&quot;,
+  &quot;mem&quot;: &quot;512&quot;,
+  &quot;uris&quot;: [ ]
+}
+</code></pre>
+
+<p>修正した JSON を POST します。</p>
+
+<pre><code class="language-bash">% curl -X PUT -H &quot;Content-Type: application/json&quot; localhost:8080/v2/apps/ubuntu -d@ubuntu.json
+</code></pre>
+
+<p>Tasks の一覧を取得し containers が 2 になっていることが確認できます。</p>
+
+<pre><code class="language-bash">% curl -X GET -H &quot;Content-Type: application/json&quot; localhost:8080/v2/apps
+{&quot;apps&quot;:[{&quot;id&quot;:&quot;ubuntu&quot;,&quot;cmd&quot;:&quot;&quot;,&quot;env&quot;:{},&quot;instances&quot;:2,&quot;cpus&quot;:0.5,&quot;mem&quot;:512.0,&quot;executor&quot;:&quot;&quot;,&quot;constraints&quot;:[],&quot;uris&quot;:[],&quot;ports&quot;:[17543],&quot;taskRateLimit&quot;:1.0,&quot;container&quot;:{&quot;image&quot;:&quot;docker:///libmesos/ubuntu&quot;,&quot;options&quot;:[]},&quot;version&quot;:&quot;2014-06-13T02:40:04.536Z&quot;,&quot;tasksStaged&quot;:3,&quot;tasksRunning&quot;:0}]}
+</code></pre>
+
+<p>最後に Tasks を削除してみましょう。</p>
+
+<pre><code class="language-bash">% curl -X DELETE -H &quot;Content-Type: application/json&quot; localhost:8080/v2/apps/ubuntu
+</code></pre>
+
+<p>Tasks が削除されたことを確認します。</p>
+
+<pre><code class="language-bash">% curl -X GET -H &quot;Content-Type: application/json&quot; localhost:8080/v2/apps
+{&quot;apps&quot;:[]}
+</code></pre>
+
+<h2 id="marathon-api-v2">Marathon API v2</h2>
+
+<p>Marathon API v2 について下記の URL に仕様が載っています。上記に記したクエリ以外にも色々載っているので
+動作を確認してみるといいと思います。</p>
+
+<p><a href="https://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md">https://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md</a></p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>オールインワン構成が出来ました。また動作確認も無事出来ています。
+以前試した時よりも大分、手順が簡潔になった印象があります。また参考資料中に</p>
+
+<p>&ldquo;checkout our other multi-node tutorials on how to scale Docker in your data center.&rdquo;</p>
+
+<p>とありますが、まだ見つかっていません(´・ω・｀)見つかった方教えてくださいー。</p>
+
+<p>以前試した時は Mesos-Master の冗長化が出来なかったので今回こそ Multi Mesos-Masters,
+Multi Mesos-Slaves の構成を作ってみたいと思います。</p>
+
+<p>また今月？になって続々と Docker のオーケストレーションツールを各社が公開しています。</p>
+
+<h5 id="centurion">centurion</h5>
+
+<p>New Relic が開発したオーケストレーションツール。
+<a href="https://github.com/newrelic/centurion">https://github.com/newrelic/centurion</a></p>
+
+<h5 id="helios">helios</h5>
+
+<p>Spotify が開発したオーケストレーションツール。
+<a href="https://github.com/spotify/helios">https://github.com/spotify/helios</a></p>
+
+<h5 id="fleet">fleet</h5>
+
+<p>CoreOS 標準搭載。
+<a href="https://github.com/coreos/fleet">https://github.com/coreos/fleet</a></p>
+
+<h5 id="geard">geard</h5>
+
+<p>RedHat が Red Hat Enterprise Linux Atomic Host に搭載しているツール。
+<a href="http://openshift.github.io/geard/">http://openshift.github.io/geard/</a></p>
+
+<h5 id="kubernetes">Kubernetes</h5>
+
+<p>Google が開発したオーケストレーションツール。
+<a href="https://github.com/GoogleCloudPlatform/kubernetes">https://github.com/GoogleCloudPlatform/kubernetes</a></p>
+
+<h5 id="shipper">shipper</h5>
+
+<p>Python のコードで Docker をオーケストレーション出来るツール。
+<a href="https://github.com/mailgun/shipper">https://github.com/mailgun/shipper</a></p>
+
+<p>幾つか試したのですが、まだまだ動く所までいかないツールがありました。github の README にも
+&ldquo;絶賛開発中なのでプロダクトレディではない&rdquo; と書かれています。これからでしょう。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2014/05/29/fog-aws-ec2-elb/"
+                class="button big previous">クラウドライブラリ Fog で AWS を操作！..のサンプル</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2014/06/22/jtf2014-ceph/"
+                class="button big next">JTF2014 で Ceph について話してきた！</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2014\/06\/13\/mesos-marathon-deimos-docker\/';
+    var disqus_title = 'Mesos \x2b Marathon \x2b Deimos \x2b Docker を試してみた!';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2014\/06\/13\/mesos-marathon-deimos-docker\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

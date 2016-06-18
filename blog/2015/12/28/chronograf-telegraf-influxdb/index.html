@@ -1,0 +1,885 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 Influxdb が Influxdata (https://influxdata.com/) として生まれ変わり公式の メトリクス送信エージェント Telegraf と可視化ツール Chronograf をリリースしたので 使ってみました。 3つのツールの役割は下記のとおりです。 Chronograf : 可視化ツール, Grafana 相当のソフトウェアです Telegraf : メトリクス情報を Influxdb に送信するエージェント Influxdb : メトリクス情報を格納する時系列データベース 以前に cAdvisor, influxdb, grafana を使って Docker コンテナのメトリクスを可視 化する記事を書きましたが telegraf を使うとサーバ情報と合わせて Docker コンテナ のメトリクスも influxdb に送信することが出来ます。個人的にはそのコンテナ情報の 扱いもサーバ情報と同様に扱ってくれる点に期待しつつ、評価してみました。 今回の環境 今回は Ubuntu 15.04 vivid64 を使ってテストしています。 influxdb をインストールして起動 最新リリース版の deb パッケージが用意されていたのでこれを使いました。 wget http://influxdb.s3.amazonaws.com/influxdb_0.9.5.1_amd64.deb sudo dpkg -i influxdb_0.9.5.1_amd64.deb sudo service influxdb start telegraf のインストールと起動 こちらも deb パッケージで。 wget"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 Influxdb が Influxdata (https://influxdata.com/) として生まれ変わり公式の メトリクス送信エージェント Telegraf と可視化ツール Chronograf をリリースしたので 使ってみました。 3つのツールの役割は下記のとおりです。 Chronograf : 可視化ツール, Grafana 相当のソフトウェアです Telegraf : メトリクス情報を Influxdb に送信するエージェント Influxdb : メトリクス情報を格納する時系列データベース 以前に cAdvisor, influxdb, grafana を使って Docker コンテナのメトリクスを可視 化する記事を書きましたが telegraf を使うとサーバ情報と合わせて Docker コンテナ のメトリクスも influxdb に送信することが出来ます。個人的にはそのコンテナ情報の 扱いもサーバ情報と同様に扱ってくれる点に期待しつつ、評価してみました。 今回の環境 今回は Ubuntu 15.04 vivid64 を使ってテストしています。 influxdb をインストールして起動 最新リリース版の deb パッケージが用意されていたのでこれを使いました。 wget http://influxdb.s3.amazonaws.com/influxdb_0.9.5.1_amd64.deb sudo dpkg -i influxdb_0.9.5.1_amd64.deb sudo service influxdb start telegraf のインストールと起動 こちらも deb パッケージで。 wget" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/" />
+
+
+<meta property="og:updated_time" content="2015-12-28T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 Influxdb が Influxdata (https://influxdata.com/) として生まれ変わり公式の メトリクス送信エージェント Telegraf と可視化ツール Chronograf をリリースしたので 使ってみました。 3つのツールの役割は下記のとおりです。 Chronograf : 可視化ツール, Grafana 相当のソフトウェアです Telegraf : メトリクス情報を Influxdb に送信するエージェント Influxdb : メトリクス情報を格納する時系列データベース 以前に cAdvisor, influxdb, grafana を使って Docker コンテナのメトリクスを可視 化する記事を書きましたが telegraf を使うとサーバ情報と合わせて Docker コンテナ のメトリクスも influxdb に送信することが出来ます。個人的にはそのコンテナ情報の 扱いもサーバ情報と同様に扱ってくれる点に期待しつつ、評価してみました。 今回の環境 今回は Ubuntu 15.04 vivid64 を使ってテストしています。 influxdb をインストールして起動 最新リリース版の deb パッケージが用意されていたのでこれを使いました。 wget http://influxdb.s3.amazonaws.com/influxdb_0.9.5.1_amd64.deb sudo dpkg -i influxdb_0.9.5.1_amd64.deb sudo service influxdb start telegraf のインストールと起動 こちらも deb パッケージで。 wget">
+
+
+<meta itemprop="dateModified" content="2015-12-28T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="219">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f&text=Chronograf%2c%20Telegraf%2c%20Influxdb%e3%81%a7%e3%82%b5%e3%83%bc%e3%83%90%e3%81%a8%e3%82%b3%e3%83%b3%e3%83%86%e3%83%8a%e6%83%85%e5%a0%b1%e3%82%92%e5%8f%af%e8%a6%96%e5%8c%96%e3%81%99%e3%82%8b&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f&title=Chronograf%2c%20Telegraf%2c%20Influxdb%e3%81%a7%e3%82%b5%e3%83%bc%e3%83%90%e3%81%a8%e3%82%b3%e3%83%b3%e3%83%86%e3%83%8a%e6%83%85%e5%a0%b1%e3%82%92%e5%8f%af%e8%a6%96%e5%8c%96%e3%81%99%e3%82%8b" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f&title=Chronograf%2c%20Telegraf%2c%20Influxdb%e3%81%a7%e3%82%b5%e3%83%bc%e3%83%90%e3%81%a8%e3%82%b3%e3%83%b3%e3%83%86%e3%83%8a%e6%83%85%e5%a0%b1%e3%82%92%e5%8f%af%e8%a6%96%e5%8c%96%e3%81%99%e3%82%8b" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f&title=Chronograf%2c%20Telegraf%2c%20Influxdb%e3%81%a7%e3%82%b5%e3%83%bc%e3%83%90%e3%81%a8%e3%82%b3%e3%83%b3%e3%83%86%e3%83%8a%e6%83%85%e5%a0%b1%e3%82%92%e5%8f%af%e8%a6%96%e5%8c%96%e3%81%99%e3%82%8b" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2015-12-28'>
+            December 28, 2015</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f&text=Chronograf%2c%20Telegraf%2c%20Influxdb%e3%81%a7%e3%82%b5%e3%83%bc%e3%83%90%e3%81%a8%e3%82%b3%e3%83%b3%e3%83%86%e3%83%8a%e6%83%85%e5%a0%b1%e3%82%92%e5%8f%af%e8%a6%96%e5%8c%96%e3%81%99%e3%82%8b&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f&title=Chronograf%2c%20Telegraf%2c%20Influxdb%e3%81%a7%e3%82%b5%e3%83%bc%e3%83%90%e3%81%a8%e3%82%b3%e3%83%b3%e3%83%86%e3%83%8a%e6%83%85%e5%a0%b1%e3%82%92%e5%8f%af%e8%a6%96%e5%8c%96%e3%81%99%e3%82%8b" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f&title=Chronograf%2c%20Telegraf%2c%20Influxdb%e3%81%a7%e3%82%b5%e3%83%bc%e3%83%90%e3%81%a8%e3%82%b3%e3%83%b3%e3%83%86%e3%83%8a%e6%83%85%e5%a0%b1%e3%82%92%e5%8f%af%e8%a6%96%e5%8c%96%e3%81%99%e3%82%8b" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f&title=Chronograf%2c%20Telegraf%2c%20Influxdb%e3%81%a7%e3%82%b5%e3%83%bc%e3%83%90%e3%81%a8%e3%82%b3%e3%83%b3%e3%83%86%e3%83%8a%e6%83%85%e5%a0%b1%e3%82%92%e5%8f%af%e8%a6%96%e5%8c%96%e3%81%99%e3%82%8b" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f28%2fchronograf-telegraf-influxdb%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>Influxdb が Influxdata (<a href="https://influxdata.com/">https://influxdata.com/</a>) として生まれ変わり公式の
+メトリクス送信エージェント Telegraf と可視化ツール Chronograf をリリースしたので
+使ってみました。</p>
+
+<p>3つのツールの役割は下記のとおりです。</p>
+
+<ul>
+<li>Chronograf : 可視化ツール, Grafana 相当のソフトウェアです</li>
+<li>Telegraf : メトリクス情報を Influxdb に送信するエージェント</li>
+<li>Influxdb : メトリクス情報を格納する時系列データベース</li>
+</ul>
+
+<p>以前に cAdvisor, influxdb, grafana を使って Docker コンテナのメトリクスを可視
+化する記事を書きましたが telegraf を使うとサーバ情報と合わせて Docker コンテナ
+のメトリクスも influxdb に送信することが出来ます。個人的にはそのコンテナ情報の
+扱いもサーバ情報と同様に扱ってくれる点に期待しつつ、評価してみました。</p>
+
+<h2 id="今回の環境">今回の環境</h2>
+
+<p>今回は Ubuntu 15.04 vivid64 を使ってテストしています。</p>
+
+<h2 id="influxdb-をインストールして起動">influxdb をインストールして起動</h2>
+
+<p>最新リリース版の deb パッケージが用意されていたのでこれを使いました。</p>
+
+<pre><code>wget http://influxdb.s3.amazonaws.com/influxdb_0.9.5.1_amd64.deb
+sudo dpkg -i influxdb_0.9.5.1_amd64.deb
+sudo service influxdb start
+</code></pre>
+
+<h2 id="telegraf-のインストールと起動">telegraf のインストールと起動</h2>
+
+<p>こちらも deb パッケージで。</p>
+
+<pre><code>wget http://get.influxdb.org/telegraf/telegraf_0.2.4_amd64.deb
+sudo dpkg -i telegraf_0.2.4_amd64.deb
+</code></pre>
+
+<p>コンフィギュレーションですが今回は CPU, Disk, Net, Docker のメトリクス情報を送
+信するようにしました。</p>
+
+<pre><code>[agent]
+    interval = &quot;0.1s&quot;
+
+[outputs]
+
+[outputs.influxdb]
+    urls = [&quot;http://localhost:8086&quot;]
+    database = &quot;telegraf-test&quot;
+    user_agent = &quot;telegraf&quot;
+
+[plugins]
+[[plugins.cpu]]
+  percpu = true
+  totalcpu = false
+  drop = [&quot;cpu_time*&quot;]
+
+[[plugins.disk]]
+  [plugins.disk.tagpass]
+    fstype = [ &quot;ext4&quot;, &quot;xfs&quot; ]
+    #path = [ &quot;/home*&quot; ]
+
+[[plugins.disk]]
+  pass = [ &quot;disk_inodes*&quot; ]
+  
+[[plugins.docker]]
+
+[[plugins.net]]
+  interfaces = [&quot;eth0&quot;]
+</code></pre>
+
+<p>他にも色々メトリクス情報を取得できそうです、下記のサイトを参考にしてみてください。
+<a href="https://github.com/influxdb/telegraf/blob/0.3.0/CONFIGURATION.md">https://github.com/influxdb/telegraf/blob/0.3.0/CONFIGURATION.md</a></p>
+
+<p>telegraf を起動します。Docker コンテナのメトリクスを取得するために root ユーザ
+で起動する必要があります。</p>
+
+<pre><code>sudo telegraf -config telegraf.conf
+</code></pre>
+
+<h2 id="chronograf-のインストールと起動">chronograf のインストールと起動</h2>
+
+<p>こちらも deb でインストールします。</p>
+
+<pre><code>wget https://s3.amazonaws.com/get.influxdb.org/chronograf/chronograf_0.4.0_amd64.deb
+sudo dpkg -i chronograf_0.4.0_amd64.deb
+sudo /opt/chronograf/chronograf -sample-config &gt; /opt/chronograf/config.toml
+sudo service chronograf start
+</code></pre>
+
+<h2 id="グラフの描画">グラフの描画</h2>
+
+<p>この状態でブラウザでアクセスしてみましょう。</p>
+
+<p>http://&lt;ホストのIPアドレス&gt;:10000/</p>
+
+<p>アクセスすると簡単なガイドが走りますのでここでは設定方法は省きます。Grafana を使った場合と
+同様に気をつけるポイントは下記のとおりです。</p>
+
+<ul>
+<li>&lsquo;filter by&rsquo;  に描画したいリソース名を選択(CPU,Disk,Net,Dockerの各リソース)</li>
+<li>Database に telegraf.conf に記した &lsquo;telegraf-test&rsquo; を選択</li>
+</ul>
+
+<p>すると下記のようなグラフやダッシュボードが作成されます。下記は CPU 使用率をグ
+ラフ化したものです。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/chronograf_cpu.png" width="70%"></p>
+
+<p>こちらは Docker 関連のグラフ。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/chronograf_docker.png" width="70%"></p>
+
+<p>複数のグラフを1つのダッシュボードにまとめることもできるようです。</p>
+
+<p>まとめ
++++</p>
+
+<p>個人的には Grafana の UI はとてもわかりずらかったので公式の可視化ツールが出てきて良かった
+と思っています。操作もとても理解しやすくなっています。Telegraf についても公式のメトリクス
+情報送信エージェントということで安心感があります。また Grafana は別途 HTTP サー
+バが必要でしたが Chronograf は HTTP サーバも内包しているのでセットアップが簡単
+でした。</p>
+
+<p>ただ configuration guide がまだまだ説明不十分なので凝ったことをしようすとする
+とソースを読まなくてはいけないかもしれません。</p>
+
+<p>いずれにしてもサーバのメトリクス情報と共に cAdvisor 等のソフトウェアを用いなく
+てもサーバ上で稼働しているコンテナ周りの情報も取得できたので個人的にはハッピー。
+cAdvisor でしか取得できない情報もありそうですが今後、導入を検討する上で評価し
+ていきたいと思います。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"
+                class="button big previous">Weave を使った Docker ネットワーク</a></li>
+    
+
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2015\/12\/28\/chronograf-telegraf-influxdb\/';
+    var disqus_title = 'Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2015\/12\/28\/chronograf-telegraf-influxdb\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

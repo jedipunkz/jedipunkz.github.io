@@ -1,0 +1,979 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Chef で OpenStack デプロイ</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Chef で OpenStack デプロイ"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 前回の記事で OpenCenter を使った OpenStack デプロイを行いましたが、デプロイの 仕組みの実体は Opscode Chef です。慣れている人であれば Chef を単独で使った方が よさそうです。僕もこの方法を今後取ろうと思っています。 幾つかの構成を試している最中ですが、今回 nova-network を使ったオールインワン構 成を作ってみたいと思います。NIC の数は1つです。ノート PC や VPS サービス上にも 構築できると思いますので試してみてください。 今回は Chef サーバの構築や Knife の環境構築に関しては割愛します。 また全ての操作は workstation ノードで行います。皆さんお手持ちの Macbook 等です。 デプロイする先は OpenStack をデプロイするサーバです。 手順 Chef Cookbook を取得 RackSpace 社のエンジニアがメンテナンスしている Chef Cookbook を使います。各 Cookbook が git submodule 化されているので &ndash;recursive オプションを付けます。 % git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo % cd openstack-chef-repo &lsquo;v4.0.0&rsquo; ブランチをチェックアウト master ブランチは今現在 (2013/07/08) folsom ベースの構成になっているので &lsquo;grizzly&rsquo; のためのブランチ"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Chef で OpenStack デプロイ" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 前回の記事で OpenCenter を使った OpenStack デプロイを行いましたが、デプロイの 仕組みの実体は Opscode Chef です。慣れている人であれば Chef を単独で使った方が よさそうです。僕もこの方法を今後取ろうと思っています。 幾つかの構成を試している最中ですが、今回 nova-network を使ったオールインワン構 成を作ってみたいと思います。NIC の数は1つです。ノート PC や VPS サービス上にも 構築できると思いますので試してみてください。 今回は Chef サーバの構築や Knife の環境構築に関しては割愛します。 また全ての操作は workstation ノードで行います。皆さんお手持ちの Macbook 等です。 デプロイする先は OpenStack をデプロイするサーバです。 手順 Chef Cookbook を取得 RackSpace 社のエンジニアがメンテナンスしている Chef Cookbook を使います。各 Cookbook が git submodule 化されているので &ndash;recursive オプションを付けます。 % git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo % cd openstack-chef-repo &lsquo;v4.0.0&rsquo; ブランチをチェックアウト master ブランチは今現在 (2013/07/08) folsom ベースの構成になっているので &lsquo;grizzly&rsquo; のためのブランチ" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/07/08/chef-openstack-deploy/" />
+
+
+<meta property="og:updated_time" content="2013-07-08T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Chef で OpenStack デプロイ">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 前回の記事で OpenCenter を使った OpenStack デプロイを行いましたが、デプロイの 仕組みの実体は Opscode Chef です。慣れている人であれば Chef を単独で使った方が よさそうです。僕もこの方法を今後取ろうと思っています。 幾つかの構成を試している最中ですが、今回 nova-network を使ったオールインワン構 成を作ってみたいと思います。NIC の数は1つです。ノート PC や VPS サービス上にも 構築できると思いますので試してみてください。 今回は Chef サーバの構築や Knife の環境構築に関しては割愛します。 また全ての操作は workstation ノードで行います。皆さんお手持ちの Macbook 等です。 デプロイする先は OpenStack をデプロイするサーバです。 手順 Chef Cookbook を取得 RackSpace 社のエンジニアがメンテナンスしている Chef Cookbook を使います。各 Cookbook が git submodule 化されているので &ndash;recursive オプションを付けます。 % git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo % cd openstack-chef-repo &lsquo;v4.0.0&rsquo; ブランチをチェックアウト master ブランチは今現在 (2013/07/08) folsom ベースの構成になっているので &lsquo;grizzly&rsquo; のためのブランチ">
+
+
+<meta itemprop="dateModified" content="2013-07-08T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="490">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f&text=Chef%20%e3%81%a7%20OpenStack%20%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f&title=Chef%20%e3%81%a7%20OpenStack%20%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f&title=Chef%20%e3%81%a7%20OpenStack%20%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f&title=Chef%20%e3%81%a7%20OpenStack%20%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/07/08/chef-openstack-deploy/">Chef で OpenStack デプロイ</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-07-08'>
+            July 8, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f&text=Chef%20%e3%81%a7%20OpenStack%20%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f&title=Chef%20%e3%81%a7%20OpenStack%20%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f&title=Chef%20%e3%81%a7%20OpenStack%20%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f&title=Chef%20%e3%81%a7%20OpenStack%20%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f08%2fchef-openstack-deploy%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>前回の記事で OpenCenter を使った OpenStack デプロイを行いましたが、デプロイの
+仕組みの実体は Opscode Chef です。慣れている人であれば Chef を単独で使った方が
+よさそうです。僕もこの方法を今後取ろうと思っています。</p>
+
+<p>幾つかの構成を試している最中ですが、今回 nova-network を使ったオールインワン構
+成を作ってみたいと思います。NIC の数は1つです。ノート PC や VPS サービス上にも
+構築できると思いますので試してみてください。</p>
+
+<p>今回は Chef サーバの構築や Knife の環境構築に関しては割愛します。</p>
+
+<p>また全ての操作は workstation ノードで行います。皆さんお手持ちの Macbook 等です。
+デプロイする先は OpenStack をデプロイするサーバです。</p>
+
+<h2 id="手順">手順</h2>
+
+<h4 id="chef-cookbook-を取得">Chef Cookbook を取得</h4>
+
+<p>RackSpace 社のエンジニアがメンテナンスしている Chef Cookbook を使います。各
+Cookbook が git submodule 化されているので &ndash;recursive オプションを付けます。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo
+% cd openstack-chef-repo
+</code></pre>
+
+<h4 id="v4-0-0-ブランチをチェックアウト">&lsquo;v4.0.0&rsquo; ブランチをチェックアウト</h4>
+
+<p>master ブランチは今現在 (2013/07/08) folsom ベースの構成になっているので
+&lsquo;grizzly&rsquo; のためのブランチ &lsquo;v4.0.0&rsquo; をローカルにチェックアウトします。</p>
+
+<pre><code class="language-bash">% git checkout v4.0.0
+</code></pre>
+
+<p>submodule である Cookbooks を初期化 -&gt; 更新を行います。</p>
+
+<pre><code class="language-bash">% git submodule init
+% git submodule sync
+% git submodule update
+</code></pre>
+
+<h4 id="environment-の作成">Environment の作成</h4>
+
+<p>Chef の中に Environment という情報があります。これは環境に合わせ各 Cookbooks
+内の Attributes 等を上書きすることが可能です。この Environment を作成すること
+でそれぞれ独立している Cookbooks を用いて一つの環境を作ることが可能になっています。
+Environement は clone してきた環境の environments ディレクトリ配下に格納します。
+下記の情報をコピペして environments/AllinOne.json として保存してください。</p>
+
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;AllinOne&quot;,
+  &quot;description&quot;: &quot;&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;package_component&quot;: &quot;grizzly&quot;,
+    &quot;osops_networks&quot;: {
+      &quot;management&quot;: &quot;10.0.0.0/24&quot;,
+      &quot;public&quot;: &quot;10.0.0.0/24&quot;,
+      &quot;nova&quot;: &quot;10.0.0.0/24&quot;
+    },
+    &quot;nova&quot;: {
+      &quot;networks&quot;: [
+        {
+          &quot;bridge&quot;: &quot;br100&quot;,
+          &quot;num_networks&quot;: &quot;1&quot;,
+          &quot;dns2&quot;: &quot;8.8.4.4&quot;,
+          &quot;dns1&quot;: &quot;8.8.8.8&quot;,
+          &quot;ipv4_cidr&quot;: &quot;172.16.0.0/24&quot;,
+          &quot;network_size&quot;: &quot;256&quot;,
+          &quot;label&quot;: &quot;private&quot;
+        }
+      ],
+      &quot;config&quot;: {
+        &quot;use_single_default_gateway&quot;: false,
+        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
+        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
+      },
+      &quot;network&quot;: {
+        &quot;dmz_cidr&quot;: &quot;172.18.0.0/24&quot;,
+        &quot;public_interface&quot;: &quot;eth0&quot;,
+        &quot;multi_host&quot;: true,
+        &quot;fixed_range&quot;: &quot;172.16.0.0/24&quot;
+      },
+      &quot;apply_patches&quot;: true,
+      &quot;libvirt&quot;: {
+        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
+        &quot;virt_type&quot;: &quot;qemu&quot;
+      }
+    },
+    &quot;keystone&quot;: {
+      &quot;admin_user&quot;: &quot;admin&quot;,
+      &quot;tenants&quot;: [
+        &quot;admin&quot;,
+        &quot;service&quot;
+      ],
+      &quot;users&quot;: {
+        &quot;admin&quot;: {
+          &quot;password&quot;: &quot;secrete&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [
+              &quot;admin&quot;
+            ]
+          }
+        },
+        &quot;demo&quot;: {
+          &quot;password&quot;: &quot;demo&quot;,
+          &quot;default_tenant&quot; : &quot;service&quot;,
+          &quot;roles&quot;: {
+            &quot;service&quot;: [ &quot;service&quot; ]
+          }
+        }
+      }
+    },
+    &quot;horizon&quot;: {
+      &quot;theme&quot;: &quot;Rackspace&quot;
+    },
+    &quot;mysql&quot;: {
+      &quot;root_network_acl&quot;: &quot;%&quot;,
+      &quot;allow_remote_root&quot;: true
+    },
+    &quot;monitoring&quot;: {
+      &quot;procmon_provider&quot;: &quot;monit&quot;,
+      &quot;metric_provider&quot;: &quot;collectd&quot;
+    },
+    &quot;glance&quot;: {
+      &quot;images&quot;: [
+        &quot;precise&quot;,
+        &quot;cirros&quot;
+      ],
+      &quot;image&quot;: {
+      },
+      &quot;image_upload&quot;: true
+    },
+    &quot;developer_mode&quot;: false
+  }
+}
+</code></pre>
+
+<p>環境に合わせ修正する必要があるのは&hellip;</p>
+
+<pre><code>&quot;osops_networks&quot;: {
+  &quot;management&quot;: &quot;10.0.0.0/24&quot;,
+  &quot;public&quot;: &quot;10.0.0.0/24&quot;,
+  &quot;nova&quot;: &quot;10.0.0.0/24&quot;
+},
+</code></pre>
+
+<p>だけです。私の環境は 10.0.0.0/24 にあるので上記のように記しましたが、これはみ
+なさんのネットワーク環境に合わせ修正してください。</p>
+
+<h2 id="roles-の修正">Roles の修正</h2>
+
+<p>デフォルトの &lsquo;allinone&rsquo; Role では Cinder が使えない状態です。これは別ストレー
+ジを扱うことを前提にしているためと思われます。今回はオールインワンでコミコミの
+構成を組みたいので roles/allinone.json を下記のように追記します。</p>
+
+<pre><code class="language-ruby">run_list(
+  &quot;role[single-controller]&quot;,
+  &quot;role[single-compute]&quot;,
+  &quot;role[cinder-volume]&quot; # &lt;- 追加
+)
+</code></pre>
+
+<h2 id="cookbooks-roles-environments-を-chef-サーバへアップロード">Cookbooks, Roles, Environments を Chef サーバへアップロード</h2>
+
+<p>チェックアウトした Cookbooks, Roles, あと今作成した Environements を Chef サー
+バへアップロードします。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
+% knife role from file roles/*.rb
+% knife environment from file environments/AllinOne.json
+</code></pre>
+
+<h2 id="openstack-をデプロイ">OpenStack をデプロイ</h2>
+
+<p>いよいよ、次のコマンドでデプロイを行います。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_address&gt; -N &lt;hostname&gt; -r 'role[allinone]' -E AllinOne --sudo -x &lt;username&gt;
+</code></pre>
+
+<p>数分経つと OpenStack デプロイが完了します。ブラウザで https://<ip_address> へ
+アクセスして確認してみてください。ログインアカウントを上記の environments 内に
+記してあります。(user : demo, pass : demo, もしくは user : admin, pass : secrete)</p>
+
+<h2 id="cinder-の利用">Cinder の利用</h2>
+
+<p>この状態で VM を作成してアクセスすることは出来るのですが、Block Storage as a
+Service (Cinder) は利用できない状態です。下記の操作で使えるようになります。</p>
+
+<pre><code class="language-bash">% sudo dd if=/dev/zero of=/var/lib/cinder/volumes-disk bs=2 count=0 seek=7G
+% sudo modprobe loop
+% sudo losetup /dev/loop3 /var/lib/cinder/volumes-disk
+% sudo pvcreate /dev/loop3
+% sudo vgcreate cinder-volumes /dev/loop3
+% sudo service cinder-volume restart
+</code></pre>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>操作して気がついたと思いますが、Roles が数多く存在します。これは色んな構成が組
+めることを明示していると言えます。また、Environments を OpenStack 上の一つの構
+成に見立てる (例 : controller + compute x n ) あたりが、とても Chef との親和性
+が高いと言えます。今まで構築のために bash スクリプトを書いてきましたが、もうそ
+の必要が無くなりました。また Git のブランチに &lsquo;folsom&rsquo; 等がある通り、ブランチ
+をチェックアウトし直すことで folsom ベースの構成も組むことが出来ます。私は今、
+コントローラノードの HA 化をこの Cookbooks でデプロイしてみています。とても完
+成度が高いなぁと感じるのは environments である json ファイルに vips という項目
+を追記するだけで HA 構成が組める点です。これにより MySQL, Rabbitmq, API が VIP
+を持ち、コントローラノードの片系に障害が発生しても OpenStack 全体の構成 (今回
+で言う一つの Envorinments ですね) がサービス継続できる！ということです。次回、
+機会がありましたら、その構成のデプロイ方法についても紹介したいと思います。</p>
+
+<p>また、今回は VPS サービス上等に構築出来るように</p>
+
+<pre><code>&quot;virt_type&quot;: &quot;qemu&quot;
+</code></pre>
+
+<p>と environments に記しましたが、KVM リソースが扱える環境であればここを &lsquo;kvm&rsquo;
+とすることでパフォーマンスは若干上がると思います。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/07/02/chef-opencenter-openstack/"
+                class="button big previous">内部で Chef を使っている OpenCenter で OpenStack 構築</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/07/17/openstach-ha-chef-deploy/"
+                class="button big next">OpenStack HA 構成を Chef でデプロイ</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/07\/08\/chef-openstack-deploy\/';
+    var disqus_title = 'Chef で OpenStack デプロイ';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/07\/08\/chef-openstack-deploy\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

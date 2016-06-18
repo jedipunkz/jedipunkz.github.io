@@ -1,0 +1,1062 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Swift HA 構成を Chef でデプロイ</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Swift HA 構成を Chef でデプロイ"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 最近 Chef で OpenStack をデプロイすることばかりに興味持っちゃって、他のことも やらんとなぁと思っているのですが、せっかくなので Swift HA 構成を Chef でデプロ イする方法を書きます。 Swift って分散ストレージなのに HA ってなんよ！と思われるかもしれませんが、ご存 知の様に Swift はストレージノード (accout, object, container) とプロキシノード に別れます。今回紹介する方法だとプロキシノードを Keepalived と Haproxy で HA、 また MySQL も KeepAlived で HA の構成に出来ました。いつものように RackSpace 管 理の Cookbooks を使っています。 参考資料 http://www.rackspace.com/knowledge_center/article/openstack-object-storage-configuration 構成 構成は簡単に記すと下記のようになります。特徴としては&hellip; swift-proxy01, swift-proxy02 で HA。VRRP &#43; LB な構成。 swift-proxy01 で git サーバ稼働。Rings 情報を管理。 swift-storageNN がストレージノード OS は Ubuntu server 12.04 です。 |--------- VRRP &#43;"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Swift HA 構成を Chef でデプロイ" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 最近 Chef で OpenStack をデプロイすることばかりに興味持っちゃって、他のことも やらんとなぁと思っているのですが、せっかくなので Swift HA 構成を Chef でデプロ イする方法を書きます。 Swift って分散ストレージなのに HA ってなんよ！と思われるかもしれませんが、ご存 知の様に Swift はストレージノード (accout, object, container) とプロキシノード に別れます。今回紹介する方法だとプロキシノードを Keepalived と Haproxy で HA、 また MySQL も KeepAlived で HA の構成に出来ました。いつものように RackSpace 管 理の Cookbooks を使っています。 参考資料 http://www.rackspace.com/knowledge_center/article/openstack-object-storage-configuration 構成 構成は簡単に記すと下記のようになります。特徴としては&hellip; swift-proxy01, swift-proxy02 で HA。VRRP &#43; LB な構成。 swift-proxy01 で git サーバ稼働。Rings 情報を管理。 swift-storageNN がストレージノード OS は Ubuntu server 12.04 です。 |--------- VRRP &#43;" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/" />
+
+
+<meta property="og:updated_time" content="2013-07-26T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Swift HA 構成を Chef でデプロイ">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 最近 Chef で OpenStack をデプロイすることばかりに興味持っちゃって、他のことも やらんとなぁと思っているのですが、せっかくなので Swift HA 構成を Chef でデプロ イする方法を書きます。 Swift って分散ストレージなのに HA ってなんよ！と思われるかもしれませんが、ご存 知の様に Swift はストレージノード (accout, object, container) とプロキシノード に別れます。今回紹介する方法だとプロキシノードを Keepalived と Haproxy で HA、 また MySQL も KeepAlived で HA の構成に出来ました。いつものように RackSpace 管 理の Cookbooks を使っています。 参考資料 http://www.rackspace.com/knowledge_center/article/openstack-object-storage-configuration 構成 構成は簡単に記すと下記のようになります。特徴としては&hellip; swift-proxy01, swift-proxy02 で HA。VRRP &#43; LB な構成。 swift-proxy01 で git サーバ稼働。Rings 情報を管理。 swift-storageNN がストレージノード OS は Ubuntu server 12.04 です。 |--------- VRRP &#43;">
+
+
+<meta itemprop="dateModified" content="2013-07-26T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="803">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f&text=Swift%20HA%20%e6%a7%8b%e6%88%90%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f&title=Swift%20HA%20%e6%a7%8b%e6%88%90%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f&title=Swift%20HA%20%e6%a7%8b%e6%88%90%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f&title=Swift%20HA%20%e6%a7%8b%e6%88%90%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/">Swift HA 構成を Chef でデプロイ</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-07-26'>
+            July 26, 2013</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f&text=Swift%20HA%20%e6%a7%8b%e6%88%90%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f&title=Swift%20HA%20%e6%a7%8b%e6%88%90%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f&title=Swift%20HA%20%e6%a7%8b%e6%88%90%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f&title=Swift%20HA%20%e6%a7%8b%e6%88%90%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f07%2f26%2fswift-ha-chef-deploy%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>最近 Chef で OpenStack をデプロイすることばかりに興味持っちゃって、他のことも
+やらんとなぁと思っているのですが、せっかくなので Swift HA 構成を Chef でデプロ
+イする方法を書きます。</p>
+
+<p>Swift って分散ストレージなのに HA ってなんよ！と思われるかもしれませんが、ご存
+知の様に Swift はストレージノード (accout, object, container) とプロキシノード
+に別れます。今回紹介する方法だとプロキシノードを Keepalived と Haproxy で HA、
+また MySQL も KeepAlived で HA の構成に出来ました。いつものように RackSpace 管
+理の Cookbooks を使っています。</p>
+
+<h2 id="参考資料">参考資料</h2>
+
+<p><a href="http://www.rackspace.com/knowledge_center/article/openstack-object-storage-configuration">http://www.rackspace.com/knowledge_center/article/openstack-object-storage-configuration</a></p>
+
+<h2 id="構成">構成</h2>
+
+<p>構成は簡単に記すと下記のようになります。特徴としては&hellip;</p>
+
+<ul>
+<li>swift-proxy01, swift-proxy02 で HA。VRRP + LB な構成。</li>
+<li>swift-proxy01 で git サーバ稼働。Rings 情報を管理。</li>
+<li>swift-storageNN がストレージノード</li>
+<li>OS は Ubuntu server 12.04</li>
+</ul>
+
+<p>です。</p>
+
+<pre><code>|--------- VRRP + Load Balancer ------|
+
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+
+|  swift-proxy01  | |  swift-proxy02  | | swift-storage01 | | swift-storage02 | | swift-storage03 |
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+
+|                   |                   |                   |                   |
++-------------------+-------------------+-------------------+-------------------+------------------
+|                   |
++-----------------+ +-----------------+
+| chef workstation| |   chef server   |
++-----------------+ +-----------------+
+</code></pre>
+
+<p>絵は書く意味なかったか&hellip;。</p>
+
+<h2 id="手順">手順</h2>
+
+<h4 id="chef-server-構築">chef server 構築</h4>
+
+<p>例によって Omnibus パッケージを使います。</p>
+
+<pre><code class="language-bash">% wget https://opscode-omnibus-packages.s3.amazonaws.com/ubuntu/12.04/x86_64/chef-server_11.0.8-1.ubuntu.12.04_amd64.deb
+% sudo dpkg -i chef-server_11.0.8-1.ubuntu.12.04_amd64.deb
+% sudo chef-server-ctl reconfigure
+% knife configure -i
+&lt; 適当に答える &gt;
+</code></pre>
+
+<p>&lsquo;knife configure -i&rsquo; で自分用の秘密鍵が生成出来ます。</p>
+
+<h4 id="workstation-ノードでの準備">workstation ノードでの準備</h4>
+
+<p>ほぼ全ての操作を workstation ノードで行います。knife.rb や秘密鍵の設置等につい
+ては方法を割愛します。このへんはモヤモヤと説明しますが、皆さんならご存知かと思
+いますので..。</p>
+
+<p>github より rackspace 管理の Chef Cookbooks を取得する。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo
+% cd ~/openstack-chef-repo
+</code></pre>
+
+<p>v.4.0.0 とい現在 (2013/07/25) 最新リリース版をチェックアウトする。</p>
+
+<pre><code class="language-bash">% git checkout v4.0.0
+% git submodule init
+% git submodule sync
+% git submodule update
+</code></pre>
+
+<p>&lsquo;chef server&rsquo; ノードへ Cookbooks をアップロードする</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
+</code></pre>
+
+<p>&lsquo;chef-server&rsquo; ノードへ Roles をアップロードする</p>
+
+<pre><code class="language-bash">% knife role from file roles/*rb
+</code></pre>
+
+<p>今回の構成用の environment &lsquo;swift-ha&rsquo; を用意します。ここでは各 Cookbooks の
+Attributes を上書きし、一つの構成を組みます。Cookbooks 内でこの environment 名
+をキーに検索し自ノードと同環境のノードを見つけ出し、関連付けがされます。</p>
+
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;swift-ha&quot;,
+  &quot;description&quot;: &quot;&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;package_component&quot;: &quot;grizzly&quot;,
+    &quot;osops_networks&quot;: {
+      &quot;management&quot;: &quot;10.0.0.0/24&quot;,
+      &quot;public&quot;: &quot;10.0.0.0/24&quot;,
+      &quot;nova&quot;: &quot;10.0.0.0/24&quot;,
+      &quot;swift&quot;: &quot;10.0.0.0/24&quot;
+    },
+    &quot;keystone&quot;: {
+      &quot;admin_user&quot;: &quot;admin&quot;,
+      &quot;tenants&quot;: [
+        &quot;admin&quot;,
+        &quot;service&quot;
+      ],
+      &quot;users&quot;: {
+        &quot;admin&quot;: {
+          &quot;password&quot;: &quot;secrete&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [
+              &quot;admin&quot;
+            ]
+          }
+        },
+        &quot;demo&quot;: {
+          &quot;password&quot;: &quot;demo&quot;,
+          &quot;default_tenant&quot; : &quot;service&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [ &quot;admin&quot; ]
+          }
+        }
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;keystone&quot;
+      }
+    },
+    &quot;mysql&quot;: {
+      &quot;root_network_acl&quot;: &quot;%&quot;,
+      &quot;allow_remote_root&quot;: true,
+      &quot;server_root_password&quot;: &quot;secrete&quot;,
+      &quot;server_repl_password&quot;: &quot;secrete&quot;,
+      &quot;server_debian_password&quot;: &quot;secrete&quot;
+    },
+    &quot;monitoring&quot;: {
+      &quot;procmon_provider&quot;: &quot;monit&quot;,
+      &quot;metric_provider&quot;: &quot;collectd&quot;
+    },
+    &quot;vips&quot;: {
+      &quot;keystone-admin-api&quot;: &quot;10.0.0.11&quot;,
+      &quot;keystone-service-api&quot;: &quot;10.0.0.11&quot;,
+      &quot;keystone-internal-api&quot;: &quot;10.0.0.11&quot;,
+      &quot;mysql-db&quot;: &quot;10.0.0.12&quot;,
+      &quot;swift-proxy&quot;: &quot;10.0.0.11&quot;
+    },
+    &quot;developer_mode&quot;: false,
+    &quot;swift&quot;: {
+      &quot;swift_hash&quot;: &quot;127005c8ea84&quot;,
+      &quot;authmode&quot;: &quot;keystone&quot;,
+      &quot;authkey&quot;: &quot;1f281c71-cf89-5b27-a2ad-ad873d3f2760&quot;
+    }
+  }
+}
+</code></pre>
+
+<p>生成した environment ファイル &lsquo;environments/swift-ha.json&rsquo; を Chef サーバへアッ
+プロードします。</p>
+
+<pre><code class="language-bash">% knife environment from file environments/swift-ha.json
+</code></pre>
+
+<h4 id="disk-デバイスの用意">disk デバイスの用意</h4>
+
+<p>swift-storageNN で オブジェクト格納用の Disk がある場合はパーティションを作成
+します。追加の Disk が無くても構わないと思います。後に Chef が使用可能な Disk
+デバイスを検知してくれます。ここでは例として /dev/sdb として認識されていること
+を前提に記します。追加の disk が無い場合は /dev/sda6 等、OS インストール時にオ
+ブジェクト格納用のパーティションを用意してもらえば大丈夫です。また GPT なパー
+ティションを切る必要があると思いますので (大きいから) fdisk ではなく gdisk を
+用いましょう。</p>
+
+<pre><code class="language-bash">% swift-storageNN% sudo apt-get update; apt-get -y install gdisk
+% swift-storageNN% sudo gdisk /dev/sdb
+</code></pre>
+
+<h4 id="各ノードをブートストラップ">各ノードをブートストラップ</h4>
+
+<p>いよいよデプロイします。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_swift-proxy01&gt; -N swift-proxy01 -r 'role[ha-swift-controller1]' -E swift-ha --sudo -x jedipunkz
+% knife bootstrap &lt;ip_swift-proxy02&gt; -N swift-proxy02 -r 'role[ha-swift-controller2]' -E swift-ha --sudo -x jedipunkz
+% knife bootstrap &lt;ip_swift-storage01&gt; -N swift-storage01 -r \
+'role[swift-object-server]','role[swift-container-server]','role[swift-account-server]' -E swift-ha --sudo -x jedipunkz
+% knife bootstrap &lt;ip_swift-sotrage02&gt; -N swift-storage02 -r \
+'role[swift-object-server]','role[swift-container-server]','role[swift-account-server]' -E swift-ha --sudo -x jedipunkz
+% knife bootstrap &lt;ip_swift-storage03&gt; -N swift-storage03 -r \
+'role[swift-object-server]','role[swift-container-server]','role[swift-account-server]' -E swift-ha --sudo -x jedipunkz
+</code></pre>
+
+<p>Chef サーバにノード情報が登録されているので各ストレージノードの zone 情報にシー
+ケンシャル番号を付与します。これにより各ノードは自分の zone 情報を Chef サーバ
+から知ることが出来ます。</p>
+
+<pre><code class="language-bash">% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
+</code></pre>
+
+<p>Account, Container, Object に対して適切に割り当てられたか確認を行います。</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-account-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  role [swift-account-server] and is in swift zone #{z}&quot;; }'
+% knife exec -E 'search(:node,&quot;role:swift-container-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-container-server] and is in swift zone #{z}&quot;; }'
+% knife exec -E 'search(:node,&quot;role:swift-object-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-object-server] and is in swift zone #{z}&quot;; }'
+</code></pre>
+
+<p>また、先ほど用意した Swift 用ディスクデバイスを Chef がディスカバ出来るか確認
+を行います。</p>
+
+<pre><code class="language-bash">% knife exec -E \
+  'search(:node,&quot;role:swift-object-server OR \
+  role:swift-account-server \
+  OR role:swift-container-server&quot;) \
+  { |n| puts &quot;#{n.name}&quot;; \
+  begin; n[:swift][:state][:devs].each do |d| \
+  puts &quot;\tdevice #{d[1][&quot;device&quot;]}&quot;; \
+  end; rescue; puts \
+  &quot;no candidate drives found&quot;; end; }'
+</code></pre>
+
+<p>またディスカバされたディスクデバイス /dev/sdb1 が既にマウントされているかどう
+か確認します。</p>
+
+<p>swift-strageNN# df</p>
+
+<p>&lsquo;swift-proxy01&rsquo; ノードにて再度 chef-client を実行し /etc/swift/ring-workspace/generate-rings.sh を
+更新する。上記 zone 情報に従って内容が更新される。</p>
+
+<pre><code class="language-bash">swift-proxy01# chef-client
+</code></pre>
+
+<p>生成された generate-rails.sh を実行。&rsquo;exit 0&rsquo; の行をコメントアウトして実行すること。</p>
+
+<pre><code class="language-bash">swift-proxy01# cd /etc/swift/ring-workspace
+swift-proxy01# ./generate-rings.sh
+</code></pre>
+
+<p>/etc/swift/ring-workstation/rings 配下に Rings ファイルが生成されたはずです。確
+認してみてください。この Rings ファイルを git サーバにプッシュします。git サー
+バは既に &lsquo;swift-proxy01&rsquo; ノード上に構築されています。</p>
+
+<pre><code class="language-bash">swift-proxy01# cd /etc/swift/ring-workspace/rings
+swift-proxy01# git add account.builder container.builder object.builder
+swift-proxy01# git add account.ring.gz container.ring.gz object.ring.gz
+swift-proxy01# git commit -m &quot;initial commit&quot;
+swift-proxy01# git push
+</code></pre>
+
+<p>git サーバにプッシュされた Rings ファイルを各ノードに配布します。配布の方法は
+各ノードで chef-client を実行することです。これは knife ssh 等を用いても構いま
+せん。</p>
+
+<pre><code class="language-bash">swift-proxy01# chef-client
+swift-proxy02# chef-client
+swift-storage01# chef-client
+swift-storage02# chef-client
+swift-storage03# chef-client
+</code></pre>
+
+<p>swift-storageNN の計3台が登録されたかどうかを確認します。</p>
+
+<pre><code class="language-bash">swift-proxy# swift-recon --md5
+</code></pre>
+
+<h2 id="動作確認">動作確認</h2>
+
+<p>動作確認をしましょう。</p>
+
+<pre><code class="language-bash">swift-storage01# source swift-openrc
+swift-storage01# swift post container01
+swift-storage01# echo &quot;test&quot; &gt; test
+swift-storage01# swift upload container01 test
+swift-storage01# swift list
+swift-storage01# swift list container01
+</code></pre>
+
+<p>また、これらの操作が swift-proxy01, swift-proxy02 の片系を落とした状態でも可能
+かどうかも確認しましょう。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>swift-proxy 片系の障害時にも読み込み系・書き込み系の操作が可能なことを確認出来
+ました。復旧に関しても MySQL 的な Slave 系 (今回だと swift-proxy02(後からブー
+トストラップしたノード)) に関しては knife bootstrap で出来ます。Master 系の復
+旧は簡単にはいきません。この事態に備えるには Rings 情報のバックアップ (Git レ
+ポジトリバックアップ) と MySQL のダンプの定期的取得が必要になるでしょう。</p>
+
+<p>また、今回 VRRP で HA しているので2台構成になります。Swift プロキシは本来、ノー
+ドを増やすことでより多くのリクエストを受けられる (何がボトルネックになるかで状
+況は変わりますが) 利点があるため、この2台構成がベストかどうかは状況に合わせて
+考えた方が良いかもしれません。この構成の場合、ロードバランサが必要ない点がメリッ
+トだったりします。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/07/17/openstach-ha-chef-deploy/"
+                class="button big previous">OpenStack HA 構成を Chef でデプロイ</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/07/28/cobbler-os-automation-install/"
+                class="button big next">Cobbler で OS 自動インストール</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/07\/26\/swift-ha-chef-deploy\/';
+    var disqus_title = 'Swift HA 構成を Chef でデプロイ';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/07\/26\/swift-ha-chef-deploy\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

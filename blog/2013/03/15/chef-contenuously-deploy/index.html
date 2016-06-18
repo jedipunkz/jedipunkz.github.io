@@ -1,0 +1,947 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>chef-client の継続的デリバリ</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="chef-client の継続的デリバリ"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 久々に Chef の話題。 有名な方々が最近 Chef について記事書いたりで Chef が再び盛り上がってきましたね。 僕のブログにも chef-solo で検索してアクセスしてくる方が増えているようです。 ちょうど今、仕事で試験的なサービスを立ち上げてそこで Chef を使っているのですが Server, Workstation, Target Node(s) の構成で使っていて、僕らは最初から chef-solo と capistrano でってことは考えていませんでした。もちろん chef-solo &#43; capistrano の環境も調査しましたが、今の Server 構成が便利なのでもう戻れない。 今日は Chef サーバ構成の良さについての記事ではないですが、それについては次回、 時間見つけて書こうかと思ってます。 今日は &lsquo;chef-client をどうアップデートするか&rsquo; について。せっかく Chef でサーバ構成を継続的にデプロイ出来ても Chef 自身をアップデート出来ないと悲しい ですよね。chef-client が稼働しているインスタンスなんて起動して利用してすぐに破 棄だって時代ですが、なかなかそうもいなかい気がしています。 「ほら、だから chef-solo 使えばいいんだよ！」って思ってるあなた！違うんですよー。 そのデメリットを上回るメリットが Chef サーバ構成にあるんです。次回書きますｗ Chef10 から Chef11 と試験してみるにはちょうど良い時期でした。今回の構成は&hellip; 旧環境 &#43;------------------&#43; | chef server | | version 10.18 | &#43;------------------&#43; ^ | &#43;--------------------&#43; | | | | &#43;------------------&#43; &#43;------------------&#43; | chef workstation | | target node | | version 10.24 | | version 10.24 | &#43;------------------&#43; &#43;------------------&#43; chef server は apt.opscode.com レポジトリを利用した Chef 10.18 なもの chef workstaion は version 10.24 (2013年3月15日現在 10.x 系最新) target node は chef workstaion から knife bootstrap を行い構成 knife bootstrap の際に下記のオプションを指定します。 % knife bootstrap -N vmtest01 -r &#39;role[base]&#39; \ -i -x root -d chef-full distro は chef-full を選択。chef-full については下記にコードがあります。 https://github.com/opscode/chef/blob/master/lib/chef/knife/bootstrap/chef-full.erb コードを抜粋すると、omnibus インストーラをダンロードして実行しているのがわかり ます。つまり Chef11 環境で再度 knife bootstrap すれば新しい Chef がインストー ルされるはず。 install_sh=&quot;http://opscode.com/chef/install.sh&quot; version_string=&quot;-v &lt;%= chef_version %&gt;&quot; if !"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="chef-client の継続的デリバリ" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 久々に Chef の話題。 有名な方々が最近 Chef について記事書いたりで Chef が再び盛り上がってきましたね。 僕のブログにも chef-solo で検索してアクセスしてくる方が増えているようです。 ちょうど今、仕事で試験的なサービスを立ち上げてそこで Chef を使っているのですが Server, Workstation, Target Node(s) の構成で使っていて、僕らは最初から chef-solo と capistrano でってことは考えていませんでした。もちろん chef-solo &#43; capistrano の環境も調査しましたが、今の Server 構成が便利なのでもう戻れない。 今日は Chef サーバ構成の良さについての記事ではないですが、それについては次回、 時間見つけて書こうかと思ってます。 今日は &lsquo;chef-client をどうアップデートするか&rsquo; について。せっかく Chef でサーバ構成を継続的にデプロイ出来ても Chef 自身をアップデート出来ないと悲しい ですよね。chef-client が稼働しているインスタンスなんて起動して利用してすぐに破 棄だって時代ですが、なかなかそうもいなかい気がしています。 「ほら、だから chef-solo 使えばいいんだよ！」って思ってるあなた！違うんですよー。 そのデメリットを上回るメリットが Chef サーバ構成にあるんです。次回書きますｗ Chef10 から Chef11 と試験してみるにはちょうど良い時期でした。今回の構成は&hellip; 旧環境 &#43;------------------&#43; | chef server | | version 10.18 | &#43;------------------&#43; ^ | &#43;--------------------&#43; | | | | &#43;------------------&#43; &#43;------------------&#43; | chef workstation | | target node | | version 10.24 | | version 10.24 | &#43;------------------&#43; &#43;------------------&#43; chef server は apt.opscode.com レポジトリを利用した Chef 10.18 なもの chef workstaion は version 10.24 (2013年3月15日現在 10.x 系最新) target node は chef workstaion から knife bootstrap を行い構成 knife bootstrap の際に下記のオプションを指定します。 % knife bootstrap -N vmtest01 -r &#39;role[base]&#39; \ -i -x root -d chef-full distro は chef-full を選択。chef-full については下記にコードがあります。 https://github.com/opscode/chef/blob/master/lib/chef/knife/bootstrap/chef-full.erb コードを抜粋すると、omnibus インストーラをダンロードして実行しているのがわかり ます。つまり Chef11 環境で再度 knife bootstrap すれば新しい Chef がインストー ルされるはず。 install_sh=&quot;http://opscode.com/chef/install.sh&quot; version_string=&quot;-v &lt;%= chef_version %&gt;&quot; if !" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/03/15/chef-contenuously-deploy/" />
+
+
+<meta property="og:updated_time" content="2013-03-15T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="chef-client の継続的デリバリ">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 久々に Chef の話題。 有名な方々が最近 Chef について記事書いたりで Chef が再び盛り上がってきましたね。 僕のブログにも chef-solo で検索してアクセスしてくる方が増えているようです。 ちょうど今、仕事で試験的なサービスを立ち上げてそこで Chef を使っているのですが Server, Workstation, Target Node(s) の構成で使っていて、僕らは最初から chef-solo と capistrano でってことは考えていませんでした。もちろん chef-solo &#43; capistrano の環境も調査しましたが、今の Server 構成が便利なのでもう戻れない。 今日は Chef サーバ構成の良さについての記事ではないですが、それについては次回、 時間見つけて書こうかと思ってます。 今日は &lsquo;chef-client をどうアップデートするか&rsquo; について。せっかく Chef でサーバ構成を継続的にデプロイ出来ても Chef 自身をアップデート出来ないと悲しい ですよね。chef-client が稼働しているインスタンスなんて起動して利用してすぐに破 棄だって時代ですが、なかなかそうもいなかい気がしています。 「ほら、だから chef-solo 使えばいいんだよ！」って思ってるあなた！違うんですよー。 そのデメリットを上回るメリットが Chef サーバ構成にあるんです。次回書きますｗ Chef10 から Chef11 と試験してみるにはちょうど良い時期でした。今回の構成は&hellip; 旧環境 &#43;------------------&#43; | chef server | | version 10.18 | &#43;------------------&#43; ^ | &#43;--------------------&#43; | | | | &#43;------------------&#43; &#43;------------------&#43; | chef workstation | | target node | | version 10.24 | | version 10.24 | &#43;------------------&#43; &#43;------------------&#43; chef server は apt.opscode.com レポジトリを利用した Chef 10.18 なもの chef workstaion は version 10.24 (2013年3月15日現在 10.x 系最新) target node は chef workstaion から knife bootstrap を行い構成 knife bootstrap の際に下記のオプションを指定します。 % knife bootstrap -N vmtest01 -r &#39;role[base]&#39; \ -i -x root -d chef-full distro は chef-full を選択。chef-full については下記にコードがあります。 https://github.com/opscode/chef/blob/master/lib/chef/knife/bootstrap/chef-full.erb コードを抜粋すると、omnibus インストーラをダンロードして実行しているのがわかり ます。つまり Chef11 環境で再度 knife bootstrap すれば新しい Chef がインストー ルされるはず。 install_sh=&quot;http://opscode.com/chef/install.sh&quot; version_string=&quot;-v &lt;%= chef_version %&gt;&quot; if !">
+
+
+<meta itemprop="dateModified" content="2013-03-15T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="525">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f&text=chef-client%20%e3%81%ae%e7%b6%99%e7%b6%9a%e7%9a%84%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f&title=chef-client%20%e3%81%ae%e7%b6%99%e7%b6%9a%e7%9a%84%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f&title=chef-client%20%e3%81%ae%e7%b6%99%e7%b6%9a%e7%9a%84%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f&title=chef-client%20%e3%81%ae%e7%b6%99%e7%b6%9a%e7%9a%84%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/03/15/chef-contenuously-deploy/">chef-client の継続的デリバリ</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-03-15'>
+            March 15, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f&text=chef-client%20%e3%81%ae%e7%b6%99%e7%b6%9a%e7%9a%84%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f&title=chef-client%20%e3%81%ae%e7%b6%99%e7%b6%9a%e7%9a%84%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f&title=chef-client%20%e3%81%ae%e7%b6%99%e7%b6%9a%e7%9a%84%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f&title=chef-client%20%e3%81%ae%e7%b6%99%e7%b6%9a%e7%9a%84%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f15%2fchef-contenuously-deploy%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>久々に Chef の話題。</p>
+
+<p>有名な方々が最近 Chef について記事書いたりで Chef が再び盛り上がってきましたね。
+僕のブログにも chef-solo で検索してアクセスしてくる方が増えているようです。</p>
+
+<p>ちょうど今、仕事で試験的なサービスを立ち上げてそこで Chef を使っているのですが Server,
+Workstation, Target Node(s) の構成で使っていて、僕らは最初から chef-solo と
+capistrano でってことは考えていませんでした。もちろん chef-solo + capistrano
+の環境も調査しましたが、今の Server 構成が便利なのでもう戻れない。</p>
+
+<p>今日は Chef サーバ構成の良さについての記事ではないですが、それについては次回、
+時間見つけて書こうかと思ってます。</p>
+
+<p>今日は &lsquo;chef-client をどうアップデートするか&rsquo; について。せっかく Chef
+でサーバ構成を継続的にデプロイ出来ても Chef 自身をアップデート出来ないと悲しい
+ですよね。chef-client が稼働しているインスタンスなんて起動して利用してすぐに破
+棄だって時代ですが、なかなかそうもいなかい気がしています。</p>
+
+<p>「ほら、だから chef-solo 使えばいいんだよ！」って思ってるあなた！違うんですよー。
+そのデメリットを上回るメリットが Chef サーバ構成にあるんです。次回書きますｗ</p>
+
+<p>Chef10 から Chef11 と試験してみるにはちょうど良い時期でした。今回の構成は&hellip;</p>
+
+<h2 id="旧環境">旧環境</h2>
+
+<pre><code>+------------------+
+|   chef server    |
+|  version 10.18   |
++------------------+
+^
+|
++--------------------+
+|                    |
+|                    |
++------------------+ +------------------+
+| chef workstation | |   target node    |
+|  version 10.24   | |  version 10.24   |
++------------------+ +------------------+
+</code></pre>
+
+<ul>
+<li>chef server は apt.opscode.com レポジトリを利用した Chef 10.18 なもの</li>
+<li>chef workstaion は version 10.24 (2013年3月15日現在 10.x 系最新)</li>
+<li>target node は chef workstaion から knife bootstrap を行い構成</li>
+</ul>
+
+<p>knife bootstrap の際に下記のオプションを指定します。</p>
+
+<pre><code>% knife bootstrap -N vmtest01 -r 'role[base]' \ -i -x root -d chef-full
+</code></pre>
+
+<p>distro は chef-full を選択。chef-full については下記にコードがあります。</p>
+
+<p><a href="https://github.com/opscode/chef/blob/master/lib/chef/knife/bootstrap/chef-full.erb">https://github.com/opscode/chef/blob/master/lib/chef/knife/bootstrap/chef-full.erb</a></p>
+
+<p>コードを抜粋すると、omnibus インストーラをダンロードして実行しているのがわかり
+ます。つまり Chef11 環境で再度 knife bootstrap すれば新しい Chef がインストー
+ルされるはず。</p>
+
+<pre><code class="language-bash">install_sh=&quot;http://opscode.com/chef/install.sh&quot;
+version_string=&quot;-v &lt;%= chef_version %&gt;&quot;
+
+if ! exists /usr/bin/chef-client; then
+  if exists wget; then
+    bash &lt;(wget &lt;%= &quot;--proxy=on &quot; if knife_config[:bootstrap_proxy] %&gt; ${install_sh} -O -) ${version_string}
+  elif exists curl; then
+    bash &lt;(curl -L &lt;%= &quot;--proxy \&quot;#{knife_config[:bootstrap_proxy]}\&quot; &quot; if knife_config[:bootstrap_proxy] %&gt; ${install_sh}) ${version_string}
+  else
+    echo &quot;Neither wget nor curl found. Please install one and try again.&quot; &gt;&amp;2
+    exit 1
+  fi
+fi
+</code></pre>
+
+<p>このように Chef10 で運用している状態を Chef11 に移行します。新しい環境は&hellip;</p>
+
+<h2 id="新環境">新環境</h2>
+
+<pre><code>+------------------+ +------------------+
+|   chef server    | |   chef server    |
+|  version 10.18   | |  version 11.0.6  |
++------------------+ +------------------+
+                     ^
+                     |
++--------------------+
+|                    |
+|                    |
++------------------+ +------------------+
+| chef workstation | |   target node    |
+|  version 11.4    | |  version 11.4    |
++------------------+ +------------------+
+</code></pre>
+
+<ul>
+<li>chef server は omnibus インストールから構築</li>
+<li>chef workstation は version 11.4 (2013年3月15日現在最新)</li>
+</ul>
+
+<h2 id="移行手順">移行手順</h2>
+
+<h4 id="chef11-サーバを用意する">Chef11 サーバを用意する</h4>
+
+<p>Omnibus インストーラでコマンド3つ打つだけで Chef サーバは構築出来ます。Chef11
+からはこの方法が推奨されているようです。bootstrap を使った方法より簡単ですし。</p>
+
+<pre><code>% wget https://opscode-omnitruck-release.s3.amazonaws.com/ubuntu/12.04/x86_64/chef-server_11.0.6-1.ubuntu.12.04_amd64.deb
+% sudo dpkg -i chef-server_11.0.6-1.ubuntu.12.04_amd64.deb
+% sudo chef-server-ctl reconfigure
+</code></pre>
+
+<h4 id="chef11-workstation-を用意する">Chef11 Workstation を用意する</h4>
+
+<p>詳細は割愛します。chef10 と同じです。手順としては</p>
+
+<ul>
+<li>chef10 の chef-repo をコピー</li>
+<li>pem ファイル群を chef11 server からコピー</li>
+<li>knife configure -i にて knife.rb の生成</li>
+<li>cookbooks, roles, data_bags, environments 等を chef11 にアップロード。若干修正が必要な場合がある。</li>
+</ul>
+
+<p>です。</p>
+
+<h4 id="target-node-における旧-chef-client-の停止と削除">Target Node における旧 chef-client の停止と削除</h4>
+
+<p>稼働している Chef10 の chef-client を停止し削除、そして pem ファイル達を退避し
+てあげます。ここでは ssh で消す例を書きますが、これこそ Cookbook を書いて実行
+すれば良いと思います。</p>
+
+<pre><code>% ssh -i &lt;ssh_secret_key&gt; -l root &lt;ip_address&gt; \
+'service chef-client stop; apt-get -y remove chef; mv /etc/chef /etc/chef.old'
+</code></pre>
+
+<h4 id="再-knife-bootstrap-実行">再 knife bootstrap 実行</h4>
+
+<p>Chef11 の Workstation から knife bootstrap を実行します。これによって Target
+Node に Chef11 の環境がインストールされ Chef11 Server と接続出来ます。</p>
+
+<pre><code>% knife bootstrap &lt;ip_address&gt; -N vmtest01 -r 'role[base]' -i &lt;ssh_secret_key&gt; \
+-x root -d chef-full
+</code></pre>
+
+<p>role[base] 中の run_list に&rsquo;chef-client::service&rsquo; を追加すると chef-client が
+常時稼動してくれて定期的に Chef Server と接続、更新してくれます。</p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>chef-client の更新は簡単に出来た！</p>
+
+<p>今回はデフォルトの distro &lsquo;chef-full&rsquo; の例で書いたのだけど、distro には他にも
+下記がある。</p>
+
+<p><a href="https://github.com/opscode/chef/tree/master/lib/chef/knife/bootstrap">https://github.com/opscode/chef/tree/master/lib/chef/knife/bootstrap</a></p>
+
+<p>Linux のディストリビューション名がついた distro は ruby をパッケージで, Chef
+を gem でインストールしている。下記は distro &lsquo;ubuntu12.04-gems&rsquo; のコードの抜粋
+です。</p>
+
+<pre><code class="language-bash">if [ ! -f /usr/bin/chef-client ]; then
+  aptitude update
+  aptitude install -y ruby ruby1.8-dev build-essential wget libruby1.8 rubygems
+fi
+  
+gem update --no-rdoc --no-ri
+gem install ohai --no-rdoc --no-ri --verbose
+gem install chef --no-rdoc --no-ri --verbose &lt;%= bootstrap_version_string %&gt;
+</code></pre>
+
+<p>ruby はディストリビューションが用意しているパッケージを。Chef は
+bootstrap_version_string を指定し gem でインストールしている。</p>
+
+<p>つまり &lsquo;ubuntu12.04-gems&rsquo; でも chef-client の更新は出来る。ちなみに試してみま
+した。chef-client の停止・削除を下記の通り行うと、全く同じ knife bootstrap コ
+マンドで chef-client のアップデートが行えた。</p>
+
+<pre><code>% ssh -i &lt;ssh_secret_key&gt; -l root &lt;ip_address&gt; 'service chef-client stop; mv \
+/usr/local/bin/chef-client /usr/local/bin/chef-client.old; mv /etc/chef /etc/chef.old'
+</code></pre>
+
+<p>以上です。</p>
+
+<p>なんか簡単なこと書くのに長くなっちゃったけど&hellip;。運用を僕らはまだ出来ていない
+のだけど、その時のことを考えると今回の試験はしてみたかったし、いい結果が出てよ
+かった。Chef がメジャーバージョンアップされて Chef Server の構成が大きく代わっ
+ても対応した cookbook, role, .. があればスムースに移行出来る。</p>
+
+<p>Chef 無しにはインフラエンジニアやってられない時代が来たって感じｗ Chef 周りた
+のしー！</p>
+
+<p>追伸: 今回の方法より良いベストプラクティス的な方法があれば教えて下さい。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/03/06/pry/"
+                class="button big previous">pry のススメ</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/03/17/berkshelf-chef-cookbook-manage/"
+                class="button big next">Berkshelf で Chef Cookbook の管理</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/03\/15\/chef-contenuously-deploy\/';
+    var disqus_title = 'chef-client の継続的デリバリ';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/03\/15\/chef-contenuously-deploy\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

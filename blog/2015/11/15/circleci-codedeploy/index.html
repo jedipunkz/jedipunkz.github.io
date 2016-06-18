@@ -1,0 +1,1029 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。 この記事の前提&hellip; ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、 それの回避方法等&hellip;についてまとめています。 CirlceCI と併用するサービスについて CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが 省けそう。ってことで AWS S3 (https://aws.amazon.com/jp/s3/) AWS CodeDeploy (https://aws.amazon.com/jp/codedeploy/) を併用することを考えました。 S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、 ビルドした結果を格納します。私の務めている会社ではプログラミング言語として Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り 戻すことが出来そうです。 また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ ロイが可能になるサービスです。東京リージョンでは 2015&frasl;08 から利用が可能になり ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内 のインスタンスに対してもデプロイが可能なところです。 Tips 的な情報として &#43;&#43;&#43; circle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい と思います。 Git push からデプロイまでを自動で行う circle.yml Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の circle.yml を紹介します。全体の流れとしては&hellip; レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする となります。 machine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:&#43;CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot; services: - docker dependencies: pre: - (事前に実行したいコマンド・スクリプトを記述) cache_directories: - &quot;~/.sbt&quot; test: override: - sbt compile deployment: production: branch: master codedeploy: codedeploy-sample: application_root: / region: ap-northeast-1 revision_location: revision_type: S3 s3_location: bucket: circleci-sample-bucket key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip deployment_group: codedeploy-sample-group それぞれのパラメータの意味 上記 circle.yml の重要なパラメータのみ説明していきます。 私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき ると思いますので読み替えてください。 machine -&gt; environment : 全体で適用できる環境変数を定義します dependencies -&gt; pre : 事前に実行したいコマンド等を定義できます test -&gt; overide : テストを実行するコマンドを書きます。 deployment -&gt; production -&gt; branch : 適用するブランチ名と本番環境であることを記述します。 &lsquo;codedeploy-sample&rsquo; : CodeDeploy 上にサンプルで作成した &lsquo;Application&rsquo; 名です s3_location -&gt; bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します s3_location -&gt; key_pattern : S3 バケットに収めるファイル名指定です deployment_group : CodeDeploy で定義する &lsquo;Deployment-Group&rsquo; 名です より詳細な説明を読みたい場合は下記の URL に描いてあります。 https://circleci.com/docs/configuration S3 のみににデプロイする例 上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて 実行したい場面もありそうです。流れとしては&hellip; レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の API を直接叩けば出来そうです。 http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html このリファレンスにある &ldquo;CreateDeployment&rdquo; については後に例をあげます。 ただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。 よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば 上記の流れが組めそうです。 machine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:&#43;CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot; services: - docker dependencies: pre: - sudo pip install awscli cache_directories: - &quot;~/.sbt&quot; test: override: - sbt compile deployment: master: branch: master commands: - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip ."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。 この記事の前提&hellip; ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、 それの回避方法等&hellip;についてまとめています。 CirlceCI と併用するサービスについて CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが 省けそう。ってことで AWS S3 (https://aws.amazon.com/jp/s3/) AWS CodeDeploy (https://aws.amazon.com/jp/codedeploy/) を併用することを考えました。 S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、 ビルドした結果を格納します。私の務めている会社ではプログラミング言語として Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り 戻すことが出来そうです。 また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ ロイが可能になるサービスです。東京リージョンでは 2015&frasl;08 から利用が可能になり ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内 のインスタンスに対してもデプロイが可能なところです。 Tips 的な情報として &#43;&#43;&#43; circle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい と思います。 Git push からデプロイまでを自動で行う circle.yml Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の circle.yml を紹介します。全体の流れとしては&hellip; レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする となります。 machine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:&#43;CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot; services: - docker dependencies: pre: - (事前に実行したいコマンド・スクリプトを記述) cache_directories: - &quot;~/.sbt&quot; test: override: - sbt compile deployment: production: branch: master codedeploy: codedeploy-sample: application_root: / region: ap-northeast-1 revision_location: revision_type: S3 s3_location: bucket: circleci-sample-bucket key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip deployment_group: codedeploy-sample-group それぞれのパラメータの意味 上記 circle.yml の重要なパラメータのみ説明していきます。 私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき ると思いますので読み替えてください。 machine -&gt; environment : 全体で適用できる環境変数を定義します dependencies -&gt; pre : 事前に実行したいコマンド等を定義できます test -&gt; overide : テストを実行するコマンドを書きます。 deployment -&gt; production -&gt; branch : 適用するブランチ名と本番環境であることを記述します。 &lsquo;codedeploy-sample&rsquo; : CodeDeploy 上にサンプルで作成した &lsquo;Application&rsquo; 名です s3_location -&gt; bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します s3_location -&gt; key_pattern : S3 バケットに収めるファイル名指定です deployment_group : CodeDeploy で定義する &lsquo;Deployment-Group&rsquo; 名です より詳細な説明を読みたい場合は下記の URL に描いてあります。 https://circleci.com/docs/configuration S3 のみににデプロイする例 上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて 実行したい場面もありそうです。流れとしては&hellip; レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の API を直接叩けば出来そうです。 http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html このリファレンスにある &ldquo;CreateDeployment&rdquo; については後に例をあげます。 ただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。 よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば 上記の流れが組めそうです。 machine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:&#43;CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot; services: - docker dependencies: pre: - sudo pip install awscli cache_directories: - &quot;~/.sbt&quot; test: override: - sbt compile deployment: master: branch: master commands: - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip ." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/" />
+
+
+<meta property="og:updated_time" content="2015-11-15T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。 この記事の前提&hellip; ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、 それの回避方法等&hellip;についてまとめています。 CirlceCI と併用するサービスについて CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが 省けそう。ってことで AWS S3 (https://aws.amazon.com/jp/s3/) AWS CodeDeploy (https://aws.amazon.com/jp/codedeploy/) を併用することを考えました。 S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、 ビルドした結果を格納します。私の務めている会社ではプログラミング言語として Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り 戻すことが出来そうです。 また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ ロイが可能になるサービスです。東京リージョンでは 2015&frasl;08 から利用が可能になり ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内 のインスタンスに対してもデプロイが可能なところです。 Tips 的な情報として &#43;&#43;&#43; circle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい と思います。 Git push からデプロイまでを自動で行う circle.yml Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の circle.yml を紹介します。全体の流れとしては&hellip; レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする となります。 machine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:&#43;CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot; services: - docker dependencies: pre: - (事前に実行したいコマンド・スクリプトを記述) cache_directories: - &quot;~/.sbt&quot; test: override: - sbt compile deployment: production: branch: master codedeploy: codedeploy-sample: application_root: / region: ap-northeast-1 revision_location: revision_type: S3 s3_location: bucket: circleci-sample-bucket key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip deployment_group: codedeploy-sample-group それぞれのパラメータの意味 上記 circle.yml の重要なパラメータのみ説明していきます。 私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき ると思いますので読み替えてください。 machine -&gt; environment : 全体で適用できる環境変数を定義します dependencies -&gt; pre : 事前に実行したいコマンド等を定義できます test -&gt; overide : テストを実行するコマンドを書きます。 deployment -&gt; production -&gt; branch : 適用するブランチ名と本番環境であることを記述します。 &lsquo;codedeploy-sample&rsquo; : CodeDeploy 上にサンプルで作成した &lsquo;Application&rsquo; 名です s3_location -&gt; bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します s3_location -&gt; key_pattern : S3 バケットに収めるファイル名指定です deployment_group : CodeDeploy で定義する &lsquo;Deployment-Group&rsquo; 名です より詳細な説明を読みたい場合は下記の URL に描いてあります。 https://circleci.com/docs/configuration S3 のみににデプロイする例 上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて 実行したい場面もありそうです。流れとしては&hellip; レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の API を直接叩けば出来そうです。 http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html このリファレンスにある &ldquo;CreateDeployment&rdquo; については後に例をあげます。 ただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。 よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば 上記の流れが組めそうです。 machine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:&#43;CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot; services: - docker dependencies: pre: - sudo pip install awscli cache_directories: - &quot;~/.sbt&quot; test: override: - sbt compile deployment: master: branch: master commands: - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip .">
+
+
+<meta itemprop="dateModified" content="2015-11-15T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="511">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f&text=CodeDeploy%2c%20S3%20%e3%82%92%e4%bd%b5%e7%94%a8%e3%81%97%e3%81%a6%20CircleCI%20%e3%81%ab%e3%82%88%e3%82%8a%20VPC%20%e3%81%ab%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f&title=CodeDeploy%2c%20S3%20%e3%82%92%e4%bd%b5%e7%94%a8%e3%81%97%e3%81%a6%20CircleCI%20%e3%81%ab%e3%82%88%e3%82%8a%20VPC%20%e3%81%ab%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f&title=CodeDeploy%2c%20S3%20%e3%82%92%e4%bd%b5%e7%94%a8%e3%81%97%e3%81%a6%20CircleCI%20%e3%81%ab%e3%82%88%e3%82%8a%20VPC%20%e3%81%ab%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f&title=CodeDeploy%2c%20S3%20%e3%82%92%e4%bd%b5%e7%94%a8%e3%81%97%e3%81%a6%20CircleCI%20%e3%81%ab%e3%82%88%e3%82%8a%20VPC%20%e3%81%ab%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2015-11-15'>
+            November 15, 2015</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f&text=CodeDeploy%2c%20S3%20%e3%82%92%e4%bd%b5%e7%94%a8%e3%81%97%e3%81%a6%20CircleCI%20%e3%81%ab%e3%82%88%e3%82%8a%20VPC%20%e3%81%ab%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f&title=CodeDeploy%2c%20S3%20%e3%82%92%e4%bd%b5%e7%94%a8%e3%81%97%e3%81%a6%20CircleCI%20%e3%81%ab%e3%82%88%e3%82%8a%20VPC%20%e3%81%ab%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f&title=CodeDeploy%2c%20S3%20%e3%82%92%e4%bd%b5%e7%94%a8%e3%81%97%e3%81%a6%20CircleCI%20%e3%81%ab%e3%82%88%e3%82%8a%20VPC%20%e3%81%ab%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f&title=CodeDeploy%2c%20S3%20%e3%82%92%e4%bd%b5%e7%94%a8%e3%81%97%e3%81%a6%20CircleCI%20%e3%81%ab%e3%82%88%e3%82%8a%20VPC%20%e3%81%ab%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f11%2f15%2fcircleci-codedeploy%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと
+に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。</p>
+
+<h2 id="この記事の前提">この記事の前提&hellip;</h2>
+
+<p>ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ
+ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、
+それの回避方法等&hellip;についてまとめています。</p>
+
+<h2 id="cirlceci-と併用するサービスについて">CirlceCI と併用するサービスについて</h2>
+
+<p>CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ
+スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た
+ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー
+トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ
+うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た
+らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが
+省けそう。ってことで</p>
+
+<ul>
+<li>AWS S3 (<a href="https://aws.amazon.com/jp/s3/">https://aws.amazon.com/jp/s3/</a>)</li>
+<li>AWS CodeDeploy (<a href="https://aws.amazon.com/jp/codedeploy/">https://aws.amazon.com/jp/codedeploy/</a>)</li>
+</ul>
+
+<p>を併用することを考えました。</p>
+
+<p>S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、
+ビルドした結果を格納します。私の務めている会社ではプログラミング言語として
+Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ
+ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り
+戻すことが出来そうです。</p>
+
+<p>また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ
+ロイが可能になるサービスです。東京リージョンでは <sup>2015</sup>&frasl;<sub>08</sub> から利用が可能になり
+ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内
+のインスタンスに対してもデプロイが可能なところです。</p>
+
+<p>Tips 的な情報として
++++</p>
+
+<p>circle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで
+CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい
+と思います。</p>
+
+<h2 id="git-push-からデプロイまでを自動で行う-circle-yml">Git push からデプロイまでを自動で行う circle.yml</h2>
+
+<p>Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の
+circle.yml を紹介します。全体の流れとしては&hellip;</p>
+
+<ul>
+<li>レポジトリに git push, merge ことがトリガで処理が走る</li>
+<li>circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る</li>
+<li>S3 バケットにビルドされた結果が格納される</li>
+<li>CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする</li>
+</ul>
+
+<p>となります。</p>
+
+<pre><code class="language-yml">machine:
+  environment:
+    SBT_VERSION: 0.13.9
+    SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot;
+  services:
+    - docker
+
+dependencies:
+  pre:
+    - (事前に実行したいコマンド・スクリプトを記述)
+  cache_directories:
+    - &quot;~/.sbt&quot;
+
+test:
+  override:
+    - sbt compile
+
+deployment:
+  production:
+    branch: master
+    codedeploy:
+      codedeploy-sample:
+        application_root: /
+        region: ap-northeast-1
+        revision_location:
+          revision_type: S3
+          s3_location:
+            bucket: circleci-sample-bucket
+            key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip
+        deployment_group: codedeploy-sample-group
+</code></pre>
+
+<h4 id="それぞれのパラメータの意味">それぞれのパラメータの意味</h4>
+
+<p>上記 circle.yml の重要なパラメータのみ説明していきます。
+私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに
+SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき
+ると思いますので読み替えてください。</p>
+
+<ul>
+<li>machine -&gt; environment : 全体で適用できる環境変数を定義します</li>
+<li>dependencies -&gt; pre : 事前に実行したいコマンド等を定義できます</li>
+<li>test -&gt; overide : テストを実行するコマンドを書きます。</li>
+<li>deployment -&gt; production -&gt; branch : 適用するブランチ名と本番環境であることを記述します。</li>
+<li>&lsquo;codedeploy-sample&rsquo; : CodeDeploy 上にサンプルで作成した &lsquo;Application&rsquo; 名です</li>
+<li>s3_location -&gt; bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します</li>
+<li>s3_location -&gt; key_pattern : S3 バケットに収めるファイル名指定です</li>
+<li>deployment_group : CodeDeploy で定義する &lsquo;Deployment-Group&rsquo; 名です</li>
+</ul>
+
+<p>より詳細な説明を読みたい場合は下記の URL に描いてあります。</p>
+
+<p><a href="https://circleci.com/docs/configuration">https://circleci.com/docs/configuration</a></p>
+
+<h2 id="s3-のみににデプロイする例">S3 のみににデプロイする例</h2>
+
+<p>上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて
+実行したい場面もありそうです。流れとしては&hellip;</p>
+
+<ul>
+<li>レポジトリに git push, merge ことがトリガで処理が走る</li>
+<li>circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る</li>
+<li>S3 バケットにビルドされた結果が格納される</li>
+</ul>
+
+<p>です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の
+API を直接叩けば出来そうです。</p>
+
+<p><a href="http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html">http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html</a></p>
+
+<p>このリファレンスにある &ldquo;CreateDeployment&rdquo; については後に例をあげます。</p>
+
+<p>ただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが
+CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。</p>
+
+<p>よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば
+上記の流れが組めそうです。</p>
+
+<pre><code class="language-yml">machine:
+  environment:
+    SBT_VERSION: 0.13.9
+    SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot;
+  services:
+    - docker
+
+dependencies:
+  pre:
+    - sudo pip install awscli
+  cache_directories:
+    - &quot;~/.sbt&quot;
+
+test:
+  override:
+    - sbt compile
+
+deployment:
+  master:
+    branch: master
+    commands:
+      - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip .
+      - aws s3 cp
+        sample-code-${CIRCLE_PROJECT_REPONAME}-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip s3://&lt;バケット名&gt;/&lt;ディレクトリ&gt;/ --region ap-northeast-1
+</code></pre>
+
+<p>事前に awscli をインストールしているだけです。</p>
+
+<p>S3 バケットに格納された成果物を CodeDeploy を使って手動でデプロイするには下記
+のコマンドで実施できます。</p>
+
+<pre><code class="language-bash">$ aws deploy create-deployment \
+  --application-name codedeploy-sample \
+  --deployment-config-name CodeDeployDefault.OneAtATime \
+  --deployment-group-name codedeploy-sample-group \
+  --description &quot;deploy test&quot; \
+  --s3-location bucket=&lt;バケット名&gt;,bundleType=zip,key=&lt;ファイル名&gt;
+  {
+    &quot;deploymentId&quot;: &quot;d-2B4OAMT0B&quot;
+   }
+</code></pre>
+
+<p>deploymentId は CodeDeploy 上の Application に紐付いた ID です。CodeDeploy の
+API を叩くか AWS コンソールで確認可能です。</p>
+
+<h4 id="circleci-の問題点とそれの回避方法">CircleCI の問題点とそれの回避方法</h4>
+
+<ul>
+<li>production と staging</li>
+</ul>
+
+<p>1つのブランチで管理できる circle.yml は1つです。このファイルの中で定義できる &lsquo;本番用&rsquo;, &lsquo;開発用&rsquo; の定義は
+deployment -&gt; production, staging の2種類になります。この2つで管理しきれない環境がある場合(例えば staging 以前の
+development 環境がある) は、レポジトリのブランチを別けて circle.yml を管理する方法があると思います。</p>
+
+<ul>
+<li>複数のデプロイ先があるレポジトリの運用</li>
+</ul>
+
+<p>同一のレポジトリ内で管理しているコードのデプロイ先が複数ある場合は CodeDeploy 上で1つの Application に対して複数の
+Deployment-Group を作成することで対応できます。ただ、cirlce.yml で定義できるデプロイ先は deployment_group: の1つ(
+厳密に言うと production, staging の2つ) になるので、こちらもブランチによる circle.yml の別管理で回避できそうです。</p>
+
+<p>こちらの問題については CircleCI 的にはおそらく「1つのレポジトリで管理するデプロイ先は1つに」というコンセプトなのかもしれません。</p>
+
+<h4 id="aws-iam-ユーザにアタッチする-policy-作成">AWS IAM ユーザにアタッチする Policy 作成</h4>
+
+<p>IAM ユーザを CircleCI に事前に設定しておくことで直接 AWS のリソースを操作出来るのですが、
+そのユーザにアタッチしておくべき Policy について例をあげておきます。</p>
+
+<p>特定の S3 バケットにオブジェクト Put する Policy</p>
+
+<pre><code class="language-json">{
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Sid&quot;: &quot;Stmt1444196633000&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: [
+                &quot;s3:PutObject&quot;
+            ],
+            &quot;Resource&quot;: [
+                &quot;arn:aws:s3:::&lt;S3 バケット名&gt;/*&quot;
+            ]
+        }
+    ]
+}
+</code></pre>
+
+<p>CodeDeploy の各 Action を実行する Policy</p>
+
+<pre><code class="language-json">{
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: [
+                &quot;codedeploy:RegisterApplicationRevision&quot;,
+                &quot;codedeploy:GetApplicationRevision&quot;
+            ],
+            &quot;Resource&quot;: [
+                &quot;*&quot;
+            ]
+        },
+        {
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: [
+                &quot;codedeploy:CreateDeployment&quot;,
+                &quot;codedeploy:GetDeployment&quot;
+            ],
+            &quot;Resource&quot;: [
+                &quot;*&quot;
+            ]
+        },
+        {
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: [
+                &quot;codedeploy:GetDeploymentConfig&quot;
+            ],
+            &quot;Resource&quot;: [
+                &quot;*&quot;
+            ]
+        }
+    ]
+}
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>CodeDeploy, S3 を併用することで CircleCI を使っても VPC 内のプライベートインス
+タンスにデプロイできることが判りました。もし EC2 インスタンスを使っている場合
+は他の方法も取れることが判っています。circle.yml 内の pre: で指定出来るコマン
+ド・スクリプトで EC2 インスタンスに紐付いているセキュリティグループに穴あけ処
+理を記述すれば良さそうです。デプロイが終わったら穴を塞げばいいですね。この辺の
+例については国内でもブログ記事にされている方がいらっしゃいますので参考にしてくだ
+さい。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"
+                class="button big previous">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"
+                class="button big next">Weave を使った Docker ネットワーク</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2015\/11\/15\/circleci-codedeploy\/';
+    var disqus_title = 'CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2015\/11\/15\/circleci-codedeploy\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

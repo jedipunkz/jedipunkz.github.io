@@ -1,0 +1,894 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Mesos アーキテクチャ #1</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Mesos アーキテクチャ #1"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 今回はクラスタマネージャである Mesos について書こうと思います。 Mesos は Apache Software Foundation によって管理されるソフトウェアで分散アプリ ケーションをクラスタ化することが出来るマネージャです。Twitter が採用しているこ とで有名だそうで、開発にも積極的に参加しているそうです。 http://mesos.apache.org/ @riywo さんが既に Mesos &#43; Marathon &#43; Zookeper &#43; Docker な構成を組む手順をブロ グで紹介されていますので是非試してみると面白いと思います。 http://tech.riywo.com/blog/2013/09/27/mesos-introduction-1/ 私は理解した Mesos のアーキテクチャについて少し書いていきたいと思います。 全体の構造 &#43;-----------&#43; | zookeeper | | quorum | &#43;-----------&#43; | &#43;----------------&#43;----------------&#43; | | | &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; | mesos-master | | mesos-master | | mesos-master | | active | | hot standby | | hot standby | &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; ..."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Mesos アーキテクチャ #1" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 今回はクラスタマネージャである Mesos について書こうと思います。 Mesos は Apache Software Foundation によって管理されるソフトウェアで分散アプリ ケーションをクラスタ化することが出来るマネージャです。Twitter が採用しているこ とで有名だそうで、開発にも積極的に参加しているそうです。 http://mesos.apache.org/ @riywo さんが既に Mesos &#43; Marathon &#43; Zookeper &#43; Docker な構成を組む手順をブロ グで紹介されていますので是非試してみると面白いと思います。 http://tech.riywo.com/blog/2013/09/27/mesos-introduction-1/ 私は理解した Mesos のアーキテクチャについて少し書いていきたいと思います。 全体の構造 &#43;-----------&#43; | zookeeper | | quorum | &#43;-----------&#43; | &#43;----------------&#43;----------------&#43; | | | &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; | mesos-master | | mesos-master | | mesos-master | | active | | hot standby | | hot standby | &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; ..." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/" />
+
+
+<meta property="og:updated_time" content="2013-09-28T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Mesos アーキテクチャ #1">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 今回はクラスタマネージャである Mesos について書こうと思います。 Mesos は Apache Software Foundation によって管理されるソフトウェアで分散アプリ ケーションをクラスタ化することが出来るマネージャです。Twitter が採用しているこ とで有名だそうで、開発にも積極的に参加しているそうです。 http://mesos.apache.org/ @riywo さんが既に Mesos &#43; Marathon &#43; Zookeper &#43; Docker な構成を組む手順をブロ グで紹介されていますので是非試してみると面白いと思います。 http://tech.riywo.com/blog/2013/09/27/mesos-introduction-1/ 私は理解した Mesos のアーキテクチャについて少し書いていきたいと思います。 全体の構造 &#43;-----------&#43; | zookeeper | | quorum | &#43;-----------&#43; | &#43;----------------&#43;----------------&#43; | | | &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; | mesos-master | | mesos-master | | mesos-master | | active | | hot standby | | hot standby | &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; ...">
+
+
+<meta itemprop="dateModified" content="2013-09-28T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="336">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f&text=Mesos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%231&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f&title=Mesos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%231" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f&title=Mesos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%231" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f&title=Mesos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%231" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/">Mesos アーキテクチャ #1</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-09-28'>
+            September 28, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f&text=Mesos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%231&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f&title=Mesos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%231" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f&title=Mesos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%231" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f&title=Mesos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%231" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f28%2fmesos-architecture-number-1%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>今回はクラスタマネージャである Mesos について書こうと思います。</p>
+
+<p>Mesos は Apache Software Foundation によって管理されるソフトウェアで分散アプリ
+ケーションをクラスタ化することが出来るマネージャです。Twitter が採用しているこ
+とで有名だそうで、開発にも積極的に参加しているそうです。</p>
+
+<p><a href="http://mesos.apache.org/">http://mesos.apache.org/</a></p>
+
+<p>@riywo さんが既に Mesos + Marathon + Zookeper + Docker な構成を組む手順をブロ
+グで紹介されていますので是非試してみると面白いと思います。</p>
+
+<p><a href="http://tech.riywo.com/blog/2013/09/27/mesos-introduction-1/">http://tech.riywo.com/blog/2013/09/27/mesos-introduction-1/</a></p>
+
+<p>私は理解した Mesos のアーキテクチャについて少し書いていきたいと思います。</p>
+
+<h2 id="全体の構造">全体の構造</h2>
+
+<pre><code>+-----------+
+| zookeeper |
+|  quorum   |
++-----------+
+|
++----------------+----------------+
+|                |                |
++--------------+ +--------------+ +--------------+
+| mesos-master | | mesos-master | | mesos-master |
+|    active    | |  hot standby | |  hot standby |
++--------------+ +--------------+ +--------------+ ...
+|
++----------------+----------------+
+|                |                |
++--------------+ +--------------+ +--------------+
+|  mesos-slave | |  mesos-slave | |  mesos-slave |
+|   executor   | |   executor   | |   executor   |
+| +----++----+ | | +----++----+ | | +----++----+ |
+| |task||task| | | |task||task| | | |task||task| |
+| +----++----+ | | +----++----+ | | +----++----+ |
++--------------+ +--------------+ +--------------+ ...
+</code></pre>
+
+<p>基本的に few masters + many slaves の構成です。task は slaves の上で走ります。
+master はオファーによりアプリケーション(フレームワーク)に対して CPU, メモリの
+リソースをシェア出来ます。リソースは slave ID, resource1: amount1,
+resource2, amount2, &hellip; といった配列を含みます。master はポリシに従いそれぞれ
+のフレームワークに対してリソースをどれだけ提供するか決定します。プラグイン形式
+で様々なポリシを取り込む仕組みになっています。</p>
+
+<p>mesos は zookeeper により HA を組むことが出来ます。1つの active master と複数
+(もしくは1つの) stand-by master(s) の構成です。active を投票するため zookeeper
+のアルゴリズムが用いられます。</p>
+
+<p>mesos-master を起動する際に下記のパラメータを渡すとmulti masters の構成が組め
+ます。</p>
+
+<pre><code>--zk=zk://host1:port1/path,host2:port2/path,...
+</code></pre>
+
+<p>それに対して multi slaves に対しては下記のパラータを渡します。</p>
+
+<pre><code>--master=zk://host1:port1/path,host2:port2/path,...
+</code></pre>
+
+<h2 id="ネットワークの分断">ネットワークの分断</h2>
+
+<p>ネットワークの分断により様々な事象が発生します。幾つかのパターンによる動きにつ
+いて見ていきます。</p>
+
+<ul>
+<li>slave が master と分断された場合</li>
+</ul>
+
+<p>ヘルスチェックが失敗。master は slave のことを &lsquo;deactivated&rsquo; と判断しその
+slave に分配した task を LOST とします。</p>
+
+<ul>
+<li>master に再接続出来ない場合</li>
+</ul>
+
+<p>&lsquo;deactivated&rsquo; となった slave が master に再接続出来ない場合、シャットダウンの
+指示が送られる</p>
+
+<ul>
+<li>slave が zookeeper と分断された場合</li>
+</ul>
+
+<p>master がいない状態となり、再び master の投票が行われ active master が現れるま
+で master からの指示を拒否する</p>
+
+<h2 id="リソースのオファ">リソースのオファ</h2>
+
+<pre><code>+-------------------+
+|     framework     |
+|    +----+----+    |
+|    |job1|job2|    |
+|    +----+----+    |
+|     scheduler     |
++-------------------+
+~(2)                |(3)
+|                   ~
++-------------------+
+|    mesos-master   |
+| allocation module |
++-------------------+
+~(1)                |(4)
+|                   ~
++-------------------+
+|    mesos-slave    |
+|      executor     |
+|    +----+----+    |
+|    |task|task|    |
+|    +----+----+    |
++-------------------+
+</code></pre>
+
+<p>リソースのオファの流れについて。</p>
+
+<ul>
+<li>(1) mesos-slave が空きの CPU, Mem の状況(4cpus,4g mem)を mesos-mater に伝える。</li>
+<li>(2) mesos-master はそのリソース空き状況を framework に対して伝える</li>
+<li>(3) framework の scheduler は mesos-mater に対して mesos-slave の上で動かすべ
+き2個のタスクについて伝える。1個めは 2cpus, 1g mem。2個めは 1cpus, 2g memと。</li>
+<li>(4) master は task を slave に対して伝える。結果 1cpu, 1gb mem がアロケートさ
+れない状況だが、それについては別の framework に対してアロケートすることとな
+る。</li>
+</ul>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>このクラスタ自体が1つの OS かのような動きを取ることが見て取れます。Mesos の上
+で Hadoop, Spark などを稼働させることが出来るそうですが、次回、私は docker を動
+かしてみたいと思っています。</p>
+
+<p><a href="http://mesosphere.io/2013/09/26/docker-on-mesos/">http://mesosphere.io/2013/09/26/docker-on-mesos/</a></p>
+
+<p>ここが参考になります。</p>
+
+<p>駆け足でしたが、以上です。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/09/13/chef-kibana-elasticsearch-fluentd/"
+                class="button big previous">Chef で kibana &#43; elasticsearch &#43; fluentd デプロイしてみた</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/09/29/devops-day-tokyo-2013-report/"
+                class="button big next">DevOps Day Tokyo 2013 参加レポート</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/09\/28\/mesos-architecture-number-1\/';
+    var disqus_title = 'Mesos アーキテクチャ #1';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/09\/28\/mesos-architecture-number-1\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

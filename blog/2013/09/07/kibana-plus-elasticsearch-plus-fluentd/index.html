@@ -1,0 +1,897 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Kibana &#43; ElasticSearch &#43; fluentd を試してみた</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Kibana &#43; ElasticSearch &#43; fluentd を試してみた"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目 に止まるようになってきました。 ElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。バックエ ンドに Logstash を使って&hellip; と思ってたのですが最近よく聞くようになった fluentd をそろそろ真面目に使いたい！ということで、今回は Kibana &#43; ElasticSearch &#43; fluentd の組み合わせでログ解析システムを組む方法をメモしておきます。 参考にさせて頂いた URL http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html 前提の環境 OS : Ubuntu 12.04 Precise (同じ方法で 13.04 Raring でも出来ました) 必要なパッケージインストール 下記のパッケージを事前にインストールします。 % sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk 手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても 構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。 ElasticSearch のインストール 下記のサイトより ElasticSearch をダウンロードします。 http://www.elasticsearch.org/download/ 現時点 (2013/09/07) で最新のバージョンは 0.90.3 でした。 % wget https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-0.90.3.deb % sudo dpkg -i elasticsearch-0.90.3.deb % sudo service elasticsearch start Kibana のインストール Kibana をダウンロードして Gemfile にしたがって必要なモノをインストールします。 % git clone --branch=kibana-ruby https://github.com/rashidkpc/Kibana.git % sudo gem install bundler % cd Kibana % sudo bundle install % sudo gem install tzinfo-data KibanaConfig.rb の KibanaHost はリスンアドレスになるので 0.0.0.0 に修正sます。 KibanaHost = &#39;0.0.0.0&#39; Kibana を起動します。 % ruby kibana.rb == Sinatra/1.4.3 has taken the stage on 5601 for development with backup from Thin &gt;&gt; Thin web server (v1.5.1 codename Straight Razor) &gt;&gt; Maximum connections set to 1024 &gt;&gt; Listening on 0.0.0.0:5601, CTRL&#43;C to stop fluentd のインストール fluentd を下記の通りインストールします。 % sudo -i % curl -L http://toolbelt.treasure-data.com/sh/install-ubuntu-precise.sh | sh /etc/td-agent/td-agent.conf を下記の通りに修正します。サンプルで Apache のログ を ElasticSearch に飛ばす設定にします。 &lt;source&gt; type tail format apache path /var/log/apache2/access.log tag kibana01.apache.access &lt;/source&gt; &lt;match *.apache.*&gt; index_name adminpack type_name apache type elasticsearch include_tag_key true tag_key @log_name host 10.0.1.8 port 9200 logstash_format true flush_interval 3s &lt;/match&gt; host パラメータは環境に合わせて設定します。 fluentd を起動します。 % sudo service td-agent start Apache のインストール システムに必要なわけではありませんが、サンプルで Apache のログを fluentd 経由 で飛ばして Kibana で確認したいのでインストールします。 % sudo apt-get install apache2 % sudo chown -R td-agent /var/log/apache2 ファイルのオーナを td-agent にする必要がありました。 ブラウザでアクセス Apache2 のポート 80 にブラウザでアクセスし、その後 ポート 5601 にアクセスする と Kibana の画面が表示されます。ポート 80 のアクセスに応じて結果が出力されます。 {% img /pix/kibana-cap.png %} まとめ LogStash でも今度試してみたい。 あと API をどう叩くかは.."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Kibana &#43; ElasticSearch &#43; fluentd を試してみた" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目 に止まるようになってきました。 ElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。バックエ ンドに Logstash を使って&hellip; と思ってたのですが最近よく聞くようになった fluentd をそろそろ真面目に使いたい！ということで、今回は Kibana &#43; ElasticSearch &#43; fluentd の組み合わせでログ解析システムを組む方法をメモしておきます。 参考にさせて頂いた URL http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html 前提の環境 OS : Ubuntu 12.04 Precise (同じ方法で 13.04 Raring でも出来ました) 必要なパッケージインストール 下記のパッケージを事前にインストールします。 % sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk 手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても 構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。 ElasticSearch のインストール 下記のサイトより ElasticSearch をダウンロードします。 http://www.elasticsearch.org/download/ 現時点 (2013/09/07) で最新のバージョンは 0.90.3 でした。 % wget https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-0.90.3.deb % sudo dpkg -i elasticsearch-0.90.3.deb % sudo service elasticsearch start Kibana のインストール Kibana をダウンロードして Gemfile にしたがって必要なモノをインストールします。 % git clone --branch=kibana-ruby https://github.com/rashidkpc/Kibana.git % sudo gem install bundler % cd Kibana % sudo bundle install % sudo gem install tzinfo-data KibanaConfig.rb の KibanaHost はリスンアドレスになるので 0.0.0.0 に修正sます。 KibanaHost = &#39;0.0.0.0&#39; Kibana を起動します。 % ruby kibana.rb == Sinatra/1.4.3 has taken the stage on 5601 for development with backup from Thin &gt;&gt; Thin web server (v1.5.1 codename Straight Razor) &gt;&gt; Maximum connections set to 1024 &gt;&gt; Listening on 0.0.0.0:5601, CTRL&#43;C to stop fluentd のインストール fluentd を下記の通りインストールします。 % sudo -i % curl -L http://toolbelt.treasure-data.com/sh/install-ubuntu-precise.sh | sh /etc/td-agent/td-agent.conf を下記の通りに修正します。サンプルで Apache のログ を ElasticSearch に飛ばす設定にします。 &lt;source&gt; type tail format apache path /var/log/apache2/access.log tag kibana01.apache.access &lt;/source&gt; &lt;match *.apache.*&gt; index_name adminpack type_name apache type elasticsearch include_tag_key true tag_key @log_name host 10.0.1.8 port 9200 logstash_format true flush_interval 3s &lt;/match&gt; host パラメータは環境に合わせて設定します。 fluentd を起動します。 % sudo service td-agent start Apache のインストール システムに必要なわけではありませんが、サンプルで Apache のログを fluentd 経由 で飛ばして Kibana で確認したいのでインストールします。 % sudo apt-get install apache2 % sudo chown -R td-agent /var/log/apache2 ファイルのオーナを td-agent にする必要がありました。 ブラウザでアクセス Apache2 のポート 80 にブラウザでアクセスし、その後 ポート 5601 にアクセスする と Kibana の画面が表示されます。ポート 80 のアクセスに応じて結果が出力されます。 {% img /pix/kibana-cap.png %} まとめ LogStash でも今度試してみたい。 あと API をどう叩くかは.." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/" />
+
+
+<meta property="og:updated_time" content="2013-09-07T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Kibana &#43; ElasticSearch &#43; fluentd を試してみた">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目 に止まるようになってきました。 ElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。バックエ ンドに Logstash を使って&hellip; と思ってたのですが最近よく聞くようになった fluentd をそろそろ真面目に使いたい！ということで、今回は Kibana &#43; ElasticSearch &#43; fluentd の組み合わせでログ解析システムを組む方法をメモしておきます。 参考にさせて頂いた URL http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html 前提の環境 OS : Ubuntu 12.04 Precise (同じ方法で 13.04 Raring でも出来ました) 必要なパッケージインストール 下記のパッケージを事前にインストールします。 % sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk 手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても 構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。 ElasticSearch のインストール 下記のサイトより ElasticSearch をダウンロードします。 http://www.elasticsearch.org/download/ 現時点 (2013/09/07) で最新のバージョンは 0.90.3 でした。 % wget https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-0.90.3.deb % sudo dpkg -i elasticsearch-0.90.3.deb % sudo service elasticsearch start Kibana のインストール Kibana をダウンロードして Gemfile にしたがって必要なモノをインストールします。 % git clone --branch=kibana-ruby https://github.com/rashidkpc/Kibana.git % sudo gem install bundler % cd Kibana % sudo bundle install % sudo gem install tzinfo-data KibanaConfig.rb の KibanaHost はリスンアドレスになるので 0.0.0.0 に修正sます。 KibanaHost = &#39;0.0.0.0&#39; Kibana を起動します。 % ruby kibana.rb == Sinatra/1.4.3 has taken the stage on 5601 for development with backup from Thin &gt;&gt; Thin web server (v1.5.1 codename Straight Razor) &gt;&gt; Maximum connections set to 1024 &gt;&gt; Listening on 0.0.0.0:5601, CTRL&#43;C to stop fluentd のインストール fluentd を下記の通りインストールします。 % sudo -i % curl -L http://toolbelt.treasure-data.com/sh/install-ubuntu-precise.sh | sh /etc/td-agent/td-agent.conf を下記の通りに修正します。サンプルで Apache のログ を ElasticSearch に飛ばす設定にします。 &lt;source&gt; type tail format apache path /var/log/apache2/access.log tag kibana01.apache.access &lt;/source&gt; &lt;match *.apache.*&gt; index_name adminpack type_name apache type elasticsearch include_tag_key true tag_key @log_name host 10.0.1.8 port 9200 logstash_format true flush_interval 3s &lt;/match&gt; host パラメータは環境に合わせて設定します。 fluentd を起動します。 % sudo service td-agent start Apache のインストール システムに必要なわけではありませんが、サンプルで Apache のログを fluentd 経由 で飛ばして Kibana で確認したいのでインストールします。 % sudo apt-get install apache2 % sudo chown -R td-agent /var/log/apache2 ファイルのオーナを td-agent にする必要がありました。 ブラウザでアクセス Apache2 のポート 80 にブラウザでアクセスし、その後 ポート 5601 にアクセスする と Kibana の画面が表示されます。ポート 80 のアクセスに応じて結果が出力されます。 {% img /pix/kibana-cap.png %} まとめ LogStash でも今度試してみたい。 あと API をどう叩くかは..">
+
+
+<meta itemprop="dateModified" content="2013-09-07T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="285">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f&text=Kibana%20%2b%20ElasticSearch%20%2b%20fluentd%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f&title=Kibana%20%2b%20ElasticSearch%20%2b%20fluentd%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f&title=Kibana%20%2b%20ElasticSearch%20%2b%20fluentd%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f&title=Kibana%20%2b%20ElasticSearch%20%2b%20fluentd%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/">Kibana &#43; ElasticSearch &#43; fluentd を試してみた</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-09-07'>
+            September 7, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f&text=Kibana%20%2b%20ElasticSearch%20%2b%20fluentd%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f&title=Kibana%20%2b%20ElasticSearch%20%2b%20fluentd%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f&title=Kibana%20%2b%20ElasticSearch%20%2b%20fluentd%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f&title=Kibana%20%2b%20ElasticSearch%20%2b%20fluentd%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f09%2f07%2fkibana-plus-elasticsearch-plus-fluentd%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch
+を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目
+に止まるようになってきました。</p>
+
+<p>ElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。バックエ
+ンドに Logstash を使って&hellip; と思ってたのですが最近よく聞くようになった fluentd
+をそろそろ真面目に使いたい！ということで、今回は Kibana + ElasticSearch +
+fluentd の組み合わせでログ解析システムを組む方法をメモしておきます。</p>
+
+<h2 id="参考にさせて頂いた-url">参考にさせて頂いた URL</h2>
+
+<p><a href="http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html">http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html</a></p>
+
+<h2 id="前提の環境">前提の環境</h2>
+
+<ul>
+<li>OS : Ubuntu 12.04 Precise (同じ方法で 13.04 Raring でも出来ました)</li>
+</ul>
+
+<h2 id="必要なパッケージインストール">必要なパッケージインストール</h2>
+
+<p>下記のパッケージを事前にインストールします。</p>
+
+<pre><code class="language-bash">% sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk
+</code></pre>
+
+<p>手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても
+構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。</p>
+
+<h2 id="elasticsearch-のインストール">ElasticSearch のインストール</h2>
+
+<p>下記のサイトより ElasticSearch をダウンロードします。</p>
+
+<p><a href="http://www.elasticsearch.org/download/">http://www.elasticsearch.org/download/</a></p>
+
+<p>現時点 (2013/09/07) で最新のバージョンは 0.90.3 でした。</p>
+
+<pre><code class="language-bash">% wget https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-0.90.3.deb
+% sudo dpkg -i elasticsearch-0.90.3.deb
+% sudo service elasticsearch start
+</code></pre>
+
+<h2 id="kibana-のインストール">Kibana のインストール</h2>
+
+<p>Kibana をダウンロードして Gemfile にしたがって必要なモノをインストールします。</p>
+
+<pre><code class="language-bash">% git clone --branch=kibana-ruby https://github.com/rashidkpc/Kibana.git
+% sudo gem install bundler
+% cd Kibana
+% sudo bundle install
+% sudo gem install tzinfo-data
+</code></pre>
+
+<p>KibanaConfig.rb の KibanaHost はリスンアドレスになるので 0.0.0.0 に修正sます。</p>
+
+<pre><code class="language-bash">KibanaHost = '0.0.0.0'
+</code></pre>
+
+<p>Kibana を起動します。</p>
+
+<pre><code class="language-bash">% ruby kibana.rb
+== Sinatra/1.4.3 has taken the stage on 5601 for development with backup from Thin
+&gt;&gt; Thin web server (v1.5.1 codename Straight Razor)
+&gt;&gt; Maximum connections set to 1024
+&gt;&gt; Listening on 0.0.0.0:5601, CTRL+C to stop
+</code></pre>
+
+<h2 id="fluentd-のインストール">fluentd のインストール</h2>
+
+<p>fluentd を下記の通りインストールします。</p>
+
+<pre><code class="language-bash">% sudo -i
+% curl -L http://toolbelt.treasure-data.com/sh/install-ubuntu-precise.sh | sh
+</code></pre>
+
+<p>/etc/td-agent/td-agent.conf を下記の通りに修正します。サンプルで Apache のログ
+を ElasticSearch に飛ばす設定にします。</p>
+
+<pre><code class="language-xml">&lt;source&gt;
+  type tail
+  format apache
+  path /var/log/apache2/access.log
+  tag kibana01.apache.access
+&lt;/source&gt;
+
+&lt;match *.apache.*&gt;
+  index_name adminpack
+  type_name apache
+  type elasticsearch
+  include_tag_key true
+  tag_key @log_name
+  host 10.0.1.8
+  port 9200
+  logstash_format true
+  flush_interval 3s
+&lt;/match&gt;
+</code></pre>
+
+<p>host パラメータは環境に合わせて設定します。</p>
+
+<p>fluentd を起動します。</p>
+
+<pre><code class="language-bash">% sudo service td-agent start
+</code></pre>
+
+<h2 id="apache-のインストール">Apache のインストール</h2>
+
+<p>システムに必要なわけではありませんが、サンプルで Apache のログを fluentd 経由
+で飛ばして Kibana で確認したいのでインストールします。</p>
+
+<pre><code class="language-bash">% sudo apt-get install apache2
+% sudo chown -R td-agent /var/log/apache2
+</code></pre>
+
+<p>ファイルのオーナを td-agent にする必要がありました。</p>
+
+<h2 id="ブラウザでアクセス">ブラウザでアクセス</h2>
+
+<p>Apache2 のポート 80 にブラウザでアクセスし、その後 ポート 5601 にアクセスする
+と Kibana の画面が表示されます。ポート 80 のアクセスに応じて結果が出力されます。</p>
+
+<p>{% img /pix/kibana-cap.png %}</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>LogStash でも今度試してみたい。
+あと API をどう叩くかは..</p>
+
+<p><a href="http://www.elasticsearch.org/guide/reference/api/">http://www.elasticsearch.org/guide/reference/api/</a></p>
+
+<p>にリファレンスがあるので、時間を見つけてやってみる。Apache 以外のログ転送につ
+いては fluentd を詳細に知る必要があるので、そちらも時間を見つけてやってみる。
+kibana.rb を起動するもっと良い方法がないかも調べないと。</p>
+
+<p>2013.09.08追記</p>
+
+<p>@nora96o さんに「Kibana3 使うと幸せになれますよ！」と教えて頂いて早速 Kibana3
+も試してみました。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/">http://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/</a></p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/09/01/hurricane-electric-vyatta-ipv6/"
+                class="button big previous">Hurricane Electric &#43; Vyatta で宅内 IPv6 化</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/"
+                class="button big next">Kibana3 &#43; elasticsearch &#43; fluentd を試した</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/09\/07\/kibana-plus-elasticsearch-plus-fluentd\/';
+    var disqus_title = 'Kibana \x2b ElasticSearch \x2b fluentd を試してみた';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/09\/07\/kibana-plus-elasticsearch-plus-fluentd\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

@@ -1,0 +1,1089 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>OpenStack Havana を Chef でデプロイ</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="OpenStack Havana を Chef でデプロイ"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 毎度お馴染みになった OpenStack の Chef によるデプロイですが、今回は OpenStack Havana 構成を Chef でデプロイする方法についてです。使用するのは今回も rcbops/chef-cookbooks です。ブランチは &lsquo;havana&rsquo; を用います。 早速ですが構成について。4.1.2 辺りからだと思うのですが構成の前提が物理ネットワー ク4つを前提にし始めました。public, external (VM) を別ける必要が出てきました。 通信の特性も異なるので (public は public API を。external は VM 用) 、別けるの が得策かもしれません。 構成 &#43;--------------&#43;------------------------------------------------------- external | | &#43;--------------&#43;--(-----------&#43;--(-----------&#43;--------------&#43;---------------------------- public | | | | | | | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | controller | | network | | network | | compute | | compute | | workstation|"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="OpenStack Havana を Chef でデプロイ" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 毎度お馴染みになった OpenStack の Chef によるデプロイですが、今回は OpenStack Havana 構成を Chef でデプロイする方法についてです。使用するのは今回も rcbops/chef-cookbooks です。ブランチは &lsquo;havana&rsquo; を用います。 早速ですが構成について。4.1.2 辺りからだと思うのですが構成の前提が物理ネットワー ク4つを前提にし始めました。public, external (VM) を別ける必要が出てきました。 通信の特性も異なるので (public は public API を。external は VM 用) 、別けるの が得策かもしれません。 構成 &#43;--------------&#43;------------------------------------------------------- external | | &#43;--------------&#43;--(-----------&#43;--(-----------&#43;--------------&#43;---------------------------- public | | | | | | | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | controller | | network | | network | | compute | | compute | | workstation|" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/" />
+
+
+<meta property="og:updated_time" content="2013-11-17T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="OpenStack Havana を Chef でデプロイ">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 毎度お馴染みになった OpenStack の Chef によるデプロイですが、今回は OpenStack Havana 構成を Chef でデプロイする方法についてです。使用するのは今回も rcbops/chef-cookbooks です。ブランチは &lsquo;havana&rsquo; を用います。 早速ですが構成について。4.1.2 辺りからだと思うのですが構成の前提が物理ネットワー ク4つを前提にし始めました。public, external (VM) を別ける必要が出てきました。 通信の特性も異なるので (public は public API を。external は VM 用) 、別けるの が得策かもしれません。 構成 &#43;--------------&#43;------------------------------------------------------- external | | &#43;--------------&#43;--(-----------&#43;--(-----------&#43;--------------&#43;---------------------------- public | | | | | | | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | controller | | network | | network | | compute | | compute | | workstation|">
+
+
+<meta itemprop="dateModified" content="2013-11-17T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="737">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f&text=OpenStack%20Havana%20%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f&title=OpenStack%20Havana%20%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f&title=OpenStack%20Havana%20%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f&title=OpenStack%20Havana%20%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/">OpenStack Havana を Chef でデプロイ</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-11-17'>
+            November 17, 2013</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f&text=OpenStack%20Havana%20%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f&title=OpenStack%20Havana%20%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f&title=OpenStack%20Havana%20%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f&title=OpenStack%20Havana%20%e3%82%92%20Chef%20%e3%81%a7%e3%83%87%e3%83%97%e3%83%ad%e3%82%a4" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f17%2fopenstack-havana-chef-deploy%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>毎度お馴染みになった OpenStack の Chef によるデプロイですが、今回は OpenStack
+Havana 構成を Chef でデプロイする方法についてです。使用するのは今回も
+rcbops/chef-cookbooks です。ブランチは &lsquo;havana&rsquo; を用います。</p>
+
+<p>早速ですが構成について。4.1.2 辺りからだと思うのですが構成の前提が物理ネットワー
+ク4つを前提にし始めました。public, external (VM) を別ける必要が出てきました。
+通信の特性も異なるので (public は public API を。external は VM 用) 、別けるの
+が得策かもしれません。</p>
+
+<h2 id="構成">構成</h2>
+
+<pre><code>                  +--------------+------------------------------------------------------- external
+                  |              |
++--------------+--(-----------+--(-----------+--------------+---------------------------- public
+|              |  |           |  |           |              |
++------------+ +------------+ +------------+ +------------+ +------------+ +------------+
+| controller | |  network   | |  network   | |  compute   | |  compute   | | workstation|
++------------+ +------------+ +------------+ +------------+ +------------+ +------------+
+|              |  |           |  |           |  |           |  |           |
++--------------+--(-----------+--(-----------+--(-----------+--(-----------+------------- management
+                  |              |              |              |
+                  +--------------+--------------+--------------+------------------------- guest
+</code></pre>
+
+<h4 id="上記の構成の特徴">上記の構成の特徴</h4>
+
+<ul>
+<li>4つの物理ネットワークを前提</li>
+<li>public ネットワーク : 外部 API 用ネットワーク</li>
+<li>external ネットワーク : インスタンス外部接続用ネットワーク</li>
+<li>guest ネットワーク : インスタンス内部用ネットワーク</li>
+<li>management ネットワーク : 各コンポーネント接続用ネットワーク</li>
+<li>public, external のみグローバルネットワーク</li>
+<li>controller : 2 nics, network : 4 nics, compute : 3nics の構成</li>
+<li>controller はシングル構成</li>
+<li>network ノードは台数拡張可能, agent 単位でノード間移動可能</li>
+<li>compute ノードも台数拡張可能</li>
+<li>workstation は chef-repo の所在地, management ネットワークに所属</li>
+</ul>
+
+<h2 id="各ノードの準備">各ノードの準備</h2>
+
+<p>OS インストール後、各ノードのネットワークインターフェースの設定を下記の通り行っ
+てください。また LVM を使うのであれば cinder ボリュームの設定も必要になってきます。</p>
+
+<h4 id="controller-ノード">controller ノード</h4>
+
+<p>2 nics を下記の通り設定します。</p>
+
+<ul>
+<li>eth0 を public ネットワークに。gateway をこのインターフェースに設定</li>
+<li>eth1 を guest ネットワークに。gateway はなし</li>
+</ul>
+
+<p>/etc/network/interfaces の例</p>
+
+<pre><code>auto eth0
+iface eth0 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    gateway &lt;gateway&gt;
+    dns-nameservers &lt;dns_cache_server&gt;
+    dns-search &lt;domain&gt;
+
+auto eth1
+iface eth1 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+</code></pre>
+
+<p>/dev/sdb を cinder 用ディスクデバイスとします。</p>
+
+<pre><code class="language-bash">% sudo pvcreate /dev/sdb
+% sudo vgcreate cinder-volumes /dev/sdb
+</code></pre>
+
+<h4 id="network-ノード">network ノード</h4>
+
+<p>4 nics を下記の通り設定します。up route で仮想ネットワークへのルーティングを書
+いてあげると、network ノードから直接仮想ネットワーク上のインスタンスへ通信する
+ことが可能です。最初は書かなくても OK です。</p>
+
+<pre><code>auto eth0
+iface eth0 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    dns-nameservers &lt;dns_cache_server&gt;
+    dns-search &lt;domain&gt;
+
+auto eth1
+iface eth1 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+
+auto eth2
+iface eth2 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    gateway 10.200.10.1
+    dns-nameservers 8.8.8.8 8.8.4.4
+    dns-search cpi.ad.jp
+
+auto eth3
+iface eth3 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    # 仮想ネットワークへのルーティング
+    # up route add -net &lt;virtual_net_cidr&gt; gw &lt;neutron_gw&gt;
+    # up route add -net &lt;virtual_net_cidr&gt; gw &lt;neutron_gw&gt;
+</code></pre>
+
+<h4 id="compute-ノード">compute ノード</h4>
+
+<p>3 nics を下記の通り設定します。</p>
+
+<pre><code>auto eth0
+iface eth0 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    dns-nameservers &lt;dns_cache_server&gt;
+    dns-search &lt;domain&gt;
+
+auto eth1
+iface eth1 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    
+auto eth2
+iface eth2 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    gateway &lt;gateway&gt;
+    dns-nameservers &lt;dns_cache_server&gt;
+    dns-search &lt;domain&gt;
+</code></pre>
+
+<h2 id="cookbooks-roles-environments-等の準備">Cookbooks, Roles, Environments 等の準備</h2>
+
+<p>下記の操作は全て workstation ノードからの操作です。
+また chef のインストールや chef サーバの構築方法については割愛します。</p>
+
+<p>rcbops/chef-cookbooks を取得します。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git
+% cd chef-cookbooks
+% git checkout -b havana remotes/origin/havana
+% # .chef 配下の準備割愛。各 Chef サーバ環境に合わせる
+% git submodule init
+% git submodule sync
+% git submodule update
+% knife cookbook upload -o cookbooks -a
+% knife role from file roles/*.rb
+</code></pre>
+
+<p>今回の構成用の environment を生成します。それぞれの環境に合わせて作成してくだ
+さい。生成のコツは各 Cookbooks の attributes を見ながら設定することです。
+生成した json ファイルを environments ディレクトリ配下に配置します。</p>
+
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;havana-neutron&quot;,
+  &quot;description&quot;: &quot;&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;package_component&quot;: &quot;havana&quot;,
+    &quot;osops_networks&quot;: {
+      &quot;management&quot;: &quot;10.200.10.0/24&quot;,
+      &quot;public&quot;: &quot;10.200.9.0/24&quot;,
+      &quot;nova&quot;: &quot;10.200.10.0/24&quot;
+    },
+    &quot;nova&quot;: {
+      &quot;config&quot;: {
+        &quot;use_single_default_gateway&quot;: false,
+        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
+        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
+      },
+      &quot;network&quot;: {
+        &quot;provider&quot;: &quot;neutron&quot;,
+        &quot;network_type&quot;: &quot;vlan&quot;
+      },
+      &quot;apply_patches&quot;: true,
+      &quot;libvirt&quot;: {
+        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
+        &quot;virt_type&quot;: &quot;kvm&quot;
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;nova&quot;
+      },
+      &quot;services&quot;: {
+        &quot;novnc-proxy&quot;: {
+          &quot;network&quot;: &quot;public&quot;
+        },
+        &quot;ec2-admin&quot;: {
+          &quot;network&quot;: &quot;management&quot;
+        }
+      }
+    },
+    &quot;cinder&quot;: {
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;cinder&quot;
+      }
+    },
+    &quot;keystone&quot;: {
+      &quot;admin_user&quot;: &quot;admin&quot;,
+      &quot;tenants&quot;: [
+        &quot;admin&quot;,
+        &quot;service&quot;
+      ],
+      &quot;users&quot;: {
+        &quot;admin&quot;: {
+          &quot;password&quot;: &quot;secrete&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [
+              &quot;admin&quot;
+            ]
+          }
+        },
+        &quot;demo&quot;: {
+          &quot;password&quot;: &quot;demo&quot;,
+          &quot;default_tenant&quot; : &quot;service&quot;,
+          &quot;roles&quot;: {
+            &quot;service&quot;: [ &quot;service&quot; ]
+          }
+        }
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;keystone&quot;
+      }
+    },
+    &quot;horizon&quot;: {
+      &quot;theme&quot;: &quot;Rackspace&quot;,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;horizon&quot;
+      },
+      &quot;endpoint_type&quot; : &quot;publicURL&quot;,
+      &quot;endpoint_scheme&quot; : &quot;http&quot;
+    },
+    &quot;mysql&quot;: {
+      &quot;root_network_acl&quot;: &quot;%&quot;,
+      &quot;allow_remote_root&quot;: true,
+      &quot;server_root_password&quot;: &quot;secrete&quot;,
+      &quot;server_repl_password&quot;: &quot;secrete&quot;,
+      &quot;server_debian_password&quot;: &quot;secrete&quot;
+    },
+    &quot;monitoring&quot;: {
+      &quot;procmon_provider&quot;: &quot;monit&quot;,
+      &quot;metric_provider&quot;: &quot;collectd&quot;
+    },
+    &quot;glance&quot;: {
+      &quot;images&quot;: [
+        &quot;precise&quot;, &quot;cirros&quot;
+      ],
+      &quot;image&quot;: {
+      },
+      &quot;image_upload&quot;: false,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;glance&quot;
+      }
+    },
+    &quot;neutron&quot;: {
+      &quot;service_pass&quot;: &quot;neutron&quot;,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;neutron&quot;
+      }
+    },
+    &quot;developer_mode&quot;: false
+  }
+}
+</code></pre>
+
+<p>environment ファイルの chef サーバへのアップロード。</p>
+
+<pre><code class="language-bash">% knife environment from file environments/havana-neutron.json
+</code></pre>
+
+<h2 id="knife-bootstrap-によるデプロイ">knife bootstrap によるデプロイ</h2>
+
+<p>下記の通り knife bootstrap することで各ノードをデプロイします。</p>
+
+<p>controller ノードのデプロイ。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;controller_ipaddr&gt; -N &lt;controller_name&gt; \
+  -r 'role[single-controller]','role[cinder-volume]' \
+  -E havana-neutron -x &lt;username&gt; --sudo
+</code></pre>
+
+<p>network ノードのデプロイ。台数分デプロイしてください。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;network_ipaddr&gt; -N &lt;network_name&gt; \
+  -r 'role[single-network-node]','recipe[nova-network::neutron-l3-agent]' \
+  -E neutron-havana -x &lt;username&gt; --sudo
+</code></pre>
+
+<p>compute ノードのデプロイ。台数分デプロイしてください。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;compute_ipaddr&gt; -N &lt;compute_name&gt; \
+  -r 'role[single-compute]' \
+  -E havana-neutron -x &lt;username&gt; --sudo
+</code></pre>
+
+<h2 id="openvswitch-の物理-nic-とブリッジインタフェースマッピング作業">openvswitch の物理 NIC とブリッジインタフェースマッピング作業</h2>
+
+<p>各ノードで下記の通り物理 NIC とブリッジのマッピング作業を行ってください。操作
+は必ず management ネットワークを介して行うようにしましょう。その他のネットワー
+クから操作すると通信が途絶える可能性があります。</p>
+
+<p>network ノード</p>
+
+<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
+% sudo ovs-vsctl add-port br-ex eth3
+</code></pre>
+
+<p>compute ノード</p>
+
+<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
+</code></pre>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>havana の roles にはコアプロジェクトのコンポーネントが入っています。つまり
+ceilometer と heat も上記のデプロイで入ってきます。ceilometer に関して公式のド
+キュメントではデータ格納用 DB として mongodb が記されていますが、ここでは
+mysqld 上に格納する構成になっていました。これは個人的には非常に助かります。
+また、compute ノードから controller ノードの public api を叩く必要が出てきて、
+compute ノードにも public ネットワーク用の NIC を足しましたが、こうするべきな
+のかどうかは今後考えてみます。理想は management ネットワークを介することですが
+attributes の調整でけではうまくいきませんでした。&rsquo;havana&rsquo; ブランチはまだ開発が
+進んでいるので改善されるかもしれません。コントリビュートするのも手だと思います。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/"
+                class="button big previous">第2回 Elasticsearch 勉強会参加レポート</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/11/26/vyatta-timemachine-netatalk/"
+                class="button big next">Vyatta で Mac 用 TimeMachine サーバ兼ファイルサーバを構築！</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/11\/17\/openstack-havana-chef-deploy\/';
+    var disqus_title = 'OpenStack Havana を Chef でデプロイ';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/11\/17\/openstack-havana-chef-deploy\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

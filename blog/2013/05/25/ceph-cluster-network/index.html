@@ -1,0 +1,982 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Ceph クラスターネットワーク構成</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Ceph クラスターネットワーク構成"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 Ceph を運用する上で考慮しなければいけないのがトラフィックの負荷です。特に OSD 同士のレプリケーション・ハートビートには相当トラフィックの負荷が掛かることが想 像出来ます。 このため MDS, MON の通信に影響を与えないよう、OSD レプリケーション・ハートビー トのためのネットワークを別に設けるのがベストプラクティスな構成の様です。このネッ トワークのことをクラスターネットワークと Ceph 的に言うそうです。 こんな接続になります。 &#43;------&#43; |Client| &#43;------&#43; | &#43;-------&#43;-------&#43;-------&#43;-------&#43;------ public network | | | | | &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; | MON | | MDS | | OSD | | OSD | | OSD | &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; | | | ----------------&#43;-------&#43;-------&#43;------ cluster network 上図の様に MON, MDS は public ネットワークを介し OSD のレプリケーション・ハー トビートのみ cluster ネットワークを介します。Client と MDS との通信に影響を与 えない構成になります。 今回はその様な構成を ceph-deploy を使って構築する方法を書いていきます。前提と なるホストとプロセスとネットワークの関係は下記の図の通りです。 &#43;----------&#43; | &#39;client&#39; | &#43;----------&#43; | &#43;---------------&#43;---------------&#43;------------- public network | | | |10.0.0.11 | 10.0.0.12 | 10.0.0.13 &#43;----------&#43; &#43;----------&#43; &#43;----------&#43; | &#39;ceph01&#39; | | &#39;ceph02&#39; | | &#39;ceph03&#39; | | osd | | osd | | osd | | mon | | mon | | mon | | mds | | mds | | mds | &#43;----------&#43; &#43;----------&#43; &#43;----------&#43; |172.18.0.11 | 172.18.0.12 | 172.18.0.13 | | | &#43;---------------&#43;---------------&#43;------------- cluster network 特徴としては.."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Ceph クラスターネットワーク構成" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 Ceph を運用する上で考慮しなければいけないのがトラフィックの負荷です。特に OSD 同士のレプリケーション・ハートビートには相当トラフィックの負荷が掛かることが想 像出来ます。 このため MDS, MON の通信に影響を与えないよう、OSD レプリケーション・ハートビー トのためのネットワークを別に設けるのがベストプラクティスな構成の様です。このネッ トワークのことをクラスターネットワークと Ceph 的に言うそうです。 こんな接続になります。 &#43;------&#43; |Client| &#43;------&#43; | &#43;-------&#43;-------&#43;-------&#43;-------&#43;------ public network | | | | | &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; | MON | | MDS | | OSD | | OSD | | OSD | &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; | | | ----------------&#43;-------&#43;-------&#43;------ cluster network 上図の様に MON, MDS は public ネットワークを介し OSD のレプリケーション・ハー トビートのみ cluster ネットワークを介します。Client と MDS との通信に影響を与 えない構成になります。 今回はその様な構成を ceph-deploy を使って構築する方法を書いていきます。前提と なるホストとプロセスとネットワークの関係は下記の図の通りです。 &#43;----------&#43; | &#39;client&#39; | &#43;----------&#43; | &#43;---------------&#43;---------------&#43;------------- public network | | | |10.0.0.11 | 10.0.0.12 | 10.0.0.13 &#43;----------&#43; &#43;----------&#43; &#43;----------&#43; | &#39;ceph01&#39; | | &#39;ceph02&#39; | | &#39;ceph03&#39; | | osd | | osd | | osd | | mon | | mon | | mon | | mds | | mds | | mds | &#43;----------&#43; &#43;----------&#43; &#43;----------&#43; |172.18.0.11 | 172.18.0.12 | 172.18.0.13 | | | &#43;---------------&#43;---------------&#43;------------- cluster network 特徴としては.." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/" />
+
+
+<meta property="og:updated_time" content="2013-05-25T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Ceph クラスターネットワーク構成">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 Ceph を運用する上で考慮しなければいけないのがトラフィックの負荷です。特に OSD 同士のレプリケーション・ハートビートには相当トラフィックの負荷が掛かることが想 像出来ます。 このため MDS, MON の通信に影響を与えないよう、OSD レプリケーション・ハートビー トのためのネットワークを別に設けるのがベストプラクティスな構成の様です。このネッ トワークのことをクラスターネットワークと Ceph 的に言うそうです。 こんな接続になります。 &#43;------&#43; |Client| &#43;------&#43; | &#43;-------&#43;-------&#43;-------&#43;-------&#43;------ public network | | | | | &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; | MON | | MDS | | OSD | | OSD | | OSD | &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; | | | ----------------&#43;-------&#43;-------&#43;------ cluster network 上図の様に MON, MDS は public ネットワークを介し OSD のレプリケーション・ハー トビートのみ cluster ネットワークを介します。Client と MDS との通信に影響を与 えない構成になります。 今回はその様な構成を ceph-deploy を使って構築する方法を書いていきます。前提と なるホストとプロセスとネットワークの関係は下記の図の通りです。 &#43;----------&#43; | &#39;client&#39; | &#43;----------&#43; | &#43;---------------&#43;---------------&#43;------------- public network | | | |10.0.0.11 | 10.0.0.12 | 10.0.0.13 &#43;----------&#43; &#43;----------&#43; &#43;----------&#43; | &#39;ceph01&#39; | | &#39;ceph02&#39; | | &#39;ceph03&#39; | | osd | | osd | | osd | | mon | | mon | | mon | | mds | | mds | | mds | &#43;----------&#43; &#43;----------&#43; &#43;----------&#43; |172.18.0.11 | 172.18.0.12 | 172.18.0.13 | | | &#43;---------------&#43;---------------&#43;------------- cluster network 特徴としては..">
+
+
+<meta itemprop="dateModified" content="2013-05-25T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="499">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f&text=Ceph%20%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%83%bc%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af%e6%a7%8b%e6%88%90&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f&title=Ceph%20%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%83%bc%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af%e6%a7%8b%e6%88%90" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f&title=Ceph%20%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%83%bc%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af%e6%a7%8b%e6%88%90" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f&title=Ceph%20%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%83%bc%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af%e6%a7%8b%e6%88%90" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/">Ceph クラスターネットワーク構成</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-05-25'>
+            May 25, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f&text=Ceph%20%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%83%bc%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af%e6%a7%8b%e6%88%90&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f&title=Ceph%20%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%83%bc%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af%e6%a7%8b%e6%88%90" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f&title=Ceph%20%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%83%bc%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af%e6%a7%8b%e6%88%90" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f&title=Ceph%20%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%83%bc%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af%e6%a7%8b%e6%88%90" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f05%2f25%2fceph-cluster-network%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>Ceph を運用する上で考慮しなければいけないのがトラフィックの負荷です。特に OSD
+同士のレプリケーション・ハートビートには相当トラフィックの負荷が掛かることが想
+像出来ます。</p>
+
+<p>このため MDS, MON の通信に影響を与えないよう、OSD レプリケーション・ハートビー
+トのためのネットワークを別に設けるのがベストプラクティスな構成の様です。このネッ
+トワークのことをクラスターネットワークと Ceph 的に言うそうです。</p>
+
+<p>こんな接続になります。</p>
+
+<pre><code>                +------+
+                |Client|
+                +------+
+                |
++-------+-------+-------+-------+------ public network
+|       |       |       |       |
++-----+ +-----+ +-----+ +-----+ +-----+
+| MON | | MDS | | OSD | | OSD | | OSD |
++-----+ +-----+ +-----+ +-----+ +-----+
+                |       |       |
+----------------+-------+-------+------ cluster network
+</code></pre>
+
+<p>上図の様に MON, MDS は public ネットワークを介し OSD のレプリケーション・ハー
+トビートのみ cluster ネットワークを介します。Client と MDS との通信に影響を与
+えない構成になります。</p>
+
+<p>今回はその様な構成を ceph-deploy を使って構築する方法を書いていきます。前提と
+なるホストとプロセスとネットワークの関係は下記の図の通りです。</p>
+
+<pre><code>+----------+
+| 'client' |
++----------+
+|
++---------------+---------------+------------- public network
+|               |               |
+|10.0.0.11      | 10.0.0.12     | 10.0.0.13
++----------+    +----------+    +----------+
+| 'ceph01' |    | 'ceph02' |    | 'ceph03' |
+|    osd   |    |    osd   |    |    osd   |
+|    mon   |    |    mon   |    |    mon   |
+|    mds   |    |    mds   |    |    mds   |
++----------+    +----------+    +----------+
+|172.18.0.11    | 172.18.0.12   | 172.18.0.13
+|               |               |
++---------------+---------------+------------- cluster network
+</code></pre>
+
+<p>特徴としては..</p>
+
+<ul>
+<li>ceph01-03 には NIC を2本出します。</li>
+<li>ceph01-03 の全てに MDS, MON, OSD を稼働させます。</li>
+<li>ceph01-03:/dev/sdb を Ceph 用のディスクとして利用</li>
+</ul>
+
+<p>となります。</p>
+
+<h2 id="ceph-deply-を利用するまでの準備">Ceph-Deply を利用するまでの準備</h2>
+
+<p>今回は ceph-deploy を利用し Ceph を構築する。そのための準備として下記の操作を
+行う。</p>
+
+<h4 id="ceph-サーバ-ceph01-03-の準備">ceph サーバ (ceph01-03) の準備</h4>
+
+<p>&lsquo;ceph&rsquo; ユーザの作成を行う。</p>
+
+<pre><code>% ssh user@ceph-server
+% sudo useradd -d /home/ceph -m ceph
+% sudo passwd ceph
+</code></pre>
+
+<p>sudoers の設定を行う。</p>
+
+<pre><code>% echo &quot;ceph ALL = (root) NOPASSWD:ALL&quot; | sudo tee /etc/sudoers.d/ceph
+% sudo chmod 0440 /etc/sudoers.d/ceph
+</code></pre>
+
+<h4 id="client-の準備">&lsquo;client&rsquo; の準備</h4>
+
+<p>ホスト &lsquo;client&rsquo; で準備をします。この準備によって ceph-deploy をそれぞれのホス
+トに対して実行できるようになります。</p>
+
+<p>まず、ノンパスフレーズの SSH 公開鍵・秘密鍵を生成します。</p>
+
+<pre><code>client% ssh-keygen
+Generating public/private key pair.
+Enter file in which to save the key (/ceph-client/.ssh/id_rsa):
+Enter passphrase (empty for no passphrase):
+Enter same passphrase again:
+Your identification has been saved in /ceph-client/.ssh/id_rsa.
+Your public key has been saved in /ceph-client/.ssh/id_rsa.pub.
+</code></pre>
+
+<p>公開鍵をターゲットホスト (ceph01-03) に配置します。</p>
+
+<pre><code>client% ssh-copy-id ceph@ceph01
+client% ssh-copy-id ceph@ceph02
+client% ssh-copy-id ceph@ceph03
+</code></pre>
+
+<p>ceph-deploy を取得します。</p>
+
+<pre><code>client% git clone https://github.com/ceph/ceph-deploy.git ~/ceph-deploy
+</code></pre>
+
+<p>&lsquo;python-virtualenv&rsquo; パッケージをインストールする。</p>
+
+<pre><code>client% sudo apt-get update ; sudo apt-get -y install python-virtualenv
+</code></pre>
+
+<p>ceph-deploy をブートストラップする</p>
+
+<pre><code>client% cd ~/ceph-deploy
+client% ./bootstrap
+</code></pre>
+
+<p>PATH を通す。下記は例。</p>
+
+<pre><code>client% ${EDITOR} ~/.zshrc
+export PATH=$HOME/ceph-deploy:$PATH
+</code></pre>
+
+<p>ホスト名の解決を行う。</p>
+
+<pre><code>cephclient% sudo ${EDITOR} /etc/hosts
+10.0.0.11    ceph01
+10.0.0.12    ceph02
+10.0.0.13    ceph03
+</code></pre>
+
+<p>これで準備は OK です。ceph-deploy が使える状態になりました。</p>
+
+<h2 id="ceph-構築手順">Ceph 構築手順</h2>
+
+<p>今回は ceph01-03 の3台構成を構築しますが、すべての操作はホスト &lsquo;client&rsquo; から行
+います。先ほど配置した公開鍵によってそれぞれのホストに対して操作が行えます。</p>
+
+<p>ceph サーバ・クライアント間通信のための鍵の生成とコンフィギュレーションの生成
+を下記の操作にて行う。</p>
+
+<pre><code>client% ceph-deploy new ceph01 ceph02 ceph03
+</code></pre>
+
+<p>上記の操作で生成されたカレントディレクトリ上の ceph.conf に対して下記の記述を
+追記する。</p>
+
+<pre><code>public network = 10.0.0.0/24
+cluster network = 172.18.0.0/24
+
+[mon.a]
+    host = ceph01
+    mon addr = 10.0.0.11:6789
+
+[mon.b]
+    host = ceph02
+    mon addr = 10.0.0.12:6789
+
+[mon.c]
+    host = ceph03
+    mon addr = 10.0.0.13:6789
+
+[osd.0]
+    public addr = 10.0.0.11
+    cluster addr = 172.18.0.11
+
+[osd.1
+    public addr = 10.0.0.12
+    cluster addr = 172.18.0.12
+
+[osd.2]
+    public addr = 10.0.0.13
+    cluster addr = 172.18.0.13
+
+[mds.a]
+    host = ceph01
+
+[mds.a]
+    host = ceph02
+
+[mds.a]
+    host = ceph03
+</code></pre>
+
+<p>次の操作でそれぞれのホストに対して ceph の公開しているレポジトリを参照させ
+ceph をインストールしていきます。</p>
+
+<pre><code>cephclient% ceph-deploy install ceph01 ceph02 ceph03
+</code></pre>
+
+<p>MON daemon のデプロイを行う。</p>
+
+<pre><code>cephclient% ceph-deploy mon create ceph01 ceph02 ceph03
+</code></pre>
+
+<p>鍵のデプロイを行う。Ceph サーバ間・クライアント間での共有鍵です。1 Cluster
+に対して1つの鍵を保有することになります。</p>
+
+<pre><code>cephclient% ceph-deploy gatherkeys ceph01 ceph02 ceph03
+</code></pre>
+
+<p>OSD daemon のデプロイを行う。下記の様にパーティションを指定しなければツールが
+自動でパーティショニングを行なってくれます。</p>
+
+<pre><code>cephclient% ceph-deploy osd create create ceph01:/dev/sdb ceph02:/dev/sdb ceph03:/dev/sdb
+</code></pre>
+
+<p>MDS deamon のデプロイを行う。</p>
+
+<pre><code>cephcleint% ceph-deploy mds create ceph01 ceph02 ceph03
+</code></pre>
+
+<p>完成です。</p>
+
+<p>全てのホスト ceph01-03 にて MON, MDS, OSD のプロセスが稼働しているのが確認出来
+ると思います。実際にどれかのホストの MDS に対して client から ceph ストレージ
+をマウントしてみてください。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>通常のフラットなネットワーク上にデプロイする方法とほぼ同じ操作で構築出来ます。
+異なるところは ceph.conf に対して設定を追加した点です。また、それぞれのホスト
+への ceph のインストールの時にオプションが渡せます。&ndash;testing と渡せば RC 版の
+ceph が利用できます。今回の様に何も記さなければ stable 版の利用ということにな
+ります。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/05/19/openstack-ceph/"
+                class="button big previous">OpenStack &#43; Ceph 連携</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/06/12/chef-ruby-code/"
+                class="button big next">Chef を Ruby コード内で利用する</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/05\/25\/ceph-cluster-network\/';
+    var disqus_title = 'Ceph クラスターネットワーク構成';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/05\/25\/ceph-cluster-network\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+
