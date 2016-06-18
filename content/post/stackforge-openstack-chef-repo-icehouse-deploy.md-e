@@ -1,0 +1,747 @@
++++
+title = "stackforge/openstack-chef-repo で OpenStack Icehouse デプロイ"
+date = "2014-04-25"
+slug = "2014/04/25/stackforge-openstack-chef-repo-icehouse-deploy"
+Categories = []
++++
+こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
+
+またまた OpenStack のデプロイをどうするか？についてです。
+
+今まで自分の中では Rackspace Private Cloud で使われている Rackspace 管理の
+rcbops/chef-cookbooks が今現在使うならベストの選択だと思っていました。これは内
+部で Chef が使われていてしかも Cookbooks が Github 上で公開されています。
+Apache ライセンスで使えるので、サービス構築にも使えちゃうというモノ。
+
+先日、ある OpenStack コアデベロッパーの方から「jedipunkz さん、やっぱり rcbops
+がいいですか？運営とかどうなっているんでしょう？マージの規準とかどうなのかな？」
+と質問受けました。確かにマージの基準は Rackspace Private Cloud がベースになり
+ますし、管理しているエンジニアの一覧を見ていると Rackspace 社のエンジニアがメ
+インですし、今後どうなるのか分からない...。
+
+逃げ道は用意したほうが良さそう。
+
+ということで、以前自分も暑かったことのある StackForge の openstack-chef-repo
+を久々に使ってみました。Icehouse 構成がこの時点で既に組めるようになっていて、
+以前よりだい〜ぶ完成度増した感があります。今回は nova-network 構成を作ってみた
+のですが、Neutron 構成ももちろん出来そうなので後に調べてまた公開したいです。
+
+StackForge とは
+----
+
+StackForge は OpenStack のデプロイ・CI の仕組みとして公式に用いられているもの。
+公式サイトは下記の場所にある。
+
+<http://ci.openstack.org/stackforge.html>
+
+StackForge の openstack-chef-repo は下記の場所にある。
+
+<https://github.com/stackforge/openstack-chef-repo>
+
+openstack-chef-repo はまだ 'stable/icehouse' ブランチが生成されていない。が直
+ちに master からブランチが切られる様子。
+
+目的
+----
+
+StackForge の openstack-chef-repo を用いて Icehouse リリース版の OpenStack を
+デプロイするための方法を記す。今回は未だ 'stable/icehouse' ブランチが無いので
+master ブランチを用いて Icehouse リリース版 OpenStack を構築する。
+
+構成
+----
+
+構成はこんな感じ。
+
+```
+   +-----------------+
+   |    GW Router    |
++--+-----------------+
+|  |
+|  +-------------------+-------------------+--------------------------------------
+|  |eth0               |eth0               |eth0                      VM Network (fixed)
+|  +-----------------+ +-----------------+ +-----------------+ +-----------------+ 
+|  | Controller Node | |  Compute Node   | |  Compute Node   | | Chef Workstation|
+|  +-----------------+ +-----------------+ +-----------------+ +-----------------+ 
+|  |eth1               |eth1               |eth1               |  
++--+-------------------+-------------------+-------------------+------------------
+                                                                 API/Management Network
+```
+
+* Nova-Network 構成
+* 今回は fixed network 用の NIC を eth0(物理 NIC) にアサイン
+* fixed network 用のネットワークをパブリックにする
+* API/Management Network 側に全ての API を出す。またここから The Internet に迂回出来るようにする
+* VM Network も GW を介して The Internet へ迂回出来るようにする
+* 全ての操作は 'Chef Workstaion' から行う
+* Compute ノードはキャパシティの許す限り何台でも可
+
+IP 一覧 (この記事での例)
+
+* Controller : 10.200.9.46 (eth0), 10.200.10.46 (eth1)
+* Compute    : 10.200.9.47 (eth0), 10.200.10.47 (eth1)
+* Compute    : 10.200.9.48 (eth0), 10.200.10.48 (eth1)
+
+
+手順
+----
+
+openstack-chef-repo をワークステーションノード上で取得する。
+
+``` bash
+% git clone https://github.com/stackforge/openstack-chef-repo.git
+% cd openstack-chef-repo
+```
+
+Berksfile があるのでこれを用いて Chef Cookbooks を取得する。
+
+``` bash
+% berks install --path=./cookbooks
+```
+
+Roles, Cookbooks を Chef サーバにアップロードする。
+
+``` bash
+% knife cookbook upload -o cookbooks -a
+% knife role from file roles/*.rb
+```
+
+1 Environment に対して 1 OpenStack クラスタである。今回構築するクラスタのため
+の Environment を作成する。
+
+下記を environments/icehouse-nova-network.rb として生成する。
+
+``` json
+name "icehouse-nova-network"
+description "separated nodes environment"
+
+override_attributes(
+    "release" => "icehouse",
+    "osops_networks" => {
+      "management" => "10.200.10.0/24",
+      "public" => "10.200.10.0/24",
+      "nova" => "10.200.10.0/24"
+    },
+    "mysql" => {
+      "bind_address" => "0.0.0.0",
+      "root_network_acl" => "%",
+      "allow_remote_root" => true,
+      "server_root_password" => "secrete",
+      "server_repl_password" => "secrete",
+      "server_debian_password" => "secrete"
+    },
+    "nova" => {
+      "network" => {
+        "fixed_range" => "172.18.0.0/24",
+        "public_interface" => "eth0"
+      }
+    },
+    "rabbitmq" => {
+      "address" => "10.200.10.46",
+      "port" => "5672"
+    },
+    "openstack" => {
+      "developer_mode" => true,
+      "compute" => {
+        "rabbit" => {
+          "host" => "10.200.10.46"
+        },
+        "novnc_proxy" => {
+          "bind_interface" => "eth1"
+        },
+        "libvirt" => {
+          "bind_interface" => "eth1"
+        },
+        "network" => {
+          "fixed_range" => "10.200.9.0/24"
+        },
+        "rabbit_server_chef_role" => "os-ops-messaging",
+        "networks" => [
+        {
+          "label" => "private",
+          "ipv4_cidr" => "10.200.9.0/24",
+          "num_networks" => "1",
+          "network_size" => "255",
+          "bridge" => "br200",
+          "bridge_dev" => "eth0",
+          "dns1" => "8.8.8.8",
+          "dns2" => "8.8.4.4",
+          "multi_host" => "T"
+        }
+        ]
+      },
+      "identity" => {
+        "bind_interface" => "eth1",
+        "users" => {
+          "demo" => {
+            "password" => "demo",
+            "default_tenant" => "service",
+            "roles" => {
+              "Member" => [ "Member" ]
+            }
+          }
+        }
+      },
+      "image" => {
+        "api" => {
+          "bind_interface" => "eth1"
+        },
+        "debug" => true,
+        "identity_service_chef_role" => "os-identity",
+        "rabbit_server_chef_role" => "os-ops-messaging",
+        "registry" => {
+          "bind_interface" => "eth1"
+        },
+        "syslog" => {
+          "use" => false
+        },
+        "upload_image" => {
+          "cirros" => "http://hypnotoad/cirros-0.3.0-x86_64-disk.img",
+        },
+        "upload_images" => [
+          "cirros"
+        ]
+      },
+      "network" => {
+        "api" => {
+          "bind_interface" => "eth1",
+        }
+      },
+      "db" => {
+        "bind_interface" => "eth1",
+        "compute" => {
+          "host" => "10.200.10.46"
+        },
+        "identity" => {
+          "host" => "10.200.10.46"
+        },
+        "image" => {
+          "host" => "10.200.10.46"
+        },
+        "network" => {
+          "host" => "10.200.10.46"
+        },
+        "volume" => {
+          "host" => "10.200.10.46"
+        },
+        "dashboard" => {
+          "host" => "10.200.10.46"
+        }
+      },
+      "mq" => {
+        "bind_interface" => "eth1",
+        "host" => "10.200.10.46",
+        "user" => "guest",
+        "vhost" => "/nova",
+        "servers" => "10.200.10.46",
+        "compute" => {
+          "service_type" => "rabbitmq",
+          "rabbit" => {
+            "host" => "10.200.10.46",
+            "port" => "5672"
+          }
+        },
+        "block-storage" => {
+          "service_type" => "rabbitmq",
+          "rabbit" => {
+            "host" => "10.200.10.46",
+            "port" => "5672"
+          }
+        }
+      },
+      "endpoints" => {
+        "compute-api-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8774",
+          "path" => "/v2/%(tenant_id)s"
+        },
+        "compute-api" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8774",
+          "path" => "/v2/%(tenant_id)s"
+        },
+        "compute-ec2-admin-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8773",
+          "path" => "/services/Admin"
+        },
+        "compute-ec2-admin" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8773",
+          "path" => "/services/Admin"
+        },
+        "compute-ec2-api-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8773",
+          "path" => "/services/Cloud"
+        },
+        "compute-ec2-api" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8773",
+          "path" => "/services/Cloud"
+        },
+        "compute-xvpvnc-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "6081",
+          "path" => "/console"
+        },
+        "compute-xvpvnc" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "6081",
+          "path" => "/console"
+        },
+        "compute-novnc-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "6080",
+          "path" => "/vnc_auto.html"
+        },
+        "compute-novnc" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "6080",
+          "path" => "/vnc_auto.html"
+        },
+        "compute-vnc" => {
+          "host" => "0.0.0.0",
+          "scheme" => "http",
+          "port" => "6080",
+          "path" => "/vnc_auto.html"
+        },
+        "image-api-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "9292",
+          "path" => "/v2"
+        },
+        "image-api" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "9292",
+          "path" => "/v2"
+        },
+        "image-registry-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "9191",
+          "path" => "/v2"
+        },
+        "image-registry" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "9191",
+          "path" => "/v2"
+        },
+        "identity-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "5000",
+          "path" => "/v2.0"
+        },
+        "identity-api" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "5000",
+          "path" => "/v2.0"
+        },
+        "identity-admin" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "35357",
+          "path" => "/v2.0"
+        },
+        "volume-api-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8776",
+          "path" => "/v1/%(tenant_id)s"
+        },
+        "block-storage-api" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8776",
+          "path" => "/v1/%(tenant_id)s"
+        },
+        "telemetry-api-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8777",
+          "path" => "/v1"
+        },
+        "telemetry-api" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8777",
+          "path" => "/v1"
+        },
+        "network-api-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "9696",
+          "path" => "/v2"
+        },
+        "network-api" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "9696",
+          "path" => "/v2"
+        },
+        "orchestration-api-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8004",
+          "path" => "/v1/%(tenant_id)s"
+        },
+        "orchestration-api" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8004",
+          "path" => "/v1/%(tenant_id)s"
+        },
+        "orchestration-api-cfn-bind" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8000",
+          "path" => "/v1"
+        },
+        "orchestration-api-cfn" => {
+          "host" => "10.200.10.46",
+          "scheme" => "http",
+          "port" => "8000",
+          "path" => "/v1"
+        },
+        "mq" => {
+          "port" => "5672"
+        }
+      }
+    }
+)
+```
+
+生成した environment を Chef サーバにアップロードする。
+
+``` bash
+% knife environment from file environments/icehouse-nova-network.rb
+```
+
+Spiceweasel をインストールする。Spiceweasel は yml ファイルを元に knife の操作
+を書き出して、またそれを一気に実行することが出来るツールです。
+
+``` bash
+% gem install spiceweasel --no-ri --no-rdoc
+% rbenv rehash
+```
+
+infrastructure.yml を下記の通り修正する。
+
+``` bash
+berksfile:
+    options: '--no-freeze --halt-on-frozen'
+
+cookbooks:
+- apache2:
+- apt:
+- aws:
+- build-essential:
+- chef_handler:
+- database:
+- dmg:
+- erlang:
+- git:
+- homebrew:
+- iptables:
+- logrotate:
+- memcached:
+- mysql:
+- openssl:
+- openstack-block-storage:
+- openstack-common:
+- openstack-compute:
+- openstack-dashboard:
+- openstack-identity:
+- openstack-image:
+- openstack-network:
+- openstack-object-storage:
+- openstack-ops-messaging:
+- openstack-ops-database:
+- openstack-orchestration:
+- openstack-telemetry:
+- pacman:
+- postgresql:
+- python:
+- rabbitmq:
+- runit:
+- selinux:
+- statsd:
+- windows:
+- xfs:
+- yum:
+- yum-epel:
+- yum-erlang_solutions:
+
+roles:
+- allinone-compute:
+- os-compute-single-controller:
+- os-base:
+- os-ops-caching:
+- os-ops-messaging:
+- os-ops-database:
+- os-block-storage:
+- os-block-storage-api:
+- os-block-storage-scheduler:
+- os-block-storage-volume:
+- os-client:
+- os-compute-api:
+- os-compute-api-ec2:
+- os-compute-api-metadata:
+- os-compute-api-os-compute:
+- os-compute-cert:
+- os-compute-conductor:
+- os-compute-scheduler:
+- os-compute-setup:
+- os-compute-vncproxy:
+- os-compute-worker:
+- os-dashboard:
+- os-identity:
+- os-image:
+- os-image-api:
+- os-image-registry:
+- os-image-upload:
+- os-telemetry-agent-central:
+- os-telemetry-agent-compute:
+- os-telemetry-api:
+- os-telemetry-collector:
+- os-network:
+- os-network-server:
+- os-network-l3-agent:
+- os-network-dhcp-agent:
+- os-network-metadata-agent:
+- os-network-openvswitch:
+- os-object-storage:
+- os-object-storage-account:
+- os-object-storage-container:
+- os-object-storage-management:
+- os-object-storage-object:
+- os-object-storage-proxy:
+
+environments:
+- icehouse-nova-network:
+
+nodes:
+- 10.200.10.46:
+    run_list: role[os-compute-single-controller]
+    options: -N opstall01 -E icehouse-nova-network --sudo -x thirai
+- 10.200.10.47:
+    run_list: role[os-compute-worker]
+    options: -N opstall02 -E icehouse-nova-network --sudo -x thirai
+- 10.200.10.48:
+    run_list: role[os-compute-worker]
+    options: -N opstall03 -E icehouse-nova-network --sudo -x thirai
+```
+
+※ nodes: 項にはデプロイしたいノードと Roles を割り当て列挙する。
+
+spiceweasel を実行する。この時点ではこれから実行されるコマンドの一覧が表示され
+るのみである。
+
+``` bash
+% spiceweasel infrastructure.yml
+berks upload --no-freeze --halt-on-frozen -b ./Berksfile
+knife cookbook upload apache2 apt aws build-essential chef_handler database dmg erlang git homebrew iptables logrotate memcached mysql openssl openstack-block-storage openstack-common openstack-compute openstack-dashboard openstack-identity openstack-image openstack-network openstack-object-storage openstack-ops-messaging openstack-ops-database openstack-orchestration openstack-telemetry pacman postgresql python rabbitmq runit selinux statsd windows xfs yum yum-epel yum-erlang_solutions
+knife environment from file separated.rb
+knife role from file allinone-compute.rb os-base.rb os-block-storage-api.rb os-block-storage-scheduler.rb os-block-storage-volume.rb os-block-storage.rb os-client.rb os-compute-api-ec2.rb os-compute-api-metadata.rb os-compute-api-os-compute.rb os-compute-api.rb os-compute-cert.rb os-compute-conductor.rb os-compute-scheduler.rb os-compute-setup.rb os-compute-single-controller.rb os-compute-vncproxy.rb os-compute-worker.rb os-dashboard.rb os-identity.rb os-image-api.rb os-image-registry.rb os-image-upload.rb os-image.rb os-network-dhcp-agent.rb os-network-l3-agent.rb os-network-metadata-agent.rb os-network-openvswitch.rb os-network-server.rb os-network.rb os-object-storage-account.rb os-object-storage-container.rb os-object-storage-management.rb os-object-storage-object.rb os-object-storage-proxy.rb os-object-storage.rb os-ops-caching.rb os-ops-database.rb os-ops-messaging.rb os-telemetry-agent-central.rb os-telemetry-agent-compute.rb os-telemetry-api.rb os-telemetry-collector.rb
+knife bootstrap 10.200.10.46 -N opstall01 -E separated --sudo -x thirai -r 'role[os-compute-single-controller]'
+knife bootstrap 10.200.10.47 -N opstall02 -E separated --sudo -x thirai -r 'role[os-compute-worker]'
+knife bootstrap 10.200.10.48 -N opstall03 -E separated --sudo -x thirai -r 'role[os-compute-worker]'
+```
+
+-e オプションを付与すると実際にこれらのコマンドが実行される。実行してデプロイを行う。
+
+``` bash
+% spiceweasel -e infrastructure.yml
+```
+
+この時点で、下記の操作も行われる。
+
+* Nova-Network 上に仮想ネットワークの生成
+* OS イメージのダウンロードと登録 (Environment に記したモノ)
+
+Cinder の設定
+----
+
+デプロイ完了したところで cinder-volume プロセスは稼働しているが物理ディスクの
+アサインが済んでいない。これは Chef では指定出来ないので手動で行う。
+
+予め Cinder 用の物理ディスクを Controller ノードに付与する。(ここでは /dev/sdb1)
+
+``` bash
+controller% sudo -i
+controller# pvcreate /dev/sdb1
+controller# vgcreate cinder-volumes /dev/sdb1
+controller# service cinder-volume restart
+```
+
+これで完了。
+
+使ってみる
+-----
+
+ではデプロイした OpenStack を使って仮想マシンを作ってみる。
+
+``` bash
+controller% sudo -i
+controller# source openrc
+controller# nova keypair-add novakey01 > novakey01
+controller# chmod 400 novakey01
+controller# nova boot --image cirros --flavor 1 --key_name novakey01 cirros01
+controller# nova list 
++--------------------------------------+----------+--------+------------+-------------+--------------------+
+| ID                                   | Name     | Status | Task State | Power State | Networks           |
++--------------------------------------+----------+--------+------------+-------------+--------------------+
+| e6687359-1aef-4105-a8db-894600001610 | cirros01 | ACTIVE | -          | Running     | private=10.200.9.2 |
++--------------------------------------+----------+--------+------------+-------------+--------------------+
+controller# ssh -i novakey01 -l cirros 10.200.9.2
+vm# ping www.goo.ne.jp
+```
+
+仮想マシンが生成され The Internet に対して通信が行えたことを確認。
+
+次に仮想ディスクを生成して上記で作成した仮想マシンに付与する。
+
+``` bash
+controller# cinder create --display-name vol01 1
++--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+
+|                  ID                  |  Status   | Display Name | Size | Volume Type | Bootable |             Attached to              |
++--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+
+| 0f3726a0-c2f5-45bc-bcf2-1f6eb746f5c8 | available |    vol02     |  1   |     None    |  false   | b286387c-2311-4134-ab59-850fee3e4650 |
++--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+
+controller# nova volume-attach e6687359-1aef-4105-a8db-894600001610 0f3726a0-c2f5-45bc-bcf2-1f6eb746f5c8 auto
+controller# ssh -i novakey01 -l cirros 10.200.9.2
+vm# mkfs.ext4 /dev/vdb
+vm# mount -t ext4 /dev/vdb /mnt
+vm# df -h | grep mnt
+/dev/vdb        976M  1.3M  908M   1% /mnt
+```
+
+仮想ディスクを仮想マシンに付与しマウントできることを確認出来た。
+
+まとめ
+-----
+
+今回は Nova-Network 構成の Icehouse を構築出来た。Nova-Network は Havana でサポート終了との話が延期
+になっていることは聞いていたが Icehouse でもしっかり動いている。また後に Neutron 構成も調査を行う。
+Neutron 構成は下記の Environments を参考にすると動作するかもしれない。
+
+<https://github.com/stackforge/openstack-chef-repo/blob/master/environments/vagrant-multi-neutron.json>
+
+キーとなるのは、
+
+``` json
+    "network": {
+      "debug": "True",
+      "dhcp": {
+        "enable_isolated_metadata": "True"
+      },
+      "metadata": {
+        "nova_metadata_ip": "192.168.3.60"
+      },
+      "openvswitch": {
+        "tunnel_id_ranges": "1:1000",
+        "enable_tunneling": "True",
+        "tenant_network_type": "gre",
+        "local_ip_interface": "eth2"
+      },
+      "api": {
+        "bind_interface": "eth1"
+      }
+    },
+```
+
+この辺り。
+
+残っている問題点
+----
+
+VNC コンソールにアクセス出来ない。調べたのですが、environment の修正で直せる問
+題ではないように見えました。
+
+cookbooks/openstack-compute/templates/default/nova.conf.rb を確認すると下記の
+ようになっています。
+
+``` ruby
+##### VNCPROXY #####
+novncproxy_base_url=<%= @novncproxy_base_url %>
+xvpvncproxy_base_url=<%= @xvpvncproxy_base_url %>
+
+# This is only required on the server running xvpvncproxy
+xvpvncproxy_host=<%= @xvpvncproxy_bind_host %>
+xvpvncproxy_port=<%= @xvpvncproxy_bind_port %>
+
+# This is only required on the server running novncproxy
+novncproxy_host=<%= @novncproxy_bind_host %>
+novncproxy_port=<%= @novncproxy_bind_port %>
+
+vncserver_listen=<%= @vncserver_listen %>
+vncserver_proxyclient_address=<%= @vncserver_proxyclient_address %>
+```
+
+vncserver_listen, vncserver_proxyclient_address はそれぞれ
+
+* @vncserver_listen
+* @vncserver_proxyclient_address
+
+という変数が格納されることになっている。
+
+では cookbooks/openstack-compute/recipes/nova-common.rb を確認すると、
+
+``` ruby
+template '/etc/nova/nova.conf' do
+  source 'nova.conf.erb'
+  owner node['openstack']['compute']['user']
+  group node['openstack']['compute']['group']
+  mode 00644
+  variables(
+    sql_connection: sql_connection,
+    novncproxy_base_url: novnc_endpoint.to_s,
+    xvpvncproxy_base_url: xvpvnc_endpoint.to_s,
+    xvpvncproxy_bind_host: xvpvnc_bind.host,
+    xvpvncproxy_bind_port: xvpvnc_bind.port,
+    novncproxy_bind_host: novnc_bind.host,
+    novncproxy_bind_port: novnc_bind.port,
+    vncserver_listen: vnc_endpoint.host,
+    vncserver_proxyclient_address: vnc_endpoint.host,
+    以下略
+```
+
+となっている。vncserver_listen, vncserver_proxyclient_address 共に
+vnc_endpoint.host が格納されることになっている。vnc_endpont.host は
+
+``` ruby
+vnc_endpoint = endpoint 'compute-vnc' || {}
+```
+ 
+となっており、Attributes の
+
+``` json
+    "compute-vnc" => {
+      "host" => "0.0.0.0",
+      "scheme" => "http",
+      "port" => "6080",
+      "path" => "/vnc_auto.html"
+    },
+```
+
+の設定が入ることになる。つまり上記のような Attributes だと vncserver_listen, vncserver_proxyclient_address 共に
+'0.0.0.0' のアドレスが controller, compute ノードの双方に入ってしまい、NoVNC が正しく格納しないことになる。
+
+解決したらまたここに更新版を載せたいと思いまーす！
+
+以上です。

@@ -1,0 +1,336 @@
++++
+title = "Swift HA 構成を Chef でデプロイ"
+date = "2013-07-26"
+slug = "2013/07/26/swift-ha-chef-deploy"
+Categories = ["infrastructure"]
++++
+
+こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
+
+最近 Chef で OpenStack をデプロイすることばかりに興味持っちゃって、他のことも
+やらんとなぁと思っているのですが、せっかくなので Swift HA 構成を Chef でデプロ
+イする方法を書きます。
+
+Swift って分散ストレージなのに HA ってなんよ！と思われるかもしれませんが、ご存
+知の様に Swift はストレージノード (accout, object, container) とプロキシノード
+に別れます。今回紹介する方法だとプロキシノードを Keepalived と Haproxy で HA、
+また MySQL も KeepAlived で HA の構成に出来ました。いつものように RackSpace 管
+理の Cookbooks を使っています。
+
+参考資料
+----
+
+<http://www.rackspace.com/knowledge_center/article/openstack-object-storage-configuration>
+
+構成
+----
+
+構成は簡単に記すと下記のようになります。特徴としては...
+
+* swift-proxy01, swift-proxy02 で HA。VRRP + LB な構成。
+* swift-proxy01 で git サーバ稼働。Rings 情報を管理。
+* swift-storageNN がストレージノード
+* OS は Ubuntu server 12.04 
+
+です。
+
+```
+|--------- VRRP + Load Balancer ------|
+
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+
+|  swift-proxy01  | |  swift-proxy02  | | swift-storage01 | | swift-storage02 | | swift-storage03 |
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+
+|                   |                   |                   |                   |
++-------------------+-------------------+-------------------+-------------------+------------------
+|                   |
++-----------------+ +-----------------+
+| chef workstation| |   chef server   |
++-----------------+ +-----------------+
+```
+
+絵は書く意味なかったか...。
+
+手順
+----
+
+#### chef server 構築
+
+例によって Omnibus パッケージを使います。
+
+``` bash
+% wget https://opscode-omnibus-packages.s3.amazonaws.com/ubuntu/12.04/x86_64/chef-server_11.0.8-1.ubuntu.12.04_amd64.deb
+% sudo dpkg -i chef-server_11.0.8-1.ubuntu.12.04_amd64.deb
+% sudo chef-server-ctl reconfigure
+% knife configure -i
+< 適当に答える >
+```
+
+'knife configure -i' で自分用の秘密鍵が生成出来ます。
+
+#### workstation ノードでの準備
+
+ほぼ全ての操作を workstation ノードで行います。knife.rb や秘密鍵の設置等につい
+ては方法を割愛します。このへんはモヤモヤと説明しますが、皆さんならご存知かと思
+いますので..。
+
+github より rackspace 管理の Chef Cookbooks を取得する。
+
+``` bash
+% git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo
+% cd ~/openstack-chef-repo
+```
+
+v.4.0.0 とい現在 (2013/07/25) 最新リリース版をチェックアウトする。
+
+``` bash
+% git checkout v4.0.0
+% git submodule init
+% git submodule sync
+% git submodule update
+```
+
+'chef server' ノードへ Cookbooks をアップロードする
+
+``` bash
+% knife cookbook upload -o cookbooks -a
+```
+
+'chef-server' ノードへ Roles をアップロードする
+
+``` bash
+% knife role from file roles/*rb
+```
+
+今回の構成用の environment 'swift-ha' を用意します。ここでは各 Cookbooks の
+Attributes を上書きし、一つの構成を組みます。Cookbooks 内でこの environment 名
+をキーに検索し自ノードと同環境のノードを見つけ出し、関連付けがされます。
+
+``` json
+{
+  "name": "swift-ha",
+  "description": "",
+  "cookbook_versions": {
+  },
+  "json_class": "Chef::Environment",
+  "chef_type": "environment",
+  "default_attributes": {
+  },
+  "override_attributes": {
+    "package_component": "grizzly",
+    "osops_networks": {
+      "management": "10.0.0.0/24",
+      "public": "10.0.0.0/24",
+      "nova": "10.0.0.0/24",
+      "swift": "10.0.0.0/24"
+    },
+    "keystone": {
+      "admin_user": "admin",
+      "tenants": [
+        "admin",
+        "service"
+      ],
+      "users": {
+        "admin": {
+          "password": "secrete",
+          "roles": {
+            "admin": [
+              "admin"
+            ]
+          }
+        },
+        "demo": {
+          "password": "demo",
+          "default_tenant" : "service",
+          "roles": {
+            "admin": [ "admin" ]
+          }
+        }
+      },
+      "db": {
+        "password": "keystone"
+      }
+    },
+    "mysql": {
+      "root_network_acl": "%",
+      "allow_remote_root": true,
+      "server_root_password": "secrete",
+      "server_repl_password": "secrete",
+      "server_debian_password": "secrete"
+    },
+    "monitoring": {
+      "procmon_provider": "monit",
+      "metric_provider": "collectd"
+    },
+    "vips": {
+      "keystone-admin-api": "10.0.0.11",
+      "keystone-service-api": "10.0.0.11",
+      "keystone-internal-api": "10.0.0.11",
+      "mysql-db": "10.0.0.12",
+      "swift-proxy": "10.0.0.11"
+    },
+    "developer_mode": false,
+    "swift": {
+      "swift_hash": "127005c8ea84",
+      "authmode": "keystone",
+      "authkey": "1f281c71-cf89-5b27-a2ad-ad873d3f2760"
+    }
+  }
+}
+```
+
+生成した environment ファイル 'environments/swift-ha.json' を Chef サーバへアッ
+プロードします。
+
+``` bash
+% knife environment from file environments/swift-ha.json
+```
+
+#### disk デバイスの用意
+
+swift-storageNN で オブジェクト格納用の Disk がある場合はパーティションを作成
+します。追加の Disk が無くても構わないと思います。後に Chef が使用可能な Disk
+デバイスを検知してくれます。ここでは例として /dev/sdb として認識されていること
+を前提に記します。追加の disk が無い場合は /dev/sda6 等、OS インストール時にオ
+ブジェクト格納用のパーティションを用意してもらえば大丈夫です。また GPT なパー
+ティションを切る必要があると思いますので (大きいから) fdisk ではなく gdisk を
+用いましょう。
+
+``` bash
+% swift-storageNN% sudo apt-get update; apt-get -y install gdisk
+% swift-storageNN% sudo gdisk /dev/sdb
+```
+
+#### 各ノードをブートストラップ
+
+いよいよデプロイします。
+
+``` bash
+% knife bootstrap <ip_swift-proxy01> -N swift-proxy01 -r 'role[ha-swift-controller1]' -E swift-ha --sudo -x jedipunkz
+% knife bootstrap <ip_swift-proxy02> -N swift-proxy02 -r 'role[ha-swift-controller2]' -E swift-ha --sudo -x jedipunkz
+% knife bootstrap <ip_swift-storage01> -N swift-storage01 -r \
+'role[swift-object-server]','role[swift-container-server]','role[swift-account-server]' -E swift-ha --sudo -x jedipunkz
+% knife bootstrap <ip_swift-sotrage02> -N swift-storage02 -r \
+'role[swift-object-server]','role[swift-container-server]','role[swift-account-server]' -E swift-ha --sudo -x jedipunkz
+% knife bootstrap <ip_swift-storage03> -N swift-storage03 -r \
+'role[swift-object-server]','role[swift-container-server]','role[swift-account-server]' -E swift-ha --sudo -x jedipunkz
+```
+
+Chef サーバにノード情報が登録されているので各ストレージノードの zone 情報にシー
+ケンシャル番号を付与します。これにより各ノードは自分の zone 情報を Chef サーバ
+から知ることが出来ます。
+
+``` bash
+% knife exec -E "nodes.find(:name => 'swift-storage01') {|n| n.set['swift']['zone'] = '1'; n.save }"
+% knife exec -E "nodes.find(:name => 'swift-storage02') {|n| n.set['swift']['zone'] = '2'; n.save }"
+% knife exec -E "nodes.find(:name => 'swift-storage03') {|n| n.set['swift']['zone'] = '3'; n.save }"
+```
+
+Account, Container, Object に対して適切に割り当てられたか確認を行います。
+
+``` bash
+% knife exec -E 'search(:node,"role:swift-account-server") \
+  { |n| z=n[:swift][:zone]||"not defined"; puts "#{n.name} has the role \
+  role [swift-account-server] and is in swift zone #{z}"; }'
+% knife exec -E 'search(:node,"role:swift-container-server") \
+  { |n| z=n[:swift][:zone]||"not defined"; puts "#{n.name} has the role \
+  [swift-container-server] and is in swift zone #{z}"; }'
+% knife exec -E 'search(:node,"role:swift-object-server") \
+  { |n| z=n[:swift][:zone]||"not defined"; puts "#{n.name} has the role \
+  [swift-object-server] and is in swift zone #{z}"; }'
+```
+
+また、先ほど用意した Swift 用ディスクデバイスを Chef がディスカバ出来るか確認
+を行います。
+
+``` bash
+% knife exec -E \
+  'search(:node,"role:swift-object-server OR \
+  role:swift-account-server \
+  OR role:swift-container-server") \
+  { |n| puts "#{n.name}"; \
+  begin; n[:swift][:state][:devs].each do |d| \
+  puts "\tdevice #{d[1]["device"]}"; \
+  end; rescue; puts \
+  "no candidate drives found"; end; }'
+```
+
+またディスカバされたディスクデバイス /dev/sdb1 が既にマウントされているかどう
+か確認します。
+
+swift-strageNN# df
+
+'swift-proxy01' ノードにて再度 chef-client を実行し /etc/swift/ring-workspace/generate-rings.sh を
+更新する。上記 zone 情報に従って内容が更新される。
+
+``` bash
+swift-proxy01# chef-client
+```
+
+生成された generate-rails.sh を実行。'exit 0' の行をコメントアウトして実行すること。
+
+``` bash
+swift-proxy01# cd /etc/swift/ring-workspace
+swift-proxy01# ./generate-rings.sh
+```
+
+/etc/swift/ring-workstation/rings 配下に Rings ファイルが生成されたはずです。確
+認してみてください。この Rings ファイルを git サーバにプッシュします。git サー
+バは既に 'swift-proxy01' ノード上に構築されています。
+
+``` bash
+swift-proxy01# cd /etc/swift/ring-workspace/rings
+swift-proxy01# git add account.builder container.builder object.builder
+swift-proxy01# git add account.ring.gz container.ring.gz object.ring.gz
+swift-proxy01# git commit -m "initial commit"
+swift-proxy01# git push
+```
+
+git サーバにプッシュされた Rings ファイルを各ノードに配布します。配布の方法は
+各ノードで chef-client を実行することです。これは knife ssh 等を用いても構いま
+せん。
+
+``` bash
+swift-proxy01# chef-client
+swift-proxy02# chef-client
+swift-storage01# chef-client
+swift-storage02# chef-client
+swift-storage03# chef-client
+```
+
+swift-storageNN の計3台が登録されたかどうかを確認します。
+
+``` bash
+swift-proxy# swift-recon --md5
+```
+
+動作確認
+----
+
+動作確認をしましょう。
+
+``` bash
+swift-storage01# source swift-openrc
+swift-storage01# swift post container01
+swift-storage01# echo "test" > test
+swift-storage01# swift upload container01 test
+swift-storage01# swift list
+swift-storage01# swift list container01
+```
+
+また、これらの操作が swift-proxy01, swift-proxy02 の片系を落とした状態でも可能
+かどうかも確認しましょう。
+
+まとめ
+----
+
+swift-proxy 片系の障害時にも読み込み系・書き込み系の操作が可能なことを確認出来
+ました。復旧に関しても MySQL 的な Slave 系 (今回だと swift-proxy02(後からブー
+トストラップしたノード)) に関しては knife bootstrap で出来ます。Master 系の復
+旧は簡単にはいきません。この事態に備えるには Rings 情報のバックアップ (Git レ
+ポジトリバックアップ) と MySQL のダンプの定期的取得が必要になるでしょう。
+
+また、今回 VRRP で HA しているので2台構成になります。Swift プロキシは本来、ノー
+ドを増やすことでより多くのリクエストを受けられる (何がボトルネックになるかで状
+況は変わりますが) 利点があるため、この2台構成がベストかどうかは状況に合わせて
+考えた方が良いかもしれません。この構成の場合、ロードバランサが必要ない点がメリッ
+トだったりします。

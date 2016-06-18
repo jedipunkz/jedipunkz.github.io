@@ -1,0 +1,236 @@
++++
+title = "Ironic でベアメタル OpenStack ！..の一歩手前"
+date = "2013-12-05"
+slug = "2013/12/05/ironic-openstack-beremetal"
+Categories = ["infrastructure"]
++++
+こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
+
+アドベントカレンダーの季節がやって参りました。
+
+Ironic を使って OpenStack でベアメタルサーバを扱いたい！ということで色々とやっ
+ている最中 (今週から始めました..) なのですが、まだまだ incubator プロジェクト
+ということもあって実装が追い付いていなかったりドキュメントも揃っていなかったり
+とシンドい状況ｗ ここ2日程で集めた情報を整理するためにも 2013年 OpenStack アド
+ベントカレンダーに参加させてもらいますー。
+
+参考資料のまとめ
+----
+
+まずは公式 wiki ページ。逆に言うとここに記されている以上の情報は無いんじゃ？あ
+とはコード読め！の世界かも..。
+
+<https://wiki.openstack.org/wiki/Ironic>
+
+devtest_undercloud です。上の資料の中でも手順の中で度々こちらにジャンプしている。
+同じく incubator プロジェクトの TrippleO のデベロッパ用ドキュメントになっている。
+上記の公式 wiki の情報を合わせ読むことで Ironic を使ったデプロイの手順に仕上がります。
+
+<http://docs.openstack.org/developer/tripleo-incubator/devtest_undercloud.html>
+
+ソースコードとドキュメント。あとでドキュメント作成方法を記しますが、こちらを取
+得して作成します。
+
+<https://github.com/openstack/ironic>
+
+ドキュメントサイト。まだ情報が揃っていません。よって上の github から取得したモ
+ノからドキュメントを作る方法を後で書きます。
+
+<http://docs.openstack.org/developer/ironic/>
+
+launchpad サイト。全てのバグ情報やブループリント等が閲覧出来ます。まだ絶賛開発
+中なので読む必要があると思います。
+
+<https://launchpad.net/ironic>
+
+ドキュメントを作る
++++
+
+公式 ドキュメントサイトは一応、上記の通りあるのですが、ドキュメントも絶賛執筆
+中ということで所々抜けがあります。また公式ドキュメントサイトがどのスパンで更新
+されているか分からないので、いち早く情報をゲットしたい場合ドキュメントを作る必
+要があると思います。ということで、その作り方を記していきます。尚、公式 wiki サ
+イトにも手順が載っていますが Vagrant と Apache を用いた方法になっているので、
+普通に Ubuntu サーバが手元にある環境を想定して読み替えながら説明していきます。
+
+必要なパッケージのインストールを行います。
+
+``` bash
+% sudo apt-get update
+% sudo apt-get install -y git python-dev swig libssl-dev python-pip \
+  libmysqlclient-dev libxml2-dev libxslt-dev libxslt1-dev python-mysqldb \
+  libpq-dev
+% sudo pip install virtualenv setuptools-git flake8 tox
+% sudo easy_install nose
+```
+
+ソースコード・ドキュメントを取得します。
+
+``` bash
+% git clone git://github.com/openstack/ironic.git
+```
+
+Sphinx で構成されているのでビルドします。
+
+``` bash
+% cd ironic
+% tox -evenv -- echo 'done'
+% source .tox/venv/bin/activate
+> python setup.ph build_sphinx
+> deactivate
+```
+
+ironic/doc/build/html ディレクトリ配下に HTML のドキュメントが生成されたはずで
+す。これを手元の端末に持ってきて開けばブラウザで最新のドキュメントが閲覧出来ま
+す。
+
+ironic を有効にした devstack による構築
+----
+
+devstack を使って ironic を機能させていきます。私は下記の localrc を用いて
+ironic の試験をしていました。またブランチは 'master' を使います。
+
+``` bash
+% git clone https://github.com/openstack-dev/devstack.git
+% cd devstack
+% ${EDITOR} localrc # 下記の通り
+
+HOST_IP=<your_machine_ip_addr>
+
+LOGFILE=stack.sh.log
+
+ADMIN_PASSWORD=nomoresecrete
+MYSQL_PASSWORD=$ADMIN_PASSWORD
+RABBIT_PASSWORD=$ADMIN_PASSWORD
+SERVICE_PASSWORD=$ADMIN_PASSWORD
+SERVICE_TOKEN=admintoken
+
+disable_service n-obj
+
+# ironic
+enable_service ir-api
+enable_service ir-cond
+
+# use neutron
+disable_service n-net
+enable_service q-svc
+enable_service q-agt
+enable_service q-dhcp
+enable_service q-l3
+enable_service q-meta
+enable_service q-lbaas
+enable_service neutron
+
+ENABLE_TENANT_TUNNELS=True
+
+# heat
+ENABLED_SERVICES+=,heat,h-api,h-api-cfn,h-api-cw,h-eng
+## It would also be useful to automatically download and register VM images that Heat can launch.
+# 64bit image (~660MB)
+IMAGE_URLS+=",http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-x86_64-cfntools.qcow2"
+# 32bit image (~640MB)
+IMAGE_URLS+=",http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-i386-cfntools.qcow2"
+
+# syslog
+SYSLOG=True
+SYSLOG_HOST=$HOST_IP
+SYSLOG_PORT=514
+```
+
+stack.sh を実行します。
+
+``` bash
+% ./stack.sh
+```
+
+Ironic を有効にした OpenStack 環境が出来上がったはずです。
+
+diskimage-builder を使ったイメージ作成
+----
+
+ベアメタルサーバをデプロイするためのイメージを作成します。元々は TrippleO のプ
+ロジェクト内に存在していましたが、現在は git レポジトリが別れています。
+
+先ほど devstack を導入したホストでイメージを作ります。作成には結構時間が掛かります。
+
+``` bash
+% cd ~     
+% git clone https://github.com/openstack/diskimage-builder.git
+% git clone https://github.com/openstack/tripleo-incubator.git
+% git clone https://github.com/openstack/tripleo-image-elements.git
+% git clone https://github.com/openstack/tripleo-heat-templates.git
+% export UNDERCLOUD_DIB_EXTRA_ARGS='ironic-api ironic-conductor'
+% export ELEMENTS_PATH=/home/thirai/tripleo-image-elements/elements
+% ./diskimage-builder/bin/disk-image-create -a amd64 -o ~/undercloud boot-stack \
+  nova-baremetal os-collect-config stackuser dhcp-all-interfaces \
+  neutron-dhcp-agent ${UNDERCLOUD_DIB_EXTRA_ARGS:-} ubuntu 2>&1 | tee /tmp/undercloud.log 
+```
+
+イメージが ~/undercloud.qcow2 が生成されたはずです。作成したイメージを Glance に登録します。
+
+``` bash
+% ~/tripleo-incubator/scripts/load-image undercloud.qcow2
+```
+
+undercloud.yaml と ironic.yaml をマージします。
+
+``` bash
+% cd ~/tripleo-heat-templates
+% make undercloud-vm-ironic.yaml
+```
+
+パスワードの生成と環境変数への読み込みを行います。
+
+``` bash
+% cd ~/tripleo-incubator/scripts/
+% export PATH=$PATH:.
+% ./setup-undercloud-passwords
+% source tripleo-undercloud-passwords
+```
+
+UNDERCLOUD_IRONIC_PASSWORD 環境変数にも読み込みます。
+
+``` bash
+% export UNDERCLOUD_IRONIC_PASSWORD=$(~/tripleo-incubator/scripts/os-make-password)
+```
+
+さて、イメージを利用したベアメタルへの稼働ですが、...
+
+``` bash
+if [ "$DHCP_DRIVER" = "bm-dnsmasq" ]; then
+    UNDERCLOUD_NATIVE_PXE=""
+else
+    UNDERCLOUD_NATIVE_PXE=";NeutronNativePXE=True"
+fi
+
+heat stack-create -f ./tripleo-heat-templates/undercloud-vm-ironic.yaml \
+-P "PowerUserName=$(whoami);\
+AdminToken=${UNDERCLOUD_ADMIN_TOKEN};\
+AdminPassword=${UNDERCLOUD_ADMIN_PASSWORD};\
+GlancePassword=${UNDERCLOUD_GLANCE_PASSWORD};\
+HeatPassword=${UNDERCLOUD_HEAT_PASSWORD};\
+NeutronPassword=${UNDERCLOUD_NEUTRON_PASSWORD};\
+NovaPassword=${UNDERCLOUD_NOVA_PASSWORD};\
+BaremetalArch=${NODE_ARCH}$UNDERCLOUD_NATIVE_PXE" \
+IronicPassword=${UNDERCLOUD_IRONIC_PASSWORD}" \
+undercloud
+```
+
+コケました。...エラーは下記の通り。
+
+```
+TRACE heat.engine.resource Error: Creation of server teststack01-WikiDatabase-5nyiqluilnxn failed: No valid host was found. Exceeded max
+scheduling attempts 3 for instance 733b69df-2b54-44ae-9d61-de766746f21a (500)#0122013-12-03 16:04:14.513 10022 TRACE heat.engine.resource
+```
+
+No Valid Host とな...。うーん。確かに IPMI を積んだベアメタルマシンの情報って
+どこにも記していないんだよなぁ。しかも heat のテンプレート
+(underclound-vm-ironic.yaml) 見てもよく理解していない自分がいる...(´・ω・`)
+
+というか手順にはその周りのこと何も書いていないのでぇすがぁ！...
+
+ということで、まだまだコントリビュートするチャンス満載の状態なので、よかったら
+皆さん参加されませんか !?!?
+
+<https://wiki.openstack.org/wiki/HowToContribute>
+

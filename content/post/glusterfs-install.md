@@ -1,0 +1,222 @@
++++
+title = "GlusterFS の各クラスタタイプ構築"
+date = "2013-10-12"
+slug = "2013/10/12/glusterfs-install"
+Categories = ["infrastructure"]
++++
+こんにちは。@jedipunkz です。
+
+GlusterFS をちょっと前に調べてました。何故かと言うと OpenStack Havana がもうす
+ぐリリースされるのですが、Havana から GlusterFS がサポートされる予定だからです。
+
+この辺りに色々情報が載っています。
+
+<http://www.gluster.org/category/openstack/>
+
+その前に GlusterFS を構築出来ないといけないので、今回はその方法を書いていきま
+す。各クラスタタイプ毎に特徴や構築方法が異なるのでその辺りを重点的に。
+
+
+環境
+----
+
+* Ubuntu Server 12.04.3 LTS
+* PPA レポジトリ利用
+* /dev/sdb を OS 領域とは別の disk としてサーバに追加する
+
+用いる PPA レポジトリ
+----
+
+Ubuntu 12.04.3 LTS の GlusterFS バージョンは 3.2 です。3.4 系が今回使いたかっ
+たので下記の PPA レポジトリを利用させてもらいます。ちゃんと構築するなら自分で
+パッケージを作成することをオススメします。
+
+<https://launchpad.net/~semiosis/+archive/ubuntu-glusterfs-3.4>
+
+準備
+====
+
+ここからの手順は全てのサーバで操作します。
+
+レポジトリの利用方法
+----
+
+``` bash
+% sudo aptitude install python-software-properties
+% sudo add-apt-repository ppa:semiosis/ubuntu-glusterfs-3.4
+% sudo apt-get update
+```
+
+GlusterFS3.4 のインストール
+----
+
+``` bash
+% sudo apt-get install glusterfs-server gluserfs-client
+```
+
+xfsprogs のインストール
+----
+
+glusterfs は xfs を扱うため xfsprogs をインストールする。
+
+``` bash
+% sudo apt-get install xfsprogs
+```
+
+ディスクの準備
+----
+
+``` bash
+% sudo mkfs.xfs -i size=512 /dev/sdb
+% sudo mkdir -p /export/brick1
+% sudo vim /etc/fstab
+/dev/sdb /export/brick1 xfs defaults 1 2 # <- 追記
+% sudo mount -a
+% mount
+```
+
+各クラスタタイプでのマウント方法
+====
+
+ここからの手順はどこか一台のノードで行えば OK です。
+
+
+distributed タイプ
+----
+
+まずはデフォルトとなる distributed のマウント方法。
+
+``` bash
+% sudo gluster peer probe <other_node_ip_addr> ...
+% sudo gluster volume create gv0 <mine_ip_addr>:/export/brick1/sdb <another_node_ip_addr>:/export/brick1/sdb
+% sudo gluster volume start gv0
+% sudo gluster volume info
+Volume Name: gv0
+Type: Distribute
+Volume ID: 803fdd46-4735-444a-99c8-83d1cee172e6
+Status: Started
+Number of Bricks: 2
+Transport-type: tcp
+Bricks:
+Brick1: <mine_ip_addr>:/export/brick1/sdb
+Brick2: <other_ip_addr>:/export/brick1/sdb
+```
+
+マウント行う。どちらのノードに対して行うことが出来る。
+
+``` bash
+% sudo mount -t glusterfs <mine_ip_addr>:/gv0 /mnt
+```
+
+その他のクラスタタイプのマウント方法
+----
+
+replicated の場合...
+
+``` bash
+% sudo gluster volume create gv0 replica 2 <mine_ip_addr>:/export/brick1/sdb \
+  <other_node_ip_addr>:/export/brick1/sdb
+```
+
+striped の場合...
+
+``` bash
+% sudo gluster volume create gv0 stripe 2 <mine_ip_addr>:/export/brick1/sdb \
+  <other_node_ip_addr>:/export/brick1/sdb
+```
+
+distributed replicated の場合...
+
+``` bash
+% sudo gluster volume create dist-repl replica 2 \
+  <mine_ip_addr>:/export/brick1/sdb \
+  <other_ip_addr>:/export/brick1/sdb \
+  <other_ip_addr>:/export/brick1/sdb \
+  <other_ip_addr>:/export/brick1/sdb
+```
+
+striped replicated の場合...
+
+``` bash
+% sudo gluster volume create strip-repl stripe 2 replica 2 \
+  <mine_ip_addr>:/export/brick1/sdb \
+  <other_ip_addr>:/export/brick1/sdb \
+  <other_ip_addr>:/export/brick1/sdb \
+  <other_ip_addr>:/export/brick1/sdb
+```
+
+distributed striped replicated の場合...
+
+``` bash
+% sudo gluster volume create dist-strip-repl stripe 2 replica 2 \
+  <mine_ip_addr>:/export/brick1/sdb \
+  <other_ip_addr>:/export/brick1/sdb \
+  <other_ip_addr>:/export/brick1/sdb \
+  <other_ip_addr>:/export/brick1/sdb
+  <other_ip_addr>:/export/brick1/sdb \
+  <other_ip_addr>:/export/brick1/sdb \
+  <other_ip_addr>:/export/brick1/sdb \
+  <other_ip_addr>:/export/brick1/sdb
+```
+
+各クラスタタイプの特徴
+-----
+
+* distributed
+
+1つのオブジェクトを GlusterFS 上に保管するとオブジェクト単位でどれかのノードに
+対して保管する。よって 'ノード上の disk x ノード数' が合計容量として扱うことが
+出来る。ノード障害の場合にはその該当ノード上の disk に保管されているオブジェク
+トの読み書きは NG 。その他のノード上 disk に保管されているオブジェクトに対して
+は読み書きが正常に行える。
+
+* stripe
+
+1つのオブジェクトをブロック単位で分割し各ノードに保管する。扱える合計容量は
+distributed と同じく 'ノード上の disk x ノード数' となる。障害がどこかのノード
+で発生した場合、全てのオブジェクトの読み書きが行えなくなる。
+
+* replicated
+
+1つのオブジェクトを 2 台のノードに対してミラーリングを行い保管する。障害系の対
+応が可能になる。その分、扱える合計容量は distrubuted/stripe に比べ半分となる。
+
+* distributed replicated
+
+構成イメージ図...
+
+```
++--------+
+| client |
++--------+
+|
++---------------------+
+|                     |
++----------+          +----------+
+|          |          |          |
++--------+ +--------+ +--------+ +--------+
+| node1  | | node2  | | node3  | | node4  |
++--------+ +--------+ +--------+ +--------+
+```
+
+node1, 2 と 3, 4 にて replicated しそれぞれに対して distributed を組む。扱える
+disk 容量は node の持っている disk 容量 x ノード数 / 2 となる。distributed は
+実質、障害系の対応が良くないので distributed を扱うのであれば、この volume
+type が推奨されるものと思われる。
+
+* striped replicated
+
+distributed replicated と同等の構成だがブロック単位でのオブジェクトの保管とな
+る。
+
+まとめ
+----
+
+GlusterFS には一貫性の問題 (disk 容量の一貫性を保つ必要がある) と思っていたが、
+昔の話しらしい。容量のことなる disk をノードに追加しても、それをうまく合計容量
+に合算されるのを確認した。また分散ファイルシステムの美味しいところと冗長性を兼
+ねた構成を組むのが良いと思うので distributed replicated もしくは striped
+replicated を選択するのがオススメ。今回は TCP で扱ったがバージョン 3.4 からは
+Infiniband と組み合わせて RDMA を扱うことが可能。下記の URL が参考になる。
+
+<http://gluster.org/community/documentation/index.php/Gluster_3.2:_Configuring_GlusterFS_to_work_over_InfiniBand>

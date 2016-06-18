@@ -1,0 +1,169 @@
++++
+title = "オブジェクトストレージ minio を使ってみる"
+date = "2015-06-25"
+slug = "2015/06/25/minio"
+Categories = ["infrastructure"]
++++
+こんにちは、@jedipunkz です。
+
+久々にブログ更新になりましたが、ウォーミングアップで minio というオブジェクト
+ストレージを使ってみたメモを記事にしたいと想います。
+
+minio は Minimal Object Storage の名の通り、最小限の小さなオブジェクトストレー
+ジになります。公式サイトは下記のとおりです。
+
+http://minio.io/
+
+Golang で記述されていて Apache License v2 の元に公開されています。
+
+最近、資金調達の話も挙がっていたので、これから一般的になってくるのかもしれません。
+
+早速ですが、minio を動かしてみます。
+
+Minio を起動する
+----
+
+方法は mithub.com/minio/minio の README に書かれていますが、バイナリを持ってき
+て実行権限を与えるだけのシンプルな手順になります。
+
+Linux でも Mac でも動作しますが、今回私は Mac 上で動作させました。
+
+```bash
+% wget https://dl.minio.io:9000/updates/2015/Jun/darwin-amd64/minio
+% chmod +x minio
+% ./minio mode memory limit 512MB
+Starting minio server on: http://127.0.0.1:9000
+Starting minio server on: http://192.168.1.123:9000
+```
+
+起動すると Listening Port と共に EndPoint の URL が表示されます。
+
+次に mc という minio client を使って動作確認します。
+
+Mc を使ってアクセスする
+----
+
+mc は下記の URL にあります。
+
+https://github.com/minio/mc
+
+こちらもダウンロードして実行権限を付与するのみです。mc は minio だけではなく、
+Amazon S3 とも互換性がありアクセス出来ますが、せっかくなので上記で起動した
+minio にアクセスします。
+
+```bash
+% wget https://dl.minio.io:9000/updates/2015/Jun/darwin-amd64/mc
+% chmod +x mc
+% ./mc config generate
+/mc ls  http://127.0.0.1:9000/bucket01
+[2015-06-25 16:21:37 JST]     0B testfile
+```
+
+上記では予め作っておいた bucket01 という名前のバケットの中身を表示しています。
+作り方はこれから minio の Golang ライブラリである minio-go を使って作りました。
+これから説明します。
+
+また ls コマンドの他にも Usage を確認すると幾つかのサブコマンドが見つかります。
+
+Minio の Golang ライブラリ minio-go を使ってアクセスする
+----
+
+さて、せっかくのオブジェクトストレージも手作業でファイルやバケットのアクセスを
+行うのはもったいないです。ソフトウェアを使って操作してす。
+
+minio のサンプルのコードを参考にして、下記のコードを作成してみました。
+
+```go
+package main
+
+import (
+    "log"
+    "os"
+
+    "github.com/minio/minio-go"
+)
+
+func main() {
+    config := minio.Config{
+        // AccessKeyID:     "YOUR-ACCESS-KEY-HERE",
+        // SecretAccessKey: "YOUR-PASSWORD-HERE",
+        Endpoint:        "http://127.0.0.1:9000",
+    }
+
+    s3Client, err := minio.New(config)
+    if err != nil {
+        log.Fatalln(err)
+    }
+
+    err = s3Client.MakeBucket("bucket01", minio.BucketACL("public-read-write"))
+    if err != nil {
+        log.Fatalln(err)
+    }
+    log.Println("Success: I made a bucket.")
+
+    object, err := os.Open("testfile")
+    if err != nil {
+        log.Fatalln(err)
+    }
+    defer object.Close()
+    objectInfo, err := object.Stat()
+    if err != nil {
+        object.Close()
+        log.Fatalln(err)
+    }
+
+    err = s3Client.PutObject("bucket01", "testfile", "application/octet-stream", objectInfo.Size(), object)
+    if err != nil {
+        log.Fatalln(err)
+    }
+
+    for bucket := range s3Client.ListBuckets() {
+        if bucket.Err != nil {
+            log.Fatalln(bucket.Err)
+        }
+        log.Println(bucket.Stat)
+    }
+
+    for object := range s3Client.ListObjects("bucket01", "", true) {
+        if object.Err != nil {
+            log.Fatalln(object.Err)
+        }
+        log.Println(object.Stat)
+    }
+
+}
+```
+
+簡単ですがコードの説明をします。
+
+* 11行目で config の上書きをします。先ほど起動した minio の EndPoint を記します。
+* 17行目で minio にセッションを張り接続を行っています。
+* 22行目で 'bucket01' というバケットを生成しています。その際にACLも設定
+* 28行目から42行目で 'testfile' というローカルファイルをストレージにPUTしています。
+* 44行目でバケット一覧を表示しています。
+* 51行目で上記で作成したバケットの中のオブジェクト一覧を表示しています。
+
+実行結果は下記のとおりです。
+
+```bash
+2015/06/25 16:56:21 Success: I made a bucket.
+2015/06/25 16:56:21 {bucket01 2015-06-25 07:56:21.155 +0000 UTC}
+2015/06/25 16:56:21 {"d41d8cd98f00b204e9800998ecf8427e" testfile 2015-06-25
+07:56:21.158 +0000 UTC 0 {minio minio} STANDARD}
+```
+
+バケットの作成とオブジェクトの PUT が正常に行えたことをログから確認できます。
+
+まとめ
+----
+
+上記の通り、今現在出来ることは少ないですが冒頭にも記したとおり資金調達の話も挙
+がってきていますので、これからどのような方向に向かうか楽しみでもあります。また
+最初から Golang, Python 等のライブラリが用意されているところが今どきだなぁと想
+いました。オブジェクトストレージを手作業で操作するケースは現場では殆ど無いと想
+いますので、その辺は現在では当たり前になりつつあるかもしれません。ちなみに
+Python のライブラリは下記の URL にあります。
+
+https://github.com/minio/minio-py
+
+以上です。

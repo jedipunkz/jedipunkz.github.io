@@ -1,0 +1,112 @@
++++
+title = "Berkshelf で Chef Cookbook の管理"
+date = "2013-03-17"
+slug = "2013/03/17/berkshelf-chef-cookbook-manage"
+Categories = ["infrastructure"]
++++
+こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
+
+今日は Chef Cookbook の管理をしてくれる Berkshelf について。
+
+Berkshelf は Librarian-Chef と同じく Cookbook の管理をしてくれるツールです。依
+存関係のクリアもしてくれます。Opscode の中の人 @someara さんにこんなこと言われ
+て、
+
+<blockquote class="twitter-tweet" lang="ja"><p>@<a
+href="https://twitter.com/jedipunkz">jedipunkz</a> berkshelf &gt;
+librarian-chef</p>&mdash; somearaさん (@someara) <a
+href="https://twitter.com/someara/status/298664663976120321">2013年2月5日
+</a></blockquote>
+<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script>
+
+Librarian-chef じゃなくて Berkshelf 使えってことだろうなぁと思ったので僕は
+Bekshelf を使うようにしてます。先日ブログ記事にした openstack-chef-repo も以前
+は Librarian-chef を使っていたのですが最近 Berkshelf に置き換わりました。
+openstack-chef-repo は Opscode の中の人の @mattray さん達が管理しています。
+
+では早速。
+
+インストール
+----
+
+インストールは簡単。gem install するだけです。
+
+    % gem install berkshelf
+
+使い方
+----
+
+chef-repo 配下で Berksfile を下記のように書きます。
+
+    site :opscode
+    
+    cookbook 'chef-client'
+    cookbook 'nginx', '= 0.101.2'
+
+berks コマンドを実行して Cookbooks をダウンロードします。
+
+    % export BERKSHELF_PATH=/Users/jedipunkz/chef-repo
+    % berks install
+
+それぞれ依存関係のある Cookbook 達もダウンロードされます。これでいちいち依存を
+解決しつつダウンロードなんてこともしなくて済む。
+
+ここで言えるのは chef-repo とこの Berksfile だけ git 等で管理すれば良いという
+こと。Cookbooks 達はそれぞれ別のレポジトリに git で管理する形が良いと思う。
+プロジェクトで chef を使っていて chef-repo ごと管理しがちだと思うけど、この方
+が Cookbook を他のプロジェクトでも使いまわせるメリットがある。
+
+opscode コミュニティ管理外の Cookbooks
+----
+
+自分で管理している cookbook 等も Berkshelf で管理出来ます。下記のように書くと、
+
+    site : opscode
+    
+    cookbook 'chef-client'
+    cookbook 'nginx', '= 0.101.2'
+    cookbook "pxe_install_server", git: 'https://github.com/jedipunkz/pxe_install_server'
+
+github から直接 git clone をしてくれます。
+
+Cookbooks のアップデート
+----
+
+Cookbook は独立した git レポジトリで管理すると良いと書きましたが、それぞれの
+Cookbooks は自分が若しくは他人が開発が進むので berks を使って最新の Cookbooks
+にアップデートすることも出来る。
+
+    % berks update
+
+バージョン指定
+----
+
+Cookbook のバージョン指定ももちろん出来る。先の例では
+
+    cookbook 'nginx', '= 0.101.2'
+
+では 0.101.2 と言うバージョンを指定した。その他
+
+* Equal to (=)
+* Greater than (>)
+* Greater than equal to (<)
+* Less than (<)
+* Less than equal to (<=)
+* Pessimistic (~>)
+
+が指定出来るようだ。
+
+まとめ
+----
+
+Cookbooks の管理は今のところ Berkshelf だけで OK。紹介したもの以外にも幾つか機
+能があるので公式のサイトで確認してみて欲しい。個人的には path: 指定が
+Berksfile で出来ないのが不便。公式のサイトには一応記述あるのだが動かなかった。
+そのうち改善されるだろう。また Chef サーバに Cookbooks をアップロードする機能
+もあるが、まぁこれは knife でも出来るしいいか。一番欲しかったのは '依存関係の
+クリア' だったので。また Berksfile, Berksfile.lock のファイルさえプロジェクト
+で管理すれば良いと言うのが個人的には綺麗になるなぁという印象。
+
+昔、Linux の rpm コマンドでパッケージを入れてて依存関係にあるパッケージをコマ
+ンド打つたびにダウンロードして...と言う問題を yum が解決してくれて。それに似て
+るなぁと見ていて思った。
