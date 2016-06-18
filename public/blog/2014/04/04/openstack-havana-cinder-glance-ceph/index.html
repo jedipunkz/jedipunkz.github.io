@@ -1,0 +1,1025 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携"/>
+<meta name="twitter:description" content="こんにちは！@jedipunkz です。 今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。 https://ceph.com/docs/master/rbd/rbd-openstack/ この手順から下記の変更を行って、ここでは記していきます。 Nova &#43; Ceph 連携させない cinder-backup は今のところ動作確認出来ていないので省く 諸々の手順がそのままでは実施出来ないので補足を入れていく。 cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ 上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の Ceph 連携は意味が大きくなってくると思います。 構成 下記の通りの物理ネットワーク6つの構成です。 OpenStack, Ceph 共に最小構成を前提にします。 &#43;--------------------------------------------------------------------- external | &#43;--------------&#43;--(-----------&#43;--------------&#43;------------------------------------------ public | | | | | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | controller | | network |"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携" />
+<meta property="og:description" content="こんにちは！@jedipunkz です。 今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。 https://ceph.com/docs/master/rbd/rbd-openstack/ この手順から下記の変更を行って、ここでは記していきます。 Nova &#43; Ceph 連携させない cinder-backup は今のところ動作確認出来ていないので省く 諸々の手順がそのままでは実施出来ないので補足を入れていく。 cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ 上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の Ceph 連携は意味が大きくなってくると思います。 構成 下記の通りの物理ネットワーク6つの構成です。 OpenStack, Ceph 共に最小構成を前提にします。 &#43;--------------------------------------------------------------------- external | &#43;--------------&#43;--(-----------&#43;--------------&#43;------------------------------------------ public | | | | | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | controller | | network |" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2014/04/04/openstack-havana-cinder-glance-ceph/" />
+
+
+<meta property="og:updated_time" content="2014-04-04T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携">
+<meta itemprop="description" content="こんにちは！@jedipunkz です。 今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。 https://ceph.com/docs/master/rbd/rbd-openstack/ この手順から下記の変更を行って、ここでは記していきます。 Nova &#43; Ceph 連携させない cinder-backup は今のところ動作確認出来ていないので省く 諸々の手順がそのままでは実施出来ないので補足を入れていく。 cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ 上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の Ceph 連携は意味が大きくなってくると思います。 構成 下記の通りの物理ネットワーク6つの構成です。 OpenStack, Ceph 共に最小構成を前提にします。 &#43;--------------------------------------------------------------------- external | &#43;--------------&#43;--(-----------&#43;--------------&#43;------------------------------------------ public | | | | | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | controller | | network |">
+
+
+<meta itemprop="dateModified" content="2014-04-04T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="778">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f&text=OpenStack%20Havana%20Cinder%2cGlance%20%e3%81%ae%e5%88%86%e6%95%a3%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8%20Ceph%20%e9%80%a3%e6%90%ba&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f&title=OpenStack%20Havana%20Cinder%2cGlance%20%e3%81%ae%e5%88%86%e6%95%a3%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8%20Ceph%20%e9%80%a3%e6%90%ba" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f&title=OpenStack%20Havana%20Cinder%2cGlance%20%e3%81%ae%e5%88%86%e6%95%a3%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8%20Ceph%20%e9%80%a3%e6%90%ba" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f&title=OpenStack%20Havana%20Cinder%2cGlance%20%e3%81%ae%e5%88%86%e6%95%a3%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8%20Ceph%20%e9%80%a3%e6%90%ba" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2014/04/04/openstack-havana-cinder-glance-ceph/">OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-04-04'>
+            April 4, 2014</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f&text=OpenStack%20Havana%20Cinder%2cGlance%20%e3%81%ae%e5%88%86%e6%95%a3%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8%20Ceph%20%e9%80%a3%e6%90%ba&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f&title=OpenStack%20Havana%20Cinder%2cGlance%20%e3%81%ae%e5%88%86%e6%95%a3%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8%20Ceph%20%e9%80%a3%e6%90%ba" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f&title=OpenStack%20Havana%20Cinder%2cGlance%20%e3%81%ae%e5%88%86%e6%95%a3%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8%20Ceph%20%e9%80%a3%e6%90%ba" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f&title=OpenStack%20Havana%20Cinder%2cGlance%20%e3%81%ae%e5%88%86%e6%95%a3%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8%20Ceph%20%e9%80%a3%e6%90%ba" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f04%2fopenstack-havana-cinder-glance-ceph%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは！<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ
+る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。</p>
+
+<p><a href="https://ceph.com/docs/master/rbd/rbd-openstack/">https://ceph.com/docs/master/rbd/rbd-openstack/</a></p>
+
+<p>この手順から下記の変更を行って、ここでは記していきます。</p>
+
+<ul>
+<li>Nova + Ceph 連携させない</li>
+<li>cinder-backup は今のところ動作確認出来ていないので省く</li>
+<li>諸々の手順がそのままでは実施出来ないので補足を入れていく。</li>
+</ul>
+
+<p>cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ
+上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ
+クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ
+の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の
+Ceph 連携は意味が大きくなってくると思います。</p>
+
+<h2 id="構成">構成</h2>
+
+<p>下記の通りの物理ネットワーク6つの構成です。
+OpenStack, Ceph 共に最小構成を前提にします。</p>
+
+<pre><code>                  +--------------------------------------------------------------------- external
+                  |
++--------------+--(-----------+--------------+------------------------------------------ public
+|              |  |           |              |
++------------+ +------------+ +------------+ +------------+ +------------+ +------------+
+| controller | |  network   | |  compute   | |   ceph01   | |   ceph02   | |   ceph03   |
++------------+ +------------+ +------------+ +------------+ +------------+ +------------+
+|  |           |  |           |  |  |        |  |  |        |  |  |        |  |  |
++--------------+--(-----------+--(-----------+--(--(--------+--(--(--------+--(--(------- management
+   |              |              |  |           |  |           |  |           |  |
+   |              +--------------+--(-----------(--(-----------(--(-----------(--(------- guest
+   |                                |           |  |           |  |           |  |
+   +--------------------------------+-----------+--(-----------+--(-----------+--(------- storage
+                                                   |              |              |
+                                                   +--------------+--------------+------- cluster
+</code></pre>
+
+<p>特徴</p>
+
+<ul>
+<li>最小構成 controller x 1 + network x 1 + compute x 1 + ceph x 3</li>
+<li>OpenStack API の相互通信は management ネットワーク</li>
+<li>OpenStack VM 間通信は guest ネットワーク</li>
+<li>OpenStack 外部通信は public ネットワーク</li>
+<li>OpenStack VM の floating-ip (グローバル) 通信は external ネットワーク</li>
+<li>Ceph と OpenStack 間の通信は storage ネットワーク</li>
+<li>Ceph の OSD 間通信は cluster ネットワーク</li>
+<li>ここには記されていないホスト &lsquo;workstation&rsquo; から OpenStack, Ceph をデプロイ</li>
+</ul>
+
+<h2 id="前提の構成">前提の構成</h2>
+
+<p>前提構成の OpenStack と Ceph ですが、ここでは構築方法は割愛します。OpenStack
+は rcbops/chef-cookbooks を。Ceph は ceph-deploy を使って自分は構築しました。
+下記の自分のブログに構築手順が載っているので参考にしてみてください。</p>
+
+<p>OpenStack 構築方法</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/">http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/</a></p>
+
+<p>Ceph 構築方法</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/">http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/</a></p>
+
+<h2 id="openstack-ceph-連携手順">OpenStack + Ceph 連携手順</h2>
+
+<p>では実際に連携するための手順を記していきます。</p>
+
+<h4 id="rbd-pool-の作成">rbd pool の作成</h4>
+
+<p>Ceph ノードの何れかで下記の手順を実施し rbd pool を作成する。</p>
+
+<pre><code class="language-bash">ceph01% sudo ceph osd pool create volumes 128
+ceph01% sudo ceph osd pool create images 128
+ceph01% sudo ceph osd pool create backups 128
+</code></pre>
+
+<h4 id="ssh-鍵の配置">ssh 鍵の配置</h4>
+
+<p>Ceph ノードから OpenStack の controller, compute ノードへ接続出来るよう鍵を配
+布します。</p>
+
+<pre><code class="language-bash">ceph01% ssh-copy-id &lt;username&gt;@&lt;controller_ip&gt;
+ceph01% ssh-copy-id &lt;username&gt;@&lt;compute_ip&gt;
+</code></pre>
+
+<h4 id="sudoers-の設定">sudoers の設定</h4>
+
+<p>controller, compute ノード上で sudoers の設定を予め実施する。
+/etc/sudoers.d/<username> として保存する。</p>
+
+<pre><code class="language-bash">&lt;username&gt; ALL = (root) NOPASSWD:ALL
+</code></pre>
+
+<h4 id="ceph-パッケージのインストール">ceph パッケージのインストール</h4>
+
+<p>controller ノード, compute ノード上で Ceph パッケージをインストールする。</p>
+
+<pre><code class="language-bash">controller% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add -
+controller% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list
+controller% sudo apt-get update &amp;&amp; sudo apt-get install -y python-ceph ceph-common
+
+compute% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add -
+compute% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list
+compute% sudo apt-get update &amp;&amp; sudo apt-get install -y python-ceph ceph-common
+</code></pre>
+
+<p>controller ノード, compute ノード上でディレクトリを作成する。</p>
+
+<pre><code class="language-bash">controller% sudo mkdir /etc/ceph
+compute   % sudo mkdir /etc/ceph
+</code></pre>
+
+<p>ceph.conf を controller, compute ノードへ配布する。</p>
+
+<pre><code class="language-bash">ceph01% sudo -i
+ceph01# ssh &lt;controller_ip&gt; sudo tee /etc/ceph/ceph.conf &lt;/etc/ceph/ceph.conf
+ceph01# ssh &lt;compute_ip&gt; sudo tee /etc/ceph/ceph.conf &lt;/etc/ceph/ceph.conf
+</code></pre>
+
+<h4 id="ceph-上にユーザを作成">ceph 上にユーザを作成</h4>
+
+<p>Ceph 上に cinder, glance 用の新しいユーザを作成する。</p>
+
+<pre><code class="language-bash">ceph auth get-or-create client.cinder mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=volumes, allow rx pool=images'
+ceph auth get-or-create client.glance mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=images'
+ceph auth get-or-create client.cinder-backup mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=backups'
+</code></pre>
+
+<h4 id="キーリングの作成と配置">キーリングの作成と配置</h4>
+
+<p>client.cinder, client.glance, client.cinder-backup のキーリングを作成する。また作成したキーリングを
+controller ノードに配布する。</p>
+
+<pre><code class="language-bash">ceph01% sudo ceph auth get-or-create client.glance | ssh {your-glance-api-server} sudo tee /etc/ceph/ceph.client.glance.keyring
+ceph01% ssh {your-glance-api-server} sudo chown glance:glance /etc/ceph/ceph.client.glance.keyring
+ceph01% sudo ceph auth get-or-create client.cinder | ssh {your-volume-server} sudo tee /etc/ceph/ceph.client.cinder.keyring
+ceph01% ssh {your-cinder-volume-server} sudo chown cinder:cinder /etc/ceph/ceph.client.cinder.keyring
+ceph01% sudo ceph auth get-or-create client.cinder-backup | ssh {your-cinder-backup-server} sudo tee /etc/ceph/ceph.client.cinder-backup.keyring
+ceph01% ssh {your-cinder-backup-server} sudo chown cinder:cinder /etc/ceph/ceph.client.cinder-backup.keyring
+</code></pre>
+
+<p>client.cinder のキーリングを compute ノードに配置する。</p>
+
+<pre><code class="language-bash">ceph01% sudo ceph auth get-key client.cinder | ssh {your-compute-node} tee client.cinder.key
+</code></pre>
+
+<h4 id="libvirt-への-secret-キー追加">libvirt への secret キー追加</h4>
+
+<p>compute ノード上で secret キーを libvirt に追加する。</p>
+
+<pre><code class="language-bash">compute% uuidgen
+457eb676-33da-42ec-9a8c-9293d545c337
+
+cat &gt; secret.xml &lt;&lt;EOF
+&lt;secret ephemeral='no' private='no'&gt;
+  &lt;uuid&gt;457eb676-33da-42ec-9a8c-9293d545c337&lt;/uuid&gt;
+  &lt;usage type='ceph'&gt;
+    &lt;name&gt;client.cinder secret&lt;/name&gt;
+  &lt;/usage&gt;
+&lt;/secret&gt;
+EOF
+compute % sudo virsh secret-define --file secret.xml
+Secret 457eb676-33da-42ec-9a8c-9293d545c337 created
+compute% sudo virsh secret-set-value --secret 457eb676-33da-42ec-9a8c-9293d545c337 --base64 $(cat client.cinder.key) &amp;&amp; rm client.cinder.key secret.xml
+</code></pre>
+
+<h4 id="glance-連携手順">glance 連携手順</h4>
+
+<p>controller ノードの /etc/glance/glance-api.conf に下記を追記。
+default_store=file と標準ではなっているので下記の通り rbd に書き換える。</p>
+
+<pre><code>default_store=rbd
+rbd_store_user=glance
+rbd_store_pool=images
+</code></pre>
+
+<h4 id="cinder-連携手順">cinder 連携手順</h4>
+
+<p>controller ノードの /etc/cinder/cinder.conf に下記を追記。
+volume_driver は予め LVM の設定が入っていると思われるので書き換える。
+また rbd_secret_uuid は先ほど生成した uuid を記す。</p>
+
+<pre><code>volume_driver=cinder.volume.drivers.rbd.RBDDriver
+rbd_pool=volumes
+rbd_ceph_conf=/etc/ceph/ceph.conf
+rbd_flatten_volume_from_snapshot=false
+rbd_max_clone_depth=5
+glance_api_version=2
+rbd_user=cinder
+rbd_secret_uuid=457eb676-33da-42ec-9a8c-9293d545c337
+</code></pre>
+
+<h4 id="ceph-conf-への追記">ceph.conf への追記</h4>
+
+<p>上記で配布した ceph.conf にはキーリングのパスが記されていない。controller ノー
+ド上の /etc/ceph/ceph.conf に下記の通り追記する。</p>
+
+<p>ここは公式サイトには印されていないのでハマりました。ポイントです。</p>
+
+<pre><code>[client.keyring]
+  keyring = /etc/ceph/ceph.client.cinder.keyring
+</code></pre>
+
+<h4 id="openstack-のそれぞれのコンポーネントを再起動かける">OpenStack のそれぞれのコンポーネントを再起動かける</h4>
+
+<pre><code class="language-bash">controller% sudo glance-control api restart
+compute   % sudo service nova-compute restart
+controller% sudo service cinder-volume restart
+controller% sudo service cinder-backup restart
+</code></pre>
+
+<h2 id="動作確認">動作確認</h2>
+
+<p>では動作確認を。Glance に OS イメージを登録。その後そのイメージを元にインスタ
+ンスを作成。Cinder 上に仮想ディスクを作成。その後先ほど作成したインスタンスに
+接続しマウント。そのマウントした仮想ディスク上で書き込みが行えるか確認をします。</p>
+
+<p>テストで Ubuntu Precise 12.04 のイメージを glance を用いて登録する。</p>
+
+<pre><code class="language-bash">controller% wget http://cloud-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64-disk1.img
+controller% glance image-create --name precise-image --is-public true --container-format bare --disk-format qcow2 &lt; precise-server-cloudimg-amd64-disk1.img
+</code></pre>
+
+<p>テスト VM を稼働する。</p>
+
+<pre><code class="language-bash">controller% nova boot --nic net-id=&lt;net_id&gt; --flavor 2 --image precise-image --key_name novakey01 vm01
+controller% cinder create --display-name vol01 1
+controller% nova volume-attach &lt;instance_id&gt; &lt;volume_id&gt; auto
+</code></pre>
+
+<p>テスト VM へログインしファイルシステムを作成後、マウントする。</p>
+
+<pre><code class="language-bash">controller% ssh -i &lt;key_file_path&gt; -l ubuntu &lt;instance_ip&gt;
+vm01% sudo mkfs -t ext4 /dev/vdb
+vm01% sudo mount -t ext4 /dev/vdb /mnt
+</code></pre>
+
+<p>マウントした仮想ディスク上でデータを書き込んでみる。</p>
+
+<pre><code class="language-bash">vm01% sudo dd if=/dev/zero of=/mnt/500M bs=1M count=5000
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>Ceph, Cinder の Ceph 連携が出来ました！</p>
+
+<p>OpenStack Grizzly 版時代に Ceph 連携は取っていたのですが Havana では</p>
+
+<ul>
+<li>cinder-bacup の Ceph 連携</li>
+<li>nova の Ceph 連携</li>
+</ul>
+
+<p>が追加されていました。Nova 連携をとるとインスタンスを稼働させる際に通常は
+controller ノードの /var/lib/nova 配下にファイルとしてインスタンスイメージが作
+成されますが、これが Ceph 上に作成されるとのことです。Nova 連携は是非とってみ
+たいのですが、今のところ動いていません。引き続き調査を行います。</p>
+
+<p>cinder-backup も少し連携取ってみましたが backup_driver に Ceph ドライバの指定
+をしているにも関わらず Swift に接続しにいってしまう有り様でした..。こちらも引
+き続き調査します。またステートが &lsquo;in-use&rsquo; の場合バックアップが取れず
+&lsquo;available&rsquo; なステートでないといけないようです。確かに書き込み中に操作が行われ
+てしまってもバックアップの整合性が取れないですし、ここは仕方ないところですね。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0.deploy/"
+                class="button big previous">rcbops/chef-cookbooks で Keystone 2013.2.2(Havana) &#43; Swift 1.10.0 を構築</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2014/04/22/geard-port-mapping/"
+                class="button big next">Geard のポートマッピングについて調べてみた</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2014\/04\/04\/openstack-havana-cinder-glance-ceph\/';
+    var disqus_title = 'OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2014\/04\/04\/openstack-havana-cinder-glance-ceph\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

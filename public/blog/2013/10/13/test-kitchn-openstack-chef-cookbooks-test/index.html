@@ -1,0 +1,981 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>test-kitchen と OpenStack で Chef Cookbooks テスト(前篇)</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="test-kitchen と OpenStack で Chef Cookbooks テスト(前篇)"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 test-kitchen &#43; Vagrant を利用して複数環境で Chef Cookbooks のテストを行う方法は 結構皆さん利用されていると思うのですが Vagrant だと手元のマシンに仮想マシンが バシバシ立ち上げるので僕はあまり好きではないです。そこで、OpenStack のインスタ ンスをその代替で使えればいいなぁと結構前から思っていたのですが、今回うまくいっ たのでその方法を記します。 用意するモノ OpenStack 環境一式 Chef がインストールされた OS イメージとその ID test-kitchen を実行するワークステーション (お手持ちの Macbook 等) OS イメージの作成ですが Veewee などで自動構築できますし、インスタンス上で Chef のインストールを行った後にスナップショットを作成してそれを利用しても構いません。 test-kitchen のインストール test-kitchen をインストールします。versoin 1.0.0 はまだリリースされていないの で github から master ブランチを取得してビルドします。直近で OpenStack に関連 する不具合の修正等が入っているのでこの方法を取ります。 % git clone https://github.com/opscode/test-kitchen.git % cd test-kitchen % bundle install % rake build # &lt;--- gem をビルド % gen install ./pkg/test-kitchen-1.0.0.dev.gem"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="test-kitchen と OpenStack で Chef Cookbooks テスト(前篇)" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 test-kitchen &#43; Vagrant を利用して複数環境で Chef Cookbooks のテストを行う方法は 結構皆さん利用されていると思うのですが Vagrant だと手元のマシンに仮想マシンが バシバシ立ち上げるので僕はあまり好きではないです。そこで、OpenStack のインスタ ンスをその代替で使えればいいなぁと結構前から思っていたのですが、今回うまくいっ たのでその方法を記します。 用意するモノ OpenStack 環境一式 Chef がインストールされた OS イメージとその ID test-kitchen を実行するワークステーション (お手持ちの Macbook 等) OS イメージの作成ですが Veewee などで自動構築できますし、インスタンス上で Chef のインストールを行った後にスナップショットを作成してそれを利用しても構いません。 test-kitchen のインストール test-kitchen をインストールします。versoin 1.0.0 はまだリリースされていないの で github から master ブランチを取得してビルドします。直近で OpenStack に関連 する不具合の修正等が入っているのでこの方法を取ります。 % git clone https://github.com/opscode/test-kitchen.git % cd test-kitchen % bundle install % rake build # &lt;--- gem をビルド % gen install ./pkg/test-kitchen-1.0.0.dev.gem" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/" />
+
+
+<meta property="og:updated_time" content="2013-10-13T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="test-kitchen と OpenStack で Chef Cookbooks テスト(前篇)">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 test-kitchen &#43; Vagrant を利用して複数環境で Chef Cookbooks のテストを行う方法は 結構皆さん利用されていると思うのですが Vagrant だと手元のマシンに仮想マシンが バシバシ立ち上げるので僕はあまり好きではないです。そこで、OpenStack のインスタ ンスをその代替で使えればいいなぁと結構前から思っていたのですが、今回うまくいっ たのでその方法を記します。 用意するモノ OpenStack 環境一式 Chef がインストールされた OS イメージとその ID test-kitchen を実行するワークステーション (お手持ちの Macbook 等) OS イメージの作成ですが Veewee などで自動構築できますし、インスタンス上で Chef のインストールを行った後にスナップショットを作成してそれを利用しても構いません。 test-kitchen のインストール test-kitchen をインストールします。versoin 1.0.0 はまだリリースされていないの で github から master ブランチを取得してビルドします。直近で OpenStack に関連 する不具合の修正等が入っているのでこの方法を取ります。 % git clone https://github.com/opscode/test-kitchen.git % cd test-kitchen % bundle install % rake build # &lt;--- gem をビルド % gen install ./pkg/test-kitchen-1.0.0.dev.gem">
+
+
+<meta itemprop="dateModified" content="2013-10-13T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="409">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f&text=test-kitchen%20%e3%81%a8%20OpenStack%20%e3%81%a7%20Chef%20Cookbooks%20%e3%83%86%e3%82%b9%e3%83%88%28%e5%89%8d%e7%af%87%29&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f&title=test-kitchen%20%e3%81%a8%20OpenStack%20%e3%81%a7%20Chef%20Cookbooks%20%e3%83%86%e3%82%b9%e3%83%88%28%e5%89%8d%e7%af%87%29" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f&title=test-kitchen%20%e3%81%a8%20OpenStack%20%e3%81%a7%20Chef%20Cookbooks%20%e3%83%86%e3%82%b9%e3%83%88%28%e5%89%8d%e7%af%87%29" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f&title=test-kitchen%20%e3%81%a8%20OpenStack%20%e3%81%a7%20Chef%20Cookbooks%20%e3%83%86%e3%82%b9%e3%83%88%28%e5%89%8d%e7%af%87%29" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/">test-kitchen と OpenStack で Chef Cookbooks テスト(前篇)</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-10-13'>
+            October 13, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f&text=test-kitchen%20%e3%81%a8%20OpenStack%20%e3%81%a7%20Chef%20Cookbooks%20%e3%83%86%e3%82%b9%e3%83%88%28%e5%89%8d%e7%af%87%29&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f&title=test-kitchen%20%e3%81%a8%20OpenStack%20%e3%81%a7%20Chef%20Cookbooks%20%e3%83%86%e3%82%b9%e3%83%88%28%e5%89%8d%e7%af%87%29" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f&title=test-kitchen%20%e3%81%a8%20OpenStack%20%e3%81%a7%20Chef%20Cookbooks%20%e3%83%86%e3%82%b9%e3%83%88%28%e5%89%8d%e7%af%87%29" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f&title=test-kitchen%20%e3%81%a8%20OpenStack%20%e3%81%a7%20Chef%20Cookbooks%20%e3%83%86%e3%82%b9%e3%83%88%28%e5%89%8d%e7%af%87%29" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f13%2ftest-kitchn-openstack-chef-cookbooks-test%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>test-kitchen + Vagrant を利用して複数環境で Chef Cookbooks のテストを行う方法は
+結構皆さん利用されていると思うのですが Vagrant だと手元のマシンに仮想マシンが
+バシバシ立ち上げるので僕はあまり好きではないです。そこで、OpenStack のインスタ
+ンスをその代替で使えればいいなぁと結構前から思っていたのですが、今回うまくいっ
+たのでその方法を記します。</p>
+
+<h2 id="用意するモノ">用意するモノ</h2>
+
+<ul>
+<li>OpenStack 環境一式</li>
+<li>Chef がインストールされた OS イメージとその ID</li>
+<li>test-kitchen を実行するワークステーション (お手持ちの Macbook 等)</li>
+</ul>
+
+<p>OS イメージの作成ですが Veewee などで自動構築できますし、インスタンス上で Chef
+のインストールを行った後にスナップショットを作成してそれを利用しても構いません。</p>
+
+<h2 id="test-kitchen-のインストール">test-kitchen のインストール</h2>
+
+<p>test-kitchen をインストールします。versoin 1.0.0 はまだリリースされていないの
+で github から master ブランチを取得してビルドします。直近で OpenStack に関連
+する不具合の修正等が入っているのでこの方法を取ります。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/opscode/test-kitchen.git
+% cd test-kitchen
+% bundle install
+% rake build # &lt;--- gem をビルド
+% gen install ./pkg/test-kitchen-1.0.0.dev.gem
+</code></pre>
+
+<p>現時点 (2013/10/13) で berkshelf の利用しているソフトウェアと衝突を起こす問題
+があるので bundle で解決します。下記のように Gemfile に gem
+&lsquo;kitchen-openstack&rsquo; と記述します。</p>
+
+<pre><code class="language-ruby">source 'https://rubygems.org'
+gemspec
+
+gem 'kitchen-openstack' # &lt;--- 追記
+
+group :guard do
+  gem 'rb-inotify', :require =&gt; false
+  gem 'rb-fsevent', :require =&gt; false
+  gem 'rb-fchange', :require =&gt; false
+  gem 'guard-minitest', '~&gt; 1.3'
+  gem 'guard-cucumber', '~&gt; 1.4'
+end
+</code></pre>
+
+<h2 id="kitchen-openstack-のインストール">kitchen-openstack のインストール</h2>
+
+<p>kitchen-openstack をインストールします。こちらも gem をビルドしてインストール
+します。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/RoboticCheese/kitchen-openstack.git
+% cd kitchen-openstack
+% bundle insatll #&lt;---- 関連ソフトウェアインストール
+% rake build     #&lt;---- gem をビルド
+% gem install ./pkg/kitchen-openstack-0.5.1.gem
+</code></pre>
+
+<h2 id="kitchen-yml-の作成">.kitchen.yml の作成</h2>
+
+<p>.kitchen.yml を用意します。test-kitchen のディレクトリに移動し .kitchen.yml を
+下記の例に従って作成します。今回は Ubuntu OS, CentOS にてテストを実行します。</p>
+
+<pre><code class="language-bash">% cd /path/to/test-kitchen
+% ${EDITOR} .kitchen.yml
+</code></pre>
+
+<pre><code class="language-ruby">+++
+driver_plugin: openstack
+
+suites:
+- name: default
+  run_list:
+  - recipe[ntp::default]
+  attributes: {}
+
+platforms:
+- name: ubuntu-12.04
+  driver_config:
+    openstack_username: &lt;openstac_username&gt;
+    openstack_api_key: &lt;openstack_password&gt;
+    openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens
+    image_ref: &lt;image_id&gt;
+    flavor_ref: 1
+    key_name: &lt;key_name&gt;
+    openstack_tenant: service
+    username: ubuntu
+    private_key_path: &lt;path_to_secretkey&gt;
+
+- name: centos-64
+  driver_config:
+    openstack_username: &lt;openstac_username&gt;
+    openstack_api_key: &lt;openstack_password&gt;
+    openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens
+    image_ref: &lt;image_id&gt;
+    flavor_ref: 1
+    key_name: &lt;key_name&gt;
+    openstack_tenant: service
+    username: root
+    private_key_path: &lt;path_to_secretkey&gt;
+</code></pre>
+
+<p>ファイルの内容について解説します。</p>
+
+<ul>
+<li>suites:</li>
+</ul>
+
+<p>実行したい Chef Cookbooks のレシピ名を指定します。attriutes などをここで上書き
+することも出来ます。</p>
+
+<ul>
+<li>platforms:</li>
+</ul>
+
+<p>テストに用いたい OS を列挙していけます。ここでは例として Ubuntu, CentOS を記し
+ました。</p>
+
+<ul>
+<li>openstack_username, openstack_api_key</li>
+</ul>
+
+<p>OpenStack にログインするためのユーザ名とパスワードです。keystone で作成します。</p>
+
+<ul>
+<li>openstack_auth_url</li>
+</ul>
+
+<p>Keystone の URL です。最後に /tokens と付けるのを忘れずに。</p>
+
+<ul>
+<li>image_ref</li>
+</ul>
+
+<p>それぞれの OS イメージの ID を記します。前述したとおりインスタンスでオペレーショ
+ン後にスナップショットを作成しそれを記すことも可能です。</p>
+
+<ul>
+<li>flavor_ref</li>
+</ul>
+
+<p>Flavor ID を記します。ここでは一番小さい Flavor である m1.tiny を記しました。</p>
+
+<ul>
+<li>key_name</li>
+</ul>
+
+<p>インスタンス作成時に選択する Nova のキーペア名です。OpenStack コマンドラインで
+言う &ndash;key_name です。</p>
+
+<ul>
+<li>openstack_tenant</li>
+</ul>
+
+<p>どのテナントにインスタンスを作成するか？を記します。</p>
+
+<ul>
+<li>username</li>
+</ul>
+
+<p>インスタンスにログインする際のユーザ名を記します。</p>
+
+<ul>
+<li>private_key_path</li>
+</ul>
+
+<p>インスタンスにログインするための SSH 秘密鍵のパスを記します。ここではノンパス
+ワードでログイン出来るよう鍵を生成してあげる必要があります。</p>
+
+<h2 id="cookbooks-の配置">Cookbooks の配置</h2>
+
+<p>カレントディレクトリ配下に &lsquo;cookbooks&rsquo; という名前のディレクトリを用意し
+テストで用いたい Cookbooks を配置します。Berkshelf を用いれば簡単です。が、
+現時点で Berkshelf の用いているソフトウェア test-kitchen のそれが衝突を起こす
+のでテスト実行前には Berkshelf ファイルを退避してください。</p>
+
+<pre><code class="language-bash">% ${EDITOR} Berksfile
+site :opscode
+    
+cookbook 'ntp;
+% berks install --path=./cookbooks
+% mv Berksfile Berksfile.old
+</code></pre>
+
+<h2 id="テスト実行">テスト実行</h2>
+
+<p>いよいよテストを実行します。上記の例では Ubuntu OS, Debian OS に対して ntp の
+Chef Cookbooks を実際にデプロイしテストを行います。</p>
+
+<pre><code class="language-bash">% bundle exec kitchen test
+</code></pre>
+
+<p>&lsquo;test&rsquo; を引数で渡すと</p>
+
+<ul>
+<li>インスタンス作成</li>
+<li>Chef のインストール</li>
+<li>Cookbooks のアップロード</li>
+<li>chef-solo の実行</li>
+<li>Cookbooks 中に &lsquo;test&rsquo; ディレクトリがある場合はテスト実行</li>
+</ul>
+
+<p>を行ってくれます。それぞれ別々に実行したい場合は</p>
+
+<pre><code class="language-bash">% bundle exec kitchen create   # &lt;---- インスタンスの作成
+% bundle exec kitchen setup    # &lt;---- chef のインストールと初回の converge
+% bundle exec kitchen converge # &lt;---- chef-solo を再度実行
+% bundle exec kitchen verify   # &lt;---- 'test' ディレクトリに従いテスト実行
+% bundle exec kitchen destroy  # &lt;---- インスタンスの削除
+</code></pre>
+
+<p>と行えば良いです。converge, verify は何度でも繰り返し実行が可能。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>前述したとおり Vagrant を使うと手元のマシンのリソースを大量に消費してしまうの
+で OpenStack を利用する価値は結構あるのかなぁと思っています。バージョン 1.0.0
+がリリースされる時期も近いと思うので今のうちに知っておくと良いかと思います。</p>
+
+<p>また、テストと言っても test-kitchen の場合2つの意味があると思います。実際に
+Cookbooks をインスタンスにインストールするテスト、と Cookbooks 自体のテストと
+いう意味です。後者についてはまた後ほど記したいと思います。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/10/12/glusterfs-install/"
+                class="button big previous">GlusterFS の各クラスタタイプ構築</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/10/20/test-kitchen-openstack-chef-cookbooks-test-2/"
+                class="button big next">test-kitchen と OpenStack で Chef Cookbooks テスト (後篇)</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/10\/13\/test-kitchn-openstack-chef-cookbooks-test\/';
+    var disqus_title = 'test-kitchen と OpenStack で Chef Cookbooks テスト(前篇)';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/10\/13\/test-kitchn-openstack-chef-cookbooks-test\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

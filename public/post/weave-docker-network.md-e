@@ -1,0 +1,322 @@
++++
+title = "Weave を使った Docker ネットワーク"
+date = "2015-12-22"
+slug = "2015/12/22/weave-docker-network"
+Categories = []
++++
+
+こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
+
+今回は Weave というコンテナ間のネットワークを提供してくれる Docker のネットワークプラ
+グインを使ってみました。下記のような沢山の機能があるようです。
+
+* Fast Data Path
+* Docker Network Plugin
+* Security
+* Dynamic Netwrok Attachment
+* Service Binding
+* Fault Tolerance
+* etc ...
+
+この記事では上から幾つか抜粋して、Weave ってどのように動かせるのか？を解説します。
+そこから Weave が一体ナニモノなのか理解できればなぁと思います。
+
+Vagrant を使った構成
+----
+
+この記事では下記の構成を作って色々と試していきます。使う技術は
+
+* Vagrant
+* Docker
+* Weave
+
+です。
+
+```
++---------------------+ +---------------------+ +---------------------+
+| docker container a1 | | docker container a2 | | docker container a3 |
++---------------------+ +---------------------+ +---------------------+
+|    vagrant host 1   | |    vagrant host 2   | |    vagrant host 3   |
++---------------------+-+---------------------+-+---------------------+
+|                          Mac or Windows                             |
++---------------------------------------------------------------------+
+```
+
+特徴としては
+
+* 作業端末(Mac or Windows or Linux)上で Vagrant を動作させる
+* 各 Vagrant VM 同士はホスト OS のネットワークインターフェース上で疎通が取れる
+
+です。
+
+Vagrantfile の作成と host1,2,3 の起動
+----
+
+上記の3台の構成を下記の Vagrantfile で構築します。
+
+```
+Vagrant.configure(2) do |config|
+  config.vm.box = "ubuntu/vivid64"
+
+  config.vm.define "host1" do |server|
+    server.vm.network "private_network", ip: "192.168.33.11"
+  end
+
+  config.vm.define "host2" do |server|
+    server.vm.network "private_network", ip: "192.168.33.12"
+  end
+
+  config.vm.define "host3" do |server|
+    server.vm.network "private_network", ip: "192.168.33.13"
+  end
+
+  config.vm.provision :shell, inline: <<-SHELL
+apt-get update
+apt-get install -y libsqlite3-dev docker.io
+curl -L git.io/weave -o /usr/local/bin/weave
+chmod a+x /usr/local/bin/weave
+  SHELL
+end
+```
+
+vagrant コマンドを使って host1, host2, host3 を起動します。
+
+```bash
+$ vagrant up
+$ vagrant ssh host1 # <--- host1 に SSH する場合
+$ vagrant ssh host2 # <--- host2 に SSH する場合
+$ vagrant ssh host3 # <--- host3 に SSH する場合
+```
+
+物理ノードまたがったコンテナ間で通信をする
+----
+
+weave でまず物理ノードをまたがったコンテナ間で通信をさせてみましょう。ここでは
+上図の host1, host2 を使います。通常、物理ノードまたがっていると各々のホストで
+稼働する Docker コンテナは通信し合えませんが weave を使うと通信しあうことが出
+来ます。
+
+まず weave が用いる Docker コンテナを稼働します。下記のように /16 でレンジを切って
+更にそこからデフォルトのレンジを指定することが出来ます。
+
+```bash
+host1# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24
+host1# eval $(weave env)
+host2# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
+host2# eval $(weave env)
+```
+
+この状態で下記のようなコンテナが稼働します。
+
+```bash
+host1# docker ps
+CONTAINER ID        IMAGE                        COMMAND                CREATED             STATUS              PORTS               NAMES
+c55e96b4bdf9        weaveworks/weaveexec:1.4.0   "/home/weave/weavepr   4 seconds ago       Up 3 seconds                            weaveproxy
+394382c9c5d9        weaveworks/weave:1.4.0       "/home/weave/weaver    5 seconds ago       Up 4 seconds                            weave
+```
+
+host1, host2 でそれぞれテスト用コンテナを稼働させます。名前を --name オプションで付けるのを
+忘れないようにしてください。
+
+```bash
+host1# docker run --name a1 -ti ubuntu
+host2# docker run --name a2 -ti ubuntu
+```
+
+どちらか一方から ping をもう一方に打ってみましょう。下記では a2 -> a1 の流れで
+ping を実行しています。
+
+```bash
+root@a2:/# ping 10.2.1.1 -c 3
+PING 10.2.1.1 (10.2.1.1) 56(84) bytes of data.
+64 bytes from 10.2.1.1: icmp_seq=1 ttl=64 time=0.316 ms
+64 bytes from 10.2.1.1: icmp_seq=2 ttl=64 time=0.501 ms
+64 bytes from 10.2.1.1: icmp_seq=3 ttl=64 time=0.619 ms
+
+--- 10.2.1.1 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 1999ms
+rtt min/avg/max/mdev = 0.316/0.478/0.619/0.127 ms
+```
+
+また docker コンテナを起動する時に指定した --name a1, --name a2 の名前で ping
+を実行してみましょう。これも weave の機能の１つで dns lookup が行えます。
+
+```
+root@b2:/# ping a1 -c 3
+PING b1.weave.local (10.2.1.1) 56(84) bytes of data.
+64 bytes from a1.weave.local (10.2.1.1): icmp_seq=1 ttl=64 time=1.14 ms
+64 bytes from a1.weave.local (10.2.1.1): icmp_seq=2 ttl=64 time=0.446 ms
+64 bytes from a1.weave.local (10.2.1.1): icmp_seq=3 ttl=64 time=0.364 ms
+
+--- b1.weave.local ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2001ms
+rtt min/avg/max/mdev = 0.364/0.653/1.149/0.352 ms
+```
+
+結果から、異なる物理ノード(今回は VM)上で動作させた Docker コンテナ同士が通信し合えた
+ことがわかります。またコンテナ名の DNS 的は名前解決も可能になりました。
+
+ダイナミックにネットワークをアタッチ・デタッチする
+----
+
+次に weave のネットワークを動的(コンテナがオンラインのまま)にアタッチ・デタッ
+チすることが出来るので試してみます。
+
+最初に weave のネットワークに属さない a1-1 という名前のコンテナを作ります。
+docker exec で IP アドレスを確認すると eth0, lo のインターフェースしか持っていない
+ことが判ります。
+
+```bash
+host1# C=$(docker run --name a1-1 -e WEAVE_CIDR=none -dti ubuntu)
+host1# docker exec -it a1-1 ip a # <--- docker コンテナ内でコマンド実行
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+25: eth0: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.5/16 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:5/64 scope link
+       valid_lft forever preferred_lft forever
+```
+
+では weave のネットワークを a1-1 コンテナにアタッチしてみましょう。
+
+```bash
+host1# weave attach $C
+10.2.1.1
+host1# docker exec -it a1-1 ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+25: eth0: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.5/16 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:5/64 scope link
+       valid_lft forever preferred_lft forever
+27: ethwe: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether aa:15:06:51:6a:3b brd ff:ff:ff:ff:ff:ff
+    inet 10.2.1.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet6 fe80::a815:6ff:fe51:6a3b/64 scope link
+       valid_lft forever preferred_lft forever
+```
+
+上記のようにインターフェース ethwe が付与され最初に指定したデフォルトのサブネッ
+ト上の IP アドレスが付きました。
+
+次に weave ネットワークを複数アタッチしてみましょう。default, 10.2.2.0/24,
+10.2.3.0/24 のネットワーク(サブネット)をアタッチします。
+
+```bash
+host1# weave attach net:default net:10.2.2.0/24 net:10.2.3.0/24 $C
+10.2.1.1 10.2.2.1 10.2.3.1
+root@vagrant-ubuntu-vivid-64:~# docker exec -it b3 ip a
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+25: eth0: <BROADCAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.5/16 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:5/64 scope link
+       valid_lft forever preferred_lft forever
+33: ethwe: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 9a:74:73:1b:24:a9 brd ff:ff:ff:ff:ff:ff
+    inet 10.2.1.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet 10.2.2.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet 10.2.3.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet6 fe80::9874:73ff:fe1b:24a9/64 scope link
+       valid_lft forever preferred_lft forever
+```
+
+結果、ethwe インターフェースに3つの IP アドレスが付与されました。
+この様にダイナミックにコンテナに対して weave ネットワークをアタッチすることが出来ます。
+
+コンテナ外部から情報を取得する
+----
+
+下記のようにコンテナを起動しているホスト上 (Vagrant VM) からコンテナの情報を取
+得する事もできます。シンプルですがオーケストレーション・自動化を行う上で重要な機能に
+なりそうな予感がします。
+
+```bash
+host1# weave expose
+10.2.1.1
+host1# weave dns-lookup a2
+10.2.1.128
+```
+
+ダイナミックに物理ノードを追加し weave ネットワークへ
+----
+
+物理ノード(今回の場合 vagrant vm)を追加し上記で作成した weave ネットワークへ参
+加させることも可能です。なお、今回は上記の vagrant up の時点で追加分の vm (host3)
+を既に稼働させています。
+
+host1 で新しい物理ノードを接続します。
+
+```
+host1# weave connect 192.168.33.12
+host1# weave status targets
+192.168.33.13
+192.168.33.12
+```
+
+host3 で weave コンテナ・テストコンテナを起動します。
+下記で指定している 192.168.33.11 は host1 の IP アドレスです。
+
+```
+host3# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
+host3# docker run --name a3 -ti ubuntu
+```
+
+host2 の a2 コンテナに ping を打ってみます。
+
+```
+roota3:/# ping a2 -c 3
+PING a2.weave.local (10.2.1.128) 56(84) bytes of data.
+64 bytes from a2.weave.local (10.2.1.128): icmp_seq=1 ttl=64 time=0.366 ms
+64 bytes from a2.weave.local (10.2.1.128): icmp_seq=2 ttl=64 time=0.709 ms
+64 bytes from a2.weave.local (10.2.1.128): icmp_seq=3 ttl=64 time=0.569 ms
+```
+
+host3 上の a3 コンテナが既存の weave ネットワークに参加し通信出来たことが確認
+できました。
+
+まとめと考察
+----
+
+コンフィギュレーションらしきモノを記述することなく Docker コンテナ間の通信
+が出来ました。これは自動化する際に優位になるでしょう。また今回紹介したのは
+'weave net' と呼ばれるモノですが他にも 'weave scope', 'weave run' といったモノ
+があります。
+
+http://weave.works/product/
+
+また Docker Swarm, Compose と組み合わせる構成も組めるようです。試してみたい方
+がいましたら是非。
+
+http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html
+
+ですが結果、まだ weave をどう自分たちのサービスに組み込めるかは検討が付いてい
+ません。'出来る' と '運用できる' が別物であることと、コンテナまわりのネットワー
+ク機能全般に理解して選定する必要がありそうです。
+
+参考サイト
++++
+
+http://weave.works/docs/

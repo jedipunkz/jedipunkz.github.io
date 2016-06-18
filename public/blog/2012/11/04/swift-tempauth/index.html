@@ -1,0 +1,1100 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Swift で簡単に分散オブジェクトストレージ</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Swift で簡単に分散オブジェクトストレージ"/>
+<meta name="twitter:description" content="最近、OpenStack にどっぷり浸かってる @jedipunkz です。 Folsom がリリースされて Quantum を理解するのにめちゃ苦労して楽しい真っ最中なのだけど、 今日は OpenStack の中でも最も枯れているコンポーネント Swift を使ったオブジェクトストレー ジ構築について少し書こうかなぁと思ってます。 最近は OpenStack を構築・デプロイするのに皆、Swift 入れてないのね。仲間はずれ 感たっぷりだけど、一番安定して動くと思ってる。 これを読んで、自宅にオブジェクトストレージを置いちゃおぅ。 構成は ?&hellip; &#43;--------&#43; | client | &#43;--------&#43; | &#43;-------------&#43; | swift-proxy | &#43;-------------&#43; 172.16.0.10 | &#43;-------------------&#43;-------------------&#43; 172.16.0.0/24 | | | &#43;-----------------&#43; &#43;-----------------&#43; &#43;-----------------&#43; | swift-storage01 | | swift-storage02 | | swift-storage03 | &#43;-----------------&#43; &#43;-----------------&#43; &#43;-----------------&#43; 172.16.0.11 172.16.0.12 172.16.0.13 となる。IP アドレスは&hellip; client : 172.16.0.0/24 のどこか swift-proxy : 172.16.0.10 swift-storage01 : 172.16.0.11"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Swift で簡単に分散オブジェクトストレージ" />
+<meta property="og:description" content="最近、OpenStack にどっぷり浸かってる @jedipunkz です。 Folsom がリリースされて Quantum を理解するのにめちゃ苦労して楽しい真っ最中なのだけど、 今日は OpenStack の中でも最も枯れているコンポーネント Swift を使ったオブジェクトストレー ジ構築について少し書こうかなぁと思ってます。 最近は OpenStack を構築・デプロイするのに皆、Swift 入れてないのね。仲間はずれ 感たっぷりだけど、一番安定して動くと思ってる。 これを読んで、自宅にオブジェクトストレージを置いちゃおぅ。 構成は ?&hellip; &#43;--------&#43; | client | &#43;--------&#43; | &#43;-------------&#43; | swift-proxy | &#43;-------------&#43; 172.16.0.10 | &#43;-------------------&#43;-------------------&#43; 172.16.0.0/24 | | | &#43;-----------------&#43; &#43;-----------------&#43; &#43;-----------------&#43; | swift-storage01 | | swift-storage02 | | swift-storage03 | &#43;-----------------&#43; &#43;-----------------&#43; &#43;-----------------&#43; 172.16.0.11 172.16.0.12 172.16.0.13 となる。IP アドレスは&hellip; client : 172.16.0.0/24 のどこか swift-proxy : 172.16.0.10 swift-storage01 : 172.16.0.11" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2012/11/04/swift-tempauth/" />
+
+
+<meta property="og:updated_time" content="2012-11-04T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Swift で簡単に分散オブジェクトストレージ">
+<meta itemprop="description" content="最近、OpenStack にどっぷり浸かってる @jedipunkz です。 Folsom がリリースされて Quantum を理解するのにめちゃ苦労して楽しい真っ最中なのだけど、 今日は OpenStack の中でも最も枯れているコンポーネント Swift を使ったオブジェクトストレー ジ構築について少し書こうかなぁと思ってます。 最近は OpenStack を構築・デプロイするのに皆、Swift 入れてないのね。仲間はずれ 感たっぷりだけど、一番安定して動くと思ってる。 これを読んで、自宅にオブジェクトストレージを置いちゃおぅ。 構成は ?&hellip; &#43;--------&#43; | client | &#43;--------&#43; | &#43;-------------&#43; | swift-proxy | &#43;-------------&#43; 172.16.0.10 | &#43;-------------------&#43;-------------------&#43; 172.16.0.0/24 | | | &#43;-----------------&#43; &#43;-----------------&#43; &#43;-----------------&#43; | swift-storage01 | | swift-storage02 | | swift-storage03 | &#43;-----------------&#43; &#43;-----------------&#43; &#43;-----------------&#43; 172.16.0.11 172.16.0.12 172.16.0.13 となる。IP アドレスは&hellip; client : 172.16.0.0/24 のどこか swift-proxy : 172.16.0.10 swift-storage01 : 172.16.0.11">
+
+
+<meta itemprop="dateModified" content="2012-11-04T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="870">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f&text=Swift%20%e3%81%a7%e7%b0%a1%e5%8d%98%e3%81%ab%e5%88%86%e6%95%a3%e3%82%aa%e3%83%96%e3%82%b8%e3%82%a7%e3%82%af%e3%83%88%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f&title=Swift%20%e3%81%a7%e7%b0%a1%e5%8d%98%e3%81%ab%e5%88%86%e6%95%a3%e3%82%aa%e3%83%96%e3%82%b8%e3%82%a7%e3%82%af%e3%83%88%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f&title=Swift%20%e3%81%a7%e7%b0%a1%e5%8d%98%e3%81%ab%e5%88%86%e6%95%a3%e3%82%aa%e3%83%96%e3%82%b8%e3%82%a7%e3%82%af%e3%83%88%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f&title=Swift%20%e3%81%a7%e7%b0%a1%e5%8d%98%e3%81%ab%e5%88%86%e6%95%a3%e3%82%aa%e3%83%96%e3%82%b8%e3%82%a7%e3%82%af%e3%83%88%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2012/11/04/swift-tempauth/">Swift で簡単に分散オブジェクトストレージ</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-11-04'>
+            November 4, 2012</time>
+        <span class="author"></span>
+        
+            <p>5 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f&text=Swift%20%e3%81%a7%e7%b0%a1%e5%8d%98%e3%81%ab%e5%88%86%e6%95%a3%e3%82%aa%e3%83%96%e3%82%b8%e3%82%a7%e3%82%af%e3%83%88%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f&title=Swift%20%e3%81%a7%e7%b0%a1%e5%8d%98%e3%81%ab%e5%88%86%e6%95%a3%e3%82%aa%e3%83%96%e3%82%b8%e3%82%a7%e3%82%af%e3%83%88%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f&title=Swift%20%e3%81%a7%e7%b0%a1%e5%8d%98%e3%81%ab%e5%88%86%e6%95%a3%e3%82%aa%e3%83%96%e3%82%b8%e3%82%a7%e3%82%af%e3%83%88%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f&title=Swift%20%e3%81%a7%e7%b0%a1%e5%8d%98%e3%81%ab%e5%88%86%e6%95%a3%e3%82%aa%e3%83%96%e3%82%b8%e3%82%a7%e3%82%af%e3%83%88%e3%82%b9%e3%83%88%e3%83%ac%e3%83%bc%e3%82%b8" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f11%2f04%2fswift-tempauth%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>最近、OpenStack にどっぷり浸かってる <a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>Folsom がリリースされて Quantum を理解するのにめちゃ苦労して楽しい真っ最中なのだけど、
+今日は OpenStack の中でも最も枯れているコンポーネント Swift を使ったオブジェクトストレー
+ジ構築について少し書こうかなぁと思ってます。</p>
+
+<p>最近は OpenStack を構築・デプロイするのに皆、Swift 入れてないのね。仲間はずれ
+感たっぷりだけど、一番安定して動くと思ってる。</p>
+
+<p>これを読んで、自宅にオブジェクトストレージを置いちゃおぅ。</p>
+
+<h2 id="構成は">構成は ?&hellip;</h2>
+
+<pre><code>                        +--------+
+                        | client |
+                        +--------+
+                             |
+                      +-------------+
+                      | swift-proxy |
+                      +-------------+ 172.16.0.10
+                             |
+         +-------------------+-------------------+ 172.16.0.0/24
+         |                   |                   |
++-----------------+ +-----------------+ +-----------------+
+| swift-storage01 | | swift-storage02 | | swift-storage03 |
++-----------------+ +-----------------+ +-----------------+
+172.16.0.11         172.16.0.12         172.16.0.13
+</code></pre>
+
+<p>となる。IP アドレスは&hellip;</p>
+
+<ul>
+<li>client : 172.16.0.0/24 のどこか</li>
+<li>swift-proxy : 172.16.0.10</li>
+<li>swift-storage01 : 172.16.0.11</li>
+<li>swift-storage02 : 172.16.0.12</li>
+<li>swift-storage03 : 172.16.0.13</li>
+</ul>
+
+<p>これはサンプル。自宅の環境に合わせて読み替えてください。</p>
+
+<p>全て同じネットワークセグメントに。なので上の図は概念的な図です。通信の流れだけ
+把握出来ればいいなぁと。向き書いてないけど..。四角で囲まれているのがノード (サー
+バ) です。物理サーバでも仮想マシンでも大丈夫！</p>
+
+<h2 id="マシンの準備">マシンの準備</h2>
+
+<p>Ubuntu Server 12.04 もしくは 12.10 を用意。swift-storage のマシン3台だけは
+/dev/sda6 など Disk デバイスを swift 用に用意してあげてください。普通にハード
+ディスクのパーティションを切ってあげるだけでいいです。高価な Disk を使うまでも
+ないので。それが分散ストレージの良いところ！ Disk ・ノードが壊れてもデータが失
+われないんです！</p>
+
+<h2 id="swift-proxy-の構築">swift-proxy の構築</h2>
+
+<p>今回は簡易認証機能の tempauth を使います。Keystone を使った構成を説明しようか
+迷ったのだけど、Keystone の構築だけで一つ記事が書けるくらいになるので..、諦め
+ました。tempauth は Swift 本体に実装されていますよ。</p>
+
+<p>構築は簡単、まず下記をコピペしてください。</p>
+
+<pre><code>apt-get update
+apt-get install swift python-swift
+apt-get install python-keystoneclient python-keystone 
+mkdir /etc/swift
+chown -R swift:swift /etc/swift
+export PROXY_LOCAL_NET_IP=10.200.4.133
+export POUND_NET=10.200.4.138
+apt-get install swift-proxy memcached
+perl -pi -e &quot;s/-l 127.0.0.1/-l $PROXY_LOCAL_NET_IP/&quot; /etc/memcached.conf
+service memcached restart
+cat &gt;/etc/swift/proxy-server.conf &lt;&lt;EOF
+[DEFAULT]
+#cert_file = /etc/swift/cert.crt
+#key_file = /etc/swift/cert.key
+bind_port = 8080
+workers = 8
+user = swift
+
+[pipeline:main]
+pipeline = healthcheck cache tempauth proxy-server
+
+[app:proxy-server]
+use = egg:swift#proxy
+allow_account_management = true
+account_autocreate = true
+
+[filter:tempauth]
+use = egg:swift#tempauth
+user_system_root = testpass .admin
+https://$PROXY_LOCAL_NET_IP:8080/v1/AUTH_system
+
+[filter:healthcheck]
+use = egg:swift#healthcheck
+
+[filter:cache]
+use = egg:swift#memcache
+memcache_servers = $PROXY_LOCAL_NET_IP01:11211
+EOF
+</code></pre>
+
+<p>次に swift.conf とリング情報 (バランシングのための情報) を swift-proxy 上に用意します。これらは、
+あとで各すべてのノードに配置するので重要です。これもコピペしてください。</p>
+
+<pre><code>cat &gt; /etc/swift/swift.conf &lt;&lt; EOF
+[swift-hash]
+# random unique string that can never change (DO NOT LOSE)
+swift_hash_path_suffix = `od -t x8 -N 8 -A n &lt;/dev/random`
+EOF
+cd /etc/swift
+swift-ring-builder account.builder create 18 3 1
+swift-ring-builder container.builder create 18 3 1
+swift-ring-builder object.builder create 18 3 1
+export STORAGE_LOCAL_NET_IP01=172.16.0.11
+export STORAGE_LOCAL_NET_IP02=172.16.0.12
+export STORAGE_LOCAL_NET_IP03=172.16.0.13
+export ZONE01=1
+export ZONE02=2
+export ZONE03=3
+export WEIGHT=100
+export DEVICE=sda6
+swift-ring-builder account.builder add z$ZONE01-$STORAGE_LOCAL_NET_IP01:6002/$DEVICE $WEIGHT
+swift-ring-builder container.builder add z$ZONE01-$STORAGE_LOCAL_NET_IP01:6001/$DEVICE $WEIGHT
+swift-ring-builder object.builder add z$ZONE01-$STORAGE_LOCAL_NET_IP01:6000/$DEVICE $WEIGHT
+swift-ring-builder account.builder add z$ZONE02-$STORAGE_LOCAL_NET_IP02:6002/$DEVICE $WEIGHT
+swift-ring-builder container.builder add z$ZONE02-$STORAGE_LOCAL_NET_IP02:6001/$DEVICE $WEIGHT
+swift-ring-builder object.builder add z$ZONE02-$STORAGE_LOCAL_NET_IP02:6000/$DEVICE $WEIGHT
+swift-ring-builder account.builder add z$ZONE03-$STORAGE_LOCAL_NET_IP03:6002/$DEVICE $WEIGHT
+swift-ring-builder container.builder add z$ZONE03-$STORAGE_LOCAL_NET_IP03:6001/$DEVICE $WEIGHT
+swift-ring-builder object.builder add z$ZONE03-$STORAGE_LOCAL_NET_IP03:6000/$DEVICE $WEIGHT
+swift-ring-builder account.builder
+swift-ring-builder container.builder
+swift-ring-builder object.builder
+swift-ring-builder account.builder rebalance
+swift-ring-builder container.builder rebalance
+swift-ring-builder object.builder rebalance
+</code></pre>
+
+<p>で、起動。</p>
+
+<pre><code>swift-proxy# chown -R swift:swift /etc/swift
+swift-proxy# swift-init proxy start
+</code></pre>
+
+<p>おしまい。</p>
+
+<h2 id="swift-storage-構築">swift-storage 構築</h2>
+
+<p>swift-storage の構築は各ノードで下記の内容をコピペしてください。今回は3台分だ
+けど、マシンが余ってたら4台でも5台でも OK ！</p>
+
+<pre><code>apt-get update
+apt-get install swift python-swift
+mkdir /etc/swift
+chown -R swift:swift /etc/swift
+
+export STORAGE_LOCAL_NET_IP=172.16.0.11
+
+apt-get install swift-account swift-container swift-object xfsprogs
+mkfs.xfs -i size=1024 /dev/sda6
+echo &quot;/dev/sda6 /srv/node/sda6 xfs noatime,nodiratime,nobarrier,logbufs=8 0 0&quot; &gt;&gt; /etc/fstab
+mkdir -p /srv/node/sda6
+mount /srv/node/sda6
+chown -R swift:swift /srv/node
+cat &gt;/etc/rsyncd.conf &lt;&lt;EOF
+uid = swift
+gid = swift
+log file = /var/log/rsyncd.log
+pid file = /var/run/rsyncd.pid
+address = $STORAGE_LOCAL_NET_IP
+
+[account]
+max connections = 2
+path = /srv/node/
+read only = false
+lock file = /var/lock/account.lock
+
+[container]
+max connections = 2
+path = /srv/node/
+read only = false
+lock file = /var/lock/container.lock
+
+[object]
+max connections = 2
+path = /srv/node/
+read only = false
+lock file = /var/lock/object.lock
+EOF
+perl -pi -e 's/RSYNC_ENABLE=false/RSYNC_ENABLE=true/' /etc/default/rsync
+service rsync start
+cat &gt;/etc/swift/account-server.conf &lt;&lt;EOF
+[DEFAULT]
+bind_ip = $STORAGE_LOCAL_NET_IP
+workers = 2
+
+[pipeline:main]
+pipeline = account-server
+
+[app:account-server]
+use = egg:swift#account
+
+[account-replicator]
+
+[account-auditor]
+
+[account-reaper]
+EOF
+cat &gt;/etc/swift/container-server.conf &lt;&lt;EOF
+[DEFAULT]
+bind_ip = $STORAGE_LOCAL_NET_IP
+workers = 2
+
+[pipeline:main]
+pipeline = container-server
+
+[app:container-server]
+use = egg:swift#container
+
+[container-replicator]
+
+[container-updater]
+
+[container-auditor]
+
+[container-sync]
+EOF
+cat &gt;/etc/swift/object-server.conf &lt;&lt;EOF
+[DEFAULT]
+bind_ip = $STORAGE_LOCAL_NET_IP
+workers = 2
+
+[pipeline:main]
+pipeline = object-server
+
+[app:object-server]
+use = egg:swift#object
+
+[object-replicator]
+
+[object-updater]
+
+[object-auditor]
+EOF
+</code></pre>
+
+<p>環境変数 ${STORAGE_LOCAL_NET_IP} を3台毎に変えて、各台で流し込んであげたら、
+swift-proxy で生成した /etc/swift.conf とリング情報達を各 swift-storage に
+配置します。</p>
+
+<pre><code>swift-proxy     # scp /etc/swift/swift.conf /etc/swift/*ring.gz 172.16.0.11:/tmp/
+swift-proxy     # scp /etc/swift/swift.conf /etc/swift/*ring.gz 172.16.0.12:/tmp/
+swift-proxy     # scp /etc/swift/swift.conf /etc/swift/*ring.gz 172.16.0.13:/tmp/
+swift-storage01 # mv /tmp/swift.conf /tmp/*ring.gz /etc/swift/
+swift-storage01 # chown -R swift:swift /etc/swift
+swift-storage02 # mv /tmp/swift.conf /tmp/*ring.gz /etc/swift/
+swift-storage02 # chown -R swift:swift /etc/swift
+swift-storage03 # mv /tmp/swift.conf /tmp/*ring.gz /etc/swift/
+swift-storage03 # chown -R swift:swift /etc/swift
+</code></pre>
+
+<p>swift-storage を各台で起動します。</p>
+
+<pre><code>swift-storage01 # swift-init all start
+swift-storage02 # swift-init all start
+swift-storage03 # swift-init all start
+</code></pre>
+
+<h2 id="アクセスしてみる">アクセスしてみる</h2>
+
+<p>完成したので、swift クライアントでアクセスしてみる。</p>
+
+<pre><code>% swift -A http://172.16.0.10:8080/auth/v1.0 -U system:root -K testpass stat
+Account: AUTH_system
+Containers: 4
+Objects: 15
+Bytes: 23866252
+Connection: keep-alive
+Accept-Ranges: bytes
+</code></pre>
+
+<p>ファイルをアップロード・ダウンロードしてみる。</p>
+
+<pre><code>% swift -A http://172.16.0.10:8080/auth/v1.0 -U system:root -K testpass upload test /etc/hosts
+% swift -A http://172.16.0.10:8080/auth/v1.0 -U system:root -K testpass list
+% test
+% cd /tmp/
+% swift -A http://172.16.0.10:8080/auth/v1.0 -U system:root -K testpass download test
+% ls /tmp/etc/hosts
+</code></pre>
+
+<p>もちろん、HTTP な API なので curl 等の HTTP ブラウザを使ってもアクセスできる！</p>
+
+<pre><code>% curl -k -v -H 'X-Storage-User: system:root' -H 'X-Storage-Pass: testpass' http://172.16.0.10:8080/auth/v1.0
+&lt; HTTP/1.1 200 OK
+&lt; Server: nginx/1.1.19
+&lt; Date: Mon, 03 Sep 2012 04:58:30 GMT
+&lt; Content-Length: 0
+&lt; Connection: keep-alive
+&lt; X-Storage-Url: https://172.16.0.10:8080/v1/AUTH_system
+&lt; X-Storage-Token: AUTH_tk8a19f76c9bce4077aee02aef76257020
+&lt; X-Auth-Token: AUTH_tk8a19f96c9bce4077aee02aef76257020
+&lt;
+* Connection #0 to host 172.16.0.10 left intact
+* Closing connection #0
+* SSLv3, TLS alert, Client hello (1):
+</code></pre>
+
+<p>得られた X-Auth-Token, X-Storage-Url を使ってアクセスする。</p>
+
+<pre><code>% curl -k -v -H 'X-Auth-Token: &lt;token-from-x-auth-token-above&gt;' &lt;url-from-x-storage-url-above&gt;
+&lt; HTTP/1.1 200 OK
+&lt; Server: nginx/1.1.19
+&lt; Date: Mon, 03 Sep 2012 04:59:47 GMT
+&lt; Content-Type: text/plain; charset=utf-8
+&lt; Content-Length: 34
+&lt; Connection: keep-alive
+&lt; X-Account-Object-Count: 15
+&lt; X-Account-Bytes-Used: 23866252
+&lt; X-Account-Container-Count: 4
+&lt; Accept-Ranges: bytes
+&lt;
+test
+* Connection #0 to host 172.16.0.10 left intact
+* Closing connection #0
+* SSLv3, TLS alert, Client hello (1):
+</code></pre>
+
+<p>さっき放り込んだ &lsquo;test&rsquo; が swift 上にあることが確認できる。</p>
+
+<p><a href="http://cyberduck.ch/">http://cyberduck.ch/</a> ここにある CyberDuck という GUI なツールを使ってもアクセス出来るよ！
+HTTPS が必須になるので一工夫する必要があるのだけど、そのあたりは頑張ってみてください。</p>
+
+<p>オンラインでのノードの追加・削除なんてことも出来ます。次回時間があったら解説しますね。</p>
+
+<p>今回は swift-ring-builder コマンドでレプリカ数 &lsquo;3&rsquo; を指定したので、アップロー
+ドしたファイル(オブジェクトと言う) は必ず 3 個配置される。なので 1 台の
+swift-storage が故障しても大丈夫。ノードを増やせばストレージ全体の容量も増やせ
+る。また、swift-proxy は単純な HTTP なので負荷分散機・もしくはソフトウェアのロー
+ドバランサを入れれば swift-proxy 自体の冗長も組めるほか、ストレージ I/O の拡張
+にもつながる。pound, nginx などを使って冗長組んでみてください。その時に
+memcached の内容は共有させてあげる必要があるので、これまた一工夫が必要なのだけ
+ど。時間があったら今度解説します。</p>
+
+<p>自宅でも簡単に分散オブジェクトストレージが組める swift。使わない手は無いですよぉ。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2012/10/06/secret-training-of-opscode-chef/"
+                class="button big previous">Secret Training of Opscode Chef</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2012/11/10/openstack-folsom-install/"
+                class="button big next">OpenStack Folsom 構築スクリプト</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2012\/11\/04\/swift-tempauth\/';
+    var disqus_title = 'Swift で簡単に分散オブジェクトストレージ';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2012\/11\/04\/swift-tempauth\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

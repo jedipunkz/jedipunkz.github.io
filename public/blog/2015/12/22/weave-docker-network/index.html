@@ -1,0 +1,1054 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Weave を使った Docker ネットワーク</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Weave を使った Docker ネットワーク"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 今回は Weave というコンテナ間のネットワークを提供してくれる Docker のネットワークプラ グインを使ってみました。下記のような沢山の機能があるようです。 Fast Data Path Docker Network Plugin Security Dynamic Netwrok Attachment Service Binding Fault Tolerance etc &hellip; この記事では上から幾つか抜粋して、Weave ってどのように動かせるのか？を解説します。 そこから Weave が一体ナニモノなのか理解できればなぁと思います。 Vagrant を使った構成 この記事では下記の構成を作って色々と試していきます。使う技術は Vagrant Docker Weave です。 &#43;---------------------&#43; &#43;---------------------&#43; &#43;---------------------&#43; | docker container a1 | | docker container a2 | | docker container a3 | &#43;---------------------&#43; &#43;---------------------&#43; &#43;---------------------&#43; | vagrant host 1 | | vagrant host 2 | | vagrant host 3 | &#43;---------------------&#43;-&#43;---------------------&#43;-&#43;---------------------&#43; | Mac or Windows | &#43;---------------------------------------------------------------------&#43; 特徴としては 作業端末(Mac or Windows or Linux)上で Vagrant を動作させる 各 Vagrant VM 同士はホスト OS のネットワークインターフェース上で疎通が取れる です。 Vagrantfile の作成と host1,2,3 の起動 上記の3台の構成を下記の Vagrantfile で構築します。 Vagrant.configure(2) do |config| config.vm.box = &quot;ubuntu/vivid64&quot; config.vm.define &quot;host1&quot; do |server| server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.11&quot; end config.vm.define &quot;host2&quot; do |server| server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.12&quot; end config.vm.define &quot;host3&quot; do |server| server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.13&quot; end config.vm.provision :shell, inline: &lt;&lt;-SHELL apt-get update apt-get install -y libsqlite3-dev docker.io curl -L git.io/weave -o /usr/local/bin/weave chmod a&#43;x /usr/local/bin/weave SHELL end vagrant コマンドを使って host1, host2, host3 を起動します。 $ vagrant up $ vagrant ssh host1 # &lt;--- host1 に SSH する場合 $ vagrant ssh host2 # &lt;--- host2 に SSH する場合 $ vagrant ssh host3 # &lt;--- host3 に SSH する場合 物理ノードまたがったコンテナ間で通信をする weave でまず物理ノードをまたがったコンテナ間で通信をさせてみましょう。ここでは 上図の host1, host2 を使います。通常、物理ノードまたがっていると各々のホストで 稼働する Docker コンテナは通信し合えませんが weave を使うと通信しあうことが出 来ます。 まず weave が用いる Docker コンテナを稼働します。下記のように /16 でレンジを切って 更にそこからデフォルトのレンジを指定することが出来ます。 host1# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 host1# eval $(weave env) host2# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11 host2# eval $(weave env) この状態で下記のようなコンテナが稼働します。 host1# docker ps CONTAINER ID IMAGE COMMAND CREATED STATUS PORTS NAMES c55e96b4bdf9 weaveworks/weaveexec:1.4.0 &quot;/home/weave/weavepr 4 seconds ago Up 3 seconds weaveproxy 394382c9c5d9 weaveworks/weave:1.4.0 &quot;/home/weave/weaver 5 seconds ago Up 4 seconds weave host1, host2 でそれぞれテスト用コンテナを稼働させます。名前を &ndash;name オプションで付けるのを 忘れないようにしてください。 host1# docker run --name a1 -ti ubuntu host2# docker run --name a2 -ti ubuntu どちらか一方から ping をもう一方に打ってみましょう。下記では a2 -&gt; a1 の流れで ping を実行しています。 root@a2:/# ping 10.2.1.1 -c 3 PING 10.2.1.1 (10.2.1.1) 56(84) bytes of data."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Weave を使った Docker ネットワーク" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 今回は Weave というコンテナ間のネットワークを提供してくれる Docker のネットワークプラ グインを使ってみました。下記のような沢山の機能があるようです。 Fast Data Path Docker Network Plugin Security Dynamic Netwrok Attachment Service Binding Fault Tolerance etc &hellip; この記事では上から幾つか抜粋して、Weave ってどのように動かせるのか？を解説します。 そこから Weave が一体ナニモノなのか理解できればなぁと思います。 Vagrant を使った構成 この記事では下記の構成を作って色々と試していきます。使う技術は Vagrant Docker Weave です。 &#43;---------------------&#43; &#43;---------------------&#43; &#43;---------------------&#43; | docker container a1 | | docker container a2 | | docker container a3 | &#43;---------------------&#43; &#43;---------------------&#43; &#43;---------------------&#43; | vagrant host 1 | | vagrant host 2 | | vagrant host 3 | &#43;---------------------&#43;-&#43;---------------------&#43;-&#43;---------------------&#43; | Mac or Windows | &#43;---------------------------------------------------------------------&#43; 特徴としては 作業端末(Mac or Windows or Linux)上で Vagrant を動作させる 各 Vagrant VM 同士はホスト OS のネットワークインターフェース上で疎通が取れる です。 Vagrantfile の作成と host1,2,3 の起動 上記の3台の構成を下記の Vagrantfile で構築します。 Vagrant.configure(2) do |config| config.vm.box = &quot;ubuntu/vivid64&quot; config.vm.define &quot;host1&quot; do |server| server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.11&quot; end config.vm.define &quot;host2&quot; do |server| server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.12&quot; end config.vm.define &quot;host3&quot; do |server| server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.13&quot; end config.vm.provision :shell, inline: &lt;&lt;-SHELL apt-get update apt-get install -y libsqlite3-dev docker.io curl -L git.io/weave -o /usr/local/bin/weave chmod a&#43;x /usr/local/bin/weave SHELL end vagrant コマンドを使って host1, host2, host3 を起動します。 $ vagrant up $ vagrant ssh host1 # &lt;--- host1 に SSH する場合 $ vagrant ssh host2 # &lt;--- host2 に SSH する場合 $ vagrant ssh host3 # &lt;--- host3 に SSH する場合 物理ノードまたがったコンテナ間で通信をする weave でまず物理ノードをまたがったコンテナ間で通信をさせてみましょう。ここでは 上図の host1, host2 を使います。通常、物理ノードまたがっていると各々のホストで 稼働する Docker コンテナは通信し合えませんが weave を使うと通信しあうことが出 来ます。 まず weave が用いる Docker コンテナを稼働します。下記のように /16 でレンジを切って 更にそこからデフォルトのレンジを指定することが出来ます。 host1# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 host1# eval $(weave env) host2# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11 host2# eval $(weave env) この状態で下記のようなコンテナが稼働します。 host1# docker ps CONTAINER ID IMAGE COMMAND CREATED STATUS PORTS NAMES c55e96b4bdf9 weaveworks/weaveexec:1.4.0 &quot;/home/weave/weavepr 4 seconds ago Up 3 seconds weaveproxy 394382c9c5d9 weaveworks/weave:1.4.0 &quot;/home/weave/weaver 5 seconds ago Up 4 seconds weave host1, host2 でそれぞれテスト用コンテナを稼働させます。名前を &ndash;name オプションで付けるのを 忘れないようにしてください。 host1# docker run --name a1 -ti ubuntu host2# docker run --name a2 -ti ubuntu どちらか一方から ping をもう一方に打ってみましょう。下記では a2 -&gt; a1 の流れで ping を実行しています。 root@a2:/# ping 10.2.1.1 -c 3 PING 10.2.1.1 (10.2.1.1) 56(84) bytes of data." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/" />
+
+
+<meta property="og:updated_time" content="2015-12-22T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Weave を使った Docker ネットワーク">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 今回は Weave というコンテナ間のネットワークを提供してくれる Docker のネットワークプラ グインを使ってみました。下記のような沢山の機能があるようです。 Fast Data Path Docker Network Plugin Security Dynamic Netwrok Attachment Service Binding Fault Tolerance etc &hellip; この記事では上から幾つか抜粋して、Weave ってどのように動かせるのか？を解説します。 そこから Weave が一体ナニモノなのか理解できればなぁと思います。 Vagrant を使った構成 この記事では下記の構成を作って色々と試していきます。使う技術は Vagrant Docker Weave です。 &#43;---------------------&#43; &#43;---------------------&#43; &#43;---------------------&#43; | docker container a1 | | docker container a2 | | docker container a3 | &#43;---------------------&#43; &#43;---------------------&#43; &#43;---------------------&#43; | vagrant host 1 | | vagrant host 2 | | vagrant host 3 | &#43;---------------------&#43;-&#43;---------------------&#43;-&#43;---------------------&#43; | Mac or Windows | &#43;---------------------------------------------------------------------&#43; 特徴としては 作業端末(Mac or Windows or Linux)上で Vagrant を動作させる 各 Vagrant VM 同士はホスト OS のネットワークインターフェース上で疎通が取れる です。 Vagrantfile の作成と host1,2,3 の起動 上記の3台の構成を下記の Vagrantfile で構築します。 Vagrant.configure(2) do |config| config.vm.box = &quot;ubuntu/vivid64&quot; config.vm.define &quot;host1&quot; do |server| server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.11&quot; end config.vm.define &quot;host2&quot; do |server| server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.12&quot; end config.vm.define &quot;host3&quot; do |server| server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.13&quot; end config.vm.provision :shell, inline: &lt;&lt;-SHELL apt-get update apt-get install -y libsqlite3-dev docker.io curl -L git.io/weave -o /usr/local/bin/weave chmod a&#43;x /usr/local/bin/weave SHELL end vagrant コマンドを使って host1, host2, host3 を起動します。 $ vagrant up $ vagrant ssh host1 # &lt;--- host1 に SSH する場合 $ vagrant ssh host2 # &lt;--- host2 に SSH する場合 $ vagrant ssh host3 # &lt;--- host3 に SSH する場合 物理ノードまたがったコンテナ間で通信をする weave でまず物理ノードをまたがったコンテナ間で通信をさせてみましょう。ここでは 上図の host1, host2 を使います。通常、物理ノードまたがっていると各々のホストで 稼働する Docker コンテナは通信し合えませんが weave を使うと通信しあうことが出 来ます。 まず weave が用いる Docker コンテナを稼働します。下記のように /16 でレンジを切って 更にそこからデフォルトのレンジを指定することが出来ます。 host1# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 host1# eval $(weave env) host2# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11 host2# eval $(weave env) この状態で下記のようなコンテナが稼働します。 host1# docker ps CONTAINER ID IMAGE COMMAND CREATED STATUS PORTS NAMES c55e96b4bdf9 weaveworks/weaveexec:1.4.0 &quot;/home/weave/weavepr 4 seconds ago Up 3 seconds weaveproxy 394382c9c5d9 weaveworks/weave:1.4.0 &quot;/home/weave/weaver 5 seconds ago Up 4 seconds weave host1, host2 でそれぞれテスト用コンテナを稼働させます。名前を &ndash;name オプションで付けるのを 忘れないようにしてください。 host1# docker run --name a1 -ti ubuntu host2# docker run --name a2 -ti ubuntu どちらか一方から ping をもう一方に打ってみましょう。下記では a2 -&gt; a1 の流れで ping を実行しています。 root@a2:/# ping 10.2.1.1 -c 3 PING 10.2.1.1 (10.2.1.1) 56(84) bytes of data.">
+
+
+<meta itemprop="dateModified" content="2015-12-22T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="960">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f&text=Weave%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%9f%20Docker%20%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f&title=Weave%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%9f%20Docker%20%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f&title=Weave%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%9f%20Docker%20%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f&title=Weave%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%9f%20Docker%20%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2015-12-22'>
+            December 22, 2015</time>
+        <span class="author"></span>
+        
+            <p>5 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f&text=Weave%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%9f%20Docker%20%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f&title=Weave%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%9f%20Docker%20%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f&title=Weave%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%9f%20Docker%20%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f&title=Weave%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%9f%20Docker%20%e3%83%8d%e3%83%83%e3%83%88%e3%83%af%e3%83%bc%e3%82%af" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f12%2f22%2fweave-docker-network%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>今回は Weave というコンテナ間のネットワークを提供してくれる Docker のネットワークプラ
+グインを使ってみました。下記のような沢山の機能があるようです。</p>
+
+<ul>
+<li>Fast Data Path</li>
+<li>Docker Network Plugin</li>
+<li>Security</li>
+<li>Dynamic Netwrok Attachment</li>
+<li>Service Binding</li>
+<li>Fault Tolerance</li>
+<li>etc &hellip;</li>
+</ul>
+
+<p>この記事では上から幾つか抜粋して、Weave ってどのように動かせるのか？を解説します。
+そこから Weave が一体ナニモノなのか理解できればなぁと思います。</p>
+
+<h2 id="vagrant-を使った構成">Vagrant を使った構成</h2>
+
+<p>この記事では下記の構成を作って色々と試していきます。使う技術は</p>
+
+<ul>
+<li>Vagrant</li>
+<li>Docker</li>
+<li>Weave</li>
+</ul>
+
+<p>です。</p>
+
+<pre><code>+---------------------+ +---------------------+ +---------------------+
+| docker container a1 | | docker container a2 | | docker container a3 |
++---------------------+ +---------------------+ +---------------------+
+|    vagrant host 1   | |    vagrant host 2   | |    vagrant host 3   |
++---------------------+-+---------------------+-+---------------------+
+|                          Mac or Windows                             |
++---------------------------------------------------------------------+
+</code></pre>
+
+<p>特徴としては</p>
+
+<ul>
+<li>作業端末(Mac or Windows or Linux)上で Vagrant を動作させる</li>
+<li>各 Vagrant VM 同士はホスト OS のネットワークインターフェース上で疎通が取れる</li>
+</ul>
+
+<p>です。</p>
+
+<h2 id="vagrantfile-の作成と-host1-2-3-の起動">Vagrantfile の作成と host1,2,3 の起動</h2>
+
+<p>上記の3台の構成を下記の Vagrantfile で構築します。</p>
+
+<pre><code>Vagrant.configure(2) do |config|
+  config.vm.box = &quot;ubuntu/vivid64&quot;
+
+  config.vm.define &quot;host1&quot; do |server|
+    server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.11&quot;
+  end
+
+  config.vm.define &quot;host2&quot; do |server|
+    server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.12&quot;
+  end
+
+  config.vm.define &quot;host3&quot; do |server|
+    server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.13&quot;
+  end
+
+  config.vm.provision :shell, inline: &lt;&lt;-SHELL
+apt-get update
+apt-get install -y libsqlite3-dev docker.io
+curl -L git.io/weave -o /usr/local/bin/weave
+chmod a+x /usr/local/bin/weave
+  SHELL
+end
+</code></pre>
+
+<p>vagrant コマンドを使って host1, host2, host3 を起動します。</p>
+
+<pre><code class="language-bash">$ vagrant up
+$ vagrant ssh host1 # &lt;--- host1 に SSH する場合
+$ vagrant ssh host2 # &lt;--- host2 に SSH する場合
+$ vagrant ssh host3 # &lt;--- host3 に SSH する場合
+</code></pre>
+
+<h2 id="物理ノードまたがったコンテナ間で通信をする">物理ノードまたがったコンテナ間で通信をする</h2>
+
+<p>weave でまず物理ノードをまたがったコンテナ間で通信をさせてみましょう。ここでは
+上図の host1, host2 を使います。通常、物理ノードまたがっていると各々のホストで
+稼働する Docker コンテナは通信し合えませんが weave を使うと通信しあうことが出
+来ます。</p>
+
+<p>まず weave が用いる Docker コンテナを稼働します。下記のように /16 でレンジを切って
+更にそこからデフォルトのレンジを指定することが出来ます。</p>
+
+<pre><code class="language-bash">host1# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24
+host1# eval $(weave env)
+host2# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
+host2# eval $(weave env)
+</code></pre>
+
+<p>この状態で下記のようなコンテナが稼働します。</p>
+
+<pre><code class="language-bash">host1# docker ps
+CONTAINER ID        IMAGE                        COMMAND                CREATED             STATUS              PORTS               NAMES
+c55e96b4bdf9        weaveworks/weaveexec:1.4.0   &quot;/home/weave/weavepr   4 seconds ago       Up 3 seconds                            weaveproxy
+394382c9c5d9        weaveworks/weave:1.4.0       &quot;/home/weave/weaver    5 seconds ago       Up 4 seconds                            weave
+</code></pre>
+
+<p>host1, host2 でそれぞれテスト用コンテナを稼働させます。名前を &ndash;name オプションで付けるのを
+忘れないようにしてください。</p>
+
+<pre><code class="language-bash">host1# docker run --name a1 -ti ubuntu
+host2# docker run --name a2 -ti ubuntu
+</code></pre>
+
+<p>どちらか一方から ping をもう一方に打ってみましょう。下記では a2 -&gt; a1 の流れで
+ping を実行しています。</p>
+
+<pre><code class="language-bash">root@a2:/# ping 10.2.1.1 -c 3
+PING 10.2.1.1 (10.2.1.1) 56(84) bytes of data.
+64 bytes from 10.2.1.1: icmp_seq=1 ttl=64 time=0.316 ms
+64 bytes from 10.2.1.1: icmp_seq=2 ttl=64 time=0.501 ms
+64 bytes from 10.2.1.1: icmp_seq=3 ttl=64 time=0.619 ms
+
+--- 10.2.1.1 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 1999ms
+rtt min/avg/max/mdev = 0.316/0.478/0.619/0.127 ms
+</code></pre>
+
+<p>また docker コンテナを起動する時に指定した &ndash;name a1, &ndash;name a2 の名前で ping
+を実行してみましょう。これも weave の機能の１つで dns lookup が行えます。</p>
+
+<pre><code>root@b2:/# ping a1 -c 3
+PING b1.weave.local (10.2.1.1) 56(84) bytes of data.
+64 bytes from a1.weave.local (10.2.1.1): icmp_seq=1 ttl=64 time=1.14 ms
+64 bytes from a1.weave.local (10.2.1.1): icmp_seq=2 ttl=64 time=0.446 ms
+64 bytes from a1.weave.local (10.2.1.1): icmp_seq=3 ttl=64 time=0.364 ms
+
+--- b1.weave.local ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2001ms
+rtt min/avg/max/mdev = 0.364/0.653/1.149/0.352 ms
+</code></pre>
+
+<p>結果から、異なる物理ノード(今回は VM)上で動作させた Docker コンテナ同士が通信し合えた
+ことがわかります。またコンテナ名の DNS 的は名前解決も可能になりました。</p>
+
+<h2 id="ダイナミックにネットワークをアタッチ-デタッチする">ダイナミックにネットワークをアタッチ・デタッチする</h2>
+
+<p>次に weave のネットワークを動的(コンテナがオンラインのまま)にアタッチ・デタッ
+チすることが出来るので試してみます。</p>
+
+<p>最初に weave のネットワークに属さない a1-1 という名前のコンテナを作ります。
+docker exec で IP アドレスを確認すると eth0, lo のインターフェースしか持っていない
+ことが判ります。</p>
+
+<pre><code class="language-bash">host1# C=$(docker run --name a1-1 -e WEAVE_CIDR=none -dti ubuntu)
+host1# docker exec -it a1-1 ip a # &lt;--- docker コンテナ内でコマンド実行
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+25: eth0: &lt;BROADCAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.5/16 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:5/64 scope link
+       valid_lft forever preferred_lft forever
+</code></pre>
+
+<p>では weave のネットワークを a1-1 コンテナにアタッチしてみましょう。</p>
+
+<pre><code class="language-bash">host1# weave attach $C
+10.2.1.1
+host1# docker exec -it a1-1 ip a
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+25: eth0: &lt;BROADCAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.5/16 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:5/64 scope link
+       valid_lft forever preferred_lft forever
+27: ethwe: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether aa:15:06:51:6a:3b brd ff:ff:ff:ff:ff:ff
+    inet 10.2.1.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet6 fe80::a815:6ff:fe51:6a3b/64 scope link
+       valid_lft forever preferred_lft forever
+</code></pre>
+
+<p>上記のようにインターフェース ethwe が付与され最初に指定したデフォルトのサブネッ
+ト上の IP アドレスが付きました。</p>
+
+<p>次に weave ネットワークを複数アタッチしてみましょう。default, 10.2.2.0/24,
+10.2.3.0/24 のネットワーク(サブネット)をアタッチします。</p>
+
+<pre><code class="language-bash">host1# weave attach net:default net:10.2.2.0/24 net:10.2.3.0/24 $C
+10.2.1.1 10.2.2.1 10.2.3.1
+root@vagrant-ubuntu-vivid-64:~# docker exec -it b3 ip a
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+25: eth0: &lt;BROADCAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.5/16 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:5/64 scope link
+       valid_lft forever preferred_lft forever
+33: ethwe: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 9a:74:73:1b:24:a9 brd ff:ff:ff:ff:ff:ff
+    inet 10.2.1.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet 10.2.2.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet 10.2.3.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet6 fe80::9874:73ff:fe1b:24a9/64 scope link
+       valid_lft forever preferred_lft forever
+</code></pre>
+
+<p>結果、ethwe インターフェースに3つの IP アドレスが付与されました。
+この様にダイナミックにコンテナに対して weave ネットワークをアタッチすることが出来ます。</p>
+
+<h2 id="コンテナ外部から情報を取得する">コンテナ外部から情報を取得する</h2>
+
+<p>下記のようにコンテナを起動しているホスト上 (Vagrant VM) からコンテナの情報を取
+得する事もできます。シンプルですがオーケストレーション・自動化を行う上で重要な機能に
+なりそうな予感がします。</p>
+
+<pre><code class="language-bash">host1# weave expose
+10.2.1.1
+host1# weave dns-lookup a2
+10.2.1.128
+</code></pre>
+
+<h2 id="ダイナミックに物理ノードを追加し-weave-ネットワークへ">ダイナミックに物理ノードを追加し weave ネットワークへ</h2>
+
+<p>物理ノード(今回の場合 vagrant vm)を追加し上記で作成した weave ネットワークへ参
+加させることも可能です。なお、今回は上記の vagrant up の時点で追加分の vm (host3)
+を既に稼働させています。</p>
+
+<p>host1 で新しい物理ノードを接続します。</p>
+
+<pre><code>host1# weave connect 192.168.33.12
+host1# weave status targets
+192.168.33.13
+192.168.33.12
+</code></pre>
+
+<p>host3 で weave コンテナ・テストコンテナを起動します。
+下記で指定している 192.168.33.11 は host1 の IP アドレスです。</p>
+
+<pre><code>host3# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
+host3# docker run --name a3 -ti ubuntu
+</code></pre>
+
+<p>host2 の a2 コンテナに ping を打ってみます。</p>
+
+<pre><code>roota3:/# ping a2 -c 3
+PING a2.weave.local (10.2.1.128) 56(84) bytes of data.
+64 bytes from a2.weave.local (10.2.1.128): icmp_seq=1 ttl=64 time=0.366 ms
+64 bytes from a2.weave.local (10.2.1.128): icmp_seq=2 ttl=64 time=0.709 ms
+64 bytes from a2.weave.local (10.2.1.128): icmp_seq=3 ttl=64 time=0.569 ms
+</code></pre>
+
+<p>host3 上の a3 コンテナが既存の weave ネットワークに参加し通信出来たことが確認
+できました。</p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>コンフィギュレーションらしきモノを記述することなく Docker コンテナ間の通信
+が出来ました。これは自動化する際に優位になるでしょう。また今回紹介したのは
+&lsquo;weave net&rsquo; と呼ばれるモノですが他にも &lsquo;weave scope&rsquo;, &lsquo;weave run&rsquo; といったモノ
+があります。</p>
+
+<p><a href="http://weave.works/product/">http://weave.works/product/</a></p>
+
+<p>また Docker Swarm, Compose と組み合わせる構成も組めるようです。試してみたい方
+がいましたら是非。</p>
+
+<p><a href="http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html">http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html</a></p>
+
+<p>ですが結果、まだ weave をどう自分たちのサービスに組み込めるかは検討が付いてい
+ません。&rsquo;出来る&rsquo; と &lsquo;運用できる&rsquo; が別物であることと、コンテナまわりのネットワー
+ク機能全般に理解して選定する必要がありそうです。</p>
+
+<p>参考サイト
++++</p>
+
+<p><a href="http://weave.works/docs/">http://weave.works/docs/</a></p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"
+                class="button big previous">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"
+                class="button big next">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2015\/12\/22\/weave-docker-network\/';
+    var disqus_title = 'Weave を使った Docker ネットワーク';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2015\/12\/22\/weave-docker-network\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

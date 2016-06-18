@@ -1,0 +1,3995 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>infrastructure on ジェダイさんのブログ</title>
+    <link>http://jedipunkz.github.io/categories/infrastructure/</link>
+    <description>Recent content in infrastructure on ジェダイさんのブログ</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Mon, 28 Dec 2015 00:00:00 +0000</lastBuildDate>
+    <atom:link href="http://jedipunkz.github.io/categories/infrastructure/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</title>
+      <link>http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/</link>
+      <pubDate>Mon, 28 Dec 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;Influxdb が Influxdata (&lt;a href=&#34;https://influxdata.com/&#34;&gt;https://influxdata.com/&lt;/a&gt;) として生まれ変わり公式の
+メトリクス送信エージェント Telegraf と可視化ツール Chronograf をリリースしたので
+使ってみました。&lt;/p&gt;
+
+&lt;p&gt;3つのツールの役割は下記のとおりです。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Chronograf : 可視化ツール, Grafana 相当のソフトウェアです&lt;/li&gt;
+&lt;li&gt;Telegraf : メトリクス情報を Influxdb に送信するエージェント&lt;/li&gt;
+&lt;li&gt;Influxdb : メトリクス情報を格納する時系列データベース&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;以前に cAdvisor, influxdb, grafana を使って Docker コンテナのメトリクスを可視
+化する記事を書きましたが telegraf を使うとサーバ情報と合わせて Docker コンテナ
+のメトリクスも influxdb に送信することが出来ます。個人的にはそのコンテナ情報の
+扱いもサーバ情報と同様に扱ってくれる点に期待しつつ、評価してみました。&lt;/p&gt;
+
+&lt;h2 id=&#34;今回の環境&#34;&gt;今回の環境&lt;/h2&gt;
+
+&lt;p&gt;今回は Ubuntu 15.04 vivid64 を使ってテストしています。&lt;/p&gt;
+
+&lt;h2 id=&#34;influxdb-をインストールして起動&#34;&gt;influxdb をインストールして起動&lt;/h2&gt;
+
+&lt;p&gt;最新リリース版の deb パッケージが用意されていたのでこれを使いました。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;wget http://influxdb.s3.amazonaws.com/influxdb_0.9.5.1_amd64.deb
+sudo dpkg -i influxdb_0.9.5.1_amd64.deb
+sudo service influxdb start
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;telegraf-のインストールと起動&#34;&gt;telegraf のインストールと起動&lt;/h2&gt;
+
+&lt;p&gt;こちらも deb パッケージで。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;wget http://get.influxdb.org/telegraf/telegraf_0.2.4_amd64.deb
+sudo dpkg -i telegraf_0.2.4_amd64.deb
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;コンフィギュレーションですが今回は CPU, Disk, Net, Docker のメトリクス情報を送
+信するようにしました。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;[agent]
+    interval = &amp;quot;0.1s&amp;quot;
+
+[outputs]
+
+[outputs.influxdb]
+    urls = [&amp;quot;http://localhost:8086&amp;quot;]
+    database = &amp;quot;telegraf-test&amp;quot;
+    user_agent = &amp;quot;telegraf&amp;quot;
+
+[plugins]
+[[plugins.cpu]]
+  percpu = true
+  totalcpu = false
+  drop = [&amp;quot;cpu_time*&amp;quot;]
+
+[[plugins.disk]]
+  [plugins.disk.tagpass]
+    fstype = [ &amp;quot;ext4&amp;quot;, &amp;quot;xfs&amp;quot; ]
+    #path = [ &amp;quot;/home*&amp;quot; ]
+
+[[plugins.disk]]
+  pass = [ &amp;quot;disk_inodes*&amp;quot; ]
+  
+[[plugins.docker]]
+
+[[plugins.net]]
+  interfaces = [&amp;quot;eth0&amp;quot;]
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;他にも色々メトリクス情報を取得できそうです、下記のサイトを参考にしてみてください。
+&lt;a href=&#34;https://github.com/influxdb/telegraf/blob/0.3.0/CONFIGURATION.md&#34;&gt;https://github.com/influxdb/telegraf/blob/0.3.0/CONFIGURATION.md&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;telegraf を起動します。Docker コンテナのメトリクスを取得するために root ユーザ
+で起動する必要があります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;sudo telegraf -config telegraf.conf
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;chronograf-のインストールと起動&#34;&gt;chronograf のインストールと起動&lt;/h2&gt;
+
+&lt;p&gt;こちらも deb でインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;wget https://s3.amazonaws.com/get.influxdb.org/chronograf/chronograf_0.4.0_amd64.deb
+sudo dpkg -i chronograf_0.4.0_amd64.deb
+sudo /opt/chronograf/chronograf -sample-config &amp;gt; /opt/chronograf/config.toml
+sudo service chronograf start
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;グラフの描画&#34;&gt;グラフの描画&lt;/h2&gt;
+
+&lt;p&gt;この状態でブラウザでアクセスしてみましょう。&lt;/p&gt;
+
+&lt;p&gt;http://&amp;lt;ホストのIPアドレス&amp;gt;:10000/&lt;/p&gt;
+
+&lt;p&gt;アクセスすると簡単なガイドが走りますのでここでは設定方法は省きます。Grafana を使った場合と
+同様に気をつけるポイントは下記のとおりです。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&amp;lsquo;filter by&amp;rsquo;  に描画したいリソース名を選択(CPU,Disk,Net,Dockerの各リソース)&lt;/li&gt;
+&lt;li&gt;Database に telegraf.conf に記した &amp;lsquo;telegraf-test&amp;rsquo; を選択&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;すると下記のようなグラフやダッシュボードが作成されます。下記は CPU 使用率をグ
+ラフ化したものです。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/chronograf_cpu.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
+
+&lt;p&gt;こちらは Docker 関連のグラフ。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/chronograf_docker.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
+
+&lt;p&gt;複数のグラフを1つのダッシュボードにまとめることもできるようです。&lt;/p&gt;
+
+&lt;p&gt;まとめ
++++&lt;/p&gt;
+
+&lt;p&gt;個人的には Grafana の UI はとてもわかりずらかったので公式の可視化ツールが出てきて良かった
+と思っています。操作もとても理解しやすくなっています。Telegraf についても公式のメトリクス
+情報送信エージェントということで安心感があります。また Grafana は別途 HTTP サー
+バが必要でしたが Chronograf は HTTP サーバも内包しているのでセットアップが簡単
+でした。&lt;/p&gt;
+
+&lt;p&gt;ただ configuration guide がまだまだ説明不十分なので凝ったことをしようすとする
+とソースを読まなくてはいけないかもしれません。&lt;/p&gt;
+
+&lt;p&gt;いずれにしてもサーバのメトリクス情報と共に cAdvisor 等のソフトウェアを用いなく
+てもサーバ上で稼働しているコンテナ周りの情報も取得できたので個人的にはハッピー。
+cAdvisor でしか取得できない情報もありそうですが今後、導入を検討する上で評価し
+ていきたいと思います。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Weave を使った Docker ネットワーク</title>
+      <link>http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/</link>
+      <pubDate>Tue, 22 Dec 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;今回は Weave というコンテナ間のネットワークを提供してくれる Docker のネットワークプラ
+グインを使ってみました。下記のような沢山の機能があるようです。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Fast Data Path&lt;/li&gt;
+&lt;li&gt;Docker Network Plugin&lt;/li&gt;
+&lt;li&gt;Security&lt;/li&gt;
+&lt;li&gt;Dynamic Netwrok Attachment&lt;/li&gt;
+&lt;li&gt;Service Binding&lt;/li&gt;
+&lt;li&gt;Fault Tolerance&lt;/li&gt;
+&lt;li&gt;etc &amp;hellip;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;この記事では上から幾つか抜粋して、Weave ってどのように動かせるのか？を解説します。
+そこから Weave が一体ナニモノなのか理解できればなぁと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;vagrant-を使った構成&#34;&gt;Vagrant を使った構成&lt;/h2&gt;
+
+&lt;p&gt;この記事では下記の構成を作って色々と試していきます。使う技術は&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Vagrant&lt;/li&gt;
+&lt;li&gt;Docker&lt;/li&gt;
+&lt;li&gt;Weave&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;+---------------------+ +---------------------+ +---------------------+
+| docker container a1 | | docker container a2 | | docker container a3 |
++---------------------+ +---------------------+ +---------------------+
+|    vagrant host 1   | |    vagrant host 2   | |    vagrant host 3   |
++---------------------+-+---------------------+-+---------------------+
+|                          Mac or Windows                             |
++---------------------------------------------------------------------+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;特徴としては&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;作業端末(Mac or Windows or Linux)上で Vagrant を動作させる&lt;/li&gt;
+&lt;li&gt;各 Vagrant VM 同士はホスト OS のネットワークインターフェース上で疎通が取れる&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;です。&lt;/p&gt;
+
+&lt;h2 id=&#34;vagrantfile-の作成と-host1-2-3-の起動&#34;&gt;Vagrantfile の作成と host1,2,3 の起動&lt;/h2&gt;
+
+&lt;p&gt;上記の3台の構成を下記の Vagrantfile で構築します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;Vagrant.configure(2) do |config|
+  config.vm.box = &amp;quot;ubuntu/vivid64&amp;quot;
+
+  config.vm.define &amp;quot;host1&amp;quot; do |server|
+    server.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.11&amp;quot;
+  end
+
+  config.vm.define &amp;quot;host2&amp;quot; do |server|
+    server.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.12&amp;quot;
+  end
+
+  config.vm.define &amp;quot;host3&amp;quot; do |server|
+    server.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.13&amp;quot;
+  end
+
+  config.vm.provision :shell, inline: &amp;lt;&amp;lt;-SHELL
+apt-get update
+apt-get install -y libsqlite3-dev docker.io
+curl -L git.io/weave -o /usr/local/bin/weave
+chmod a+x /usr/local/bin/weave
+  SHELL
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;vagrant コマンドを使って host1, host2, host3 を起動します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ vagrant up
+$ vagrant ssh host1 # &amp;lt;--- host1 に SSH する場合
+$ vagrant ssh host2 # &amp;lt;--- host2 に SSH する場合
+$ vagrant ssh host3 # &amp;lt;--- host3 に SSH する場合
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;物理ノードまたがったコンテナ間で通信をする&#34;&gt;物理ノードまたがったコンテナ間で通信をする&lt;/h2&gt;
+
+&lt;p&gt;weave でまず物理ノードをまたがったコンテナ間で通信をさせてみましょう。ここでは
+上図の host1, host2 を使います。通常、物理ノードまたがっていると各々のホストで
+稼働する Docker コンテナは通信し合えませんが weave を使うと通信しあうことが出
+来ます。&lt;/p&gt;
+
+&lt;p&gt;まず weave が用いる Docker コンテナを稼働します。下記のように /16 でレンジを切って
+更にそこからデフォルトのレンジを指定することが出来ます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24
+host1# eval $(weave env)
+host2# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
+host2# eval $(weave env)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;この状態で下記のようなコンテナが稼働します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# docker ps
+CONTAINER ID        IMAGE                        COMMAND                CREATED             STATUS              PORTS               NAMES
+c55e96b4bdf9        weaveworks/weaveexec:1.4.0   &amp;quot;/home/weave/weavepr   4 seconds ago       Up 3 seconds                            weaveproxy
+394382c9c5d9        weaveworks/weave:1.4.0       &amp;quot;/home/weave/weaver    5 seconds ago       Up 4 seconds                            weave
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;host1, host2 でそれぞれテスト用コンテナを稼働させます。名前を &amp;ndash;name オプションで付けるのを
+忘れないようにしてください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# docker run --name a1 -ti ubuntu
+host2# docker run --name a2 -ti ubuntu
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;どちらか一方から ping をもう一方に打ってみましょう。下記では a2 -&amp;gt; a1 の流れで
+ping を実行しています。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;root@a2:/# ping 10.2.1.1 -c 3
+PING 10.2.1.1 (10.2.1.1) 56(84) bytes of data.
+64 bytes from 10.2.1.1: icmp_seq=1 ttl=64 time=0.316 ms
+64 bytes from 10.2.1.1: icmp_seq=2 ttl=64 time=0.501 ms
+64 bytes from 10.2.1.1: icmp_seq=3 ttl=64 time=0.619 ms
+
+--- 10.2.1.1 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 1999ms
+rtt min/avg/max/mdev = 0.316/0.478/0.619/0.127 ms
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;また docker コンテナを起動する時に指定した &amp;ndash;name a1, &amp;ndash;name a2 の名前で ping
+を実行してみましょう。これも weave の機能の１つで dns lookup が行えます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;root@b2:/# ping a1 -c 3
+PING b1.weave.local (10.2.1.1) 56(84) bytes of data.
+64 bytes from a1.weave.local (10.2.1.1): icmp_seq=1 ttl=64 time=1.14 ms
+64 bytes from a1.weave.local (10.2.1.1): icmp_seq=2 ttl=64 time=0.446 ms
+64 bytes from a1.weave.local (10.2.1.1): icmp_seq=3 ttl=64 time=0.364 ms
+
+--- b1.weave.local ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2001ms
+rtt min/avg/max/mdev = 0.364/0.653/1.149/0.352 ms
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;結果から、異なる物理ノード(今回は VM)上で動作させた Docker コンテナ同士が通信し合えた
+ことがわかります。またコンテナ名の DNS 的は名前解決も可能になりました。&lt;/p&gt;
+
+&lt;h2 id=&#34;ダイナミックにネットワークをアタッチ-デタッチする&#34;&gt;ダイナミックにネットワークをアタッチ・デタッチする&lt;/h2&gt;
+
+&lt;p&gt;次に weave のネットワークを動的(コンテナがオンラインのまま)にアタッチ・デタッ
+チすることが出来るので試してみます。&lt;/p&gt;
+
+&lt;p&gt;最初に weave のネットワークに属さない a1-1 という名前のコンテナを作ります。
+docker exec で IP アドレスを確認すると eth0, lo のインターフェースしか持っていない
+ことが判ります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# C=$(docker run --name a1-1 -e WEAVE_CIDR=none -dti ubuntu)
+host1# docker exec -it a1-1 ip a # &amp;lt;--- docker コンテナ内でコマンド実行
+1: lo: &amp;lt;LOOPBACK,UP,LOWER_UP&amp;gt; mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+25: eth0: &amp;lt;BROADCAST,UP,LOWER_UP&amp;gt; mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.5/16 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:5/64 scope link
+       valid_lft forever preferred_lft forever
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;では weave のネットワークを a1-1 コンテナにアタッチしてみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# weave attach $C
+10.2.1.1
+host1# docker exec -it a1-1 ip a
+1: lo: &amp;lt;LOOPBACK,UP,LOWER_UP&amp;gt; mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+25: eth0: &amp;lt;BROADCAST,UP,LOWER_UP&amp;gt; mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.5/16 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:5/64 scope link
+       valid_lft forever preferred_lft forever
+27: ethwe: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether aa:15:06:51:6a:3b brd ff:ff:ff:ff:ff:ff
+    inet 10.2.1.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet6 fe80::a815:6ff:fe51:6a3b/64 scope link
+       valid_lft forever preferred_lft forever
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上記のようにインターフェース ethwe が付与され最初に指定したデフォルトのサブネッ
+ト上の IP アドレスが付きました。&lt;/p&gt;
+
+&lt;p&gt;次に weave ネットワークを複数アタッチしてみましょう。default, 10.2.2.0/24,
+10.2.3.0/24 のネットワーク(サブネット)をアタッチします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# weave attach net:default net:10.2.2.0/24 net:10.2.3.0/24 $C
+10.2.1.1 10.2.2.1 10.2.3.1
+root@vagrant-ubuntu-vivid-64:~# docker exec -it b3 ip a
+1: lo: &amp;lt;LOOPBACK,UP,LOWER_UP&amp;gt; mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+25: eth0: &amp;lt;BROADCAST,UP,LOWER_UP&amp;gt; mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.5/16 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:5/64 scope link
+       valid_lft forever preferred_lft forever
+33: ethwe: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 9a:74:73:1b:24:a9 brd ff:ff:ff:ff:ff:ff
+    inet 10.2.1.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet 10.2.2.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet 10.2.3.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet6 fe80::9874:73ff:fe1b:24a9/64 scope link
+       valid_lft forever preferred_lft forever
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;結果、ethwe インターフェースに3つの IP アドレスが付与されました。
+この様にダイナミックにコンテナに対して weave ネットワークをアタッチすることが出来ます。&lt;/p&gt;
+
+&lt;h2 id=&#34;コンテナ外部から情報を取得する&#34;&gt;コンテナ外部から情報を取得する&lt;/h2&gt;
+
+&lt;p&gt;下記のようにコンテナを起動しているホスト上 (Vagrant VM) からコンテナの情報を取
+得する事もできます。シンプルですがオーケストレーション・自動化を行う上で重要な機能に
+なりそうな予感がします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# weave expose
+10.2.1.1
+host1# weave dns-lookup a2
+10.2.1.128
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;ダイナミックに物理ノードを追加し-weave-ネットワークへ&#34;&gt;ダイナミックに物理ノードを追加し weave ネットワークへ&lt;/h2&gt;
+
+&lt;p&gt;物理ノード(今回の場合 vagrant vm)を追加し上記で作成した weave ネットワークへ参
+加させることも可能です。なお、今回は上記の vagrant up の時点で追加分の vm (host3)
+を既に稼働させています。&lt;/p&gt;
+
+&lt;p&gt;host1 で新しい物理ノードを接続します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;host1# weave connect 192.168.33.12
+host1# weave status targets
+192.168.33.13
+192.168.33.12
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;host3 で weave コンテナ・テストコンテナを起動します。
+下記で指定している 192.168.33.11 は host1 の IP アドレスです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;host3# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
+host3# docker run --name a3 -ti ubuntu
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;host2 の a2 コンテナに ping を打ってみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;roota3:/# ping a2 -c 3
+PING a2.weave.local (10.2.1.128) 56(84) bytes of data.
+64 bytes from a2.weave.local (10.2.1.128): icmp_seq=1 ttl=64 time=0.366 ms
+64 bytes from a2.weave.local (10.2.1.128): icmp_seq=2 ttl=64 time=0.709 ms
+64 bytes from a2.weave.local (10.2.1.128): icmp_seq=3 ttl=64 time=0.569 ms
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;host3 上の a3 コンテナが既存の weave ネットワークに参加し通信出来たことが確認
+できました。&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
+
+&lt;p&gt;コンフィギュレーションらしきモノを記述することなく Docker コンテナ間の通信
+が出来ました。これは自動化する際に優位になるでしょう。また今回紹介したのは
+&amp;lsquo;weave net&amp;rsquo; と呼ばれるモノですが他にも &amp;lsquo;weave scope&amp;rsquo;, &amp;lsquo;weave run&amp;rsquo; といったモノ
+があります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://weave.works/product/&#34;&gt;http://weave.works/product/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;また Docker Swarm, Compose と組み合わせる構成も組めるようです。試してみたい方
+がいましたら是非。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html&#34;&gt;http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;ですが結果、まだ weave をどう自分たちのサービスに組み込めるかは検討が付いてい
+ません。&amp;rsquo;出来る&amp;rsquo; と &amp;lsquo;運用できる&amp;rsquo; が別物であることと、コンテナまわりのネットワー
+ク機能全般に理解して選定する必要がありそうです。&lt;/p&gt;
+
+&lt;p&gt;参考サイト
++++&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://weave.works/docs/&#34;&gt;http://weave.works/docs/&lt;/a&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</title>
+      <link>http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/</link>
+      <pubDate>Sun, 15 Nov 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;最近、業務で CircleCI を扱っていて、だいぶ &amp;ldquo;出来ること・出来ないこと&amp;rdquo; や &amp;ldquo;出来ないこと
+に対する回避方法&amp;rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;この記事の前提&#34;&gt;この記事の前提&amp;hellip;&lt;/h2&gt;
+
+&lt;p&gt;ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ
+ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、
+それの回避方法等&amp;hellip;についてまとめています。&lt;/p&gt;
+
+&lt;h2 id=&#34;cirlceci-と併用するサービスについて&#34;&gt;CirlceCI と併用するサービスについて&lt;/h2&gt;
+
+&lt;p&gt;CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ
+スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た
+ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー
+トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ
+うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た
+らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが
+省けそう。ってことで&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;AWS S3 (&lt;a href=&#34;https://aws.amazon.com/jp/s3/&#34;&gt;https://aws.amazon.com/jp/s3/&lt;/a&gt;)&lt;/li&gt;
+&lt;li&gt;AWS CodeDeploy (&lt;a href=&#34;https://aws.amazon.com/jp/codedeploy/&#34;&gt;https://aws.amazon.com/jp/codedeploy/&lt;/a&gt;)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;を併用することを考えました。&lt;/p&gt;
+
+&lt;p&gt;S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、
+ビルドした結果を格納します。私の務めている会社ではプログラミング言語として
+Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ
+ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り
+戻すことが出来そうです。&lt;/p&gt;
+
+&lt;p&gt;また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ
+ロイが可能になるサービスです。東京リージョンでは &lt;sup&gt;2015&lt;/sup&gt;&amp;frasl;&lt;sub&gt;08&lt;/sub&gt; から利用が可能になり
+ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内
+のインスタンスに対してもデプロイが可能なところです。&lt;/p&gt;
+
+&lt;p&gt;Tips 的な情報として
++++&lt;/p&gt;
+
+&lt;p&gt;circle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで
+CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい
+と思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;git-push-からデプロイまでを自動で行う-circle-yml&#34;&gt;Git push からデプロイまでを自動で行う circle.yml&lt;/h2&gt;
+
+&lt;p&gt;Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の
+circle.yml を紹介します。全体の流れとしては&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;レポジトリに git push, merge ことがトリガで処理が走る&lt;/li&gt;
+&lt;li&gt;circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る&lt;/li&gt;
+&lt;li&gt;S3 バケットにビルドされた結果が格納される&lt;/li&gt;
+&lt;li&gt;CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;となります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-yml&#34;&gt;machine:
+  environment:
+    SBT_VERSION: 0.13.9
+    SBT_OPTS: &amp;quot;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&amp;quot;
+  services:
+    - docker
+
+dependencies:
+  pre:
+    - (事前に実行したいコマンド・スクリプトを記述)
+  cache_directories:
+    - &amp;quot;~/.sbt&amp;quot;
+
+test:
+  override:
+    - sbt compile
+
+deployment:
+  production:
+    branch: master
+    codedeploy:
+      codedeploy-sample:
+        application_root: /
+        region: ap-northeast-1
+        revision_location:
+          revision_type: S3
+          s3_location:
+            bucket: circleci-sample-bucket
+            key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip
+        deployment_group: codedeploy-sample-group
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;それぞれのパラメータの意味&#34;&gt;それぞれのパラメータの意味&lt;/h4&gt;
+
+&lt;p&gt;上記 circle.yml の重要なパラメータのみ説明していきます。
+私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに
+SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき
+ると思いますので読み替えてください。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;machine -&amp;gt; environment : 全体で適用できる環境変数を定義します&lt;/li&gt;
+&lt;li&gt;dependencies -&amp;gt; pre : 事前に実行したいコマンド等を定義できます&lt;/li&gt;
+&lt;li&gt;test -&amp;gt; overide : テストを実行するコマンドを書きます。&lt;/li&gt;
+&lt;li&gt;deployment -&amp;gt; production -&amp;gt; branch : 適用するブランチ名と本番環境であることを記述します。&lt;/li&gt;
+&lt;li&gt;&amp;lsquo;codedeploy-sample&amp;rsquo; : CodeDeploy 上にサンプルで作成した &amp;lsquo;Application&amp;rsquo; 名です&lt;/li&gt;
+&lt;li&gt;s3_location -&amp;gt; bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します&lt;/li&gt;
+&lt;li&gt;s3_location -&amp;gt; key_pattern : S3 バケットに収めるファイル名指定です&lt;/li&gt;
+&lt;li&gt;deployment_group : CodeDeploy で定義する &amp;lsquo;Deployment-Group&amp;rsquo; 名です&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;より詳細な説明を読みたい場合は下記の URL に描いてあります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://circleci.com/docs/configuration&#34;&gt;https://circleci.com/docs/configuration&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;s3-のみににデプロイする例&#34;&gt;S3 のみににデプロイする例&lt;/h2&gt;
+
+&lt;p&gt;上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて
+実行したい場面もありそうです。流れとしては&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;レポジトリに git push, merge ことがトリガで処理が走る&lt;/li&gt;
+&lt;li&gt;circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る&lt;/li&gt;
+&lt;li&gt;S3 バケットにビルドされた結果が格納される&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の
+API を直接叩けば出来そうです。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html&#34;&gt;http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;このリファレンスにある &amp;ldquo;CreateDeployment&amp;rdquo; については後に例をあげます。&lt;/p&gt;
+
+&lt;p&gt;ただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが
+CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。&lt;/p&gt;
+
+&lt;p&gt;よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば
+上記の流れが組めそうです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-yml&#34;&gt;machine:
+  environment:
+    SBT_VERSION: 0.13.9
+    SBT_OPTS: &amp;quot;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&amp;quot;
+  services:
+    - docker
+
+dependencies:
+  pre:
+    - sudo pip install awscli
+  cache_directories:
+    - &amp;quot;~/.sbt&amp;quot;
+
+test:
+  override:
+    - sbt compile
+
+deployment:
+  master:
+    branch: master
+    commands:
+      - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip .
+      - aws s3 cp
+        sample-code-${CIRCLE_PROJECT_REPONAME}-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip s3://&amp;lt;バケット名&amp;gt;/&amp;lt;ディレクトリ&amp;gt;/ --region ap-northeast-1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;事前に awscli をインストールしているだけです。&lt;/p&gt;
+
+&lt;p&gt;S3 バケットに格納された成果物を CodeDeploy を使って手動でデプロイするには下記
+のコマンドで実施できます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ aws deploy create-deployment \
+  --application-name codedeploy-sample \
+  --deployment-config-name CodeDeployDefault.OneAtATime \
+  --deployment-group-name codedeploy-sample-group \
+  --description &amp;quot;deploy test&amp;quot; \
+  --s3-location bucket=&amp;lt;バケット名&amp;gt;,bundleType=zip,key=&amp;lt;ファイル名&amp;gt;
+  {
+    &amp;quot;deploymentId&amp;quot;: &amp;quot;d-2B4OAMT0B&amp;quot;
+   }
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;deploymentId は CodeDeploy 上の Application に紐付いた ID です。CodeDeploy の
+API を叩くか AWS コンソールで確認可能です。&lt;/p&gt;
+
+&lt;h4 id=&#34;circleci-の問題点とそれの回避方法&#34;&gt;CircleCI の問題点とそれの回避方法&lt;/h4&gt;
+
+&lt;ul&gt;
+&lt;li&gt;production と staging&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;1つのブランチで管理できる circle.yml は1つです。このファイルの中で定義できる &amp;lsquo;本番用&amp;rsquo;, &amp;lsquo;開発用&amp;rsquo; の定義は
+deployment -&amp;gt; production, staging の2種類になります。この2つで管理しきれない環境がある場合(例えば staging 以前の
+development 環境がある) は、レポジトリのブランチを別けて circle.yml を管理する方法があると思います。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;複数のデプロイ先があるレポジトリの運用&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;同一のレポジトリ内で管理しているコードのデプロイ先が複数ある場合は CodeDeploy 上で1つの Application に対して複数の
+Deployment-Group を作成することで対応できます。ただ、cirlce.yml で定義できるデプロイ先は deployment_group: の1つ(
+厳密に言うと production, staging の2つ) になるので、こちらもブランチによる circle.yml の別管理で回避できそうです。&lt;/p&gt;
+
+&lt;p&gt;こちらの問題については CircleCI 的にはおそらく「1つのレポジトリで管理するデプロイ先は1つに」というコンセプトなのかもしれません。&lt;/p&gt;
+
+&lt;h4 id=&#34;aws-iam-ユーザにアタッチする-policy-作成&#34;&gt;AWS IAM ユーザにアタッチする Policy 作成&lt;/h4&gt;
+
+&lt;p&gt;IAM ユーザを CircleCI に事前に設定しておくことで直接 AWS のリソースを操作出来るのですが、
+そのユーザにアタッチしておくべき Policy について例をあげておきます。&lt;/p&gt;
+
+&lt;p&gt;特定の S3 バケットにオブジェクト Put する Policy&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
+    &amp;quot;Version&amp;quot;: &amp;quot;2012-10-17&amp;quot;,
+    &amp;quot;Statement&amp;quot;: [
+        {
+            &amp;quot;Sid&amp;quot;: &amp;quot;Stmt1444196633000&amp;quot;,
+            &amp;quot;Effect&amp;quot;: &amp;quot;Allow&amp;quot;,
+            &amp;quot;Action&amp;quot;: [
+                &amp;quot;s3:PutObject&amp;quot;
+            ],
+            &amp;quot;Resource&amp;quot;: [
+                &amp;quot;arn:aws:s3:::&amp;lt;S3 バケット名&amp;gt;/*&amp;quot;
+            ]
+        }
+    ]
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;CodeDeploy の各 Action を実行する Policy&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
+    &amp;quot;Version&amp;quot;: &amp;quot;2012-10-17&amp;quot;,
+    &amp;quot;Statement&amp;quot;: [
+        {
+            &amp;quot;Effect&amp;quot;: &amp;quot;Allow&amp;quot;,
+            &amp;quot;Action&amp;quot;: [
+                &amp;quot;codedeploy:RegisterApplicationRevision&amp;quot;,
+                &amp;quot;codedeploy:GetApplicationRevision&amp;quot;
+            ],
+            &amp;quot;Resource&amp;quot;: [
+                &amp;quot;*&amp;quot;
+            ]
+        },
+        {
+            &amp;quot;Effect&amp;quot;: &amp;quot;Allow&amp;quot;,
+            &amp;quot;Action&amp;quot;: [
+                &amp;quot;codedeploy:CreateDeployment&amp;quot;,
+                &amp;quot;codedeploy:GetDeployment&amp;quot;
+            ],
+            &amp;quot;Resource&amp;quot;: [
+                &amp;quot;*&amp;quot;
+            ]
+        },
+        {
+            &amp;quot;Effect&amp;quot;: &amp;quot;Allow&amp;quot;,
+            &amp;quot;Action&amp;quot;: [
+                &amp;quot;codedeploy:GetDeploymentConfig&amp;quot;
+            ],
+            &amp;quot;Resource&amp;quot;: [
+                &amp;quot;*&amp;quot;
+            ]
+        }
+    ]
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;CodeDeploy, S3 を併用することで CircleCI を使っても VPC 内のプライベートインス
+タンスにデプロイできることが判りました。もし EC2 インスタンスを使っている場合
+は他の方法も取れることが判っています。circle.yml 内の pre: で指定出来るコマン
+ド・スクリプトで EC2 インスタンスに紐付いているセキュリティグループに穴あけ処
+理を記述すれば良さそうです。デプロイが終わったら穴を塞げばいいですね。この辺の
+例については国内でもブログ記事にされている方がいらっしゃいますので参考にしてくだ
+さい。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>cAdvisor/influxDB/GrafanaでDockerリソース監視</title>
+      <link>http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/</link>
+      <pubDate>Sat, 12 Sep 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;今回は Docker ネタです。Docker 導入するにしても監視はどうする？という話になる
+と思うのですが、各 Monitoring as a Service を使うにしてもエージェント入れない
+といけないしお金掛かることもあるし..で、調べていたら cAdvisor というキーワード
+が出てきました。今回は cAdvisor を使ってコンテナの監視が出来ないか、について書
+いていきたいと想います。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;cAdvisor とは ?&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;cAdvisor は Kubernates で用いられているコンポーネントで単体でも利用可能とのこ
+と。Google が開発しています。また Docker コンテナの監視においてこの cAdvisor
+は一般化しつつあるようです。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/google/cadvisor&#34;&gt;https://github.com/google/cadvisor&lt;/a&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;収集したメトリクスの保存&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;cAdvisor 自体も Docker で起動して、同ホスト上に起動している Docker コンテナの
+リソースをモニタリングしてくれます。そのメトリクスデータは幾つかの DB に保存出
+来るのですが、そのうちの一つが influxDB です。influxDB は時系列データベースで
+す。システムのメトリクスデータを収めるのにちょうどいいデータベースになります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://influxdb.com/&#34;&gt;https://influxdb.com/&lt;/a&gt;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;DB に収めたメトリクスの可視化&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;influxDB に収めたメトリクスデータを可視化するのが Grafana です。Grafana のデー
+タソースは influxDB の他にも幾つかあり Elasticsearch, KairosDB, Graphite 等が
+それです。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://grafana.org/&#34;&gt;http://grafana.org/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;では早速試してみましょう。&lt;/p&gt;
+
+&lt;h2 id=&#34;前提の環境&#34;&gt;前提の環境&lt;/h2&gt;
+
+&lt;p&gt;今回は Vagrant を使います。また Vagrant 上で上記の3つのソフトウェアを Docker
+で稼働します。またどうせなので docker-compose を使って3つのコンテナを一斉に立
+ち上げてみましょう。&lt;/p&gt;
+
+&lt;h2 id=&#34;vagrantfile-の準備&#34;&gt;VagrantFile の準備&lt;/h2&gt;
+
+&lt;p&gt;下記のような VagrantFile を作成します。各ソフトウェアはそれぞれ WebUI を持って
+いて、そこに手元のコンピュータから接続するため forwarded_port しています。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure(2) do |config|
+    config.vm.box = &amp;quot;ubuntu/trusty64&amp;quot;
+    config.vm.network &amp;quot;forwarded_port&amp;quot;, guest: 8080, host: 8080
+    config.vm.network &amp;quot;forwarded_port&amp;quot;, guest: 8083, host: 8083
+    config.vm.network &amp;quot;forwarded_port&amp;quot;, guest: 3000, host: 3000
+    config.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.10&amp;quot;
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;docker-コンテナの起動と-docker-compose-yml-の準備&#34;&gt;Docker コンテナの起動と docker-compose.yml の準備&lt;/h2&gt;
+
+&lt;p&gt;Vagrant を起動し docker, docker-compose のインストールを行います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ vagrant up
+$ vagrant ssh
+vagrant$ sudo apt-get update ; sudo apt-get -y install curl
+vagrant$ curl -sSL https://get.docker.com/ | sh
+vagrant$ sudo -i
+vagrant# export VERSION_NUM=1.4.0
+vagrant# curl -L https://github.com/docker/compose/releases/download/VERSION_NUM/docker-compose-`uname -s`-`uname -m` &amp;gt; /usr/local/bin/docker-compose
+vagrant# chmod +x /usr/local/bin/docker-compose
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に docker-compose.yml を作成します。上記3つのソフトウェアが稼働するコンテナ
+を起動するため下記のように記述しましょう。カレントディレクトリに作成します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;InfluxSrv:
+    image: &amp;quot;tutum/influxdb:0.8.8&amp;quot;
+    ports:
+        - &amp;quot;8083:8083&amp;quot;
+        - &amp;quot;8086:8086&amp;quot;
+    expose:
+        - &amp;quot;8090&amp;quot;
+        - &amp;quot;8099&amp;quot;
+    environment:
+        - PRE_CREATE_DB=cadvisor
+cadvisor:
+    image: &amp;quot;google/cadvisor:0.16.0&amp;quot;
+    volumes:
+        - &amp;quot;/:/rootfs:ro&amp;quot;
+        - &amp;quot;/var/run:/var/run:rw&amp;quot;
+        - &amp;quot;/sys:/sys:ro&amp;quot;
+        - &amp;quot;/var/lib/docker/:/var/lib/docker:ro&amp;quot;
+    links:
+        - &amp;quot;InfluxSrv:influxsrv&amp;quot;
+    ports:
+        - &amp;quot;8080:8080&amp;quot;
+    command: &amp;quot;-storage_driver=influxdb -storage_driver_db=cadvisor -storage_driver_host=influxsrv:8086 -storage_driver_user=root -storage_driver_password=root -storage_driver_secure=False&amp;quot;
+grafana:
+    image: &amp;quot;grafana/grafana:2.1.3&amp;quot;
+    ports:
+        - &amp;quot;3000:3000&amp;quot;
+    environment:
+        - INFLUXDB_HOST=localhost
+        - INFLUXDB_PORT=8086
+        - INFLUXDB_NAME=cadvisor
+        - INFLUXDB_USER=root
+        - INFLUXDB_PASS=root
+    links:
+        - &amp;quot;InfluxSrv:influxsrv&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;コンテナの起動
++++&lt;/p&gt;
+
+&lt;p&gt;docker コンテナを立ち上げます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;vagrant$ docker-compose -d
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;influxdb-の-webui-に接続する&#34;&gt;influxDB の WebUI に接続する&lt;/h2&gt;
+
+&lt;p&gt;それでは起動したコンテナのうち一つ influxDB の WebUI に接続していましょう。
+上記の VagrantFile では IP アドレスを 192.168.33.10 と指定しました。&lt;/p&gt;
+
+&lt;p&gt;URL : &lt;a href=&#34;http://192.168.33.10:8083&#34;&gt;http://192.168.33.10:8083&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;データベースに接続します。&lt;/p&gt;
+
+&lt;p&gt;ユーザ名 : root
+パスワード : root&lt;/p&gt;
+
+&lt;p&gt;接続するとデータベース作成画面に飛びますので Database Datails 枠に &amp;ldquo;cadvisor&amp;rdquo;
+と入力、その他の項目はデフォルトのままで &amp;ldquo;Create Database&amp;rdquo; をクリックします。&lt;/p&gt;
+
+&lt;h2 id=&#34;cadvisor-の-webui-に接続する&#34;&gt;cAdvisor の WebUI に接続する&lt;/h2&gt;
+
+&lt;p&gt;続いて cAdvisor の WebUI に接続してみましょう。&lt;/p&gt;
+
+&lt;p&gt;URL : &lt;a href=&#34;http://192.168.33.10:8080&#34;&gt;http://192.168.33.10:8080&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;ここでは特に作業の必要はありません。コンテナの監視が行われグラフが描画されてい
+ることを確認します。&lt;/p&gt;
+
+&lt;h2 id=&#34;grafana-の-webui-に接続する&#34;&gt;Grafana の WebUI に接続する&lt;/h2&gt;
+
+&lt;p&gt;最後に Grafana の WebUI です。&lt;/p&gt;
+
+&lt;p&gt;URL : &lt;a href=&#34;http://192.168.33.10:3000&#34;&gt;http://192.168.33.10:3000&lt;/a&gt;
+ユーザ名 : admin
+パスワード : admin&lt;/p&gt;
+
+&lt;p&gt;まずデータソースの設定を行います。左上のアイコンをクリックし &amp;ldquo;Data Sources&amp;rdquo; を
+選択します。次に &amp;ldquo;Add New Data Source&amp;rdquo; ボタンをクリックします。&lt;/p&gt;
+
+&lt;p&gt;下記の情報を入力しましょう。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Name : influxdb&lt;/li&gt;
+&lt;li&gt;Type : influxDB 0.8.x&lt;/li&gt;
+&lt;li&gt;Url  : &lt;a href=&#34;http://influxsrv:8086&#34;&gt;http://influxsrv:8086&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;Access : proxy&lt;/li&gt;
+&lt;li&gt;Basic Auth User admin&lt;/li&gt;
+&lt;li&gt;Basic Auth Password admin&lt;/li&gt;
+&lt;li&gt;Database : cadvisor&lt;/li&gt;
+&lt;li&gt;User : root&lt;/li&gt;
+&lt;li&gt;Password : root&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;さて最後にグラフを作成していきます。左メニューの &amp;ldquo;Dashboard&amp;rdquo; を選択し上部の
+&amp;ldquo;Home&amp;rdquo; ボランを押し &amp;ldquo;+New&amp;rdquo; を押します。&lt;/p&gt;
+
+&lt;p&gt;下記の画面を参考にし値に入力していきます。&lt;/p&gt;
+
+&lt;p&gt;Metrics を選択しネットワークの受信転送量をグラフにしています。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;series : &amp;lsquo;stats&amp;rsquo;&lt;/li&gt;
+&lt;li&gt;alias : RX Bytes&lt;/li&gt;
+&lt;li&gt;select mean(rx_bytes)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;同じく送信転送量もグラフにします。Add Query を押すと追加できます。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;series : &amp;lsquo;stats&amp;rsquo;&lt;/li&gt;
+&lt;li&gt;alias : TX Bytes&lt;/li&gt;
+&lt;li&gt;select mean(tx_bytes)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/grafana_input_data.png&#34; width=&#34;80%&#34;&gt;&lt;/p&gt;
+
+&lt;p&gt;時間が経過すると下記のようにグラフが描画されます。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/grafana_graph.png&#34; width=&#34;80%&#34;&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
+
+&lt;p&gt;3つのソフトウェア共に開発が活発であり、cAdvisor は特に Docker コンテナの監視と
+して一般化しつつあるよう。Kubernates の一部ということもありそう簡単には廃れな
+いと想います。コンテナの中にエージェント等を入れることもなく、これで Docker コ
+ンテナのリソース監視が出来そう。ただサービス監視は別途考えなくてはいけないなぁ
+という印象です。また、今回 docker-compose に記した各コンテナのバージョンは
+Docker Hub を確認すると別バージョンもあるので時期が経ってこのブログ記事をご覧
+になった方は修正すると良いと想います。ただこの記事を書いている時点では
+influxDB の 0.9.x 系では動作しませんでした。よって latest ではなくバージョン指
+定で記してあります。&lt;/p&gt;
+
+&lt;h2 id=&#34;参考にしたサイト&#34;&gt;参考にしたサイト&lt;/h2&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://qiita.com/atskimura/items/4c4aaaaa554e2814e938&#34;&gt;http://qiita.com/atskimura/items/4c4aaaaa554e2814e938&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://www.brianchristner.io/how-to-setup-docker-monitoring/&#34;&gt;https://www.brianchristner.io/how-to-setup-docker-monitoring/&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Knife-ZeroでOpenStack Kiloデプロイ(複数台編)</title>
+      <link>http://jedipunkz.github.io/blog/2015/07/20/knife-zero-openstack-kilo/</link>
+      <pubDate>Mon, 20 Jul 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2015/07/20/knife-zero-openstack-kilo/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;前回 OpenStack Kilo のオールインワン構成を Chef-Zero を使ってデプロイする方法
+を書きましたが、複数台構成についても調べたので結果をまとめていきます。&lt;/p&gt;
+
+&lt;p&gt;使うのは openstack/openstack-chef-repo です。下記の URL にあります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/openstack/openstack-chef-repo&#34;&gt;https://github.com/openstack/openstack-chef-repo&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;この中に Vagrant を使ったファイルが存在しますが、実機でのデプロイには全く役に
+立ちません。自分で Environment ファイルを作成する必要があります。今回は前提の
+構成を作って、それに合わせた Environment ファイルを記します。ほぼスタンダード
+な構成にしましたので、自分の環境に合わせて修正するのも比較的簡単だと想います。
+参考にしてください。&lt;/p&gt;
+
+&lt;p&gt;今回は knife-zero を使ってデプロイします。Chef サーバが必要なく、knife-zero を
+使うホスト上のオンメモリで Chef サーバが稼働するので準備がほとんど必要ありません。&lt;/p&gt;
+
+&lt;p&gt;早速ですが、構成と準備・そしてデプロイ作業を記していきます。&lt;/p&gt;
+
+&lt;h2 id=&#34;前提の構成&#34;&gt;前提の構成&lt;/h2&gt;
+
+&lt;pre&gt;&lt;code&gt;   +------------+
+   | GW Router  |
++--+------------+
+|  |
+|  +--------------+--------------+---------------------------- public network
+|  | eth0         | eth0
+|  +------------+ +------------+ +------------+ +------------+
+|  | Controller | |  Network   | |  Compute   | | Knife-Zero | 
+|  +------------+ +-------+----+ +------+-----+ +------------+
+|  | eth1         | eth1  |      | eth1 |       | eth1 
++--+--------------+-------)------+------)-------+------------- api/management network
+                          | eth2        | eth2
+                          +-------------+--------------------- guest network
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;特徴としては&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;public, api/management, guest の3つのネットワークに接続された OpenStack ホスト&lt;/li&gt;
+&lt;li&gt;Controller, Network, Compute の最小複数台構成&lt;/li&gt;
+&lt;li&gt;knife-zero を実行する &amp;lsquo;Knife-Zero&amp;rsquo; ホスト&lt;/li&gt;
+&lt;li&gt;Knife-zero ホストは api/management network のみに接続で可&lt;/li&gt;
+&lt;li&gt;デプロイは api/management network を介して行う&lt;/li&gt;
+&lt;li&gt;public, api/management network はインターネットへの疎通が必須&lt;/li&gt;
+&lt;li&gt;OS は Ubuntu 14.04 amd64&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;とくに api/management network がインターネットへの疎通が必要なところに注意して
+ください。デプロイは knife-zero ホストで実行しますが、各ノードへログインしデプ
+ロイする際にインターネット上からパッケージの取得を試みます。&lt;/p&gt;
+
+&lt;p&gt;また api/management network を2つに分離するのも一般的ですが、ここでは一本にま
+とめています。&lt;/p&gt;
+
+&lt;h2 id=&#34;ip-アドレス&#34;&gt;IP アドレス&lt;/h2&gt;
+
+&lt;p&gt;IP アドレスは下記を前提にします。&lt;/p&gt;
+
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th align=&#34;left&#34;&gt;interface&lt;/th&gt;
+&lt;th align=&#34;left&#34;&gt;IP addr&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td align=&#34;left&#34;&gt;Controller eth0&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;10.0.1.10&lt;/td&gt;
+&lt;/tr&gt;
+
+&lt;tr&gt;
+&lt;td align=&#34;left&#34;&gt;Controller eth1&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;10.0.2.10&lt;/td&gt;
+&lt;/tr&gt;
+
+&lt;tr&gt;
+&lt;td align=&#34;left&#34;&gt;Network eth0&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;10.0.1.11&lt;/td&gt;
+&lt;/tr&gt;
+
+&lt;tr&gt;
+&lt;td align=&#34;left&#34;&gt;Network eth1&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;10.0.2.11&lt;/td&gt;
+&lt;/tr&gt;
+
+&lt;tr&gt;
+&lt;td align=&#34;left&#34;&gt;Network eth2&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;10.0.3.11&lt;/td&gt;
+&lt;/tr&gt;
+
+&lt;tr&gt;
+&lt;td align=&#34;left&#34;&gt;Compute eth1&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;10.0.2.12&lt;/td&gt;
+&lt;/tr&gt;
+
+&lt;tr&gt;
+&lt;td align=&#34;left&#34;&gt;Compute eth2&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;10.0.3.12&lt;/td&gt;
+&lt;/tr&gt;
+
+&lt;tr&gt;
+&lt;td align=&#34;left&#34;&gt;Knife-Zero eth1&lt;/td&gt;
+&lt;td align=&#34;left&#34;&gt;10.0.2.13&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;h2 id=&#34;ネットワークインターフェース設定&#34;&gt;ネットワークインターフェース設定&lt;/h2&gt;
+
+&lt;p&gt;それぞれのホストで下記のようにネットワークインターフェースを設定します。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Controller ホスト&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;eth0, 1 を使用します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;auto eth0
+iface eth0 inet static
+    address 10.0.1.10
+    netmask 255.255.255.0
+    gateway 10.0.1.254
+    dns-nameservers 8.8.8.8
+    dns-search jedihub.com
+
+auto eth1
+iface eth1 inet static
+    address 10.0.2.10
+    netmask 255.255.255.0
+
+auto eth2
+iface eth2 inet manual
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Network ホスト&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;eth0, 1, 2 全てを使用します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;auto eth0
+iface eth0 inet static
+        up ifconfig $IFACE 0.0.0.0 up
+        up ip link set $IFACE promisc on
+        down ip link set $IFACE promisc off
+        down ifconfig $IFACE down
+        address 10.0.1.11
+        netmask 255.255.255.0
+
+auto eth1
+iface eth1 inet static
+        address 10.0.2.11
+        netmask 255.255.255.0
+        gateway 10.0.2.248
+        dns-nameservers 8.8.8.8
+        dns-search jedihub.com
+
+auto eth2
+iface eth2 inet static
+        address 10.0.3.11
+        netmask 255.255.255.0
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Compute ホスト&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;eth1, 2 を使用します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;auto eth0
+iface eth0 inet manual
+
+auto eth1
+iface eth1 inet static
+        address 10.0.2.12
+        netmask 255.255.255.0
+        gateway 10.0.2.248
+        dns-nameservers 8.8.8.8
+        dns-search jedihub.com
+
+auto eth2
+iface eth2 inet static
+        address 10.0.3.12
+        netmask 255.255.255.0
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;これらの作業は knife-zero からログインし eth1 を介して行ってください。でないと
+接続が切断される可能性があります。&lt;/p&gt;
+
+&lt;h2 id=&#34;準備&#34;&gt;準備&lt;/h2&gt;
+
+&lt;p&gt;knife-zero ホストに chef, knife-zero, berkshelf が入っている必要があるので、こ
+こでインストールしていきます。&lt;/p&gt;
+
+&lt;p&gt;knife-zero ホストに chef をインストールします。Omnibus パッケージを使って手っ
+取り早く環境を整えます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo -i
+curl -L https://www.opscode.com/chef/install.sh | bash
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Berkshelf をインストールするのに必要なソフトウェアをインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev ruby-dev libxml2-dev libxslt-dev g++
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Berkshelf をインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;/opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;最後に knife-zero をインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;/opt/chef/embedded/bin/gem install knife-zero --no-ri --no-rdoc
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;デプロイ作業&#34;&gt;デプロイ作業&lt;/h2&gt;
+
+&lt;p&gt;それでは openstack-chef-repo を取得してデプロイの準備を行います。
+ブランチの指定は行わず master ブランチを取得します。Kilo は master ブランチで
+管理されています。次のバージョンの開発が始まるタイミングで &amp;lsquo;stable/kilo&amp;rsquo; ブラ
+ンチに管理が移されます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo -i
+cd ~/
+git clone https://github.com/openstack/openstack-chef-repo.git
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に Berkshelf を使って必要な Cookbooks をダウンロードします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;cd ~/openstack-chef-repo
+/opt/chef/embedded/bin/berks vendor ./cookbooks
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Environment を作成します。これは各環境に合わせた設定ファイルのようなもので、各
+Cookbooks の Attributes を上書きする仕組みになっています。下記の内容を&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;openstack-chef-repo/environments/multi-neutron-kilo.json
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;というファイル名で保存してください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
+  &amp;quot;name&amp;quot;: &amp;quot;multi-neutron-kilo&amp;quot;,
+  &amp;quot;description&amp;quot;: &amp;quot;test&amp;quot;,
+  &amp;quot;cookbook_versions&amp;quot;: {
+  },
+  &amp;quot;json_class&amp;quot;: &amp;quot;Chef::Environment&amp;quot;,
+  &amp;quot;chef_type&amp;quot;: &amp;quot;environment&amp;quot;,
+  &amp;quot;default_attributes&amp;quot;: {
+  },
+  &amp;quot;override_attributes&amp;quot;: {
+    &amp;quot;mysql&amp;quot;: {
+      &amp;quot;bind_address&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
+      &amp;quot;server_root_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
+      &amp;quot;server_debian_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
+      &amp;quot;server_repl_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
+      &amp;quot;allow_remote_root&amp;quot;: true,
+      &amp;quot;root_network_acl&amp;quot;: [&amp;quot;10.0.0.0/8&amp;quot;]
+    },
+    &amp;quot;rabbitmq&amp;quot;: {
+      &amp;quot;address&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
+      &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;,
+      &amp;quot;loopback_users&amp;quot;: []
+    },
+    &amp;quot;openstack&amp;quot;: {
+      &amp;quot;auth&amp;quot;: {
+        &amp;quot;validate_certs&amp;quot;: false
+      },
+      &amp;quot;dashboard&amp;quot;: {
+        &amp;quot;session_backend&amp;quot;: &amp;quot;file&amp;quot;
+      },
+      &amp;quot;block-storage&amp;quot;: {
+        &amp;quot;syslog&amp;quot;: {
+          &amp;quot;use&amp;quot;: false
+        },
+        &amp;quot;api&amp;quot;: {
+          &amp;quot;ratelimit&amp;quot;: &amp;quot;False&amp;quot;
+        },
+        &amp;quot;debug&amp;quot;: true,
+        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
+        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
+        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;
+      },
+      &amp;quot;compute&amp;quot;: {
+        &amp;quot;rabbit&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;novnc_proxy&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;libvirt&amp;quot;: {
+          &amp;quot;virt_type&amp;quot;: &amp;quot;qemu&amp;quot;,
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;novnc_proxy&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;xvpvnc_proxy&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
+        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
+        &amp;quot;nova_setup_chef_role&amp;quot;: &amp;quot;os-compute-api&amp;quot;,
+        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
+        &amp;quot;network&amp;quot;: {
+          &amp;quot;public_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
+          &amp;quot;service_type&amp;quot;: &amp;quot;neutron&amp;quot;
+        }
+      },
+      &amp;quot;network&amp;quot;: {
+        &amp;quot;debug&amp;quot;: &amp;quot;True&amp;quot;,
+        &amp;quot;dhcp&amp;quot;: {
+          &amp;quot;enable_isolated_metadata&amp;quot;: &amp;quot;True&amp;quot;
+        },
+        &amp;quot;metadata&amp;quot;: {
+          &amp;quot;nova_metadata_ip&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;openvswitch&amp;quot;: {
+          &amp;quot;tunnel_id_ranges&amp;quot;: &amp;quot;1:1000&amp;quot;,
+          &amp;quot;enable_tunneling&amp;quot;: &amp;quot;True&amp;quot;,
+          &amp;quot;tenant_network_type&amp;quot;: &amp;quot;gre&amp;quot;,
+          &amp;quot;tunnel_types&amp;quot;: &amp;quot;gre&amp;quot;,
+          &amp;quot;tunnel_type&amp;quot;: &amp;quot;gre&amp;quot;,
+          &amp;quot;bridge_mappings&amp;quot;: &amp;quot;physnet1:br-eth2&amp;quot;,
+          &amp;quot;bridge_mapping_interface&amp;quot;: &amp;quot;br-eth2:eth2&amp;quot;
+        },
+        &amp;quot;ml2&amp;quot;: {
+          &amp;quot;tenant_network_types&amp;quot;: &amp;quot;gre&amp;quot;,
+          &amp;quot;mechanism_drivers&amp;quot;: &amp;quot;openvswitch&amp;quot;,
+          &amp;quot;tunnel_id_ranges&amp;quot;: &amp;quot;1:1000&amp;quot;,
+          &amp;quot;enable_security_group&amp;quot;: &amp;quot;True&amp;quot;
+        },
+        &amp;quot;api&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;l3&amp;quot;: {
+          &amp;quot;external_network_bridge_interface&amp;quot;: &amp;quot;eth0&amp;quot;
+        },
+        &amp;quot;service_plugins&amp;quot;: [&amp;quot;neutron.services.l3_router.l3_router_plugin.L3RouterPlugin&amp;quot;]
+      },
+      &amp;quot;db&amp;quot;: {
+        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
+        &amp;quot;compute&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;identity&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;image&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;network&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;volume&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;dashboard&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;telemetry&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;orchestration&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        }
+      },
+      &amp;quot;developer_mode&amp;quot;: true,
+      &amp;quot;endpoints&amp;quot;: {
+        &amp;quot;network-openvswitch&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;compute-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
+        },
+        &amp;quot;compute-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
+        },
+        &amp;quot;compute-ec2-admin-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
+        },
+        &amp;quot;compute-ec2-admin&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
+        },
+       &amp;quot;compute-ec2-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
+        },
+        &amp;quot;compute-ec2-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
+        },
+        &amp;quot;compute-xvpvnc&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;6081&amp;quot;
+        },
+        &amp;quot;compute-novnc-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
+        },
+        &amp;quot;compute-novnc&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
+        },
+        &amp;quot;compute-vnc&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
+        },
+        &amp;quot;image-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
+        },
+        &amp;quot;image-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
+        },
+        &amp;quot;image-registry&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
+        },
+        &amp;quot;image-registry-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
+        },
+        &amp;quot;identity-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
+        },
+        &amp;quot;identity-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
+        },
+        &amp;quot;identity-admin&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;35357&amp;quot;
+        },
+        &amp;quot;identity-internal&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;35357&amp;quot;
+        },
+        &amp;quot;volume-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
+        },
+        &amp;quot;volume-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
+        },
+        &amp;quot;telemetry-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8777&amp;quot;
+        },
+        &amp;quot;network-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.11&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
+        },
+        &amp;quot;network-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.11,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
+        },
+        &amp;quot;block-storage-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;,
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;block-storage-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
+        },
+        &amp;quot;orchestration-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8004&amp;quot;
+        },
+        &amp;quot;orchestration-api-cfn&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8000&amp;quot;
+        },
+        &amp;quot;db&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;3306&amp;quot;
+        },
+        &amp;quot;bind-host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;
+      },
+      &amp;quot;identity&amp;quot;: {
+        &amp;quot;admin_user&amp;quot;: &amp;quot;admin&amp;quot;,
+        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
+        &amp;quot;debug&amp;quot;: true
+      },
+      &amp;quot;image&amp;quot;: {
+        &amp;quot;api&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;debug&amp;quot;: true,
+        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
+        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
+        &amp;quot;registry&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;syslog&amp;quot;: {
+          &amp;quot;use&amp;quot;: false
+        }
+      },
+      &amp;quot;mq&amp;quot;: {
+        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
+        &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+        &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
+        &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;,
+        &amp;quot;network&amp;quot;: {
+          &amp;quot;rabbit&amp;quot;: {
+             &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+             &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
+          }
+        },
+        &amp;quot;compute&amp;quot;: {
+           &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
+          &amp;quot;rabbit&amp;quot;: {
+            &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
+          }
+        },
+        &amp;quot;block-storage&amp;quot;: {
+          &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
+          &amp;quot;rabbit&amp;quot;: {
+            &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
+          }
+        }
+      }
+    },
+    &amp;quot;queue&amp;quot;: {
+      &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+      &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
+      &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;
+    }
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上記ファイルでは virt_type : qemu に設定していますが、KVM リソースを利用出来る
+環境であればここを削除してください。デフォルトの &amp;lsquo;kvm&amp;rsquo; が適用されます。また気
+をつけることは IP アドレスとネットワークインターフェース名です。環境に合わせて
+設定していきましょう。今回は前提構成に合わせて environemnt ファイルを作ってい
+ます。&lt;/p&gt;
+
+&lt;p&gt;次に openstack-chef-repo/.chef/encrypted_data_bag_secret というファイルが
+knife-zero ホストにあるはずです。これをデプロイ対象の3ノードに事前に転送してお
+く必要があります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.10:/tmp/
+scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.11:/tmp/
+scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.12:/tmp/
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;対象ホストにて&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;mkdir /etc/chef
+mv /tmp/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ではいよいよデプロイです。&lt;/p&gt;
+
+&lt;p&gt;Controller ホストへのデプロイ&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;knife zero bootstrap 10.0.2.10 -N kilo01 -r &#39;role[os-compute-single-controller-no-network]&#39; -E multi-neutron-kilo -x &amp;lt;USERNAME&amp;gt; --sudo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Network ホストへのデプロイ&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;knife zero bootstrap 10.0.2.11 -N kilo02 -r &#39;role[os-client]&#39;,&#39;role[os-network]&#39; -E multi-neutron-kilo -x &amp;lt;USERNAME&amp;gt; --sudo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Compute ノードへのデプロイ&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;knife zero bootstrap 10.0.2.12 -N kilo03 -r &#39;role[os-compute-worker]&#39; -E multi-neutron-kilo -x &amp;lt;USERNAME&amp;gt; --sudo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;これで完了です。admin/mypass というユーザ・パスワードでログインが可能です。&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;openstack-chef-repo を使って OpenStack Kilo の複数台構成をデプロイ出来ました。重要なのは Environment をどうやって作るか？ですが、
+私は 作成 -&amp;gt; デプロイ -&amp;gt; 修正 -&amp;gt; デプロイ -&amp;gt;&amp;hellip;. を繰り返して作成しています。何度実行しても不具合は発生しない設計なクックブックに
+なっていますので、このような作業が可能になります。また、「ここの設定を追加したい」という時は&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;該当の template を探す&lt;/li&gt;
+&lt;li&gt;該当のパラメータを確認する&lt;/li&gt;
+&lt;li&gt;recipe 内で template にどうパラメータを渡しているか確認する&lt;/li&gt;
+&lt;li&gt;attribute なり、変数なりを修正するための方法を探す&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;と行います。比較的難しい作業になるのですが、自らの環境に合わせた Environment を作成するにはこれらの作業が必須となってきます。&lt;/p&gt;
+
+&lt;p&gt;以上、複数台構成のデプロイ方法についてでした。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Chef-ZeroでOpenStack Kiloデプロイ(オールインワン編)</title>
+      <link>http://jedipunkz.github.io/blog/2015/07/16/chef-zero-openstack-allinone/</link>
+      <pubDate>Thu, 16 Jul 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2015/07/16/chef-zero-openstack-allinone/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;久々に openstack-chef-repo を覗いてみたら &amp;lsquo;openstack/openstack-chef-repo&amp;rsquo; とし
+て公開されていました。今まで stackforge 側で管理されていましたが &amp;lsquo;openstack&amp;rsquo;
+の方に移動したようです。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/openstack/openstack-chef-repo&#34;&gt;https://github.com/openstack/openstack-chef-repo&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;結構安定してきているのかな？と想い、ちらっと試したのですが案の定、簡単に動作さ
+せることが出来ました。&lt;/p&gt;
+
+&lt;p&gt;今回はこのレポジトリを使ってオールインワン構成の OpenStack Kilo を作る方法をま
+とめていきます。&lt;/p&gt;
+
+&lt;h2 id=&#34;前提の構成&#34;&gt;前提の構成&lt;/h2&gt;
+
+&lt;p&gt;このレポジトリは Vagrant で OpenStack を作るための環境一式が最初から用意されて
+いますが、Vagrant では本番環境を作ることは出来ないため、Ubuntu ホストを前提と
+した記述に差し替えて説明していきます。前提にする構成は下記のとおりです。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Uuntu Linux 14.04 x 1 台&lt;/li&gt;
+&lt;li&gt;ネットワークインターフェース x 3 つ&lt;/li&gt;
+&lt;li&gt;eth0 : External ネットワーク用&lt;/li&gt;
+&lt;li&gt;eth1 : Internal (API, Manage) ネットワーク用&lt;/li&gt;
+&lt;li&gt;eth2 : Guest ネットワーク用&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;特徴としては上記なのですが、eth2 に関してはオールインワンなので必ずしも必要と
+いうわけではありません。複数台構成を考慮した設定になっています。&lt;/p&gt;
+
+&lt;h2 id=&#34;前提のip-アドレス&#34;&gt;前提のIP アドレス&lt;/h2&gt;
+
+&lt;p&gt;この記事では下記の IP アドレスを前提にします。お手持ちの環境の IP アドレスが違
+い場合はそれに合わせて後に示す json ファイルを変更してください。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;10.0.1.10 (eth0) : external ネットワーク&lt;/li&gt;
+&lt;li&gt;10.0.2.10 (eth1) : api/management ネットワーク&lt;/li&gt;
+&lt;li&gt;10.0.3.10 (eth2) : Guest ネットワーク&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;事前の準備&#34;&gt;事前の準備&lt;/h2&gt;
+
+&lt;p&gt;事前に対象ホスト (OpenStack ホスト) に chef, berkshelf をインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo -i
+curl -L https://www.opscode.com/chef/install.sh | bash
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Berkshelf をインストールするのに必要なソフトウェアをインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev ruby-dev libxml2-dev libxslt-dev g++
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Berkshelf をインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;/opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;デプロイ作業&#34;&gt;デプロイ作業&lt;/h2&gt;
+
+&lt;p&gt;それでは openstack-chef-repo を取得してデプロイの準備を行います。
+ブランチの指定は行わず master ブランチを取得します。Kilo は master ブランチで
+管理されています。次のバージョンの開発が始まるタイミングで &amp;lsquo;stable/kilo&amp;rsquo; ブラ
+ンチに管理が移されます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo -i
+cd ~/
+git clone https://github.com/openstack/openstack-chef-repo.git
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に Berkshelf を使って必要な Cookbooks をダウンロードします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;cd ~/openstack-chef-repo
+/opt/chef/embedded/bin/berks vendor ./cookbooks
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Environment を作成します。これは各環境に合わせた設定ファイルのようなもので、各
+Cookbooks の Attributes を上書きする仕組みになっています。下記の内容を&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;openstack-chef-repo/environments/aio-neutron-kilo.json
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;というファイル名で保存してください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
+  &amp;quot;name&amp;quot;: &amp;quot;aio-neutron-kilo&amp;quot;,
+  &amp;quot;description&amp;quot;: &amp;quot;test&amp;quot;,
+  &amp;quot;cookbook_versions&amp;quot;: {
+  },
+  &amp;quot;json_class&amp;quot;: &amp;quot;Chef::Environment&amp;quot;,
+  &amp;quot;chef_type&amp;quot;: &amp;quot;environment&amp;quot;,
+  &amp;quot;default_attributes&amp;quot;: {
+  },
+  &amp;quot;override_attributes&amp;quot;: {
+    &amp;quot;mysql&amp;quot;: {
+      &amp;quot;bind_address&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
+      &amp;quot;server_root_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
+      &amp;quot;server_debian_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
+      &amp;quot;server_repl_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
+      &amp;quot;allow_remote_root&amp;quot;: true,
+      &amp;quot;root_network_acl&amp;quot;: [&amp;quot;10.0.0.0/8&amp;quot;]
+    },
+    &amp;quot;rabbitmq&amp;quot;: {
+      &amp;quot;address&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
+      &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;,
+      &amp;quot;loopback_users&amp;quot;: []
+    },
+    &amp;quot;openstack&amp;quot;: {
+      &amp;quot;auth&amp;quot;: {
+        &amp;quot;validate_certs&amp;quot;: false
+      },
+      &amp;quot;dashboard&amp;quot;: {
+        &amp;quot;session_backend&amp;quot;: &amp;quot;file&amp;quot;
+      },
+      &amp;quot;block-storage&amp;quot;: {
+        &amp;quot;syslog&amp;quot;: {
+          &amp;quot;use&amp;quot;: false
+        },
+        &amp;quot;api&amp;quot;: {
+          &amp;quot;ratelimit&amp;quot;: &amp;quot;False&amp;quot;
+        },
+        &amp;quot;debug&amp;quot;: true,
+        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
+        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
+        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;
+      },
+      &amp;quot;compute&amp;quot;: {
+        &amp;quot;rabbit&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;novnc_proxy&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;libvirt&amp;quot;: {
+          &amp;quot;virt_type&amp;quot;: &amp;quot;qemu&amp;quot;,
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;novnc_proxy&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;xvpvnc_proxy&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
+        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
+        &amp;quot;nova_setup_chef_role&amp;quot;: &amp;quot;os-compute-api&amp;quot;,
+        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
+        &amp;quot;network&amp;quot;: {
+          &amp;quot;public_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
+          &amp;quot;service_type&amp;quot;: &amp;quot;neutron&amp;quot;
+        }
+      },
+      &amp;quot;network&amp;quot;: {
+        &amp;quot;debug&amp;quot;: &amp;quot;True&amp;quot;,
+        &amp;quot;dhcp&amp;quot;: {
+          &amp;quot;enable_isolated_metadata&amp;quot;: &amp;quot;True&amp;quot;
+        },
+        &amp;quot;metadata&amp;quot;: {
+          &amp;quot;nova_metadata_ip&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;openvswitch&amp;quot;: {
+          &amp;quot;tunnel_id_ranges&amp;quot;: &amp;quot;1:1000&amp;quot;,
+          &amp;quot;enable_tunneling&amp;quot;: &amp;quot;True&amp;quot;,
+          &amp;quot;tenant_network_type&amp;quot;: &amp;quot;gre&amp;quot;,
+          &amp;quot;local_ip_interface&amp;quot;: &amp;quot;eth2&amp;quot;
+        },
+        &amp;quot;api&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;l3&amp;quot;: {
+          &amp;quot;external_network_bridge_interface&amp;quot;: &amp;quot;eth0&amp;quot;
+        },
+        &amp;quot;service_plugins&amp;quot;: [&amp;quot;neutron.services.l3_router.l3_router_plugin.L3RouterPlugin&amp;quot;]
+      },
+      &amp;quot;db&amp;quot;: {
+        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
+        &amp;quot;compute&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;identity&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;image&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;network&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;volume&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;dashboard&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;telemetry&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        },
+        &amp;quot;orchestration&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
+        }
+      },
+      &amp;quot;developer_mode&amp;quot;: true,
+      &amp;quot;endpoints&amp;quot;: {
+        &amp;quot;compute-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
+        },
+        &amp;quot;compute-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
+        },
+        &amp;quot;compute-ec2-admin-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
+        },
+        &amp;quot;compute-ec2-admin&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
+        },
+       &amp;quot;compute-ec2-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
+        },
+        &amp;quot;compute-ec2-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
+        },
+        &amp;quot;compute-xvpvnc&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;6081&amp;quot;
+        },
+        &amp;quot;compute-novnc-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
+        },
+        &amp;quot;compute-novnc&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
+        },
+        &amp;quot;compute-vnc&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
+        },
+        &amp;quot;image-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
+        },
+        &amp;quot;image-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
+        },
+        &amp;quot;image-registry&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
+        },
+        &amp;quot;image-registry-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
+        },
+        &amp;quot;identity-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
+        },
+        &amp;quot;identity-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
+        },
+        &amp;quot;identity-admin&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;35357&amp;quot;
+        },
+        &amp;quot;identity-internal&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;35357&amp;quot;
+        },
+        &amp;quot;volume-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
+        },
+        &amp;quot;volume-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
+        },
+        &amp;quot;telemetry-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8777&amp;quot;
+        },
+        &amp;quot;network-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
+        },
+        &amp;quot;network-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
+        },
+        &amp;quot;orchestration-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8004&amp;quot;
+        },
+        &amp;quot;orchestration-api-cfn&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8000&amp;quot;
+        },
+        &amp;quot;db&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;3306&amp;quot;
+        },
+        &amp;quot;bind-host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;
+      },
+      &amp;quot;identity&amp;quot;: {
+        &amp;quot;admin_user&amp;quot;: &amp;quot;admin&amp;quot;,
+        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
+        &amp;quot;debug&amp;quot;: true
+      },
+      &amp;quot;image&amp;quot;: {
+        &amp;quot;api&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;debug&amp;quot;: true,
+        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
+        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
+        &amp;quot;registry&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;syslog&amp;quot;: {
+          &amp;quot;use&amp;quot;: false
+        }
+      },
+      &amp;quot;mq&amp;quot;: {
+        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
+        &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+        &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
+        &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;,
+        &amp;quot;network&amp;quot;: {
+          &amp;quot;rabbit&amp;quot;: {
+             &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+             &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
+          }
+        },
+        &amp;quot;compute&amp;quot;: {
+           &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
+          &amp;quot;rabbit&amp;quot;: {
+            &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
+          }
+        },
+        &amp;quot;block-storage&amp;quot;: {
+          &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
+          &amp;quot;rabbit&amp;quot;: {
+            &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
+          }
+        }
+      }
+    },
+    &amp;quot;queue&amp;quot;: {
+      &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
+      &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
+      &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;
+    }
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上記ファイルは KVM が使えない環境用に virt_type : qemu にしていますが、KVM が
+利用できる環境をご利用であれば該当行を削除してください。デフォルト値の &amp;lsquo;kvm&amp;rsquo;
+が入るはずです。&lt;/p&gt;
+
+&lt;p&gt;次にデプロイ前に databag 関連の事前操作を行います。Vagrant 用に作成されたファ
+イルを除くと&amp;hellip;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;machine &#39;controller&#39; do
+  add_machine_options vagrant_config: controller_config
+  role &#39;allinone-compute&#39;
+  role &#39;os-image-upload&#39;
+  chef_environment env
+  file(&#39;/etc/chef/openstack_data_bag_secret&#39;,
+       &amp;quot;#{File.dirname(__FILE__)}/.chef/encrypted_data_bag_secret&amp;quot;)
+  converge true
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;となっていて /etc/chef/openstack_data_bag_secret というファイルを事前にコピー
+する必要がありそうです。下記のように操作します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;cp .chef/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;デプロイを実行します。&lt;/p&gt;
+
+&lt;p&gt;この openstack-chef-repo には .chef ディレクトリが存在していてノード名が記され
+ています。&amp;rsquo;nodienode&amp;rsquo; というノード名です。これを利用してそのままデプロイを実行
+します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;chef-client -z
+knife node -z run_list add nodienode &#39;role[allinone-compute]&#39;
+chef-client -z -E aio-neutron-kilo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上記の説明を行います。
+１行目 chef-client -z で Chef-Zero サーバをメモリ上に起動し、2行目で自ノードへ
+run_list を追加しています。最後、3行目でデプロイ実行、となります。&lt;/p&gt;
+
+&lt;p&gt;数分待つと OpenStack Kilo が構成されているはずです。&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;Chef-Zero を用いることで Chef サーバを利用せずに楽に構築が行えました。ですが、
+OpenStack の複数台構成となるとそれぞれのノードのパラメータを連携させる必要が出
+てくるので Chef サーバを用いたほうが良さそうです。今度、時間を見つけて Kilo の
+複数台構成についても調べておきます。&lt;/p&gt;
+
+&lt;p&gt;また、master ブランチを使用していますので、まだ openstack-chef-repo 自体が流動
+的な状態とも言えます。が launchpad で管理されている Bug リストを見ると、ステー
+タス Critical, High の Bug が見つからなかったので Kilo に関しては、大きな問題
+無く安定してきている感があります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://bugs.launchpad.net/openstack-chef&#34;&gt;https://bugs.launchpad.net/openstack-chef&lt;/a&gt;&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>オブジェクトストレージ minio を使ってみる</title>
+      <link>http://jedipunkz.github.io/blog/2015/06/25/minio/</link>
+      <pubDate>Thu, 25 Jun 2015 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2015/06/25/minio/</guid>
+      <description>
+
+&lt;p&gt;こんにちは、@jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;久々にブログ更新になりましたが、ウォーミングアップで minio というオブジェクト
+ストレージを使ってみたメモを記事にしたいと想います。&lt;/p&gt;
+
+&lt;p&gt;minio は Minimal Object Storage の名の通り、最小限の小さなオブジェクトストレー
+ジになります。公式サイトは下記のとおりです。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://minio.io/&#34;&gt;http://minio.io/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;Golang で記述されていて Apache License v2 の元に公開されています。&lt;/p&gt;
+
+&lt;p&gt;最近、資金調達の話も挙がっていたので、これから一般的になってくるのかもしれません。&lt;/p&gt;
+
+&lt;p&gt;早速ですが、minio を動かしてみます。&lt;/p&gt;
+
+&lt;h2 id=&#34;minio-を起動する&#34;&gt;Minio を起動する&lt;/h2&gt;
+
+&lt;p&gt;方法は mithub.com/minio/minio の README に書かれていますが、バイナリを持ってき
+て実行権限を与えるだけのシンプルな手順になります。&lt;/p&gt;
+
+&lt;p&gt;Linux でも Mac でも動作しますが、今回私は Mac 上で動作させました。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% wget https://dl.minio.io:9000/updates/2015/Jun/darwin-amd64/minio
+% chmod +x minio
+% ./minio mode memory limit 512MB
+Starting minio server on: http://127.0.0.1:9000
+Starting minio server on: http://192.168.1.123:9000
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;起動すると Listening Port と共に EndPoint の URL が表示されます。&lt;/p&gt;
+
+&lt;p&gt;次に mc という minio client を使って動作確認します。&lt;/p&gt;
+
+&lt;h2 id=&#34;mc-を使ってアクセスする&#34;&gt;Mc を使ってアクセスする&lt;/h2&gt;
+
+&lt;p&gt;mc は下記の URL にあります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/minio/mc&#34;&gt;https://github.com/minio/mc&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;こちらもダウンロードして実行権限を付与するのみです。mc は minio だけではなく、
+Amazon S3 とも互換性がありアクセス出来ますが、せっかくなので上記で起動した
+minio にアクセスします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% wget https://dl.minio.io:9000/updates/2015/Jun/darwin-amd64/mc
+% chmod +x mc
+% ./mc config generate
+/mc ls  http://127.0.0.1:9000/bucket01
+[2015-06-25 16:21:37 JST]     0B testfile
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上記では予め作っておいた bucket01 という名前のバケットの中身を表示しています。
+作り方はこれから minio の Golang ライブラリである minio-go を使って作りました。
+これから説明します。&lt;/p&gt;
+
+&lt;p&gt;また ls コマンドの他にも Usage を確認すると幾つかのサブコマンドが見つかります。&lt;/p&gt;
+
+&lt;h2 id=&#34;minio-の-golang-ライブラリ-minio-go-を使ってアクセスする&#34;&gt;Minio の Golang ライブラリ minio-go を使ってアクセスする&lt;/h2&gt;
+
+&lt;p&gt;さて、せっかくのオブジェクトストレージも手作業でファイルやバケットのアクセスを
+行うのはもったいないです。ソフトウェアを使って操作してす。&lt;/p&gt;
+
+&lt;p&gt;minio のサンプルのコードを参考にして、下記のコードを作成してみました。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
+
+import (
+    &amp;quot;log&amp;quot;
+    &amp;quot;os&amp;quot;
+
+    &amp;quot;github.com/minio/minio-go&amp;quot;
+)
+
+func main() {
+    config := minio.Config{
+        // AccessKeyID:     &amp;quot;YOUR-ACCESS-KEY-HERE&amp;quot;,
+        // SecretAccessKey: &amp;quot;YOUR-PASSWORD-HERE&amp;quot;,
+        Endpoint:        &amp;quot;http://127.0.0.1:9000&amp;quot;,
+    }
+
+    s3Client, err := minio.New(config)
+    if err != nil {
+        log.Fatalln(err)
+    }
+
+    err = s3Client.MakeBucket(&amp;quot;bucket01&amp;quot;, minio.BucketACL(&amp;quot;public-read-write&amp;quot;))
+    if err != nil {
+        log.Fatalln(err)
+    }
+    log.Println(&amp;quot;Success: I made a bucket.&amp;quot;)
+
+    object, err := os.Open(&amp;quot;testfile&amp;quot;)
+    if err != nil {
+        log.Fatalln(err)
+    }
+    defer object.Close()
+    objectInfo, err := object.Stat()
+    if err != nil {
+        object.Close()
+        log.Fatalln(err)
+    }
+
+    err = s3Client.PutObject(&amp;quot;bucket01&amp;quot;, &amp;quot;testfile&amp;quot;, &amp;quot;application/octet-stream&amp;quot;, objectInfo.Size(), object)
+    if err != nil {
+        log.Fatalln(err)
+    }
+
+    for bucket := range s3Client.ListBuckets() {
+        if bucket.Err != nil {
+            log.Fatalln(bucket.Err)
+        }
+        log.Println(bucket.Stat)
+    }
+
+    for object := range s3Client.ListObjects(&amp;quot;bucket01&amp;quot;, &amp;quot;&amp;quot;, true) {
+        if object.Err != nil {
+            log.Fatalln(object.Err)
+        }
+        log.Println(object.Stat)
+    }
+
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;簡単ですがコードの説明をします。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;11行目で config の上書きをします。先ほど起動した minio の EndPoint を記します。&lt;/li&gt;
+&lt;li&gt;17行目で minio にセッションを張り接続を行っています。&lt;/li&gt;
+&lt;li&gt;22行目で &amp;lsquo;bucket01&amp;rsquo; というバケットを生成しています。その際にACLも設定&lt;/li&gt;
+&lt;li&gt;28行目から42行目で &amp;lsquo;testfile&amp;rsquo; というローカルファイルをストレージにPUTしています。&lt;/li&gt;
+&lt;li&gt;44行目でバケット一覧を表示しています。&lt;/li&gt;
+&lt;li&gt;51行目で上記で作成したバケットの中のオブジェクト一覧を表示しています。&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;実行結果は下記のとおりです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;2015/06/25 16:56:21 Success: I made a bucket.
+2015/06/25 16:56:21 {bucket01 2015-06-25 07:56:21.155 +0000 UTC}
+2015/06/25 16:56:21 {&amp;quot;d41d8cd98f00b204e9800998ecf8427e&amp;quot; testfile 2015-06-25
+07:56:21.158 +0000 UTC 0 {minio minio} STANDARD}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;バケットの作成とオブジェクトの PUT が正常に行えたことをログから確認できます。&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;上記の通り、今現在出来ることは少ないですが冒頭にも記したとおり資金調達の話も挙
+がってきていますので、これからどのような方向に向かうか楽しみでもあります。また
+最初から Golang, Python 等のライブラリが用意されているところが今どきだなぁと想
+いました。オブジェクトストレージを手作業で操作するケースは現場では殆ど無いと想
+いますので、その辺は現在では当たり前になりつつあるかもしれません。ちなみに
+Python のライブラリは下記の URL にあります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/minio/minio-py&#34;&gt;https://github.com/minio/minio-py&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;以上です。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>VyOS で VXLAN を使ってみる</title>
+      <link>http://jedipunkz.github.io/blog/2014/12/16/vyos-vxlan/</link>
+      <pubDate>Tue, 16 Dec 2014 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2014/12/16/vyos-vxlan/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;VyOS に VXLAN が実装されたと聞いて少し触ってみました。この情報を知ったきっかけ
+は @upaa さんの下記の資料です。&lt;/p&gt;
+
+&lt;p&gt;参考資料 : &lt;a href=&#34;http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan&#34;&gt;http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;VyOS は御存知の通り実体は Debian Gnu/Linux 系の OS でその上に OSS なミドル
+ウェアが搭載されていて CLI でミドルウェアのコンフィギュレーション等が行えるモ
+ノになっています。Linux で VXLAN といえば OVS を使ったモノがよく知られています
+が VyOS の VXLAN 機能は Linux Kernel の実装を使っているようです。&lt;/p&gt;
+
+&lt;h2 id=&#34;要件&#34;&gt;要件&lt;/h2&gt;
+
+&lt;ul&gt;
+&lt;li&gt;トンネルを張るためのセグメントを用意&lt;/li&gt;
+&lt;li&gt;VyOS 1.1.1 (現在最新ステーブルバージョン) が必要&lt;/li&gt;
+&lt;li&gt;Ubuntu Server 14.04 LTS (同じく Linux VXLAN 搭載バージョン)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;構成&#34;&gt;構成&lt;/h2&gt;
+
+&lt;p&gt;特徴&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;マネージメント用セグメント 10.0.1.0/24 を用意&lt;/li&gt;
+&lt;li&gt;GRE と同じくトンネル終端が必要なのでそのためのセグメント 10.0.2.0/24 を用意&lt;/li&gt;
+&lt;li&gt;各 eth1 は IP reachable である必要があるので予め IP アドレスの設定と疎通を確認&lt;/li&gt;
+&lt;li&gt;VXLAN を喋れる Ubuntu 14.04 LTS x 1 台と VyOS 1.1.1 x 2 台で相互に疎通確認&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code&gt;+-------------+-------------+------------ Management 10.0.1.0/24
+|10.0.0.254   |10.0.0.253   |10.0.0.1
+|eth0         |eth0         |eth0
++----------+  +----------+  +----------+ 
+|  vyos01  |  |  vyos02  |  |  ubuntu  |
++-+--------+  +----------+  +----------+ 
+| |eth1       | |eth1       | |eth1
+| |10.0.2.254 | |10.0.2.253 | |10.0.2.1
+| +-----------)-+-----------)-+---------- Tunneling 10.0.2.0/24
+|             |             |
++-------------+-------------+------------ VXLAN(eth1にlink) 10.0.1.0/24
+10.0.1.254     10.0.1.253    10.0.1.1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;設定を投入&#34;&gt;設定を投入&lt;/h2&gt;
+
+&lt;p&gt;vyos01 の設定を行う。VXLAN の設定に必要なものは&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;VNI (VXLAN Network Ideintity)という識別子&lt;/li&gt;
+&lt;li&gt;Multicast Group Address&lt;/li&gt;
+&lt;li&gt;互いに IP reachable なトンネルを張るためのインターフェース&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;です。これらを意識して下記の設定を vyos01 に投入します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ configure
+% set interfaces vxlan vxlan0
+% set interfaces vxlan vxlan0 group 239.1.1.1
+% set interfaces vxlan vxlan0 vni 42
+% set interfaces vxlan vxlan0 address &#39;10.0.1.254/24&#39;
+% set interfaces vxlan vxlan0 link eth1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;設定を確認します&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% exit
+$ show int
+...&amp;lt;省略&amp;gt;...
+    vxlan vxlan0 {
+     address 10.0.1.254/24
+     group 239.1.1.1
+     link eth1
+     vni 42
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;VyOS の CLI を介さず直 Linux の設定を iproute2 で確認してみましょう。
+VNI, Multicast Group Address と共に &amp;lsquo;link eth1&amp;rsquo; で設定したトンネルを終端するための物理 NIC が確認できます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;vyos@vyos01# ip -d link show vxlan0
+5: vxlan0: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
+    link/ether 86:24:26:b2:11:5c brd ff:ff:ff:ff:ff:ff promiscuity 0
+    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ttl 16 ageing 300
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;vyos02 の設定を同様に行います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ congigure
+% set interfaces vxlan vxlan0 address &#39;10.0.1.253/24&#39;
+% set interfaces vxlan vxlan0 vni 42
+% set interfaces vxlan vxlan0 group 239.1.1.1
+% set interfaces vxlan vxlan0 link eth1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;設定の確認を行います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;... 省略 ...
+vxlan vxlan0 {
+     address 10.0.1.254/24
+     group 239.1.1.1
+     link eth1
+     vni 42
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;同じく Linux の iproute2 で確認します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;vyos@vyos01# ip -d link show vxlan0
+5: vxlan0: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
+    link/ether 86:24:26:b2:11:5c brd ff:ff:ff:ff:ff:ff promiscuity 0
+    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ttl 16 ageing 300
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ubuntu ホストの設定を行っていきます。&lt;/p&gt;
+
+&lt;p&gt;Ubuntu Server 14.04 LTS であればパッチを当てること無く Linux Kernel の VXLAN 機能を使うことができます。
+設定内容は VyOS と同等です。VyOS がこの Linux の実装を使っているのがよく分かります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo modprobe vxlan
+sudo ip link add vxlan0 type vxlan id 42 group 239.1.1.1 dev eth1
+sudo ip link set up vxlan0
+sudo ip a add 10.0.1.1/24 dev vxlan0
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;同じく Linux iproute2 で確認を行います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt; ip -d link show vxlan0
+5: vxlan0: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
+    link/ether d6:ff:c1:27:69:a0 brd ff:ff:ff:ff:ff:ff promiscuity 0
+    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ageing 300
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;疎通確認&#34;&gt;疎通確認&lt;/h2&gt;
+
+&lt;p&gt;疎通確認を行います。&lt;/p&gt;
+
+&lt;p&gt;ubuntu -&amp;gt; vyos01 の疎通確認です。ICMP で疎通が取れることを確認できます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;thirai@ubuntu:~$ ping 10.0.1.254 -c 3
+PING 10.0.1.254 (10.0.1.254) 56(84) bytes of data.
+64 bytes from 10.0.1.254: icmp_seq=1 ttl=64 time=0.272 ms
+64 bytes from 10.0.1.254: icmp_seq=2 ttl=64 time=0.336 ms
+64 bytes from 10.0.1.254: icmp_seq=3 ttl=64 time=0.490 ms
+
+--- 10.0.1.254 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 1999ms
+rtt min/avg/max/mdev = 0.272/0.366/0.490/0.091 ms
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に ubuntu -&amp;gt; vyos02 の疎通確認です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;thirai@ubuntu:~$ ping 10.0.1.253 -c 3
+PING 10.0.1.253 (10.0.1.253) 56(84) bytes of data.
+64 bytes from 10.0.1.253: icmp_seq=1 ttl=64 time=0.272 ms
+64 bytes from 10.0.1.253: icmp_seq=2 ttl=64 time=0.418 ms
+64 bytes from 10.0.1.253: icmp_seq=3 ttl=64 time=0.451 ms
+
+--- 10.0.1.253 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 1998ms
+rtt min/avg/max/mdev = 0.272/0.380/0.451/0.079 ms
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;この時点で ubuntu ホストの fdb (forwarding db) の内容を確認します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ bridge fdb show dev vxlan0
+00:00:00:00:00:00 dst 239.1.1.1 via eth1 self permanent
+4e:69:a4:a7:ef:1c dst 10.0.2.253 self
+86:24:26:b2:11:5c dst 10.0.2.254 self
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;vyos01, vyos02 のトンネル終端 IP アドレスと Mac アドレスが確認できます。ubuntu ホストから見ると
+送信先は vyos0[12] の VXLAN インターフェースではなく、あくまでもトンネル終端を行っているインターフェース
+になることがわかります。&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;VyOS ver 1.1.0 には VXLAN を物理インターフェースに link する機能に不具合がありそうなので今ら ver 1.1.1 を使うしか
+なさそう。とは言え、ver 1.1.1 なら普通に動作しました。&lt;/p&gt;
+
+&lt;p&gt;VyOS は仮想ルータという位置付けなので今回紹介したようにインターフェースを VXLAN ネットワークに所属させる
+機能があるのみです。VXLAN Trunk を行うような設定はありません。これはハイパーバイザ上で動作させることを前提
+に設計されているので仕方ないです..というかスイッチで行うべき機能ですよね..。VM を接続して云々するには OVS
+のようなソフトウェアスイッチを使えばできます。&lt;/p&gt;
+
+&lt;p&gt;また fdb は時間が経つと情報が消えます。これは VXLAN のメッシュ構造なトンネルがその都度張られているのかどうか
+気になるところです。ICMP の送信で一発目のみマルチキャストでその後ユニキャストになることを確認しましたが、その
+一発目のマルチキャストでトンネリングがされるものなのでしょうか&amp;hellip;。あとで調べてみます。OVS のように CLI で
+トンネルがどのように張られているか確認する手段があれば良いのですが。&lt;/p&gt;
+
+&lt;p&gt;以上です。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Aviator でモダンに OpenStack を操作する</title>
+      <link>http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/</link>
+      <pubDate>Sat, 13 Dec 2014 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;自分は Ruby を普段使うのでいつも Fog というライブラリを使って OpenStack, AWS
+を操作していました。Fog を使うとクラウドの操作が Ruby のネイティブコードで行え
+るのでシステムコマンド打つよりミス無く済みます。&lt;/p&gt;
+
+&lt;p&gt;Fog より後発で Aviator というライブラリが登場してきたので少し使ってみたのです
+がまだ未完成なところがあるものの便利な点もあって今後に期待だったので紹介します。&lt;/p&gt;
+
+&lt;h2 id=&#34;認証情報を-yaml-ファイルに記す&#34;&gt;認証情報を yaml ファイルに記す&lt;/h2&gt;
+
+&lt;p&gt;接続に必要な認証情報を yaml ファイルで記述します。名前を &amp;lsquo;aviator.yml&amp;rsquo; として
+保存。この時に下記のように環境毎に認証情報を別けて書くことができます。こうする
+ことでコードの中で開発用・サービス用等と使い分けられます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-yaml&#34;&gt;production:
+  provider: openstack
+  auth_service:
+    name: identity
+    host_uri: &amp;lt;Auth URL&amp;gt;
+    request: create_token
+    validator: list_tenants
+  auth_credentials:
+    username: &amp;lt;User Name&amp;gt;
+    password: &amp;lt;Password&amp;gt;
+    tenant_name: &amp;lt;Tenant Name&amp;gt;
+
+development:
+  provider: openstack
+  auth_service:
+    name: identity
+    host_uri: &amp;lt;Auth URL&amp;gt;
+    request: create_token
+    validator: list_tenants
+  auth_credentials:
+    username: &amp;lt;User Name&amp;gt;
+    password: &amp;lt;Password&amp;gt;
+    tenant_name: &amp;lt;Tenant Name&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;シンタックス確認
++++&lt;/p&gt;
+
+&lt;p&gt;次に aviator のシンタックスを確認します。Fog に無い機能で、コマンドラインでシ
+ンタックスを確認できてしかも指定可能はパラメータと必須なパラメータと共にサンプ
+ルコードまで提供してくれます。公式サイトに&amp;rsquo;サーバ作成&amp;rsquo;のメソッドが掲載されてい
+るので、ここでは仮想ディスクを作るシンタックスを確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% gem install aviator
+% aviator describe openstack volume # &amp;lt;-- 利用可能な機能を確認
+Available requests for openstack volume_service:
+v1 public list_volume_types
+v1 public list_volumes
+v1 public delete_volume
+v1 public create_volume
+v1 public get_volume
+v1 public update_volume
+  v1 public root
+% aviator describe openstack volume v1 public create_volume # &amp;lt;-- シンタックスを確認
+:Request =&amp;gt; create_volume
+
+Parameters:
+ +---------------------+-----------+
+ | NAME                | REQUIRED? |
+ +---------------------+-----------+
+ | availability_zone   |     N     |
+ | display_description |     Y     |
+ | display_name        |     Y     |
+ | metadata            |     N     |
+ | size                |     Y     |
+ | snapshot_id         |     N     |
+ | volume_type         |     N     |
+ +---------------------+-----------+
+
+Sample Code:
+  session.volume_service.request(:create_volume) do |params|
+    params.volume_type = value
+    params.availability_zone = value
+    params.snapshot_id = value
+    params.metadata = value
+    params.display_name = value
+    params.display_description = value
+    params.size = value
+  end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;このように create_volume というメソッドが用意されていて、指定出来るパラメータ・
+必須なパラメータが確認できます。必須なモノには &amp;ldquo;Y&amp;rdquo; が REQUIRED に付いています。
+またサンプルコードが出力されるので、めちゃ便利です。&lt;/p&gt;
+
+&lt;p&gt;では create_volume のシンタックスがわかったので、コードを書いてみましょう。&lt;/p&gt;
+
+&lt;p&gt;コードを書いてみる
++++&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;#!/usr/bin/env ruby
+
+require &#39;aviator&#39;
+require &#39;json&#39;
+
+volume_session = Aviator::Session.new(
+              :config_file =&amp;gt; &#39;/home/thirai/aviator/aviator.yml&#39;,
+              :environment =&amp;gt; :production,
+              :log_file    =&amp;gt; &#39;/home/thirai/aviator/aviator.log&#39;
+            )
+
+volume_session.authenticate
+
+volume_session.volume_service.request(:create_volume) do |params|
+  params.display_description = &#39;testvol&#39;
+  params.display_name = &#39;testvol01&#39;
+  params.size = 1
+end
+puts volume_session.volume_service.request(:list_volumes).body
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;6行目で先ほど作成した認証情報ファイル aviator.yml とログ出力ファイル
+aviator.log を指定します。12行目で実際に OpenStack にログインしています。&lt;/p&gt;
+
+&lt;p&gt;14-18行目はサンプルコードそのままです。必須パラメータの display_description,
+display_name, size のみを指定し仮想ディスクを作成しました。最後の puts &amp;hellip; は
+実際に作成した仮想ディスク一覧を出力しています。&lt;/p&gt;
+
+&lt;p&gt;結果は下記のとおりです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{ volumes: [{ status: &#39;available&#39;, display_name: &#39;testvol01&#39;, attachments: [],
+availability_zone: &#39;az3&#39;, bootable: &#39;false&#39;, created_at:
+description = &#39;testvol&#39;, volume_type:
+&#39;standard&#39;, snapshot_id: nil, source_volid: nil, metadata:  }, id:
+&#39;3a5f616e-a732-4442-a419-10369111bd4c&#39;, size: 1 }] }
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;まとめ
++++&lt;/p&gt;
+
+&lt;p&gt;サンプルコードやパラメータ一覧等がひと目でわかる aviator はとても便利です。ま
+だ利用できるクラウドプラットフォームが OpenStack しかないのと、Neutron の機能
+がスッポリ抜けているので、まだ利用するには早いかもです&amp;hellip;。逆に言えばコントリ
+ビューションするチャンスなので、もし気になった方がいたら開発に参加してみるのも
+いいかもしれません。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Chef-Zero でお手軽に OpenStack Icehouse を作る</title>
+      <link>http://jedipunkz.github.io/blog/2014/11/15/chef-zero-openstack-icehouse/</link>
+      <pubDate>Sat, 15 Nov 2014 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2014/11/15/chef-zero-openstack-icehouse/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;OpenStack Juno がリリースされましたが、今日は Icehouse ネタです。&lt;/p&gt;
+
+&lt;p&gt;icehouse 以降、自分の中で OpenStack を自動で作る仕組みが無くなりつつあり、気軽
+に OpenStack を作って色々試したい！ッていう時に手段が無く困っていました。例え
+ば仕事でちょっと OpenStack 弄りたい！って時に DevStack, RDO しかなく。DevStack
+は御存知の通り動かない可能性が結構あるし RDO は Ubuntu/Debian Gnu Linux ベース
+じゃないし。&lt;/p&gt;
+
+&lt;p&gt;ってことで、以前にも紹介した stackforge 管理の openstack-chef-repo と
+Chef-Zero を使って OpenStack Icehouse (Neutron) のオールインワン構成を作る方法
+を書きます。ちなみに最近 Chef-Solo が Chef-Zero に置き換わりつつあるらしいです。
+Chef-Zero はオンメモリで Chef サーバを起動する仕組みです。Chef-Solo と違って Chef
+サーバを扱う時と何も変更無く操作が出来るのでとても楽です。また、Chef サーバを
+別途構、構築・管理しなくて良いので、気軽に OpenStack が作れます。&lt;/p&gt;
+
+&lt;p&gt;ちなみに stackforge/openstack-chef-repo の README.md に Chef-Zero での構築方法
+が書いてありますが、沢山の問題があります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;nova-network 構成&lt;/li&gt;
+&lt;li&gt;API の Endpoint が全て localhost に向いてしまうため外部から操作不可能&lt;/li&gt;
+&lt;li&gt;各コンポーネントの bind_address が localhost を向いてしまう&lt;/li&gt;
+&lt;li&gt;berkshelf がそのままでは入らない&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;よって、今回はこれらの問題を解決しつつ &amp;ldquo;オールインワンな Neutron 構成の
+Icehouse OpenStack を作る方法&amp;rdquo; を書いていきます。&lt;/p&gt;
+
+&lt;h2 id=&#34;構成&#34;&gt;構成&lt;/h2&gt;
+
+&lt;pre&gt;&lt;code&gt;+----------------- 10.0.0.0/24 (api/management network)
+|
++----------------+
+| OpenStack Node |
+|   Controller   |
+|    Compute     |
++----------------+
+|  |
++--(-------------- 10.0.1.0/24 (external network)
+   |
+   +-------------- 10.0.2.0/24 (guest vm network)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;IP address 達&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;10.0.0.10 (api/manageent network) : eth0&lt;/li&gt;
+&lt;li&gt;10.0.1.10 (external network) : eth1&lt;/li&gt;
+&lt;li&gt;10.0.2.10 (guest vm network) : eth2&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;注意 : 操作は全て eth0 経由で行う&lt;/p&gt;
+
+&lt;h2 id=&#34;前提の環境&#34;&gt;前提の環境&lt;/h2&gt;
+
+&lt;p&gt;stackforge/openstack-chef-repo の依存している Cookbooks の関係上、upstart 周り
+がうまく制御できていないので Ubuntu Server 12.04.x を使います。&lt;/p&gt;
+
+&lt;h2 id=&#34;インストール方法&#34;&gt;インストール方法&lt;/h2&gt;
+
+&lt;p&gt;上記のように3つのネットワークインターフェースが付いたサーバを1台用意します。
+KVM が利用出来たほうがいいですが使えないくても構いません。KVM リソースが使えな
+い場合の修正方法を後に記します。&lt;/p&gt;
+
+&lt;p&gt;サーバにログインし root ユーザになります。その後 Chef をオムニバスインストーラ
+でインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo -i
+# curl -L https://www.opscode.com/chef/install.sh | bash
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に stable/icehose ブランチを指定して openstack-chef-repo をクローンします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;# cd ~
+# git clone -b stable/icehouse https://github.com/stackforge/openstack-chef-repo
+# 
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;berkshelf をインストールするのですが依存パッケージが足らないのでここでインストー
+ルします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;# apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev \
+  ruby-dev libxml2-dev libxslt-dev g++
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;berkshelf をインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;# /opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に openstack-chef-repo に依存する Cookbooks を取得します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;# cd ~/openstack-chef-repo
+# /opt/chef/embedded/bin/berks vendor ./cookbooks
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;~/openstack-chef-repo/environments ディレクトリ配下に neutron-allinone.json と
+いうファイル名で作成します。内容は下記の通りです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{                                                                                                                                                      [0/215]
+  &amp;quot;name&amp;quot;: &amp;quot;neutron-allinone&amp;quot;,
+  &amp;quot;description&amp;quot;: &amp;quot;test&amp;quot;,
+  &amp;quot;cookbook_versions&amp;quot;: {
+  },
+  &amp;quot;json_class&amp;quot;: &amp;quot;Chef::Environment&amp;quot;,
+  &amp;quot;chef_type&amp;quot;: &amp;quot;environment&amp;quot;,
+  &amp;quot;default_attributes&amp;quot;: {
+  },
+  &amp;quot;override_attributes&amp;quot;: {
+    &amp;quot;mysql&amp;quot;: {
+      &amp;quot;bind_address&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
+      &amp;quot;server_root_password&amp;quot;: &amp;quot;root&amp;quot;,
+      &amp;quot;server_debian_password&amp;quot;: &amp;quot;root&amp;quot;,
+      &amp;quot;server_repl_password&amp;quot;: &amp;quot;root&amp;quot;,
+      &amp;quot;allow_remote_root&amp;quot;: true,
+      &amp;quot;root_network_acl&amp;quot;: [&amp;quot;10.0.0.0/8&amp;quot;]
+    },
+    &amp;quot;rabbitmq&amp;quot;: {
+      &amp;quot;address&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+      &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
+    },
+    &amp;quot;openstack&amp;quot;: {
+      &amp;quot;auth&amp;quot;: {
+        &amp;quot;validate_certs&amp;quot;: false
+      },
+      &amp;quot;dashboard&amp;quot;: {
+        &amp;quot;session_backend&amp;quot;: &amp;quot;file&amp;quot;
+      },
+      &amp;quot;block-storage&amp;quot;: {
+        &amp;quot;syslog&amp;quot;: {
+          &amp;quot;use&amp;quot;: false
+        },
+        &amp;quot;api&amp;quot;: {
+          &amp;quot;ratelimit&amp;quot;: &amp;quot;False&amp;quot;
+        },
+        &amp;quot;debug&amp;quot;: true,
+        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
+        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
+        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;
+      },
+      &amp;quot;compute&amp;quot;: {
+        &amp;quot;rabbit&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
+        },
+        &amp;quot;novnc_proxy&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;
+        },
+        &amp;quot;libvirt&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;,
+        },
+        &amp;quot;novnc_proxy&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;
+        },
+        &amp;quot;xvpvnc_proxy&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;
+        },
+        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
+        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
+        &amp;quot;nova_setup_chef_role&amp;quot;: &amp;quot;os-compute-api&amp;quot;,
+        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
+        &amp;quot;network&amp;quot;: {
+          &amp;quot;public_interface&amp;quot;: &amp;quot;eth0&amp;quot;,
+          &amp;quot;service_type&amp;quot;: &amp;quot;neutron&amp;quot;
+        }
+      },
+      &amp;quot;network&amp;quot;: {
+        &amp;quot;debug&amp;quot;: &amp;quot;True&amp;quot;,
+        &amp;quot;dhcp&amp;quot;: {
+          &amp;quot;enable_isolated_metadata&amp;quot;: &amp;quot;True&amp;quot;
+        },
+        &amp;quot;metadata&amp;quot;: {
+          &amp;quot;nova_metadata_ip&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
+        },
+        &amp;quot;openvswitch&amp;quot;: {
+          &amp;quot;tunnel_id_ranges&amp;quot;: &amp;quot;1:1000&amp;quot;,
+          &amp;quot;enable_tunneling&amp;quot;: &amp;quot;True&amp;quot;,
+          &amp;quot;tenant_network_type&amp;quot;: &amp;quot;gre&amp;quot;,
+          &amp;quot;local_ip_interface&amp;quot;: &amp;quot;eth2&amp;quot;
+        },
+        &amp;quot;api&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;
+        },
+        &amp;quot;l3&amp;quot;: {
+          &amp;quot;external_network_bridge_interface&amp;quot;: &amp;quot;eth1&amp;quot;
+        },
+        &amp;quot;service_plugins&amp;quot;: [&amp;quot;neutron.services.l3_router.l3_router_plugin.L3RouterPlugin&amp;quot;]
+      },
+      &amp;quot;db&amp;quot;: {
+        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;,
+        &amp;quot;compute&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
+        },
+        &amp;quot;identity&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
+        },
+        &amp;quot;image&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
+        },
+        &amp;quot;network&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
+        },
+        &amp;quot;volume&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
+        },
+        &amp;quot;dashboard&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
+        },
+        &amp;quot;telemetry&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
+        },
+        &amp;quot;orchestration&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
+        }
+      },
+      &amp;quot;developer_mode&amp;quot;: true,
+      &amp;quot;endpoints&amp;quot;: {
+        &amp;quot;compute-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
+        },
+        &amp;quot;compute-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
+        },
+        &amp;quot;compute-ec2-admin-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
+        },
+        &amp;quot;compute-ec2-admin&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
+        },
+       &amp;quot;compute-ec2-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
+        },
+        &amp;quot;compute-ec2-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
+        },
+        &amp;quot;compute-xvpvnc&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;6081&amp;quot;
+        },
+        &amp;quot;compute-novnc-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
+        },
+        &amp;quot;compute-novnc&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
+        },
+        &amp;quot;compute-vnc&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
+        },
+        &amp;quot;image-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
+        },
+        &amp;quot;image-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
+        },
+        &amp;quot;image-registry&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
+        },
+        &amp;quot;image-registry-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
+        },
+        &amp;quot;identity-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
+        },
+        &amp;quot;identity-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
+        },
+        &amp;quot;identity-admin&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;35357&amp;quot;
+        },
+        &amp;quot;volume-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
+        },
+        &amp;quot;volume-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
+        },
+        &amp;quot;telemetry-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8777&amp;quot;
+        },
+        &amp;quot;network-api-bind&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
+        },
+        &amp;quot;network-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
+        },
+        &amp;quot;orchestration-api&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8004&amp;quot;
+        },
+        &amp;quot;orchestration-api-cfn&amp;quot;: {
+          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
+          &amp;quot;port&amp;quot;: &amp;quot;8000&amp;quot;
+        }
+      },
+      &amp;quot;identity&amp;quot;: {
+        &amp;quot;admin_user&amp;quot;: &amp;quot;admin&amp;quot;,
+        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;,
+        &amp;quot;debug&amp;quot;: true
+      },
+      &amp;quot;image&amp;quot;: {
+        &amp;quot;api&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;
+        },
+        &amp;quot;debug&amp;quot;: true,
+        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
+        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
+        &amp;quot;registry&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;
+        },
+        &amp;quot;syslog&amp;quot;: {
+          &amp;quot;use&amp;quot;: false
+        },
+        &amp;quot;upload_images&amp;quot;: [
+          &amp;quot;precise&amp;quot;
+        ]
+      },
+      &amp;quot;mq&amp;quot;: {
+        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;,
+        &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+        &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
+        &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;,
+        &amp;quot;network&amp;quot;: {
+          &amp;quot;rabbit&amp;quot;: {
+             &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+             &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
+          }
+        },
+        &amp;quot;compute&amp;quot;: {
+           &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
+          &amp;quot;rabbit&amp;quot;: {
+            &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
+          }
+        },
+        &amp;quot;block-storage&amp;quot;: {
+          &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
+          &amp;quot;rabbit&amp;quot;: {
+            &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
+          }
+        }
+      }
+    },
+    &amp;quot;queue&amp;quot;: {
+      &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
+      &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
+      &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;
+    }
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;内容について全て説明するのは難しいですが、このファイルを作成するのが今回一番苦
+労した点です。と言うのは、構成を作りつつそれぞれのコンポーネントのコンフィギュ
+レーション、エンドポイントのアドレス、バインドアドレス、リスンポート等など、全
+てが正常な値になるように Cookbooks を読みつつ作業するからです。この json ファ
+イルが完成してしまえば、あとは簡単なのですが。&lt;/p&gt;
+
+&lt;p&gt;前述しましたが KVM リソースが使えない環境の場合 Qemu で仮想マシンを稼働するこ
+とができます。その場合、下記のように &amp;ldquo;libvirt&amp;rdquo; の項目に &amp;ldquo;virt_type&amp;rdquo; を追記して
+ください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;        &amp;quot;libvirt&amp;quot;: {
+          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;,
+          &amp;quot;virt_type&amp;quot;: &amp;quot;qemu&amp;quot; # &amp;lt;------ 追記
+        },
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;それではデプロイしていきます。&lt;/p&gt;
+
+&lt;p&gt;ここで &amp;lsquo;allinone&amp;rsquo; はホスト名、&amp;rsquo;allinone-compute&amp;rsquo; は Role 名、neutron-allinone
+は先ほど作成した json で指定している environment 名です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;# chef-client -z
+# knife node -z run_list add allinone &#39;role[allinone-compute]&#39;
+# chef-client -z -E neutron-allinone
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;環境にもよりますが、数分でオールインワンな OpenStack Icehouse が完成します。&lt;/p&gt;
+
+&lt;p&gt;まとめ
++++&lt;/p&gt;
+
+&lt;p&gt;Chef サーバを使わなくて良いのでお手軽に OpenStack が構築出来ました。この json
+ファイルは実は他にも応用出来ると思っています。複数台構成の OpenStack も指定
+Role を工夫すれば構築出来るでしょう。が、その場合は chef-zero は使えません。
+Chef サーバ構成にする必要が出てきます。&lt;/p&gt;
+
+&lt;p&gt;ちなみに OpenStack Paris Summit 2014 で「OpenStack のデプロイに何を使っている
+か？」という調査結果が下記になります。Chef が2位ですが Pueppet に大きく離され
+ている感があります。Juno 版の openstack-chef-repo も開発が進んでいますので、頑
+張って広めていきたいです。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;1位 Puppet&lt;/li&gt;
+&lt;li&gt;2位 Chef&lt;/li&gt;
+&lt;li&gt;3位 Ansible&lt;/li&gt;
+&lt;li&gt;4位 DevStack&lt;/li&gt;
+&lt;li&gt;5位 PackStack&lt;/li&gt;
+&lt;li&gt;6位 Salt&lt;/li&gt;
+&lt;li&gt;7位 Juju&lt;/li&gt;
+&lt;li&gt;8位 Crowbar&lt;/li&gt;
+&lt;li&gt;9位 CFEngine&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;参考 URL : &lt;a href=&#34;http://superuser.openstack.org/articles/openstack-user-survey-insights-november-2014&#34;&gt;http://superuser.openstack.org/articles/openstack-user-survey-insights-november-2014&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;ちなみに、Puppet を使った OpenStack デプロイも個人的に色々試しています。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>MidoStack を動かしてみる</title>
+      <link>http://jedipunkz.github.io/blog/2014/11/04/midostack/</link>
+      <pubDate>Tue, 04 Nov 2014 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2014/11/04/midostack/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;昨晩 Midokura さんが Midonet を OSS 化したとニュースになりました。公式サイトは
+下記の URL になっています。Midonet は OpenStack Neutron のプラグインとして動作
+するソフトウェアです。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://www.midonet.org&#34;&gt;http://www.midonet.org&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;下記のGithub 上でソースを公開しています。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/midonet&#34;&gt;https://github.com/midonet&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;本体の midonet と共に midostack というレポジトリがあってどうやら公式サイトの
+QuickStart を見ても devstack を交えての簡単な midonet の動作が確認できそう。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/midonet/midostack&#34;&gt;https://github.com/midonet/midostack&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;早速使ってみる&#34;&gt;早速使ってみる&lt;/h2&gt;
+
+&lt;p&gt;早速 midostack を使って midonet を体験してみましょう。QuickStart には
+Vagrant + VirtualBox を用いた使い方が改定ありますが手元の PC 端末だとリソース
+が足らなくて CirrOS VM 一個すら立ち上がりませんでした。よって普通にリソースの
+沢山あるサーバで稼働してみます。Vagrantfile 見ても&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;config.vm.synced_folder &amp;quot;./&amp;quot;, &amp;quot;/midostack&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;としているだけなので、Vagrant ではなくても大丈夫でしょう。&lt;/p&gt;
+
+&lt;p&gt;Ubuntu Server 14.04 をインストールしたマシンを用意して midostack を取得します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% git clone https://github.com/midonet/midostack.git
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;midonet_stack.sh を実行します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% cd midostack
+% ./midonet_stack.sh
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;暫く待つと Neutron Middonet Plugin が有効になった OpenStack が立ち上がります。
+Horizon にアクセスしましょう。ユーザ名 : admin, パスワード : gogomid0 (デフォ
+ルト) です。&lt;/p&gt;
+
+&lt;p&gt;VM も普通に立ち上がりますし VM 同士の通信も良好です。&lt;/p&gt;
+
+&lt;h2 id=&#34;neutron-プロセスを確認する&#34;&gt;Neutron プロセスを確認する&lt;/h2&gt;
+
+&lt;p&gt;Neutron-Server は下記のように立ち上がっています。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;16229 pts/13   S+     0:06 python /usr/local/bin/neutron-server --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/midonet/midonet.ini
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;/etc/neutron/neutron.conf の midonet の指定はこんな感じ。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;core_plugin = midonet.neutron.plugin.MidonetPluginV2
+api_extensions_path = /opt/stack/midonet/python-neutron-plugin-midonet/midonet/neutron/extensions
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に /etc/neutron/plugins/midonet/midonet.ini を確認してみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;[midonet]
+# MidoNet API server URI
+# midonet_uri = http://localhost:8080/midonet-api
+
+# MidoNet admin username
+# username = admin
+
+# MidoNet admin password
+# password = passw0rd
+
+# ID of the project that MidoNet admin user belongs to
+# project_id = 77777777-7777-7777-7777-777777777777
+
+# Virtual provider router ID
+# provider_router_id = 00112233-0011-0011-0011-001122334455
+
+# Path to midonet host uuid file
+# midonet_host_uuid_path = /etc/midolman/host_uuid.properties
+
+[MIDONET]
+project_id = admin
+password = gogomid0
+username = admin
+midonet_uri = http://localhost:8081/midonet-api
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;midonet-api-にアクセスする&#34;&gt;Midonet API にアクセスする&lt;/h2&gt;
+
+&lt;p&gt;Midonet API のリファレンスが下記の URL で公開されていました。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://docs.midonet.org/docs/v1.8/rest-api/api/rest-api-specification.html&#34;&gt;http://docs.midonet.org/docs/v1.8/rest-api/api/rest-api-specification.html&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;早速使ってみましょう。まず Token を得ます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;curl -i &#39;http://127.0.0.1:5000/v2.0/tokens&#39; -X POST -H &amp;quot;Content-Type: application/json&amp;quot; -H &amp;quot;Accept: application/json&amp;quot;  -d &#39;{&amp;quot;auth&amp;quot;: {&amp;quot;tenantName&amp;quot;: &amp;quot;admin&amp;quot;, &amp;quot;passwordCredentials&amp;quot;: {&amp;quot;username&amp;quot;: &amp;quot;admin&amp;quot;, &amp;quot;password&amp;quot;: &amp;quot;gogomid0&amp;quot;}}}&#39;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Token ID を取得したら &amp;ldquo;/&amp;rdquo; に対してアクセスしてみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -i -X GET http://localhost:8081/midonet-api/ -H &amp;quot;User-Agent: python-keystoneclient&amp;quot; -H &amp;quot;X-Auth-Token: &amp;lt;TokenID&amp;gt;&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;レスポンス&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
+&amp;quot;routerTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/routers/{id}&amp;quot;,
+&amp;quot;portTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/ports/{id}&amp;quot;,
+&amp;quot;vipTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/vips/{id}&amp;quot;,
+&amp;quot;poolTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/pools/{id}&amp;quot;,
+&amp;quot;healthMonitorTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/health_monitors/{id}&amp;quot;,
+&amp;quot;healthMonitors&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/health_monitors&amp;quot;,
+&amp;quot;loadBalancers&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/load_balancers&amp;quot;,
+&amp;quot;ipAddrGroupTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/ip_addr_groups/{id}&amp;quot;,
+&amp;quot;tenants&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/tenants&amp;quot;,
+&amp;quot;tenantTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/tenants/{id}&amp;quot;,
+&amp;quot;portGroupTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/port_groups/{id}&amp;quot;,
+&amp;quot;loadBalancerTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/load_balancers/{id}&amp;quot;,
+&amp;quot;poolMemberTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/pool_members/{id}&amp;quot;,
+&amp;quot;hostVersions&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/versions&amp;quot;,
+&amp;quot;version&amp;quot;: &amp;quot;v1.7&amp;quot;,
+&amp;quot;bridgeTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/bridges/{id}&amp;quot;,
+&amp;quot;hostTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/hosts/{id}&amp;quot;,
+&amp;quot;uri&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/&amp;quot;,
+&amp;quot;vteps&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/vteps&amp;quot;,
+&amp;quot;tunnelZoneTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/tunnel_zones/{id}&amp;quot;,
+&amp;quot;ipAddrGroups&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/ip_addr_groups&amp;quot;,
+&amp;quot;writeVersion&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/write_version&amp;quot;,
+&amp;quot;chainTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/chains/{id}&amp;quot;,
+&amp;quot;vtepTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/vteps/{ipAddr}&amp;quot;,
+&amp;quot;adRouteTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/ad_routes/{id}&amp;quot;,
+&amp;quot;bgpTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/bgps/{id}&amp;quot;,
+&amp;quot;hosts&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/hosts&amp;quot;,
+&amp;quot;routeTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/routes/{id}&amp;quot;,
+&amp;quot;ruleTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/rules/{id}&amp;quot;,
+&amp;quot;systemState&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/system_state&amp;quot;,
+&amp;quot;vips&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/vips&amp;quot;,
+&amp;quot;pools&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/pools&amp;quot;,
+&amp;quot;routers&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/routers&amp;quot;,
+&amp;quot;bridges&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/bridges&amp;quot;,
+&amp;quot;chains&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/chains&amp;quot;,
+&amp;quot;portGroups&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/port_groups&amp;quot;,
+&amp;quot;poolMembers&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/pool_members&amp;quot;,
+&amp;quot;tunnelZones&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/tunnel_zones&amp;quot;
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;なんとなく引数にこれらの文字列を渡せばいいのだなと分かります。&lt;/p&gt;
+
+&lt;p&gt;次に neutron の管理している subnets を確認してみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -i -X GET http://localhost:8081/midonet-api/neutron/subnets -H &amp;quot;User-Agent: python-keystoneclient&amp;quot; -H &amp;quot;X-Auth-Token: &amp;lt;TokenID&amp;gt;&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;レスポンス&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;[
+  {
+    &amp;quot;enable_dhcp&amp;quot;: false,
+    &amp;quot;tenant_id&amp;quot;: &amp;quot;65f7012145d84ac5afc36572eabe5b09&amp;quot;,
+    &amp;quot;host_routes&amp;quot;: [],
+    &amp;quot;dns_nameservers&amp;quot;: [],
+    &amp;quot;id&amp;quot;: &amp;quot;3dbe5cff-8a8c-4790-85b5-b789d8ede863&amp;quot;,
+    &amp;quot;name&amp;quot;: &amp;quot;public-subnet&amp;quot;,
+    &amp;quot;cidr&amp;quot;: &amp;quot;200.200.200.0/24&amp;quot;,
+    &amp;quot;shared&amp;quot;: false,
+    &amp;quot;ip_version&amp;quot;: 4,
+    &amp;quot;network_id&amp;quot;: &amp;quot;45269fba-e32f-40b0-a542-f5cfe34ce1a1&amp;quot;,
+    &amp;quot;gateway_ip&amp;quot;: &amp;quot;200.200.200.1&amp;quot;,
+    &amp;quot;allocation_pools&amp;quot;: [
+      {
+        &amp;quot;last_ip&amp;quot;: null,
+        &amp;quot;first_ip&amp;quot;: null
+      }
+    ]
+  },
+  {
+    &amp;quot;enable_dhcp&amp;quot;: true,
+    &amp;quot;tenant_id&amp;quot;: &amp;quot;f34b4398015546b8b84f50c731ed6c51&amp;quot;,
+    &amp;quot;host_routes&amp;quot;: [],
+    &amp;quot;dns_nameservers&amp;quot;: [],
+    &amp;quot;id&amp;quot;: &amp;quot;3dbcf04a-9738-4b1f-b084-76f2a4b17cbc&amp;quot;,
+    &amp;quot;name&amp;quot;: &amp;quot;private-subnet&amp;quot;,
+    &amp;quot;cidr&amp;quot;: &amp;quot;10.0.0.0/24&amp;quot;,
+    &amp;quot;shared&amp;quot;: false,
+    &amp;quot;ip_version&amp;quot;: 4,
+    &amp;quot;network_id&amp;quot;: &amp;quot;2edb78c3-0f23-4e29-a3e6-cc97f55baa6a&amp;quot;,
+    &amp;quot;gateway_ip&amp;quot;: &amp;quot;10.0.0.1&amp;quot;,
+    &amp;quot;allocation_pools&amp;quot;: [
+      {
+        &amp;quot;last_ip&amp;quot;: null,
+        &amp;quot;first_ip&amp;quot;: null
+      }
+    ]
+  }
+]
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;２つのサブネットが確認出来ました。&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;勉強不足でまだ全く midonet で出来る事がわからない..汗。でもとりあえず動かせた
+し、API も引っ張れるのでこれから色々試せそうですね。OSS 化されたことで、コミュ
+ニティの間でも使われていくことも想像出来ますし、自分たち技術者としてはとても有
+り難いことでした。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Chef-Container Beta を使ってみる</title>
+      <link>http://jedipunkz.github.io/blog/2014/07/16/chef-container/</link>
+      <pubDate>Wed, 16 Jul 2014 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2014/07/16/chef-container/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;昨晩 Chef が Chef-Container を発表しました。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://www.getchef.com/blog/2014/07/15/release-chef-container-0-2-0-beta/&#34;&gt;http://www.getchef.com/blog/2014/07/15/release-chef-container-0-2-0-beta/&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;http://docs.opscode.com/containers.html&#34;&gt;http://docs.opscode.com/containers.html&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;まだ Beta リリースでバージョンは 0.2.0 です。(gem だと 0.1.1)&lt;/p&gt;
+
+&lt;p&gt;Docker を代表とするコンテナ周りの技術が最近、盛んにリリースされていますし、今
+後クラウドプラットフォーム上でコンテナを使ってアプリを動かすケースも増えてくる
+のではないでしょうか。Dockerfile を使っても Chef-Solo を使ってソフトウェアをデ
+プロイ出来るのだけどそれだけだとしんどいので、コンテナに特化した Chef が出てき
+たってことだと思います。特徴として SSH でログインしてブートストラップするので
+はなくて Runit + Chef-init を用いてコンテナにデプロイすることが挙げられます。&lt;/p&gt;
+
+&lt;p&gt;では実際に使ってみたのでその時の手順をまとめてみます。&lt;/p&gt;
+
+&lt;h2 id=&#34;事前に用意する環境&#34;&gt;事前に用意する環境&lt;/h2&gt;
+
+&lt;p&gt;下記のソフトウェアを予めインストールしておきましょう。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;docker&lt;/li&gt;
+&lt;li&gt;chef&lt;/li&gt;
+&lt;li&gt;berkshelf&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;ここで注意なのですが後に knife コマンドを使って Docker イメージをビルドします。
+つまり root 権限が必要です。rbenv 等を使って ruby, chef をインストールすると、
+辛いかもしれませんので OS のパッケージを使ってインストールすると良いと思います。
+この辺りは今後改善策が出てくるかも&amp;hellip;。&lt;/p&gt;
+
+&lt;p&gt;尚、インストール方法はここでは割愛します。&lt;/p&gt;
+
+&lt;h2 id=&#34;chef-container-のインストール&#34;&gt;Chef-Container のインストール&lt;/h2&gt;
+
+&lt;p&gt;下記の2つの Gems をインストールします。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;knife-container&lt;/li&gt;
+&lt;li&gt;chef-container&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo gem install knife-container
+% sudo gem install chef-container
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;使用方法&#34;&gt;使用方法&lt;/h2&gt;
+
+&lt;p&gt;まず knife コマンドを使って操作に必要なディレクトリとファイルを生成します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% knife container docker init chef/ubuntu-12.04 -r &#39;recipe[apache2]&#39; -z -b
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで &amp;lsquo;chef/ubuntu-12.04&amp;rsquo; は Docker のイメージ名です。chef-init 等の環境が予
+め入っていました。このイメージ以外では今のところ動作を確認していません..。これは後にまとめで触れます。&lt;/p&gt;
+
+&lt;p&gt;上記のコマンドの結果で得られるディレクトリとファイル達です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;.
+└── dockerfiles
+    └── chef
+        └── ubuntu-12.04
+            ├── Berksfile
+            ├── chef
+            │   ├── first-boot.json
+            │   └── zero.rb
+            └── Dockerfile
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;また dockerfiles/chef/ubuntu-12.04/Dockerfile を確認すると&amp;hellip;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;# BASE chef/ubuntu-12.04:latest
+FROM chef/ubuntu-12.04
+ADD chef/ /etc/chef/
+RUN chef-init --bootstrap
+RUN rm -rf /etc/chef/secure/*
+ENTRYPOINT [&amp;quot;chef-init&amp;quot;]
+CMD [&amp;quot;--onboot&amp;quot;]
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;イメージを取得 -&amp;gt; ディレクトリ同期 -&amp;gt; chef-init 実行 -&amp;gt; /etc/chef/secure 配下削除、と
+実行しているようです。&lt;/p&gt;
+
+&lt;p&gt;次に first-boot.json という名前のファイルを生成します。chef-init が解釈するファ
+イルです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
+   &amp;quot;run_list&amp;quot;: [
+      &amp;quot;recipe[apache2]&amp;quot;
+   ],
+   &amp;quot;container_service&amp;quot;: {
+      &amp;quot;apache2&amp;quot;: {
+         &amp;quot;command&amp;quot;: &amp;quot;/usr/sbin/apache2 -k start&amp;quot;
+      }
+   }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ではいよいよ knife コマンドで Docker イメージをビルドします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo knife container docker build chef/ubuntu-12.04 -z
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;すると、下記のように Docker イメージが出来上がります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo docker images
+REPOSITORY          TAG                 IMAGE ID            CREATED             VIRTUAL SIZE
+chef/ubuntu-12.04   11                  03fd2357596f        4 days ago          397.7 MB
+chef/ubuntu-12.04   11.12               03fd2357596f        4 days ago          397.7 MB
+chef/ubuntu-12.04   11.12.8             03fd2357596f        4 days ago          397.7 MB
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;出来上がったイメージを利用してコンテナを稼働します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo docker run chef/ubuntu-12.04
+% sudo docker ps
+CONTAINER ID        IMAGE               COMMAND              CREATED             STATUS              PORTS               NAMES
+191cfdaf0bdb        650a89f73ed8        chef-init --onboot   39 minutes ago      Up 39 minutes                           agitated_almeida
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;コンテナと言っても今現在は Docker のみに対応しているようです。また init の際に指定する Docker イメージ
+の中に chef-init が入っている必要がありそうです。Build する前に予めイメージを作っておく必要があるという
+のはしんどいので、今後改善されるかもしれません。&lt;/p&gt;
+
+&lt;p&gt;そもそも Docker やコンテナ技術の登場で Puppet, Chef を代表とするツール類が不要になるのでは？という議論が
+幾つかの場面であったように思います。つまりコンテナのイメージに予めソフトウェアを配布しそれを用いて稼働
+することで、マシンが起動した後にデプロイすることが必要ないよね？という発想です。今回紹介したようにコンテナの
+イメージを生成するのに Chef を用いるということであれば、また別の議論になりそうです。また稼働したコンテナに
+ソフトウェアをデプロイすることも場合によっては必要なので、この辺りの技術の完成度が上がることを期待したいです。&lt;/p&gt;
+
+&lt;h2 id=&#34;参考-url&#34;&gt;参考 URL&lt;/h2&gt;
+
+&lt;ul&gt;
+&lt;li&gt;CreationLine さんブログ &lt;a href=&#34;http://www.creationline.com/lab/5346&#34;&gt;http://www.creationline.com/lab/5346&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;公式サイト &lt;a href=&#34;http://docs.opscode.com/containers.html&#34;&gt;http://docs.opscode.com/containers.html&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>JTF2014 で Ceph について話してきた！</title>
+      <link>http://jedipunkz.github.io/blog/2014/06/22/jtf2014-ceph/</link>
+      <pubDate>Sun, 22 Jun 2014 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2014/06/22/jtf2014-ceph/</guid>
+      <description>&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;今日、JTF2014 (July Tech Festa 2014) というイベントで Ceph のことを話してきま
+した。Ceph ユーザ会の会員として話してきたのですが Ceph ユーザ会は実は最近発足
+したばかりのユーザ会で、まだまだ活動が活発ではありません。もし興味がある方いらっ
+しゃいましたら是非参加よろしくお願いしますー。下記の Google Groups になります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://groups.google.com/forum/#!forum/ceph-jp&#34;&gt;https://groups.google.com/forum/#!forum/ceph-jp&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;ユーザ会としての勉強会として初になるのですが、今回このイベントで自分は
+Ceph-Deploy について話してきました。とりあえず皆さんに使ってもらいたかったので
+この話をしてきました。が、予定時間がメチャ短かったので超絶早口で頑張った分、皆
+さんに理解してもらえなかった気がしてちょっと反省&amp;hellip;。なので、このブログを利用
+して少し細くさせてもらいます。&lt;/p&gt;
+
+&lt;p&gt;今日の発表資料はこちらです！&lt;/p&gt;
+
+&lt;script async class=&#34;speakerdeck-embed&#34;
+data-id=&#34;592a0b90ceb30131a5d25ae3f95c3a1a&#34; data-ratio=&#34;1.33333333333333&#34; src=&#34;//speakerdeck.com/assets/embed.js&#34;&gt;&lt;/script&gt;
+
+&lt;p&gt;今日のテーマは 「Ceph-Deploy を使って Ceph を構築してみる」だったのですが、下
+記のテーマを持って資料を作っています。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;単にミニマム構成ではなく運用を考慮した実用性のある構成&lt;/li&gt;
+&lt;li&gt;OSD, MON, MDS の各プロセスとノード・ディスクの数の関係を知ってもらう&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;特に「実用性のある..」は意識したつもりでした。そのために前提とした構成に下記の
+特徴を持たせています。(資料 6 ページ目に構成図があります。確認してみてください。)&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;オブジェクト格納用ディスクは複数/ノードを前提&lt;/li&gt;
+&lt;li&gt;OSD レプリケーションのためのクラスタネットワークを用いる構成&lt;/li&gt;
+&lt;li&gt;OSD の扱うジャーナル格納用ディスクは高速な SSD を用いる&lt;/li&gt;
+&lt;li&gt;MDS は利用する HW リソースの特徴が異なるので別ノードへ配置&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;ストレージ全体を拡張したければ&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;図中 ceph01-03 の様なノードを増設する&lt;/li&gt;
+&lt;li&gt;ceph01-03 にディスクとそれに対する OSD を増設する&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;ですが、前者がベストでしょう。ノード増設の場合 ceph-deploy を用いて&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;ceph-deploy mon create &amp;lt;新規ホスト名&amp;gt; で MON を稼働&lt;/li&gt;
+&lt;li&gt;ceph-dploy disk zap, osd create で OSD を稼働&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;で簡単に可能です。MDS の増設も負荷状況を見ながらするといいでしょう。自分はまだ
+Ceph を運用していないので、各プロセスがどのようなリソースの消費の仕方をするの
+か知りません。MDS がどのような数で運用していくべきなのか。早く運用から得たノウ
+ハウが共有されないかなぁと期待しています。&lt;/p&gt;
+
+&lt;p&gt;また今回話すのを忘れたのですが SSD をジャーナル格納用ディスクとして用いたのは
+ハードディスクに対して高速でアクセス出来ること・またメタデータはファイルオブジェ
+クトに対して小容量で済む、といった理由からです。メタデータを扱うのに適している
+と思います。また将来的には幾つかの KVS データベースソフトウェアをメタデータ管
+理に使う実装がされるそうです。&lt;/p&gt;
+
+&lt;p&gt;以上です。皆さん、是非 Ceph を使ってみてください！ また興味のある方はユーザ会
+への加入をご検討くださいー。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Mesos &#43; Marathon &#43; Deimos &#43; Docker を試してみた!</title>
+      <link>http://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/</link>
+      <pubDate>Fri, 13 Jun 2014 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;以前 Mesos, Docker について記事にしました。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/&#34;&gt;http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/&lt;/a&gt;
+&lt;a href=&#34;http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/&#34;&gt;http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;Twitter で Docker 関連のオーケストレーションツールについて呟いていたら @everpeace さんから
+こんな情報をもらいました。&lt;/p&gt;
+
+&lt;p&gt;&lt;blockquote class=&#34;twitter-tweet&#34; lang=&#34;ja&#34;&gt;&lt;p&gt;&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; 元々meos-dockerっていうmesos executorがあったんですけど、mesosがcontainer部分をpluggableにしたので、それに合わせてdeimosっていうmesos用のexternal containerizer が作られました。&lt;/p&gt;&amp;mdash; Shingo Omura (@everpeace) &lt;a href=&#34;https://twitter.com/everpeace/statuses/476998842383347712&#34;&gt;2014, 6月 12&lt;/a&gt;&lt;/blockquote&gt;
+&lt;script async src=&#34;//platform.twitter.com/widgets.js&#34; charset=&#34;utf-8&#34;&gt;&lt;/script&gt;&lt;/p&gt;
+
+&lt;p&gt;Deimos !!! 知らなかった。Mesos の Docker プラグインらしく下記の場所にありました。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/mesosphere/deimos&#34;&gt;https://github.com/mesosphere/deimos&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;色々調べいたら、こんな資料が見つかりました。どうやらまだ公開されて4日しか経っていないようです。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://mesosphere.io/learn/run-docker-on-mesosphere/&#34;&gt;http://mesosphere.io/learn/run-docker-on-mesosphere/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;Mesos + Marathon + Deimos + Docker をオールインワン構成で構築する手順が書かれています。&lt;/p&gt;
+
+&lt;p&gt;内容はほぼ同じですが、一応自分がやってみて理解したことをまとめたいので下記に記していきます。&lt;/p&gt;
+
+&lt;h2 id=&#34;構築してみる&#34;&gt;構築してみる&lt;/h2&gt;
+
+&lt;p&gt;手順をまとめてスクリプトにしました。パッケージは Ubuntu 13.10 用のようですが 14.04 のホスト
+で実行出来ました。14.04 のパッケージはまだ見つかっていません。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;#!/bin/bash
+# disable ipv6
+echo &#39;net.ipv6.conf.all.disable_ipv6 = 1&#39; | sudo tee -a /etc/sysctl.conf
+echo &#39;net.ipv6.conf.default.disable_ipv6 = 1&#39; | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+
+# install related tools
+sudo apt-get update
+sudo apt-get -y install curl python-setuptools python-pip python-dev python-protobuf
+
+# install zookeeper
+sudo apt-get -y install zookeeperd
+echo 1 | sudo dd of=/var/lib/zookeeper/myid
+
+# install docker
+sudo apt-get -y install docker.io
+sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker
+sudo sed -i &#39;$acomplete -F _docker docker&#39; /etc/bash_completion.d/docker.io
+sudo docker pull libmesos/ubuntu
+
+# install mesos
+curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.deb -o /tmp/mesos.deb
+sudo dpkg -i /tmp/mesos.deb
+sudo mkdir -p /etc/mesos-master
+echo in_memory  | sudo dd of=/etc/mesos-master/registry
+curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.egg -o /tmp/mesos.egg
+sudo easy_install /tmp/mesos.egg
+
+# install marathon
+curl -fL http://downloads.mesosphere.io/marathon/marathon_0.5.0-xcon2_noarch.deb -o /tmp/marathon.deb
+sudo dpkg -i /tmp/marathon.deb
+
+# restart each services
+sudo service docker.io restart
+sudo service zookeeper restart
+sudo service mesos-master restart
+sudo service mesos-slave restart
+
+# install deimos
+sudo pip install deimos
+sudo mkdir -p /etc/mesos-slave
+
+## Configure Deimos as a containerizer
+echo /usr/bin/deimos  | sudo dd of=/etc/mesos-slave/containerizer_path
+echo external     | sudo dd of=/etc/mesos-slave/isolation
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;プロセスの確認&#34;&gt;プロセスの確認&lt;/h2&gt;
+
+&lt;p&gt;実行が終わると各プロセスが確認出来ます。オプションでどのプロセスが何を見ているか大体
+わかりますので見ていきます。&lt;/p&gt;
+
+&lt;h4 id=&#34;mesos-master&#34;&gt;mesos-master&lt;/h4&gt;
+
+&lt;p&gt;mesos-master は zookeeper を参照して 5050 番ポートで起動しているようです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% ps ax | grep mesos-master
+ 1224 ?        Ssl    0:30 /usr/local/sbin/mesos-master --zk=zk://localhost:2181/mesos --port=5050 --log_dir=/var/log/mesos --registry=in_memory
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;mesos-slave&#34;&gt;mesos-slave&lt;/h4&gt;
+
+&lt;p&gt;mesos-slave は同じく zookeeper を参照して containerizer を deimos として稼働していることが
+わかります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% ps ax | grep mesos-slave
+ 1225 ?        Ssl    0:12 /usr/local/sbin/mesos-slave --master=zk://localhost:2181/mesos --log_dir=/var/log/mesos --containerizer_path=/usr/bin/deimos --isolation=external
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;zookeeper&#34;&gt;zookeeper&lt;/h4&gt;
+
+&lt;p&gt;zookeeper は OpenJDK7 で稼働している Java プロセスです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% ps ax | grep zookeeper
+ 1073 ?        Ssl    1:07 /usr/bin/java -cp /etc/zookeeper/conf:/usr/share/java/jline.jar:/usr/share/java/log4j-1.2.jar:/usr/share/java/xercesImpl.jar:/usr/share/java/xmlParserAPIs.jar:/usr/share/java/netty.jar:/usr/share/java/slf4j-api.jar:/usr/share/java/slf4j-log4j12.jar:/usr/share/java/zookeeper.jar -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=false -Dzookeeper.log.dir=/var/log/zookeeper -Dzookeeper.root.logger=INFO,ROLLINGFILE org.apache.zookeeper.server.quorum.QuorumPeerMain /etc/zookeeper/conf/zoo.cfg
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;docker&#34;&gt;docker&lt;/h4&gt;
+
+&lt;p&gt;docker が起動していることも確認できます。設定は特にしていないです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% ps axuw | grep docker
+root       831  0.0  0.3 364776 14924 ?        Sl   01:30   0:01 /usr/bin/docker.io -d
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;marathon-の-webui-にアクセス&#34;&gt;Marathon の WebUI にアクセス&lt;/h2&gt;
+
+&lt;p&gt;Marathon の WebUI にアクセスしてみましょう。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.com/pix/deimos_01.png&#34;&gt;&lt;/p&gt;
+
+&lt;p&gt;まだ何も Tasks が実行されていないので一覧には何も表示されないと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;tasks-の実行&#34;&gt;Tasks の実行&lt;/h2&gt;
+
+&lt;p&gt;Marathon API に対してクエリを発行することで Mesos の Tasks として Docker コンテナを稼働させることが出来ます。
+下記のファイルを ubuntu.json として保存。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
+    &amp;quot;container&amp;quot;: {
+    &amp;quot;image&amp;quot;: &amp;quot;docker:///libmesos/ubuntu&amp;quot;
+  },
+  &amp;quot;id&amp;quot;: &amp;quot;ubuntu&amp;quot;,
+  &amp;quot;instances&amp;quot;: &amp;quot;1&amp;quot;,
+  &amp;quot;cpus&amp;quot;: &amp;quot;.5&amp;quot;,
+  &amp;quot;mem&amp;quot;: &amp;quot;512&amp;quot;,
+  &amp;quot;uris&amp;quot;: [ ]
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;下記の通り localhost:8080 が Marathon API の Endpoint になっているのでここに対して作成した JSON を POST します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X POST -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps -d@ubuntu.json
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Tasks の一覧を取得してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X GET -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps
+{&amp;quot;apps&amp;quot;:[{&amp;quot;id&amp;quot;:&amp;quot;ubuntu&amp;quot;,&amp;quot;cmd&amp;quot;:&amp;quot;&amp;quot;,&amp;quot;env&amp;quot;:{},&amp;quot;instances&amp;quot;:1,&amp;quot;cpus&amp;quot;:0.5,&amp;quot;mem&amp;quot;:512.0,&amp;quot;executor&amp;quot;:&amp;quot;&amp;quot;,&amp;quot;constraints&amp;quot;:[],&amp;quot;uris&amp;quot;:[],&amp;quot;ports&amp;quot;:[13049],&amp;quot;taskRateLimit&amp;quot;:1.0,&amp;quot;container&amp;quot;:{&amp;quot;image&amp;quot;:&amp;quot;docker:///libmesos/ubuntu&amp;quot;,&amp;quot;options&amp;quot;:[]},&amp;quot;version&amp;quot;:&amp;quot;2014-06-13T01:45:58.693Z&amp;quot;,&amp;quot;tasksStaged&amp;quot;:1,&amp;quot;tasksRunning&amp;quot;:0}]}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Tasks の一覧が JSON で返ってきます。id : ubuntu, インスタンス数 : 1, CPU 0.5, メモリー : 512MB で
+Task が稼働していることが確認出来ます。&lt;/p&gt;
+
+&lt;p&gt;ここで WebUI 側も見てみましょう。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.com/pix/deimos_05.png&#34;&gt;&lt;/p&gt;
+
+&lt;p&gt;一つ Task が稼働していることが確認出来ると思います。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.com/pix/deimos_04.png&#34;&gt;&lt;/p&gt;
+
+&lt;p&gt;その Task をクリックすると詳細が表示されます。&lt;/p&gt;
+
+&lt;p&gt;次に Tasks のスケーリングを行ってみましょう。
+下記の通り ubuntu.json を修正し instances : 2 とする。これによってインスタンス数が2に増えます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
+    &amp;quot;container&amp;quot;: {
+    &amp;quot;image&amp;quot;: &amp;quot;docker:///libmesos/ubuntu&amp;quot;
+  },
+  &amp;quot;id&amp;quot;: &amp;quot;ubuntu&amp;quot;,
+  &amp;quot;instances&amp;quot;: &amp;quot;2&amp;quot;,
+  &amp;quot;cpus&amp;quot;: &amp;quot;.5&amp;quot;,
+  &amp;quot;mem&amp;quot;: &amp;quot;512&amp;quot;,
+  &amp;quot;uris&amp;quot;: [ ]
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;修正した JSON を POST します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X PUT -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps/ubuntu -d@ubuntu.json
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Tasks の一覧を取得し containers が 2 になっていることが確認できます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X GET -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps
+{&amp;quot;apps&amp;quot;:[{&amp;quot;id&amp;quot;:&amp;quot;ubuntu&amp;quot;,&amp;quot;cmd&amp;quot;:&amp;quot;&amp;quot;,&amp;quot;env&amp;quot;:{},&amp;quot;instances&amp;quot;:2,&amp;quot;cpus&amp;quot;:0.5,&amp;quot;mem&amp;quot;:512.0,&amp;quot;executor&amp;quot;:&amp;quot;&amp;quot;,&amp;quot;constraints&amp;quot;:[],&amp;quot;uris&amp;quot;:[],&amp;quot;ports&amp;quot;:[17543],&amp;quot;taskRateLimit&amp;quot;:1.0,&amp;quot;container&amp;quot;:{&amp;quot;image&amp;quot;:&amp;quot;docker:///libmesos/ubuntu&amp;quot;,&amp;quot;options&amp;quot;:[]},&amp;quot;version&amp;quot;:&amp;quot;2014-06-13T02:40:04.536Z&amp;quot;,&amp;quot;tasksStaged&amp;quot;:3,&amp;quot;tasksRunning&amp;quot;:0}]}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;最後に Tasks を削除してみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X DELETE -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps/ubuntu
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Tasks が削除されたことを確認します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X GET -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps
+{&amp;quot;apps&amp;quot;:[]}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;marathon-api-v2&#34;&gt;Marathon API v2&lt;/h2&gt;
+
+&lt;p&gt;Marathon API v2 について下記の URL に仕様が載っています。上記に記したクエリ以外にも色々載っているので
+動作を確認してみるといいと思います。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md&#34;&gt;https://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;オールインワン構成が出来ました。また動作確認も無事出来ています。
+以前試した時よりも大分、手順が簡潔になった印象があります。また参考資料中に&lt;/p&gt;
+
+&lt;p&gt;&amp;ldquo;checkout our other multi-node tutorials on how to scale Docker in your data center.&amp;rdquo;&lt;/p&gt;
+
+&lt;p&gt;とありますが、まだ見つかっていません(´・ω・｀)見つかった方教えてくださいー。&lt;/p&gt;
+
+&lt;p&gt;以前試した時は Mesos-Master の冗長化が出来なかったので今回こそ Multi Mesos-Masters,
+Multi Mesos-Slaves の構成を作ってみたいと思います。&lt;/p&gt;
+
+&lt;p&gt;また今月？になって続々と Docker のオーケストレーションツールを各社が公開しています。&lt;/p&gt;
+
+&lt;h5 id=&#34;centurion&#34;&gt;centurion&lt;/h5&gt;
+
+&lt;p&gt;New Relic が開発したオーケストレーションツール。
+&lt;a href=&#34;https://github.com/newrelic/centurion&#34;&gt;https://github.com/newrelic/centurion&lt;/a&gt;&lt;/p&gt;
+
+&lt;h5 id=&#34;helios&#34;&gt;helios&lt;/h5&gt;
+
+&lt;p&gt;Spotify が開発したオーケストレーションツール。
+&lt;a href=&#34;https://github.com/spotify/helios&#34;&gt;https://github.com/spotify/helios&lt;/a&gt;&lt;/p&gt;
+
+&lt;h5 id=&#34;fleet&#34;&gt;fleet&lt;/h5&gt;
+
+&lt;p&gt;CoreOS 標準搭載。
+&lt;a href=&#34;https://github.com/coreos/fleet&#34;&gt;https://github.com/coreos/fleet&lt;/a&gt;&lt;/p&gt;
+
+&lt;h5 id=&#34;geard&#34;&gt;geard&lt;/h5&gt;
+
+&lt;p&gt;RedHat が Red Hat Enterprise Linux Atomic Host に搭載しているツール。
+&lt;a href=&#34;http://openshift.github.io/geard/&#34;&gt;http://openshift.github.io/geard/&lt;/a&gt;&lt;/p&gt;
+
+&lt;h5 id=&#34;kubernetes&#34;&gt;Kubernetes&lt;/h5&gt;
+
+&lt;p&gt;Google が開発したオーケストレーションツール。
+&lt;a href=&#34;https://github.com/GoogleCloudPlatform/kubernetes&#34;&gt;https://github.com/GoogleCloudPlatform/kubernetes&lt;/a&gt;&lt;/p&gt;
+
+&lt;h5 id=&#34;shipper&#34;&gt;shipper&lt;/h5&gt;
+
+&lt;p&gt;Python のコードで Docker をオーケストレーション出来るツール。
+&lt;a href=&#34;https://github.com/mailgun/shipper&#34;&gt;https://github.com/mailgun/shipper&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;幾つか試したのですが、まだまだ動く所までいかないツールがありました。github の README にも
+&amp;ldquo;絶賛開発中なのでプロダクトレディではない&amp;rdquo; と書かれています。これからでしょう。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>クラウドライブラリ Fog で AWS を操作！..のサンプル</title>
+      <link>http://jedipunkz.github.io/blog/2014/05/29/fog-aws-ec2-elb/</link>
+      <pubDate>Thu, 29 May 2014 00:00:00 +0000</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2014/05/29/fog-aws-ec2-elb/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;最近 OpenStack でサービスを開発！.. じゃなくて AWS でプロトタイプサービス作っ
+ているのですが、Ruby で開発したかったので Fog を使っています。EC2 と ELB の
+API を叩くコードになりつつあるのですが、サンプルコードって世の中に中々無いと気
+がついたので、このブログ記事にサンプルコードを載せたいと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;fog-とは&#34;&gt;Fog とは ?&lt;/h2&gt;
+
+&lt;p&gt;Fog &lt;a href=&#34;http://fog.io/&#34;&gt;http://fog.io/&lt;/a&gt; はクラウドライブラリソフトウェアです。AWS, Rackspace,
+CloudStack, OpenStack .. と数ある世の中のクラウドプラットフォームを扱うために
+用意されたソフトウェアです。対応しているプラットフォームの種別は下記を見ると参
+考になります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://fog.io/about/provider_documentation.html&#34;&gt;http://fog.io/about/provider_documentation.html&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;ドキュメントがまだまだ揃っていなく、Fog のコードを覗きながら実装するしかない状
+況です。なので「こう使えば良い！」というお手本があまりネット上にも無い気がしま
+す。&lt;/p&gt;
+
+&lt;p&gt;ドキュメントは一応下記にあります。
+が使い方がよくわからない・・！(´；ω；｀)ﾌﾞﾜｯ&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://rubydoc.info/gems/fog/frames/index&#34;&gt;http://rubydoc.info/gems/fog/frames/index&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;ec2-インスタンスを使ってみる&#34;&gt;EC2 インスタンスを使ってみる&lt;/h2&gt;
+
+&lt;p&gt;まずは AWS EC2 の API を叩いて t1.micro インスタンスを立ち上げてみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;require &#39;fog&#39;
+
+compute = Fog::Compute.new({
+  :provider =&amp;gt; &#39;AWS&#39;,
+  :aws_access_key_id =&amp;gt; &#39;....&#39;,
+  :aws_secret_access_key =&amp;gt; &#39;....&#39;,
+  :region =&amp;gt; &#39;ap-northeast-1&#39;
+})
+
+server = compute.servers.create(
+  :image_id =&amp;gt; &#39;ami-cedaa2bc&#39;,
+  :flavor_id =&amp;gt; &#39;t1.micro&#39;,
+  :key_name =&amp;gt; &#39;test_key&#39;,
+  :tags =&amp;gt; {&#39;Name&#39; =&amp;gt; &#39;test&#39;},
+  :groups =&amp;gt; &#39;ssh-secgroup&#39;
+)
+
+server.wait_for { print &amp;quot;.&amp;quot;; ready? }
+
+puts &amp;quot;created instance name :&amp;quot;, server.dns_name
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;解説&#34;&gt;解説&lt;/h4&gt;
+
+&lt;ul&gt;
+&lt;li&gt;compute = &amp;hellip; とあるところで接続情報を記しています。&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&amp;ldquo;ACCESS_KEY_ID&amp;rdquo; や &amp;ldquo;SECRET_ACCESS_KEY&amp;rdquo; はみなさん接続する時にお持ちですよね。それ
+とリージョン名やプロバイダ名 (ここでは AWS) を記して AWS の API に接続します。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;server = &amp;hellip; とあるところで実際にインスタンスを作成しています。&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;ここではインスタンス生成に必要な情報を盛り込んでいます。Flavor 名や AMI イメー
+ジ名・SSH 鍵の名前・セキュリティグループ名等です。&lt;/p&gt;
+
+&lt;h2 id=&#34;便利なメソッド&#34;&gt;便利なメソッド&lt;/h2&gt;
+
+&lt;p&gt;server = &amp;hellip; でインスタンスを生成すると便利なメソッドを扱って情報を読み込むこ
+とが出来ます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;server.dns_name # =&amp;gt; public な DNS 名を取得
+server.private_dns_name # =&amp;gt; private な DNS 名を取得
+server.id # =&amp;gt; インスタンス ID を取得
+server.availability_zone # =&amp;gt; Availability Zone を取得
+server.public_ip_address # =&amp;gt; public な IP アドレスを取得
+server.private_ip_address # =&amp;gt; private な IP アドレスを取得
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;これは便利&amp;hellip;&lt;/p&gt;
+
+&lt;p&gt;モジュール化して利用
++++&lt;/p&gt;
+
+&lt;p&gt;毎回コードの中でこれらの接続情報を書くのはしんどいので、Ruby のモジュールを作
+りましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;module AWSCompute
+  def self.connect()
+    conn = Fog::Compute.new({
+      :provider =&amp;gt; &#39;AWS&#39;,
+      :aws_access_key_id =&amp;gt; &#39;...&#39;,
+      :aws_secret_access_key =&amp;gt; &#39;...&#39;,
+      :region =&amp;gt; &#39;...&#39;
+    })
+    begin
+      yield conn
+    ensure
+      # conn.close
+    end
+  rescue Errno::ECONNREFUSED
+  end
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;こう書いておくと例えば&amp;hellip;&lt;/p&gt;
+
+&lt;h4 id=&#34;インスタンスのターミネイト&#34;&gt;インスタンスのターミネイト&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;AWSCompute.connect() do |sock|
+  server = sock.servers.get(instance_id)
+  server.destroy
+  return server.id
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;インスタンスの起動&#34;&gt;インスタンスの起動&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;AWSCompute.connect() do |sock|
+  server = sock.servers.get(instance_id)
+  server.start
+  return server.id
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;インスタンスの停止&#34;&gt;インスタンスの停止&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;AWSCompute.connect() do |sock|
+  server = sock.servers.get(instance_id)
+  server.stop
+  return server.id
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;等と出来ます。&lt;/p&gt;
+
+&lt;h2 id=&#34;elb-elastic-loadbalancer-を使ってみる&#34;&gt;ELB (Elastic LoadBalancer) を使ってみる&lt;/h2&gt;
+
+&lt;p&gt;同様に ELB を扱うコードのサンプルも載せておきます。同じくモジュール化して書くと&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;module AWSELB
+  def self.connect()
+    conn = Fog::AWS::ELB.new(
+      :aws_access_key_id =&amp;gt; &#39;...&#39;,
+      :aws_secret_access_key =&amp;gt; &#39;...&#39;,
+      :region =&amp;gt; &#39;...&#39;,
+    )
+    begin
+      yield conn
+    ensure
+      # conn.close
+    end
+  rescue Errno::ECONNREFUSED
+  end
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;としておいて&amp;hellip;&lt;/p&gt;
+
+&lt;h4 id=&#34;elb-の新規作成&#34;&gt;ELB の新規作成&lt;/h4&gt;
+
+&lt;p&gt;下記のコードで ELB を新規作成出来ます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;AWSELB.connect() do |sock|
+  availability_zone = &#39;...&#39;
+  elb_name = &#39;...&#39;
+  listeners = [{ &amp;quot;Protocol&amp;quot; =&amp;gt; &amp;quot;HTTP&amp;quot;, &amp;quot;LoadBalancerPort&amp;quot; =&amp;gt; 80, &amp;quot;InstancePort&amp;quot; =&amp;gt; 80, &amp;quot;InstanceProtocol&amp;quot; =&amp;gt; &amp;quot;HTTP&amp;quot; }]
+  result = sock.create_load_balancer(availability_zone, elb_name, listeners)
+  p result
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;この状態では ELB に対してインスタンスが紐付けられていないので使えません。下記の操作で
+インスタンスを紐付けてみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;AWSELB.connect() do |sock|
+  insntance_id = &#39;...&#39;
+  elb_name = &#39;...&#39;
+  result = sock.register_instances_with_load_balancer(instance_id, elbname)
+  p result
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;insntance_id には紐付けたいインスタンスの ID を、elb_name には先ほど作成した ELB の名前を
+入力します。 この操作を繰り返せば AWS 上にクラスタが構成出来ます。&lt;/p&gt;
+
+&lt;p&gt;逆にクラスタからインスタンスの削除したい場合は下記の通り実行します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;AWSELB.connect() do |sock|
+  result = sock.deregister_instances_from_load_balancer(instance_id, elbname)
+  p result
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;今回は Fog を紹介しましたが Python 使いの方には libcloud をおすすめします。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://libcloud.apache.org/&#34;&gt;https://libcloud.apache.org/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;Apache ファウンデーションが管理しているクラウドライブラリです。こちらも複数の
+クラウドプラットフォームに対応しているようです。&lt;/p&gt;
+
+&lt;p&gt;Fog で OpenStack も操作したことがあるのですが、AWS 用のコードの方が完成度が高
+いのか、戻り値などが綺麗に整形されていて扱いやすかったり、メソッドも豊富に用意
+されていたりという印象でした。これは&amp;hellip; OpenStack 用の Fog コードにコントリビュー
+トするチャンス・・！&lt;/p&gt;
+
+&lt;p&gt;皆さんもサンプルコードお持ちでしたら、ブログ等で公開していきましょうー。
+ではでは。&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

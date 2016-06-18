@@ -1,0 +1,913 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>FreeBSD on OpenStack</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="FreeBSD on OpenStack"/>
+<meta name="twitter:description" content="FreeBSD を OpenStack で管理したいなぁと思って自宅に OpenStack 環境作ってました。 お正月なのに&hellip; 使ったのは folsom ベースの OpenStack (nova-network) と FreeBSD 9.1 です。8 系 の FreeBSD でも大体同じ作業で実現出来るぽいです。あと nova-network でって書い たのは自宅に quantum だと少し厳しいからです。FlatDHCPManager が調度良かった。 今回のポイントは FreeBSD の HDD, NIC のドライバに virtio を使うように修正する ところです。OpenStack (KVM) は virtio 前提なので、そうせざるを得なかったです。 今回使ったソフトウェア OpenStack Folsom (nova-network) Ubuntu Server 12.10 FreeBSD 9.1 amd64 作業方法 準備としてこれらが必要になります。事前に行なってください。 FreeBSD-9.1-RELEASE-amd64-disc1.iso ダウンロード 作業ホスト (Ubuntu Server 12.10) に qemu-kvm をインストール freebsd9.img として qcow2 イメージを作成します。 % kvm-img create -f qcow2 freebsd9.img 8G 作成したイメージファイルに FreeBSD 9.1 をインストールします。 % kvm -m 256 -cdrom ./FreeBSD-9.1-RELEASE-amd64-disc1.iso \ -drive file=./freebsd9.img -boot d -net nic -net user -nographic -vnc :10 VNC のディスプレイ番号は空いているものを使ってください。空いていれば他でも構い ません。 VNC viewer をインストールし localhost:10 に接続します。ここでは作業ホストに X Window System が入っていることを前提に書いていますが、Non-X な方は他のホストか らその他の VNC ソフトウェアを使ってアクセスしてもらっても構わないです。 % sudo apt-get update % sudo apt-get gvncviewer %gvncviewer localhost:10 インストーラが起動しているのでインストール行なってください。気をつける点として は一つ。src をインストールしてください。後に virtio をインストールするのに必要 になってくるからです。kmod ファイルをコンパイルしてインストールすることになります。 インストールが終わったら今度は仮想マシンを HDD から起動します。 % kvm -m 256 -drive file=./freebsd9.img -boot c -net nic -net user \ -nographic -vnc :10 VNC で再度接続し仮想マシン上で emulators/virtio-kmod をインストールします。 freebsd9% cd /usr/ports/emulators/virtio-kmod/ freebsd9% su freebsd9# make install clean 次に virtio ドライバを扱うように HDD, NIC ドライバ周りの設定を変更します。 virtio のインストールが終わった後に「こうしろ」とメッセージが出てきますので それを参考に行います。一部、僕の環境ではそのままではダメだったので修正して 使いました。 インストールした virtio を起動時に読み込むために下記を追記します。 freebsd9# vi /boot/loader.conf virtio_load=&quot;YES&quot; virtio_pci_load=&quot;YES&quot; virtio_blk_load=&quot;YES&quot; if_vtnet_load=&quot;YES&quot; virtio_balloon_load=&quot;YES&quot; HDD ドライバを virtio を使うように変更します。これによってデバイス名が変わって くるので /etc/fstab を編集します。 freebsd9# sed -i.bak -Ee &#39;s|/dev/ada?|/dev/vtbd|&#39; /etc/fstab NIC も virtio を使います。僕の環境では ifconfig_re0 でした。これを vtnet0 に変 更します。 freebsd9# cat /etc/rc.conf ifconfig_vtnet0=&quot;DHCP&quot; ..&lt;snip&gt;.."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="FreeBSD on OpenStack" />
+<meta property="og:description" content="FreeBSD を OpenStack で管理したいなぁと思って自宅に OpenStack 環境作ってました。 お正月なのに&hellip; 使ったのは folsom ベースの OpenStack (nova-network) と FreeBSD 9.1 です。8 系 の FreeBSD でも大体同じ作業で実現出来るぽいです。あと nova-network でって書い たのは自宅に quantum だと少し厳しいからです。FlatDHCPManager が調度良かった。 今回のポイントは FreeBSD の HDD, NIC のドライバに virtio を使うように修正する ところです。OpenStack (KVM) は virtio 前提なので、そうせざるを得なかったです。 今回使ったソフトウェア OpenStack Folsom (nova-network) Ubuntu Server 12.10 FreeBSD 9.1 amd64 作業方法 準備としてこれらが必要になります。事前に行なってください。 FreeBSD-9.1-RELEASE-amd64-disc1.iso ダウンロード 作業ホスト (Ubuntu Server 12.10) に qemu-kvm をインストール freebsd9.img として qcow2 イメージを作成します。 % kvm-img create -f qcow2 freebsd9.img 8G 作成したイメージファイルに FreeBSD 9.1 をインストールします。 % kvm -m 256 -cdrom ./FreeBSD-9.1-RELEASE-amd64-disc1.iso \ -drive file=./freebsd9.img -boot d -net nic -net user -nographic -vnc :10 VNC のディスプレイ番号は空いているものを使ってください。空いていれば他でも構い ません。 VNC viewer をインストールし localhost:10 に接続します。ここでは作業ホストに X Window System が入っていることを前提に書いていますが、Non-X な方は他のホストか らその他の VNC ソフトウェアを使ってアクセスしてもらっても構わないです。 % sudo apt-get update % sudo apt-get gvncviewer %gvncviewer localhost:10 インストーラが起動しているのでインストール行なってください。気をつける点として は一つ。src をインストールしてください。後に virtio をインストールするのに必要 になってくるからです。kmod ファイルをコンパイルしてインストールすることになります。 インストールが終わったら今度は仮想マシンを HDD から起動します。 % kvm -m 256 -drive file=./freebsd9.img -boot c -net nic -net user \ -nographic -vnc :10 VNC で再度接続し仮想マシン上で emulators/virtio-kmod をインストールします。 freebsd9% cd /usr/ports/emulators/virtio-kmod/ freebsd9% su freebsd9# make install clean 次に virtio ドライバを扱うように HDD, NIC ドライバ周りの設定を変更します。 virtio のインストールが終わった後に「こうしろ」とメッセージが出てきますので それを参考に行います。一部、僕の環境ではそのままではダメだったので修正して 使いました。 インストールした virtio を起動時に読み込むために下記を追記します。 freebsd9# vi /boot/loader.conf virtio_load=&quot;YES&quot; virtio_pci_load=&quot;YES&quot; virtio_blk_load=&quot;YES&quot; if_vtnet_load=&quot;YES&quot; virtio_balloon_load=&quot;YES&quot; HDD ドライバを virtio を使うように変更します。これによってデバイス名が変わって くるので /etc/fstab を編集します。 freebsd9# sed -i.bak -Ee &#39;s|/dev/ada?|/dev/vtbd|&#39; /etc/fstab NIC も virtio を使います。僕の環境では ifconfig_re0 でした。これを vtnet0 に変 更します。 freebsd9# cat /etc/rc.conf ifconfig_vtnet0=&quot;DHCP&quot; ..&lt;snip&gt;.." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/01/01/freebsd-on-openstack/" />
+
+
+<meta property="og:updated_time" content="2013-01-01T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="FreeBSD on OpenStack">
+<meta itemprop="description" content="FreeBSD を OpenStack で管理したいなぁと思って自宅に OpenStack 環境作ってました。 お正月なのに&hellip; 使ったのは folsom ベースの OpenStack (nova-network) と FreeBSD 9.1 です。8 系 の FreeBSD でも大体同じ作業で実現出来るぽいです。あと nova-network でって書い たのは自宅に quantum だと少し厳しいからです。FlatDHCPManager が調度良かった。 今回のポイントは FreeBSD の HDD, NIC のドライバに virtio を使うように修正する ところです。OpenStack (KVM) は virtio 前提なので、そうせざるを得なかったです。 今回使ったソフトウェア OpenStack Folsom (nova-network) Ubuntu Server 12.10 FreeBSD 9.1 amd64 作業方法 準備としてこれらが必要になります。事前に行なってください。 FreeBSD-9.1-RELEASE-amd64-disc1.iso ダウンロード 作業ホスト (Ubuntu Server 12.10) に qemu-kvm をインストール freebsd9.img として qcow2 イメージを作成します。 % kvm-img create -f qcow2 freebsd9.img 8G 作成したイメージファイルに FreeBSD 9.1 をインストールします。 % kvm -m 256 -cdrom ./FreeBSD-9.1-RELEASE-amd64-disc1.iso \ -drive file=./freebsd9.img -boot d -net nic -net user -nographic -vnc :10 VNC のディスプレイ番号は空いているものを使ってください。空いていれば他でも構い ません。 VNC viewer をインストールし localhost:10 に接続します。ここでは作業ホストに X Window System が入っていることを前提に書いていますが、Non-X な方は他のホストか らその他の VNC ソフトウェアを使ってアクセスしてもらっても構わないです。 % sudo apt-get update % sudo apt-get gvncviewer %gvncviewer localhost:10 インストーラが起動しているのでインストール行なってください。気をつける点として は一つ。src をインストールしてください。後に virtio をインストールするのに必要 になってくるからです。kmod ファイルをコンパイルしてインストールすることになります。 インストールが終わったら今度は仮想マシンを HDD から起動します。 % kvm -m 256 -drive file=./freebsd9.img -boot c -net nic -net user \ -nographic -vnc :10 VNC で再度接続し仮想マシン上で emulators/virtio-kmod をインストールします。 freebsd9% cd /usr/ports/emulators/virtio-kmod/ freebsd9% su freebsd9# make install clean 次に virtio ドライバを扱うように HDD, NIC ドライバ周りの設定を変更します。 virtio のインストールが終わった後に「こうしろ」とメッセージが出てきますので それを参考に行います。一部、僕の環境ではそのままではダメだったので修正して 使いました。 インストールした virtio を起動時に読み込むために下記を追記します。 freebsd9# vi /boot/loader.conf virtio_load=&quot;YES&quot; virtio_pci_load=&quot;YES&quot; virtio_blk_load=&quot;YES&quot; if_vtnet_load=&quot;YES&quot; virtio_balloon_load=&quot;YES&quot; HDD ドライバを virtio を使うように変更します。これによってデバイス名が変わって くるので /etc/fstab を編集します。 freebsd9# sed -i.bak -Ee &#39;s|/dev/ada?|/dev/vtbd|&#39; /etc/fstab NIC も virtio を使います。僕の環境では ifconfig_re0 でした。これを vtnet0 に変 更します。 freebsd9# cat /etc/rc.conf ifconfig_vtnet0=&quot;DHCP&quot; ..&lt;snip&gt;..">
+
+
+<meta itemprop="dateModified" content="2013-01-01T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="372">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f&text=FreeBSD%20on%20OpenStack&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f&title=FreeBSD%20on%20OpenStack" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f&title=FreeBSD%20on%20OpenStack" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f&title=FreeBSD%20on%20OpenStack" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/01/01/freebsd-on-openstack/">FreeBSD on OpenStack</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-01-01'>
+            January 1, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f&text=FreeBSD%20on%20OpenStack&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f&title=FreeBSD%20on%20OpenStack" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f&title=FreeBSD%20on%20OpenStack" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f&title=FreeBSD%20on%20OpenStack" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f01%2f01%2ffreebsd-on-openstack%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>FreeBSD を OpenStack で管理したいなぁと思って自宅に OpenStack 環境作ってました。</p>
+
+<p>お正月なのに&hellip;</p>
+
+<p>使ったのは folsom ベースの OpenStack (nova-network) と FreeBSD 9.1 です。8 系
+の FreeBSD でも大体同じ作業で実現出来るぽいです。あと nova-network でって書い
+たのは自宅に quantum だと少し厳しいからです。FlatDHCPManager が調度良かった。</p>
+
+<p>今回のポイントは FreeBSD の HDD, NIC のドライバに virtio を使うように修正する
+ところです。OpenStack (KVM) は virtio 前提なので、そうせざるを得なかったです。</p>
+
+<h2 id="今回使ったソフトウェア">今回使ったソフトウェア</h2>
+
+<ul>
+<li>OpenStack Folsom (nova-network)</li>
+<li>Ubuntu Server 12.10</li>
+<li>FreeBSD 9.1 amd64</li>
+</ul>
+
+<h2 id="作業方法">作業方法</h2>
+
+<p>準備としてこれらが必要になります。事前に行なってください。</p>
+
+<ul>
+<li>FreeBSD-9.1-RELEASE-amd64-disc1.iso ダウンロード</li>
+<li>作業ホスト (Ubuntu Server 12.10) に qemu-kvm をインストール</li>
+</ul>
+
+<p>freebsd9.img として qcow2 イメージを作成します。</p>
+
+<pre><code>% kvm-img create -f qcow2 freebsd9.img 8G
+</code></pre>
+
+<p>作成したイメージファイルに FreeBSD 9.1 をインストールします。</p>
+
+<pre><code>% kvm -m 256 -cdrom ./FreeBSD-9.1-RELEASE-amd64-disc1.iso \
+-drive file=./freebsd9.img -boot d -net nic -net user -nographic -vnc :10
+</code></pre>
+
+<p>VNC のディスプレイ番号は空いているものを使ってください。空いていれば他でも構い
+ません。</p>
+
+<p>VNC viewer をインストールし localhost:10 に接続します。ここでは作業ホストに X
+Window System が入っていることを前提に書いていますが、Non-X な方は他のホストか
+らその他の VNC ソフトウェアを使ってアクセスしてもらっても構わないです。</p>
+
+<pre><code>% sudo apt-get update
+% sudo apt-get gvncviewer
+%gvncviewer localhost:10
+</code></pre>
+
+<p>インストーラが起動しているのでインストール行なってください。気をつける点として
+は一つ。src をインストールしてください。後に virtio をインストールするのに必要
+になってくるからです。kmod ファイルをコンパイルしてインストールすることになります。</p>
+
+<p>インストールが終わったら今度は仮想マシンを HDD から起動します。</p>
+
+<pre><code>% kvm -m 256 -drive file=./freebsd9.img -boot c -net nic -net user \
+  -nographic -vnc :10
+</code></pre>
+
+<p>VNC で再度接続し仮想マシン上で emulators/virtio-kmod をインストールします。</p>
+
+<pre><code>freebsd9% cd /usr/ports/emulators/virtio-kmod/
+freebsd9% su
+freebsd9# make install clean
+</code></pre>
+
+<p>次に virtio ドライバを扱うように HDD, NIC ドライバ周りの設定を変更します。
+virtio のインストールが終わった後に「こうしろ」とメッセージが出てきますので
+それを参考に行います。一部、僕の環境ではそのままではダメだったので修正して
+使いました。</p>
+
+<p>インストールした virtio を起動時に読み込むために下記を追記します。</p>
+
+<pre><code>freebsd9# vi /boot/loader.conf
+virtio_load=&quot;YES&quot;
+virtio_pci_load=&quot;YES&quot;
+virtio_blk_load=&quot;YES&quot;
+if_vtnet_load=&quot;YES&quot;
+virtio_balloon_load=&quot;YES&quot;
+</code></pre>
+
+<p>HDD ドライバを virtio を使うように変更します。これによってデバイス名が変わって
+くるので /etc/fstab を編集します。</p>
+
+<pre><code>freebsd9# sed -i.bak -Ee 's|/dev/ada?|/dev/vtbd|' /etc/fstab
+</code></pre>
+
+<p>NIC も virtio を使います。僕の環境では ifconfig_re0 でした。これを vtnet0 に変
+更します。</p>
+
+<pre><code>freebsd9# cat /etc/rc.conf
+ifconfig_vtnet0=&quot;DHCP&quot;
+..&lt;snip&gt;..
+</code></pre>
+
+<p>qemu の起動方法、もしくはデフォルトのハードウェア定義によって re0 は変わってく
+るかもしれません。適宜変更します。</p>
+
+<p>仮想マシンをシャットダウンします。</p>
+
+<pre><code>freebsd9# shutdown -p now
+</code></pre>
+
+<p>完成したイメージファイル freebsd9.img を openstack 環境に転送し (openstack 環
+境で作業している方は必要無いです) glance に登録します。</p>
+
+<p>環境変数諸々を揃えて&hellip;</p>
+
+<pre><code>% glance add name=&quot;FreeBSD 9&quot; is_public=true container_format=ovf disk_format=qcow2 &lt; freebsd9.img
+% glance image-list
++--------------------------------------+------------------------+-------------+------------------+-------------+--------+
+| ID                                   | Name                   | Disk Format | Container Format | Size        | Status |
++--------------------------------------+------------------------+-------------+------------------+-------------+--------+
+| 1af6f41b-1048-4d78-9715-87935c0bc6ae | FreeBSD 9              | qcow2       | ovf              | 4305584128  | active |
++--------------------------------------+------------------------+-------------+------------------+-------------+--------+
+</code></pre>
+
+<p>以上です。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>FreeBSD は仕事場でもプライベートでもまだまだ現役だし OpenStack で扱えるように
+することは僕にとってとても重要でした。なので満足ｗ FreeBSD 8 系では同じ手順で
+扱えるらしいのだけど、それ以前のバージョンになるとどうか&hellip; virtio がポイント
+なのと、KVM とゲスト OS バージョンって相性がめちゃ有るのでここもポイントになり
+そう。ハイパーバイザに VMWare も使えるらしいので今度やってみるかな。VMWare で
+も相性はあるけど、KVM ほどシビアにならなくていい印象がある。FreeBSD 3系でも頑
+張れば動いたし。</p>
+
+<p>あとは cloud-init 。まだ開発途中だそうです。なので metadata サーバにアクセスし
+て、色んな事しようと思ってもまだ難しい。</p>
+
+<p>この年末に Windows も OpenStack に乗せてみたので、そちらの記事も時間があったら
+載せようっと。</p>
+
+<h4 id="2013-01-02-追記">2013/01/02 追記</h4>
+
+<p>FreeBSD 8.3 で試してみましたが、全く同じ手順で起動してくれました。ただ、
+emulators/virtio-kmod が 8.2 or 9 に対応しているとあったので Makefile を修正し
+て virtio-kmod をインストールしています。今のところ何も問題出ていません。</p>
+
+<p>``` bash diff output of Makefiles</p>
+
+<h1 id="diff-u-usr-ports-emulators-virtio-kmod-makefile-org-usr-ports-emulators-virtio-kmod-makefile">diff -u /usr/ports/emulators/virtio-kmod/Makefile.org  /usr/ports/emulators/virtio-kmod/Makefile</h1>
+
+<p>&mdash; /usr/ports/emulators/virtio-kmod/Makefile.org   2013-01-02 06:02:48.000000000 +0900
++++ /usr/ports/emulators/virtio-kmod/Makefile   2013-01-02 06:02:59.000000000 +0900
+@@ -28,7 +28,7 @@</p>
+
+<p>.include <bsd.port.pre.mk></p>
+
+<p>-.if ${OSREL} != &ldquo;8.2&rdquo; &amp;&amp; ${OSREL} != &ldquo;9.0&rdquo;
++.if ${OSREL} != &ldquo;8.3&rdquo; &amp;&amp; ${OSREL} != &ldquo;9.0&rdquo;
+ IGNORE=not supported $${OSREL} (${OSREL})
+ .endif
+```</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2012/12/08/knife-fog-openstack-api/"
+                class="button big previous">OpenStack API を理解しインフラエンジニアの仕事の変化を感じる</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/01/12/openstack-on-thinkpad/"
+                class="button big next">OpenStack Folsom on Thinkpad</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/01\/01\/freebsd-on-openstack\/';
+    var disqus_title = 'FreeBSD on OpenStack';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/01\/01\/freebsd-on-openstack\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

@@ -1,0 +1,1005 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>OpenStack API を理解しインフラエンジニアの仕事の変化を感じる</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="OpenStack API を理解しインフラエンジニアの仕事の変化を感じる"/>
+<meta name="twitter:description" content="今日は &ldquo;OpenStack Advent Calendar 2012 JP&rdquo; というイベントのために記事を書きた いと思います。Advent Calendar とはキリスト生誕を祝うため 12&frasl;25 まで毎日誰かがブログ 等で特定の話題について述べるもの、らしいです。CloudStack さん, Eucalyptus さん も今年はやっているそうですね。 イベントサイト : http://atnd.org/events/34389 では早速！(ただ..CloudStack の Advent Calendar とネタがかぶり気味です..。) 御存知の通り OpenStack は API を提供していてユーザがコードを書くことで OpenStack のコマンド・Horizon で出来ることは全て可能です。API を叩くのに幾つか フレームワークが存在します。 fog libcloud deltacloud などです。 ここでは内部で fog を使っている knife-openstack を利用して API に触れてみよう かと思います。API を叩くことを想像してもらって、インフラエンジニアの仕事内容の 変化まで述べられたらいいなぁと思っています。 OpenStack 環境の用意 予め OpenStack 環境は揃っているものとしますです。お持ちでなければ http://jedipunkz.github.com/blog/2012/11/10/openstack-folsom-install/ この記事を参考に環境を作ってみて下さい。あ、devstack でも大丈夫です。 chef, knife-openstack の用意 chef, knife-openstack を入れるのは OpenStack 環境でも、別のノードでも構いません。 chef が確か 1.9.2 ベースが推奨だったので今回は 1.9.2-p320 使います。 ruby は rbenv で入れるのがオススメです。knife-openstack, chef のインストールは&hellip; % sudo apt-get install libreadline-dev libxslt1-dev libxml2-dev % gem install chef --no-rdoc --no-ri % gem install knife-openstack --no-rdoc --no-ri % rbenv rehash # rbenv を使っている際に実行.."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="OpenStack API を理解しインフラエンジニアの仕事の変化を感じる" />
+<meta property="og:description" content="今日は &ldquo;OpenStack Advent Calendar 2012 JP&rdquo; というイベントのために記事を書きた いと思います。Advent Calendar とはキリスト生誕を祝うため 12&frasl;25 まで毎日誰かがブログ 等で特定の話題について述べるもの、らしいです。CloudStack さん, Eucalyptus さん も今年はやっているそうですね。 イベントサイト : http://atnd.org/events/34389 では早速！(ただ..CloudStack の Advent Calendar とネタがかぶり気味です..。) 御存知の通り OpenStack は API を提供していてユーザがコードを書くことで OpenStack のコマンド・Horizon で出来ることは全て可能です。API を叩くのに幾つか フレームワークが存在します。 fog libcloud deltacloud などです。 ここでは内部で fog を使っている knife-openstack を利用して API に触れてみよう かと思います。API を叩くことを想像してもらって、インフラエンジニアの仕事内容の 変化まで述べられたらいいなぁと思っています。 OpenStack 環境の用意 予め OpenStack 環境は揃っているものとしますです。お持ちでなければ http://jedipunkz.github.com/blog/2012/11/10/openstack-folsom-install/ この記事を参考に環境を作ってみて下さい。あ、devstack でも大丈夫です。 chef, knife-openstack の用意 chef, knife-openstack を入れるのは OpenStack 環境でも、別のノードでも構いません。 chef が確か 1.9.2 ベースが推奨だったので今回は 1.9.2-p320 使います。 ruby は rbenv で入れるのがオススメです。knife-openstack, chef のインストールは&hellip; % sudo apt-get install libreadline-dev libxslt1-dev libxml2-dev % gem install chef --no-rdoc --no-ri % gem install knife-openstack --no-rdoc --no-ri % rbenv rehash # rbenv を使っている際に実行.." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2012/12/08/knife-fog-openstack-api/" />
+
+
+<meta property="og:updated_time" content="2012-12-08T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="OpenStack API を理解しインフラエンジニアの仕事の変化を感じる">
+<meta itemprop="description" content="今日は &ldquo;OpenStack Advent Calendar 2012 JP&rdquo; というイベントのために記事を書きた いと思います。Advent Calendar とはキリスト生誕を祝うため 12&frasl;25 まで毎日誰かがブログ 等で特定の話題について述べるもの、らしいです。CloudStack さん, Eucalyptus さん も今年はやっているそうですね。 イベントサイト : http://atnd.org/events/34389 では早速！(ただ..CloudStack の Advent Calendar とネタがかぶり気味です..。) 御存知の通り OpenStack は API を提供していてユーザがコードを書くことで OpenStack のコマンド・Horizon で出来ることは全て可能です。API を叩くのに幾つか フレームワークが存在します。 fog libcloud deltacloud などです。 ここでは内部で fog を使っている knife-openstack を利用して API に触れてみよう かと思います。API を叩くことを想像してもらって、インフラエンジニアの仕事内容の 変化まで述べられたらいいなぁと思っています。 OpenStack 環境の用意 予め OpenStack 環境は揃っているものとしますです。お持ちでなければ http://jedipunkz.github.com/blog/2012/11/10/openstack-folsom-install/ この記事を参考に環境を作ってみて下さい。あ、devstack でも大丈夫です。 chef, knife-openstack の用意 chef, knife-openstack を入れるのは OpenStack 環境でも、別のノードでも構いません。 chef が確か 1.9.2 ベースが推奨だったので今回は 1.9.2-p320 使います。 ruby は rbenv で入れるのがオススメです。knife-openstack, chef のインストールは&hellip; % sudo apt-get install libreadline-dev libxslt1-dev libxml2-dev % gem install chef --no-rdoc --no-ri % gem install knife-openstack --no-rdoc --no-ri % rbenv rehash # rbenv を使っている際に実行..">
+
+
+<meta itemprop="dateModified" content="2012-12-08T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="599">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f&text=OpenStack%20API%20%e3%82%92%e7%90%86%e8%a7%a3%e3%81%97%e3%82%a4%e3%83%b3%e3%83%95%e3%83%a9%e3%82%a8%e3%83%b3%e3%82%b8%e3%83%8b%e3%82%a2%e3%81%ae%e4%bb%95%e4%ba%8b%e3%81%ae%e5%a4%89%e5%8c%96%e3%82%92%e6%84%9f%e3%81%98%e3%82%8b&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f&title=OpenStack%20API%20%e3%82%92%e7%90%86%e8%a7%a3%e3%81%97%e3%82%a4%e3%83%b3%e3%83%95%e3%83%a9%e3%82%a8%e3%83%b3%e3%82%b8%e3%83%8b%e3%82%a2%e3%81%ae%e4%bb%95%e4%ba%8b%e3%81%ae%e5%a4%89%e5%8c%96%e3%82%92%e6%84%9f%e3%81%98%e3%82%8b" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f&title=OpenStack%20API%20%e3%82%92%e7%90%86%e8%a7%a3%e3%81%97%e3%82%a4%e3%83%b3%e3%83%95%e3%83%a9%e3%82%a8%e3%83%b3%e3%82%b8%e3%83%8b%e3%82%a2%e3%81%ae%e4%bb%95%e4%ba%8b%e3%81%ae%e5%a4%89%e5%8c%96%e3%82%92%e6%84%9f%e3%81%98%e3%82%8b" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f&title=OpenStack%20API%20%e3%82%92%e7%90%86%e8%a7%a3%e3%81%97%e3%82%a4%e3%83%b3%e3%83%95%e3%83%a9%e3%82%a8%e3%83%b3%e3%82%b8%e3%83%8b%e3%82%a2%e3%81%ae%e4%bb%95%e4%ba%8b%e3%81%ae%e5%a4%89%e5%8c%96%e3%82%92%e6%84%9f%e3%81%98%e3%82%8b" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2012/12/08/knife-fog-openstack-api/">OpenStack API を理解しインフラエンジニアの仕事の変化を感じる</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-12-08'>
+            December 8, 2012</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f&text=OpenStack%20API%20%e3%82%92%e7%90%86%e8%a7%a3%e3%81%97%e3%82%a4%e3%83%b3%e3%83%95%e3%83%a9%e3%82%a8%e3%83%b3%e3%82%b8%e3%83%8b%e3%82%a2%e3%81%ae%e4%bb%95%e4%ba%8b%e3%81%ae%e5%a4%89%e5%8c%96%e3%82%92%e6%84%9f%e3%81%98%e3%82%8b&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f&title=OpenStack%20API%20%e3%82%92%e7%90%86%e8%a7%a3%e3%81%97%e3%82%a4%e3%83%b3%e3%83%95%e3%83%a9%e3%82%a8%e3%83%b3%e3%82%b8%e3%83%8b%e3%82%a2%e3%81%ae%e4%bb%95%e4%ba%8b%e3%81%ae%e5%a4%89%e5%8c%96%e3%82%92%e6%84%9f%e3%81%98%e3%82%8b" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f&title=OpenStack%20API%20%e3%82%92%e7%90%86%e8%a7%a3%e3%81%97%e3%82%a4%e3%83%b3%e3%83%95%e3%83%a9%e3%82%a8%e3%83%b3%e3%82%b8%e3%83%8b%e3%82%a2%e3%81%ae%e4%bb%95%e4%ba%8b%e3%81%ae%e5%a4%89%e5%8c%96%e3%82%92%e6%84%9f%e3%81%98%e3%82%8b" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f&title=OpenStack%20API%20%e3%82%92%e7%90%86%e8%a7%a3%e3%81%97%e3%82%a4%e3%83%b3%e3%83%95%e3%83%a9%e3%82%a8%e3%83%b3%e3%82%b8%e3%83%8b%e3%82%a2%e3%81%ae%e4%bb%95%e4%ba%8b%e3%81%ae%e5%a4%89%e5%8c%96%e3%82%92%e6%84%9f%e3%81%98%e3%82%8b" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2012%2f12%2f08%2fknife-fog-openstack-api%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>今日は &ldquo;OpenStack Advent Calendar 2012 JP&rdquo; というイベントのために記事を書きた
+いと思います。Advent Calendar とはキリスト生誕を祝うため <sup>12</sup>&frasl;<sub>25</sub> まで毎日誰かがブログ
+等で特定の話題について述べるもの、らしいです。CloudStack さん, Eucalyptus さん
+も今年はやっているそうですね。</p>
+
+<p>イベントサイト : <a href="http://atnd.org/events/34389">http://atnd.org/events/34389</a></p>
+
+<p>では早速！(ただ..CloudStack の Advent Calendar とネタがかぶり気味です..。)</p>
+
+<p>御存知の通り OpenStack は API を提供していてユーザがコードを書くことで
+OpenStack のコマンド・Horizon で出来ることは全て可能です。API を叩くのに幾つか
+フレームワークが存在します。</p>
+
+<ul>
+<li>fog</li>
+<li>libcloud</li>
+<li>deltacloud</li>
+</ul>
+
+<p>などです。</p>
+
+<p>ここでは内部で fog を使っている knife-openstack を利用して API に触れてみよう
+かと思います。API を叩くことを想像してもらって、インフラエンジニアの仕事内容の
+変化まで述べられたらいいなぁと思っています。</p>
+
+<h2 id="openstack-環境の用意">OpenStack 環境の用意</h2>
+
+<p>予め OpenStack 環境は揃っているものとしますです。お持ちでなければ</p>
+
+<p><a href="http://jedipunkz.github.com/blog/2012/11/10/openstack-folsom-install/">http://jedipunkz.github.com/blog/2012/11/10/openstack-folsom-install/</a></p>
+
+<p>この記事を参考に環境を作ってみて下さい。あ、devstack でも大丈夫です。</p>
+
+<h2 id="chef-knife-openstack-の用意">chef, knife-openstack の用意</h2>
+
+<p>chef, knife-openstack を入れるのは OpenStack 環境でも、別のノードでも構いません。</p>
+
+<p>chef が確か 1.9.2 ベースが推奨だったので今回は 1.9.2-p320 使います。
+ruby は rbenv で入れるのがオススメです。knife-openstack, chef のインストールは&hellip;</p>
+
+<pre><code>% sudo apt-get install libreadline-dev libxslt1-dev libxml2-dev
+% gem install chef --no-rdoc --no-ri
+% gem install knife-openstack --no-rdoc --no-ri
+% rbenv rehash # rbenv を使っている際に実行..
+</code></pre>
+
+<p>次に knife.rb を用意します。情報として下記を</p>
+
+<ul>
+<li>OS_USERNAME : :openstack_username</li>
+<li>OS_PASSWORD : :openstack_password</li>
+<li>OS_AUTH_URL : :openstack_auth_url</li>
+<li>OS_TENANT_NAME : :openstack_tenant</li>
+</ul>
+
+<p>追加します。例として下記を参考にしてください。</p>
+
+<pre><code>% mkdir .chef
+% ${EDITOR} .chef/knife.rb
+
+knife[:openstack_username] = &quot;demo&quot;
+knife[:openstack_password] = &quot;demo&quot;
+knife[:openstack_auth_url] = &quot;http://172.16.1.11:5000/v2.0/tokens&quot;
+knife[:openstack_tenant] = &quot;service&quot;
+</code></pre>
+
+<p>ここで注意なのが OS_AUTH_URL がいつもコマンドラインで扱うものと違い /tokens が
+付いています。fog を直に扱う時も同じですがこれが必要です。</p>
+
+<h2 id="ssh-keypair-の用意">ssh keypair の用意</h2>
+
+<p>ssh keypair が必要になってくるので用意します。</p>
+
+<pre><code>% nova keypair-add testkey01 &gt; testkey01
+</code></pre>
+
+<h2 id="knife-openstack-の操作方法">knife-openstack の操作方法</h2>
+
+<p>いよいよ knife-openstack を使って OpenStack を操作してみましょう。</p>
+
+<p>まずは flavor のリストを取得します。</p>
+
+<pre><code>% knife openstack flavor list
+ID  Name       Virtual CPUs  RAM       Disk
+1   m1.tiny    1             512 MB    0 GB
+2   m1.small   1             2048 MB   20 GB
+3   m1.medium  2             4096 MB   40 GB
+4   m1.large   4             8192 MB   80 GB
+5   m1.xlarge  8             16384 MB  160 GB
+</code></pre>
+
+<p>image リストを取得します。id が必要になります。</p>
+
+<pre><code>% knife openstack image list
+ID                                    Name
+436deba5-8fab-4bb7-9205-41e33fe22744  Cirros 0.3.0 x86_64
+</code></pre>
+
+<p>VM を生成してみましょー。</p>
+
+<pre><code>% knife openstack server create -f 1 -I 436deba5-8fab-4bb7-9205-41e33fe22744 -S testkey01 -N knifetest01
+Instance Name: knifetest01
+Instance ID: 1e20850d-9572-46c8-a41e-fdf56f4f65a7
+SSH Keypair: testkey
+
+Waiting for server............
+Flavor: 1
+Image: 436deba5-8fab-4bb7-9205-41e33fe22744
+</code></pre>
+
+<p>出来たかどうか、チェック。</p>
+
+<pre><code>% knife openstack server list
+Instance ID                           Name         Public IP  Private IP  Flavor  Image                                 Keypair   State
+1e20850d-9572-46c8-a41e-fdf56f4f65a7  knifetest01                         1       436deba5-8fab-4bb7-9205-41e33fe22744  hogehoge  active
+</code></pre>
+
+<p>できました。逆に VM を削除するには</p>
+
+<pre><code>% knife openstack server delete 1e20850d-9572-46c8-a41e-fdf56f4f65a7
+Instance ID: 1e20850d-9572-46c8-a41e-fdf56f4f65a7
+Instance Name: knifetest01
+Flavor: 1
+Image: 436deba5-8fab-4bb7-9205-41e33fe22744
+
+Do you really want to delete this server? (Y/N) y
+WARNING: Deleted server 1e20850d-9572-46c8-a41e-fdf56f4f65a7
+WARNING: Corresponding node and client for the 1e20850d-9572-46c8-a41e-fdf56f4f65a7 server were not deleted and remain registered with the Chef Server
+</code></pre>
+
+<p>です。</p>
+
+<p>残念なところとしては knife-openstack 自体はまだまだ機能が充実していません。VM
+の基本的な操作くらいしか出来ないので、追加実装したいという方がいらっしゃいまし
+たら Pull リクエスト送ると良いのではないでしょうか。</p>
+
+<p>knife-openstack 公式サイト : <a href="https://github.com/opscode/knife-openstack">https://github.com/opscode/knife-openstack</a></p>
+
+<p>まぁ、ここまで書いてアレですが.. 気がついた方もいらっしゃると思います。
+knife-openstack で出来ることは openstack コマンド群で全て出来るのであまり意味
+はないですよね。ただ fog を使って API を叩くことを想像して欲しくて..( -_- )</p>
+
+<h2 id="fog-単体で操作してみる">Fog 単体で操作してみる</h2>
+
+<p>今日はまだまだ書ける！</p>
+
+<p>knife-openstack では基本的な操作しか出来ませんでしたが fog はより多くの機能を実装しています。(2012/12/08 現在 quantum 周りの開発は未
+完成らしいです。floating-ip 周りがぁ。誰かコミットして。)</p>
+
+<p>fog 単体で OpenStack API を操作するには、下記の通り実行します。fog をインストー
+ルし&hellip;</p>
+
+<pre><code>% gem install fog --no-rdoc --no-ri
+% rbenv rehash
+</code></pre>
+
+<p>環境変数を入力し&hellip; (情報は例です)</p>
+
+<pre><code>% cat env
+export OS_TENANT_NAME=service
+export OS_USERNAME=demo
+export OS_PASSWORD=demo
+export OS_AUTH_URL=&quot;http://172.16.1.11:5000/v2.0/&quot;
+export OS_AUTH_URL_FOG=&quot;http://172.16.1.11:5000/v2.0/tokens&quot;
+% source env
+</code></pre>
+
+<p>コードを下記のように記述すると VM の生成が行えます。
+``` ruby
+    #!/usr/bin/env ruby</p>
+
+<pre><code>require 'fog'
+require 'pp'
+
+conn = Fog::Compute.new({
+  :provider =&gt; 'OpenStack',
+  :openstack_api_key =&gt; ENV['OS_PASSWORD'],
+  :openstack_username =&gt; ENV[&quot;OS_USERNAME&quot;],
+  :openstack_auth_url =&gt; ENV[&quot;OS_AUTH_URL_FOG&quot;],
+  :openstack_tenant =&gt; ENV[&quot;OS_TENANT_NAME&quot;]
+})
+
+flavor = conn.flavors.find { |f| f.name == 'm1.tiny' }
+
+image_name = 'Cirros 0.3.0 x86_64'
+image = conn.images.find { |i| i.name == image_name }
+
+puts &quot;#{'Creating server'} from image #{image.name}...&quot;
+server = conn.servers.create :name =&gt; &quot;fogvm-#{Time.now.strftime '%Y%m%d-%H%M%S'}&quot;,
+                             :image_ref =&gt; image.id,
+                             :flavor_ref =&gt; flavor.id,
+                             :key_name =&gt; 'testkey01'
+server.wait_for { ready? }
+</code></pre>
+
+<p>````</p>
+
+<p>実行 !</p>
+
+<pre><code>% ruby &lt;CODENAME&gt;.rb
+Creating server from image Cirros 0.3.0 x86_64...
+%
+</code></pre>
+
+<p>出来ました。VM が生成されたか先ほどの knife-openstack で確認してみましょう。</p>
+
+<pre><code>% knife openstack server list
+Instance ID                           Name         Public IP  Private IP  Flavor  Image                                 Keypair   State
+1e20850d-9572-46c8-a41e-fdf56f4f65a7  knifetest01                         1       436deba5-8fab-4bb7-9205-41e33fe22744  hogehoge  active
+f5c314a3-e32f-498f-984f-b79078d76a5a  fogvm-20121207-104743                         1       aedef2a1-f820-43a6-96cd-f5361d27df3f  testkey01  active
+</code></pre>
+
+<h2 id="まとめと-考察">まとめと 考察</h2>
+
+<p>今回は API をみんな叩いてるねん！ってことに気がついて欲しくて、こんな記事を書
+いてみました。実は OpenStack のコマンドも &ndash;debug を付けて (Quantum だけは -v)
+実行すると OpenStack の API を叩いているメッセージが出力されると OpenStack ユー
+ザ会の方から聞きました。是非やっていてください。</p>
+
+<pre><code>% nova --debug list
+% quantum -v net-list
+</code></pre>
+
+<p>API を実装するのか、ツールを実装するのか？といった話題が以前の OpenStack
+Summit で常に話題になっていたらしいですが、最近は API で決まり、といったと
+ころでしょうか。コードを書いてインラフを定義する時代に突入です。ちなみに fog
+は AWS も扱えます。また Opscode Chef や Puppet, JuJu 等のデプロイフレームワー
+クを使えば VM 上のサービス構築もコードを書くことで出来ます。また、以前ブログに
+書いたのですが OpenFlow といった技術を使うとネットワークをコードを書くことで設
+計出来る、かもしれない。</p>
+
+<p><a href="http://jedipunkz.github.com/blog/2012/11/21/openflow-trema-handson-report/">http://jedipunkz.github.com/blog/2012/11/21/openflow-trema-handson-report/</a></p>
+
+<p>つまり、コードを書くことで</p>
+
+<ul>
+<li>サーバ構築</li>
+<li>ネットワーク構築</li>
+<li>サービス構築</li>
+</ul>
+
+<p>を一貫して行えることになります。</p>
+
+<p>インフラエンジニアの僕としては時代の変化に着いて行かねば！という焦りで一杯です。
+もちろんレガシなインフラエンジニアも生き残るのでしょうが、働く場所が限られてき
+そう。より高度な(低レイヤからの深い？)技術を有している人が限定された場所で成果
+を上げていく印象。僕らの様な一般的なインフラエンジニアは OpenStack, AWS, HP
+Cloud, CloudStack の様なクラウドインフラを相手にコードを書く、もしくは抽象化さ
+れた技術をより扱いやすいソフトウェアを介して構築・管理していくことになるのでしょ
+うか。これから覚えることは山積みですが、楽しい時代です。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2012/11/21/openflow-trema-handson-report/"
+                class="button big previous">OpenFlow Trema ハンズオン参加レポート</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/01/01/freebsd-on-openstack/"
+                class="button big next">FreeBSD on OpenStack</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2012\/12\/08\/knife-fog-openstack-api\/';
+    var disqus_title = 'OpenStack API を理解しインフラエンジニアの仕事の変化を感じる';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2012\/12\/08\/knife-fog-openstack-api\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

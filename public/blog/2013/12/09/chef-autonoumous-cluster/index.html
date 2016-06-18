@@ -1,0 +1,877 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Chef で自律的クラスタを考える</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Chef で自律的クラスタを考える"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 Serf の登場があったり、ここ最近オーケストレーションについて考える人が増えた気 がします。システムをデプロイしてその後各ノード間の連結だったりも同じ Chef, Puppet 等のコンフィギュレーションツールで行うのか？全く別のツールで？.. 最近 Serf というツールの登場がありました。 僕も Serf を触ってつい先日ブログに書きました。有用なツールだと思います。シ ンプルだからこそ応用が効きますし、リアルタイム性もあり、将来的に異なるネットワー クセグメント上のノードとも連結出来るようになりそうですし、とても期待です。 話が少し飛びますが.. いつも Rebuild.fm を楽しく聞いているのですが Immutable Infrastructure の話題の 時にオーケストレーションの話題になって、どうも &lsquo;Chef でも自律的なクラスタを組 むことが認知されていないのでは？&rsquo; と思うようになりました。もちろん Chef でやる べき！とは言い切りませんし、今後どうなるかわかりません。Opscode の中の人も &lsquo;オー ケストレーションは自分でやってね&rsquo; というスタンスだったとずいぶん前ですが聞きま した。Serf を等のオーケストレーションツールを使う使わないの話は今回はしないの ですが Chef でも自律的クラスタを組むことは出来ますよ〜というのが今回の話題。 まえがきが長くなりました。 今回は Chef で自律的クラスタを構成する方法を記したいと思います。 haproxy 等を利用すれば尚良いと思いますが、よりクラスタを組むのが簡単な nginx を今回は利用したいと思います。 https://github.com/opscode-cookbooks/nginx 構成 &lsquo;web&rsquo; という Role 名と &lsquo;lb&rsquo; という Role 名で単純な HTTP サーバとしての nginx ノードを複数台と、ロードバランサとしての nginx ノードを1台でクラスタを構成しま す。また共に environment 名は同じものを利用します。別の environment 名の場合は 別クラスタという区切りです。"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Chef で自律的クラスタを考える" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 Serf の登場があったり、ここ最近オーケストレーションについて考える人が増えた気 がします。システムをデプロイしてその後各ノード間の連結だったりも同じ Chef, Puppet 等のコンフィギュレーションツールで行うのか？全く別のツールで？.. 最近 Serf というツールの登場がありました。 僕も Serf を触ってつい先日ブログに書きました。有用なツールだと思います。シ ンプルだからこそ応用が効きますし、リアルタイム性もあり、将来的に異なるネットワー クセグメント上のノードとも連結出来るようになりそうですし、とても期待です。 話が少し飛びますが.. いつも Rebuild.fm を楽しく聞いているのですが Immutable Infrastructure の話題の 時にオーケストレーションの話題になって、どうも &lsquo;Chef でも自律的なクラスタを組 むことが認知されていないのでは？&rsquo; と思うようになりました。もちろん Chef でやる べき！とは言い切りませんし、今後どうなるかわかりません。Opscode の中の人も &lsquo;オー ケストレーションは自分でやってね&rsquo; というスタンスだったとずいぶん前ですが聞きま した。Serf を等のオーケストレーションツールを使う使わないの話は今回はしないの ですが Chef でも自律的クラスタを組むことは出来ますよ〜というのが今回の話題。 まえがきが長くなりました。 今回は Chef で自律的クラスタを構成する方法を記したいと思います。 haproxy 等を利用すれば尚良いと思いますが、よりクラスタを組むのが簡単な nginx を今回は利用したいと思います。 https://github.com/opscode-cookbooks/nginx 構成 &lsquo;web&rsquo; という Role 名と &lsquo;lb&rsquo; という Role 名で単純な HTTP サーバとしての nginx ノードを複数台と、ロードバランサとしての nginx ノードを1台でクラスタを構成しま す。また共に environment 名は同じものを利用します。別の environment 名の場合は 別クラスタという区切りです。" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/12/09/chef-autonoumous-cluster/" />
+
+
+<meta property="og:updated_time" content="2013-12-09T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Chef で自律的クラスタを考える">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 Serf の登場があったり、ここ最近オーケストレーションについて考える人が増えた気 がします。システムをデプロイしてその後各ノード間の連結だったりも同じ Chef, Puppet 等のコンフィギュレーションツールで行うのか？全く別のツールで？.. 最近 Serf というツールの登場がありました。 僕も Serf を触ってつい先日ブログに書きました。有用なツールだと思います。シ ンプルだからこそ応用が効きますし、リアルタイム性もあり、将来的に異なるネットワー クセグメント上のノードとも連結出来るようになりそうですし、とても期待です。 話が少し飛びますが.. いつも Rebuild.fm を楽しく聞いているのですが Immutable Infrastructure の話題の 時にオーケストレーションの話題になって、どうも &lsquo;Chef でも自律的なクラスタを組 むことが認知されていないのでは？&rsquo; と思うようになりました。もちろん Chef でやる べき！とは言い切りませんし、今後どうなるかわかりません。Opscode の中の人も &lsquo;オー ケストレーションは自分でやってね&rsquo; というスタンスだったとずいぶん前ですが聞きま した。Serf を等のオーケストレーションツールを使う使わないの話は今回はしないの ですが Chef でも自律的クラスタを組むことは出来ますよ〜というのが今回の話題。 まえがきが長くなりました。 今回は Chef で自律的クラスタを構成する方法を記したいと思います。 haproxy 等を利用すれば尚良いと思いますが、よりクラスタを組むのが簡単な nginx を今回は利用したいと思います。 https://github.com/opscode-cookbooks/nginx 構成 &lsquo;web&rsquo; という Role 名と &lsquo;lb&rsquo; という Role 名で単純な HTTP サーバとしての nginx ノードを複数台と、ロードバランサとしての nginx ノードを1台でクラスタを構成しま す。また共に environment 名は同じものを利用します。別の environment 名の場合は 別クラスタという区切りです。">
+
+
+<meta itemprop="dateModified" content="2013-12-09T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="295">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f&text=Chef%20%e3%81%a7%e8%87%aa%e5%be%8b%e7%9a%84%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%82%92%e8%80%83%e3%81%88%e3%82%8b&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f&title=Chef%20%e3%81%a7%e8%87%aa%e5%be%8b%e7%9a%84%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%82%92%e8%80%83%e3%81%88%e3%82%8b" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f&title=Chef%20%e3%81%a7%e8%87%aa%e5%be%8b%e7%9a%84%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%82%92%e8%80%83%e3%81%88%e3%82%8b" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f&title=Chef%20%e3%81%a7%e8%87%aa%e5%be%8b%e7%9a%84%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%82%92%e8%80%83%e3%81%88%e3%82%8b" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/12/09/chef-autonoumous-cluster/">Chef で自律的クラスタを考える</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-12-09'>
+            December 9, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f&text=Chef%20%e3%81%a7%e8%87%aa%e5%be%8b%e7%9a%84%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%82%92%e8%80%83%e3%81%88%e3%82%8b&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f&title=Chef%20%e3%81%a7%e8%87%aa%e5%be%8b%e7%9a%84%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%82%92%e8%80%83%e3%81%88%e3%82%8b" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f&title=Chef%20%e3%81%a7%e8%87%aa%e5%be%8b%e7%9a%84%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%82%92%e8%80%83%e3%81%88%e3%82%8b" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f&title=Chef%20%e3%81%a7%e8%87%aa%e5%be%8b%e7%9a%84%e3%82%af%e3%83%a9%e3%82%b9%e3%82%bf%e3%82%92%e8%80%83%e3%81%88%e3%82%8b" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f12%2f09%2fchef-autonoumous-cluster%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>Serf の登場があったり、ここ最近オーケストレーションについて考える人が増えた気
+がします。システムをデプロイしてその後各ノード間の連結だったりも同じ Chef,
+Puppet 等のコンフィギュレーションツールで行うのか？全く別のツールで？..</p>
+
+<p>最近 Serf というツールの登場がありました。</p>
+
+<p>僕も Serf を触ってつい先日ブログに書きました。有用なツールだと思います。シ
+ンプルだからこそ応用が効きますし、リアルタイム性もあり、将来的に異なるネットワー
+クセグメント上のノードとも連結出来るようになりそうですし、とても期待です。</p>
+
+<p>話が少し飛びますが..</p>
+
+<p>いつも Rebuild.fm を楽しく聞いているのですが Immutable Infrastructure の話題の
+時にオーケストレーションの話題になって、どうも &lsquo;Chef でも自律的なクラスタを組
+むことが認知されていないのでは？&rsquo; と思うようになりました。もちろん Chef でやる
+べき！とは言い切りませんし、今後どうなるかわかりません。Opscode の中の人も &lsquo;オー
+ケストレーションは自分でやってね&rsquo; というスタンスだったとずいぶん前ですが聞きま
+した。Serf を等のオーケストレーションツールを使う使わないの話は今回はしないの
+ですが Chef でも自律的クラスタを組むことは出来ますよ〜というのが今回の話題。</p>
+
+<p>まえがきが長くなりました。</p>
+
+<p>今回は Chef で自律的クラスタを構成する方法を記したいと思います。</p>
+
+<p>haproxy 等を利用すれば尚良いと思いますが、よりクラスタを組むのが簡単な nginx
+を今回は利用したいと思います。</p>
+
+<p><a href="https://github.com/opscode-cookbooks/nginx">https://github.com/opscode-cookbooks/nginx</a></p>
+
+<h2 id="構成">構成</h2>
+
+<p>&lsquo;web&rsquo; という Role 名と &lsquo;lb&rsquo; という Role 名で単純な HTTP サーバとしての nginx
+ノードを複数台と、ロードバランサとしての nginx ノードを1台でクラスタを構成しま
+す。また共に environment 名は同じものを利用します。別の environment 名の場合は
+別クラスタという区切りです。</p>
+
+<ul>
+<li>&lsquo;lb&rsquo; node x 1 + &lsquo;web&rsquo; node x n (&lsquo;foo&rsquo; environment)</li>
+<li>&lsquo;lb&rsquo; node x 1 + &lsquo;web&rsquo; node x n (&lsquo;bar&rsquo; environment)</li>
+</ul>
+
+<h2 id="lb-nginx-ロードバランサのレシピ">&lsquo;lb&rsquo; nginx ロードバランサのレシピ</h2>
+
+<p>下記が &lsquo;lb&rsquo; Role の recipes/cmomnos_conf.rb の修正した内容です。</p>
+
+<pre><code class="language-ruby">environment = node.chef_environment
+webservers = search(:node, &quot;role:web AND chef_environment:#{environment}&quot;)
+ 
+template &quot;#{node['nginx']['dir']}/sites-available/default&quot; do
+  source &quot;default-site.erb&quot;
+  owner &quot;root&quot;
+  group &quot;root&quot;
+  mode 00644
+  notifies :reload, 'service[nginx]'
+    variables ({
+      :webservers =&gt; webservers
+    })
+end
+</code></pre>
+
+<p>何をやっているかと言うと、environment という変数に自ノードの environment 名を。
+webservers という変数に role 名が &lsquo;web&rsquo; で尚且つ自ノードと同じ environment 名
+が付いたノード名を入れています。これで自分と同じ environment に所属している
+&lsquo;web&rsquo; Role なノードを Chef サーバに対して検索しています。また、template 内で
+webservers という変数をそのまま利用できるように variables で渡しています。</p>
+
+<h2 id="lb-nginx-ロードバランサのテンプレート">&lsquo;lb&rsquo; nginx ロードバランサのテンプレート</h2>
+
+<p>下記が webservers 変数を受け取った後の template 内の処理です。</p>
+
+<pre><code class="language-ruby">&lt;% if @webservers and ( @webservers != [] ) %&gt;
+upstream backend {
+&lt;% @webservers.each do |hostname| -%&gt;
+  server &lt;%= hostname['ipaddr'] -%&gt;;
+&lt;% end -%&gt;
+}
+&lt;% end %&gt;
+  
+server {
+  listen   80;
+  server_name  &lt;%= node['hostname'] %&gt;;
+    
+  access_log  &lt;%= node['nginx']['log_dir'] %&gt;/localhost.access.log;
+    
+  location / {
+    &lt;% if @webservers and ( @webservers != [] ) %&gt;
+    proxy_pass http://backend;
+    &lt;% else %&gt;
+    root   /var/www/nginx-default;
+    index  index.html index.htm;
+    &lt;% end %&gt;
+  }
+}
+</code></pre>
+
+<p>upstream backend { &hellip; は皆さん見慣れた記述だと思うのですが、バックエンドの
+HTTP サーバの IP アドレスを一覧化します。each で回しているので台数分だけ
+server <ip_addr>; の記述が入ります。</p>
+
+<p>chef-client をデーモン稼働しておけば、新規に Chef サーバに登録された &lsquo;web&rsquo;
+Role の HTTP サーバを自動で &lsquo;lb&rsquo; Role のロードバランサが組み込む、つまり自律的
+なクラスタが組めることになります。もちろんこの間の手作業は一切ありません。</p>
+
+<p>ちなみに chef-client をデーモン稼働するには</p>
+
+<pre><code>recipe[chef-client::service]
+</code></pre>
+
+<p>というレシピをノードに割り当てることで可能です。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>Chef でも自律的なクラスタが組めました。もちろん chef-client の稼働間隔があるの
+でリアルタイム性はありません。chef-client の稼働間隔は &lsquo;chef-client&rsquo; レシピの
+attributes で調整出来ます。その点は serf のほうが確実に勝っていると見るべきで
+しょう。冒頭に記したようにこの辺りの操作を Chef で行うのか別のツールを使うのか
+はまだまだ模索が必要そう。ただ、私がいつも使っている &lsquo;OpenStack を Chef で構成
+する Cookbooks&rsquo; 等は複数台構成を Chef で構成しています。なので僕にとってはこの
+辺りの話は当たり前だと思っていたのだけど、どうも勉強会に出たりすると &ldquo;Chef は
+複数台構成を作るのが苦手だ&rdquo; って話があがってくるので気になっていました。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/12/09/coreos-etcd-cluster/"
+                class="button big previous">CoreOS etcd のクラスタとその応用性</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2014/01/21/17th-openstack-study/"
+                class="button big next">第17回 OpenStack 勉強会で話してきました</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/12\/09\/chef-autonoumous-cluster\/';
+    var disqus_title = 'Chef で自律的クラスタを考える';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/12\/09\/chef-autonoumous-cluster\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

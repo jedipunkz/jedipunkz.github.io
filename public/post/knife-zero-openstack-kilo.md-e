@@ -1,0 +1,607 @@
++++
+title = "Knife-ZeroでOpenStack Kiloデプロイ(複数台編)"
+date = "2015-07-20"
+slug = "2015/07/20/knife-zero-openstack-kilo"
+Categories = []
++++
+こんにちは。@jedipunkz です。
+
+前回 OpenStack Kilo のオールインワン構成を Chef-Zero を使ってデプロイする方法
+を書きましたが、複数台構成についても調べたので結果をまとめていきます。
+
+使うのは openstack/openstack-chef-repo です。下記の URL にあります。
+
+https://github.com/openstack/openstack-chef-repo
+
+この中に Vagrant を使ったファイルが存在しますが、実機でのデプロイには全く役に
+立ちません。自分で Environment ファイルを作成する必要があります。今回は前提の
+構成を作って、それに合わせた Environment ファイルを記します。ほぼスタンダード
+な構成にしましたので、自分の環境に合わせて修正するのも比較的簡単だと想います。
+参考にしてください。
+
+今回は knife-zero を使ってデプロイします。Chef サーバが必要なく、knife-zero を
+使うホスト上のオンメモリで Chef サーバが稼働するので準備がほとんど必要ありません。
+
+早速ですが、構成と準備・そしてデプロイ作業を記していきます。
+
+前提の構成
+----
+
+       +------------+
+       | GW Router  |
+    +--+------------+
+    |  |
+    |  +--------------+--------------+---------------------------- public network
+    |  | eth0         | eth0
+    |  +------------+ +------------+ +------------+ +------------+
+    |  | Controller | |  Network   | |  Compute   | | Knife-Zero | 
+    |  +------------+ +-------+----+ +------+-----+ +------------+
+    |  | eth1         | eth1  |      | eth1 |       | eth1 
+    +--+--------------+-------)------+------)-------+------------- api/management network
+                              | eth2        | eth2
+                              +-------------+--------------------- guest network
+
+特徴としては...
+
+* public, api/management, guest の3つのネットワークに接続された OpenStack ホスト
+* Controller, Network, Compute の最小複数台構成
+* knife-zero を実行する 'Knife-Zero' ホスト
+* Knife-zero ホストは api/management network のみに接続で可
+* デプロイは api/management network を介して行う
+* public, api/management network はインターネットへの疎通が必須
+* OS は Ubuntu 14.04 amd64
+
+とくに api/management network がインターネットへの疎通が必要なところに注意して
+ください。デプロイは knife-zero ホストで実行しますが、各ノードへログインしデプ
+ロイする際にインターネット上からパッケージの取得を試みます。
+
+また api/management network を2つに分離するのも一般的ですが、ここでは一本にま
+とめています。
+
+IP アドレス
+----
+
+IP アドレスは下記を前提にします。
+
+| interface       | IP addr      |
+|:----------------|:-------------|
+| Controller eth0 | 10.0.1.10    |
+| Controller eth1 | 10.0.2.10    |
+| Network eth0    | 10.0.1.11    |
+| Network eth1    | 10.0.2.11    |
+| Network eth2    | 10.0.3.11    |
+| Compute eth1    | 10.0.2.12    |
+| Compute eth2    | 10.0.3.12    |
+| Knife-Zero eth1 | 10.0.2.13    |
+
+
+ネットワークインターフェース設定
+----
+
+それぞれのホストで下記のようにネットワークインターフェースを設定します。
+
+* Controller ホスト
+
+eth0, 1 を使用します。
+
+```bash
+auto eth0
+iface eth0 inet static
+    address 10.0.1.10
+    netmask 255.255.255.0
+    gateway 10.0.1.254
+    dns-nameservers 8.8.8.8
+    dns-search jedihub.com
+
+auto eth1
+iface eth1 inet static
+    address 10.0.2.10
+    netmask 255.255.255.0
+
+auto eth2
+iface eth2 inet manual
+```
+
+* Network ホスト
+
+eth0, 1, 2 全てを使用します。
+
+```bash
+auto eth0
+iface eth0 inet static
+        up ifconfig $IFACE 0.0.0.0 up
+        up ip link set $IFACE promisc on
+        down ip link set $IFACE promisc off
+        down ifconfig $IFACE down
+        address 10.0.1.11
+        netmask 255.255.255.0
+
+auto eth1
+iface eth1 inet static
+        address 10.0.2.11
+        netmask 255.255.255.0
+        gateway 10.0.2.248
+        dns-nameservers 8.8.8.8
+        dns-search jedihub.com
+
+auto eth2
+iface eth2 inet static
+        address 10.0.3.11
+        netmask 255.255.255.0
+```
+
+* Compute ホスト
+
+eth1, 2 を使用します。
+
+```bash
+auto eth0
+iface eth0 inet manual
+
+auto eth1
+iface eth1 inet static
+        address 10.0.2.12
+        netmask 255.255.255.0
+        gateway 10.0.2.248
+        dns-nameservers 8.8.8.8
+        dns-search jedihub.com
+
+auto eth2
+iface eth2 inet static
+        address 10.0.3.12
+        netmask 255.255.255.0
+```
+
+これらの作業は knife-zero からログインし eth1 を介して行ってください。でないと
+接続が切断される可能性があります。
+
+準備
+----
+
+knife-zero ホストに chef, knife-zero, berkshelf が入っている必要があるので、こ
+こでインストールしていきます。
+
+knife-zero ホストに chef をインストールします。Omnibus パッケージを使って手っ
+取り早く環境を整えます。
+
+```bash
+sudo -i
+curl -L https://www.opscode.com/chef/install.sh | bash
+```
+
+Berkshelf をインストールするのに必要なソフトウェアをインストールします。
+
+```bash
+apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev ruby-dev libxml2-dev libxslt-dev g++
+```
+
+Berkshelf をインストールします。
+
+```bash
+/opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc
+```
+
+最後に knife-zero をインストールします。
+
+```bash
+/opt/chef/embedded/bin/gem install knife-zero --no-ri --no-rdoc
+```
+
+デプロイ作業
+----
+
+それでは openstack-chef-repo を取得してデプロイの準備を行います。
+ブランチの指定は行わず master ブランチを取得します。Kilo は master ブランチで
+管理されています。次のバージョンの開発が始まるタイミングで 'stable/kilo' ブラ
+ンチに管理が移されます。
+
+```bash
+sudo -i
+cd ~/
+git clone https://github.com/openstack/openstack-chef-repo.git
+```
+
+次に Berkshelf を使って必要な Cookbooks をダウンロードします。
+
+```bash
+cd ~/openstack-chef-repo
+/opt/chef/embedded/bin/berks vendor ./cookbooks
+```
+
+Environment を作成します。これは各環境に合わせた設定ファイルのようなもので、各
+Cookbooks の Attributes を上書きする仕組みになっています。下記の内容を
+
+```
+openstack-chef-repo/environments/multi-neutron-kilo.json
+```
+
+というファイル名で保存してください。
+
+```json
+{
+  "name": "multi-neutron-kilo",
+  "description": "test",
+  "cookbook_versions": {
+  },
+  "json_class": "Chef::Environment",
+  "chef_type": "environment",
+  "default_attributes": {
+  },
+  "override_attributes": {
+    "mysql": {
+      "bind_address": "0.0.0.0",
+      "server_root_password": "mysqlroot",
+      "server_debian_password": "mysqlroot",
+      "server_repl_password": "mysqlroot",
+      "allow_remote_root": true,
+      "root_network_acl": ["10.0.0.0/8"]
+    },
+    "rabbitmq": {
+      "address": "0.0.0.0",
+      "port": "5672",
+      "loopback_users": []
+    },
+    "openstack": {
+      "auth": {
+        "validate_certs": false
+      },
+      "dashboard": {
+        "session_backend": "file"
+      },
+      "block-storage": {
+        "syslog": {
+          "use": false
+        },
+        "api": {
+          "ratelimit": "False"
+        },
+        "debug": true,
+        "image_api_chef_role": "os-image",
+        "identity_service_chef_role": "os-identity",
+        "rabbit_server_chef_role": "os-ops-messaging"
+      },
+      "compute": {
+        "rabbit": {
+          "host": "10.0.2.10"
+        },
+        "novnc_proxy": {
+          "bind_interface": "eth1"
+        },
+        "libvirt": {
+          "virt_type": "qemu",
+          "bind_interface": "eth1"
+        },
+        "novnc_proxy": {
+          "bind_interface": "eth1"
+        },
+        "xvpvnc_proxy": {
+          "bind_interface": "eth1"
+        },
+        "image_api_chef_role": "os-image",
+        "identity_service_chef_role": "os-identity",
+        "nova_setup_chef_role": "os-compute-api",
+        "rabbit_server_chef_role": "os-ops-messaging",
+        "network": {
+          "public_interface": "eth1",
+          "service_type": "neutron"
+        }
+      },
+      "network": {
+        "debug": "True",
+        "dhcp": {
+          "enable_isolated_metadata": "True"
+        },
+        "metadata": {
+          "nova_metadata_ip": "10.0.2.10"
+        },
+        "openvswitch": {
+          "tunnel_id_ranges": "1:1000",
+          "enable_tunneling": "True",
+          "tenant_network_type": "gre",
+          "tunnel_types": "gre",
+          "tunnel_type": "gre",
+          "bridge_mappings": "physnet1:br-eth2",
+          "bridge_mapping_interface": "br-eth2:eth2"
+        },
+        "ml2": {
+          "tenant_network_types": "gre",
+          "mechanism_drivers": "openvswitch",
+          "tunnel_id_ranges": "1:1000",
+          "enable_security_group": "True"
+        },
+        "api": {
+          "bind_interface": "eth1"
+        },
+        "l3": {
+          "external_network_bridge_interface": "eth0"
+        },
+        "service_plugins": ["neutron.services.l3_router.l3_router_plugin.L3RouterPlugin"]
+      },
+      "db": {
+        "bind_interface": "eth1",
+        "compute": {
+          "host": "10.0.2.10"
+        },
+        "identity": {
+          "host": "10.0.2.10"
+        },
+        "image": {
+          "host": "10.0.2.10"
+        },
+        "network": {
+          "host": "10.0.2.10"
+        },
+        "volume": {
+          "host": "10.0.2.10"
+        },
+        "dashboard": {
+          "host": "10.0.2.10"
+        },
+        "telemetry": {
+          "host": "10.0.2.10"
+        },
+        "orchestration": {
+          "host": "10.0.2.10"
+        }
+      },
+      "developer_mode": true,
+      "endpoints": {
+        "network-openvswitch": {
+          "bind_interface": "eth1"
+        },
+        "compute-api-bind": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "8774"
+        },
+        "compute-api": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "8774"
+        },
+        "compute-ec2-admin-bind": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "8773"
+        },
+        "compute-ec2-admin": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "8773"
+        },
+       "compute-ec2-api-bind": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "8773"
+        },
+        "compute-ec2-api": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "8773"
+        },
+        "compute-xvpvnc": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "6081"
+        },
+        "compute-novnc-bind": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "6080"
+        },
+        "compute-novnc": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "6080"
+        },
+        "compute-vnc": {
+          "host": "0.0.0.0",
+          "scheme": "http",
+          "port": "6080"
+        },
+        "image-api": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "9292"
+        },
+        "image-api-bind": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "9292"
+        },
+        "image-registry": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "9191"
+        },
+        "image-registry-bind": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "9191"
+        },
+        "identity-api": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "5000"
+        },
+        "identity-bind": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "5000"
+        },
+        "identity-admin": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "35357"
+        },
+        "identity-internal": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "35357"
+        },
+        "volume-api-bind": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "8776"
+        },
+        "volume-api": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "8776"
+        },
+        "telemetry-api": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "8777"
+        },
+        "network-api-bind": {
+          "host": "10.0.2.11",
+          "scheme": "http",
+          "port": "9696"
+        },
+        "network-api": {
+          "host": "10.0.2.11,
+          "scheme": "http",
+          "port": "9696"
+        },
+        "block-storage-api-bind": {
+          "host": "10.0.2.10",
+          "port": "8776",
+          "bind_interface": "eth1"
+        },
+        "block-storage-api": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "8776"
+        },
+        "orchestration-api": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "8004"
+        },
+        "orchestration-api-cfn": {
+          "host": "10.0.2.10",
+          "scheme": "http",
+          "port": "8000"
+        },
+        "db": {
+          "host": "0.0.0.0",
+          "port": "3306"
+        },
+        "bind-host": "0.0.0.0"
+      },
+      "identity": {
+        "admin_user": "admin",
+        "bind_interface": "eth1",
+        "debug": true
+      },
+      "image": {
+        "api": {
+          "bind_interface": "eth1"
+        },
+        "debug": true,
+        "identity_service_chef_role": "os-identity",
+        "rabbit_server_chef_role": "os-ops-messaging",
+        "registry": {
+          "bind_interface": "eth1"
+        },
+        "syslog": {
+          "use": false
+        }
+      },
+      "mq": {
+        "bind_interface": "eth1",
+        "host": "10.0.2.10",
+        "user": "guest",
+        "vhost": "/nova",
+        "network": {
+          "rabbit": {
+             "host": "10.0.2.10",
+             "port": "5672"
+          }
+        },
+        "compute": {
+           "service_type": "rabbitmq",
+          "rabbit": {
+            "host": "10.0.2.10",
+            "port": "5672"
+          }
+        },
+        "block-storage": {
+          "service_type": "rabbitmq",
+          "rabbit": {
+            "host": "10.0.2.10",
+            "port": "5672"
+          }
+        }
+      }
+    },
+    "queue": {
+      "host": "10.0.2.10",
+      "user": "guest",
+      "vhost": "/nova"
+    }
+  }
+}
+```
+
+上記ファイルでは virt_type : qemu に設定していますが、KVM リソースを利用出来る
+環境であればここを削除してください。デフォルトの 'kvm' が適用されます。また気
+をつけることは IP アドレスとネットワークインターフェース名です。環境に合わせて
+設定していきましょう。今回は前提構成に合わせて environemnt ファイルを作ってい
+ます。
+
+次に openstack-chef-repo/.chef/encrypted_data_bag_secret というファイルが
+knife-zero ホストにあるはずです。これをデプロイ対象の3ノードに事前に転送してお
+く必要があります。
+
+```bash
+scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.10:/tmp/
+scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.11:/tmp/
+scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.12:/tmp/
+```
+
+対象ホストにて
+
+```bash
+mkdir /etc/chef
+mv /tmp/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
+```
+
+ではいよいよデプロイです。
+
+Controller ホストへのデプロイ
+
+```bash
+knife zero bootstrap 10.0.2.10 -N kilo01 -r 'role[os-compute-single-controller-no-network]' -E multi-neutron-kilo -x <USERNAME> --sudo
+```
+
+Network ホストへのデプロイ
+
+```bash
+knife zero bootstrap 10.0.2.11 -N kilo02 -r 'role[os-client]','role[os-network]' -E multi-neutron-kilo -x <USERNAME> --sudo
+```
+
+Compute ノードへのデプロイ
+
+```bash
+knife zero bootstrap 10.0.2.12 -N kilo03 -r 'role[os-compute-worker]' -E multi-neutron-kilo -x <USERNAME> --sudo
+```
+
+これで完了です。admin/mypass というユーザ・パスワードでログインが可能です。
+
+まとめ
+-------
+
+openstack-chef-repo を使って OpenStack Kilo の複数台構成をデプロイ出来ました。重要なのは Environment をどうやって作るか？ですが、
+私は 作成 -> デプロイ -> 修正 -> デプロイ ->.... を繰り返して作成しています。何度実行しても不具合は発生しない設計なクックブックに
+なっていますので、このような作業が可能になります。また、「ここの設定を追加したい」という時は...
+
+* 該当の template を探す
+* 該当のパラメータを確認する
+* recipe 内で template にどうパラメータを渡しているか確認する
+* attribute なり、変数なりを修正するための方法を探す
+
+と行います。比較的難しい作業になるのですが、自らの環境に合わせた Environment を作成するにはこれらの作業が必須となってきます。
+
+以上、複数台構成のデプロイ方法についてでした。

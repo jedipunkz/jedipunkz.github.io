@@ -1,0 +1,927 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Mirantis OpenStack (Neutron GRE)を組んでみた！</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Mirantis OpenStack (Neutron GRE)を組んでみた！"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 皆さん、Mirantis OpenStack はご存知ですか？ OpenStack ディストリビューションの 1つです。以下、公式サイトです。 http://software.mirantis.com/main/ この Mirantis OpenStack を使って OpenStack Havana (Neutron GRE) 構成を作ってみ ました。その時のメモを書いていきたいと思います。 構成は? 構成は下記の通り。 ※ CreativeCommon 特徴は Administrative Network : Fuel Node, DHCP &#43; PXE ブート用 Management Network : 各コンポーネント間 API 用 Public/Floating IP Network : パブリック API, VM Floating IP 用 Storage Network : Cinder 配下ストレージ &lt;-&gt; インスタンス間用 要インターネット接続 : Public/Floating Networks Neutron(GRE) 構成 です。タグ VLAN 使って物理ネットワークの本数を減らすことも出来るはずですが、僕 の環境では何故かダメだったので上記の4つの物理ネットワークを別々に用意しました。 Fuel ノードの構築 Fuel ノードとは、OpenStack"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Mirantis OpenStack (Neutron GRE)を組んでみた！" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 皆さん、Mirantis OpenStack はご存知ですか？ OpenStack ディストリビューションの 1つです。以下、公式サイトです。 http://software.mirantis.com/main/ この Mirantis OpenStack を使って OpenStack Havana (Neutron GRE) 構成を作ってみ ました。その時のメモを書いていきたいと思います。 構成は? 構成は下記の通り。 ※ CreativeCommon 特徴は Administrative Network : Fuel Node, DHCP &#43; PXE ブート用 Management Network : 各コンポーネント間 API 用 Public/Floating IP Network : パブリック API, VM Floating IP 用 Storage Network : Cinder 配下ストレージ &lt;-&gt; インスタンス間用 要インターネット接続 : Public/Floating Networks Neutron(GRE) 構成 です。タグ VLAN 使って物理ネットワークの本数を減らすことも出来るはずですが、僕 の環境では何故かダメだったので上記の4つの物理ネットワークを別々に用意しました。 Fuel ノードの構築 Fuel ノードとは、OpenStack" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2014/04/23/mirantis-openstack/" />
+
+
+<meta property="og:updated_time" content="2014-04-23T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Mirantis OpenStack (Neutron GRE)を組んでみた！">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 皆さん、Mirantis OpenStack はご存知ですか？ OpenStack ディストリビューションの 1つです。以下、公式サイトです。 http://software.mirantis.com/main/ この Mirantis OpenStack を使って OpenStack Havana (Neutron GRE) 構成を作ってみ ました。その時のメモを書いていきたいと思います。 構成は? 構成は下記の通り。 ※ CreativeCommon 特徴は Administrative Network : Fuel Node, DHCP &#43; PXE ブート用 Management Network : 各コンポーネント間 API 用 Public/Floating IP Network : パブリック API, VM Floating IP 用 Storage Network : Cinder 配下ストレージ &lt;-&gt; インスタンス間用 要インターネット接続 : Public/Floating Networks Neutron(GRE) 構成 です。タグ VLAN 使って物理ネットワークの本数を減らすことも出来るはずですが、僕 の環境では何故かダメだったので上記の4つの物理ネットワークを別々に用意しました。 Fuel ノードの構築 Fuel ノードとは、OpenStack">
+
+
+<meta itemprop="dateModified" content="2014-04-23T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="337">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f&text=Mirantis%20OpenStack%20%28Neutron%20GRE%29%e3%82%92%e7%b5%84%e3%82%93%e3%81%a7%e3%81%bf%e3%81%9f%ef%bc%81&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f&title=Mirantis%20OpenStack%20%28Neutron%20GRE%29%e3%82%92%e7%b5%84%e3%82%93%e3%81%a7%e3%81%bf%e3%81%9f%ef%bc%81" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f&title=Mirantis%20OpenStack%20%28Neutron%20GRE%29%e3%82%92%e7%b5%84%e3%82%93%e3%81%a7%e3%81%bf%e3%81%9f%ef%bc%81" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f&title=Mirantis%20OpenStack%20%28Neutron%20GRE%29%e3%82%92%e7%b5%84%e3%82%93%e3%81%a7%e3%81%bf%e3%81%9f%ef%bc%81" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2014/04/23/mirantis-openstack/">Mirantis OpenStack (Neutron GRE)を組んでみた！</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-04-23'>
+            April 23, 2014</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f&text=Mirantis%20OpenStack%20%28Neutron%20GRE%29%e3%82%92%e7%b5%84%e3%82%93%e3%81%a7%e3%81%bf%e3%81%9f%ef%bc%81&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f&title=Mirantis%20OpenStack%20%28Neutron%20GRE%29%e3%82%92%e7%b5%84%e3%82%93%e3%81%a7%e3%81%bf%e3%81%9f%ef%bc%81" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f&title=Mirantis%20OpenStack%20%28Neutron%20GRE%29%e3%82%92%e7%b5%84%e3%82%93%e3%81%a7%e3%81%bf%e3%81%9f%ef%bc%81" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f&title=Mirantis%20OpenStack%20%28Neutron%20GRE%29%e3%82%92%e7%b5%84%e3%82%93%e3%81%a7%e3%81%bf%e3%81%9f%ef%bc%81" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f04%2f23%2fmirantis-openstack%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>皆さん、Mirantis OpenStack はご存知ですか？ OpenStack ディストリビューションの
+1つです。以下、公式サイトです。</p>
+
+<p><a href="http://software.mirantis.com/main/">http://software.mirantis.com/main/</a></p>
+
+<p>この Mirantis OpenStack を使って OpenStack Havana (Neutron GRE) 構成を作ってみ
+ました。その時のメモを書いていきたいと思います。</p>
+
+<h2 id="構成は">構成は?</h2>
+
+<p>構成は下記の通り。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/mirantis_gre.jpg"></p>
+
+<p>※ CreativeCommon</p>
+
+<p>特徴は</p>
+
+<ul>
+<li>Administrative Network : Fuel Node, DHCP + PXE ブート用</li>
+<li>Management Network : 各コンポーネント間 API 用</li>
+<li>Public/Floating IP Network : パブリック API, VM Floating IP 用</li>
+<li>Storage Network : Cinder 配下ストレージ &lt;-&gt; インスタンス間用</li>
+<li>要インターネット接続 : Public/Floating Networks</li>
+<li>Neutron(GRE) 構成</li>
+</ul>
+
+<p>です。タグ VLAN 使って物理ネットワークの本数を減らすことも出来るはずですが、僕
+の環境では何故かダメだったので上記の4つの物理ネットワークを別々に用意しました。</p>
+
+<h2 id="fuel-ノードの構築">Fuel ノードの構築</h2>
+
+<p>Fuel ノードとは、OpenStack の各ノードをデプロイするための管理ノードのことです。
+DHCP + PXE を管理する Cobbler やデプロイツールの Puppet が内部で稼働し、
+Administrative Network 上で稼働したノードを管理・その後デプロイします。</p>
+
+<p>構築方法は&hellip;</p>
+
+<p>下記の URL より ISO ファイルをダウンロード。</p>
+
+<p><a href="http://software.mirantis.com/main/">http://software.mirantis.com/main/</a></p>
+
+<p>Administrative Network に NIC を出したノードを上記の ISO から起動。</p>
+
+<p>Grub メニューが表示されたタイミングで &ldquo;Tab&rdquo; キーを押下。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/grub.png"></p>
+
+<p>上記画面にてカーネルオプションにて hostname, ip, gw, dns を修正。下記は例。</p>
+
+<pre><code class="language-bash">vmlinuz initrd=initrd.img biosdevname=0 ks=cdrom:/ks.cfg ip=10.200.10.76
+gw=10.200.10.1 dns1=8.8.8.8 netmask=255.255.255.0 hostname=fuel.cpi.ad.jp
+showmenu=no_
+</code></pre>
+
+<p>ブラウザで <a href="http://10.200.10.76:8080">http://10.200.10.76:8080</a> (上記例)にアクセスし、新しい &lsquo;OpenStack
+Environment&rsquo; を作成する。</p>
+
+<pre><code>Name : 任意
+OpenStack Release : Havana on CentOS6.4
+</code></pre>
+
+<p>なお、Ubuntu 構成も組めるが、私の環境では途中でエラーが出力した。</p>
+
+<p>Next を押下し、ネットワーク設定を行う。今回は &lsquo;Nuetron GRE&rsquo; を選択。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/mirantis_network.png"></p>
+
+<p>&lsquo;Save Settings&rsquo; を押下し設定を保存。この時点では &lsquo;Verify Networks&rsquo; は行えない。
+少なくとも 2 ノードが必要。次のステップで2ノードの追加を行う。</p>
+
+<h2 id="ノードの追加">ノードの追加</h2>
+
+<p>下記の4つのネットワークセグメントに NIC を出したノードを用意し、起動する。起動
+すると Administrative Network 上で稼働している Cobbler によりノードが PXE 起動
+しミニマムな OS がインストールされる。これは後に Fuel ノードよりログインがされ、
+各インターフェースの Mac アドレス等の情報を知るためです。ネットワークベリファ
+イ等もこのミニマムな OS 越しに実施されます。</p>
+
+<ul>
+<li>Administrative Network</li>
+<li>Public/Floating IP Network</li>
+<li>Storage Network</li>
+<li>Management Network</li>
+</ul>
+
+<p>ノードが稼働した時点で Fuel によりノードが認識されるので、ここでは2つのノード
+をそれぞれ</p>
+
+<ul>
+<li>Controller ノード</li>
+<li>Compute ノード</li>
+</ul>
+
+<p>として画面上で割り当てます。</p>
+
+<h2 id="インターフェースの設定">インターフェースの設定</h2>
+
+<p><img src="http://jedipunkz.github.io/pix/mirantis_mac.png"></p>
+
+<p><a href="http://10.200.10.76:8000/#cluster/1/nodes">http://10.200.10.76:8000/#cluster/1/nodes</a> にログインし作成した Environment
+を選択。その後、&rsquo;Nodes&rsquo; タブを押下。ノードを選択し、&rsquo;Configure Interfaces&rsquo; を
+選択。各ノードのインターフェースの Mac アドレスを確認し、各々のネットワークセ
+グメントを紐付ける。尚、Fuel ノードから &lsquo;root&rsquo; ユーザで SSH(22番ポート) にノン
+パスフレーズで公開鍵認証ログインが可能となっている。Fuel ノードに対しては SSH
+(22番ポート) にて下記のユーザにてログインが可能です。</p>
+
+<pre><code>username : root
+password : r00tme
+</code></pre>
+
+<h2 id="ネットワークの確認">ネットワークの確認</h2>
+
+<p><a href="http://10.200.10.76:8000/#cluster/1/network">http://10.200.10.76:8000/#cluster/1/network</a> にて &lsquo;Networks&rsquo; タブを開き、&rsquo;Verify
+Networks&rsquo; を押下。ネットワーク設定が正しく行われているか否かを確認。</p>
+
+<h2 id="デプロイ">デプロイ</h2>
+
+<p><a href="http://10.200.10.76:8000/#cluster/1/nodes">http://10.200.10.76:8000/#cluster/1/nodes</a> にて &lsquo;Deploy Changes&rsquo; を押下しデプ
+ロイ開始。kickstart にて OS が自動でインストールされ puppet にて fuel ノードか
+ら自動で OpenStack がインストールされます。</p>
+
+<h2 id="openstack-へのアクセス">OpenStack へのアクセス</h2>
+
+<p>SSH では下記のステップで OpenStack コントローラノードにログイン。</p>
+
+<p>fuel ノード (SSH) -&gt; node-1 (OpenStack コントローラノード)(SSH)</p>
+
+<p>ブラウザで Horizon にアクセスするには</p>
+
+<p><a href="http://10.200.10.2">http://10.200.10.2</a></p>
+
+<p>にアクセス。これは例。Administrative Network に接続している NIC の IP アドレス
+へ HTTP でログイン。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>Mirantis OpenStack Neutron (GRE) 構成が組めた。上記構成図を見て疑問に思ってい
+た &ldquo;VM 間通信のネットワークセグメント&rdquo; であるが、Administrative Network のセグ
+メントを用いている事が判った。これは利用者が意図しているとは考えづらいので、正
+直、あるべき姿では無いように思える。が、上記構成図に VM ネットワークが無い理由
+はこれにて判った。</p>
+
+<p>下記はノード上で ovs-vsctl show コマンドを打った結果の抜粋です。</p>
+
+<pre><code class="language-bash">    Bridge &quot;br-eth1&quot;
+        Port &quot;br-eth1&quot;
+            Interface &quot;br-eth1&quot;
+                type: internal
+        Port &quot;br-eth1--br-fw-admin&quot;
+            trunks: [0]
+            Interface &quot;br-eth1--br-fw-admin&quot;
+                type: patch
+                options: {peer=&quot;br-fw-admin--br-eth1&quot;}
+        Port &quot;eth1&quot;
+            Interface &quot;eth1&quot;
+</code></pre>
+
+<p>今回の構成は eth1 は Administrative Network に割り当てていました。</p>
+
+<p>一昔前は OS のディストリビュータが有料サポートをビジネスにしていました。Redhat
+がその代表格だと思いますが、今は OS 上で何かを実現するにもソフトウェアの完成度
+が高く、エンジニアが困るシチュエーションがそれほど無くなった気がします。そこで
+その OS の上で稼働する OpenStack のサポートビジネスが出てきたか！という印象で
+す。OpenStack はまだまだエンジニアにとって敷居の高いソフトウェアです。自らクラ
+ウドプラットフォームを構築出来るのは魅力的ですが、サポート無しに構築・運用する
+には、まだ難しい技術かもしれません。こういったディストリビューションが出てくる
+辺りが時代だなぁと感じます。</p>
+
+<p>尚、ISO をダウンロードして利用するだけでしたら無償で OK です。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2014/04/22/geard-port-mapping/"
+                class="button big previous">Geard のポートマッピングについて調べてみた</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2014/04/25/stackforge-openstack-chef-repo-icehouse-deploy/"
+                class="button big next">stackforge/openstack-chef-repo で OpenStack Icehouse デプロイ</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2014\/04\/23\/mirantis-openstack\/';
+    var disqus_title = 'Mirantis OpenStack (Neutron GRE)を組んでみた！';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2014\/04\/23\/mirantis-openstack\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

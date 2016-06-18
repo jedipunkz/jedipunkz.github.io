@@ -1,0 +1,994 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>第2回 Elasticsearch 勉強会参加レポート</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="第2回 Elasticsearch 勉強会参加レポート"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 第2回 Elasticsearch 勉強会に参加してきました。箇条書きですが参加レポートを記し ておきます。 開催日 : 2013/11/12 場所 : 東京駅 グラントウキョウサウスタワー リクルートテクノロジーズさま URL : http://elasticsearch.doorkeeper.jp/events/6532 Routing 周りの話 株式会社シーマーク 大谷純さん (@johtani) Index 構成 cluster の中に index -&gt; type が作成される index は shard という部分的な index の集まり shard 数は生成時のみ指定可能 node ごとに replica, primary を別ける replica 数は後に変えられる doc -&gt; hash 値を shard 数で割って replica, primary に登録 doc の id の ハッシュ値を利用 type も含める場合はかの設定を true に クライアントはどのノードに対してクエリを投げても OK routing id の代わりに routing (URL パラメータ) で登録 url リクエストパラメータとして登録時にルーティングパラメータを登録 id の代わりにパラメータで指定された値のハッシュ値を計算して利用 検索時 routing 指定で関係のある shard のみを指定出来る スケールアウト sharding によるスケールアウト数 = インデックス作成時に指定 shard によるインデックスの分割以外にインデックス自体を複数持つことによるスケール 複数のドキュメントをエイリアス書けることが可能 所感 個人的には非常に興味のあるところでした。mongodb のような sharding をイメージし てよいのか？そうでないのか？すら理解出来ていなかったので。sharding を理解する 前提知識の話もあって非常に参考になりました。 ElasticSearchを使ったBaaS基盤の開発 株式会社富士通ソフトウェアテクノロジーズ 滝田聖己さん（@pisatoshi） 運用の話。これは貴重&hellip;。 shard 数 : 10 , replica : 1 で運用している データは業務データ , トラッキングデータ マルチテナント, 更新の即時反映, ルーティングによる性能向上 が要件 登録更新 -&gt; 検索結果反映までタイムラグがある -&gt; replica 完了まで待つので高コスト replica 数を減らすことで性能向上 routing id を指定することで&hellip; doc id の has から shard 自動選択がデフォルト -&gt; hash key を指定して格納シャードを制御出来る -&gt; doc 登録性能向上 -&gt; 検索対象の shard を絞りこみえる -&gt; 不可を軽減 バックアップ/リストア mysql にもデータ格納 -&gt; backup elasticsearch の index はバックアップ取らず -&gt; bug を踏みたくないのが理由 dynamic mapping の問題 入力データから型を推測 -&gt; 自動マッピング登録 -&gt; マッピング定義が肥大化 -&gt; データ型のコンフリクト mapping の肥大化 mapping 定義は type, field の数に応じてサイズが増加 -&gt; index 性能低下 -&gt; mapping を伴う doc 登録 3sec (mapping size 80MB) -&gt; 各 node への mapping 定義の同期 大量のデータを一気に登録するときは 1 node が速い -&gt; その後シャード再配置したことがある =&gt; dynamic mapping を使うのをやめた -&gt; app で指定 よく利用するツール bigdesk elasticsearch-head sense (chrome extention) unit test unit test はどうする？ nodeClient テスト開始時に起動 テストデータを配置して起動, 終了時に削除 memoryIndex で高速に実行 elasticsearch-test が便利 所感 運用の話はどの技術でも重要!!!"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="第2回 Elasticsearch 勉強会参加レポート" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 第2回 Elasticsearch 勉強会に参加してきました。箇条書きですが参加レポートを記し ておきます。 開催日 : 2013/11/12 場所 : 東京駅 グラントウキョウサウスタワー リクルートテクノロジーズさま URL : http://elasticsearch.doorkeeper.jp/events/6532 Routing 周りの話 株式会社シーマーク 大谷純さん (@johtani) Index 構成 cluster の中に index -&gt; type が作成される index は shard という部分的な index の集まり shard 数は生成時のみ指定可能 node ごとに replica, primary を別ける replica 数は後に変えられる doc -&gt; hash 値を shard 数で割って replica, primary に登録 doc の id の ハッシュ値を利用 type も含める場合はかの設定を true に クライアントはどのノードに対してクエリを投げても OK routing id の代わりに routing (URL パラメータ) で登録 url リクエストパラメータとして登録時にルーティングパラメータを登録 id の代わりにパラメータで指定された値のハッシュ値を計算して利用 検索時 routing 指定で関係のある shard のみを指定出来る スケールアウト sharding によるスケールアウト数 = インデックス作成時に指定 shard によるインデックスの分割以外にインデックス自体を複数持つことによるスケール 複数のドキュメントをエイリアス書けることが可能 所感 個人的には非常に興味のあるところでした。mongodb のような sharding をイメージし てよいのか？そうでないのか？すら理解出来ていなかったので。sharding を理解する 前提知識の話もあって非常に参考になりました。 ElasticSearchを使ったBaaS基盤の開発 株式会社富士通ソフトウェアテクノロジーズ 滝田聖己さん（@pisatoshi） 運用の話。これは貴重&hellip;。 shard 数 : 10 , replica : 1 で運用している データは業務データ , トラッキングデータ マルチテナント, 更新の即時反映, ルーティングによる性能向上 が要件 登録更新 -&gt; 検索結果反映までタイムラグがある -&gt; replica 完了まで待つので高コスト replica 数を減らすことで性能向上 routing id を指定することで&hellip; doc id の has から shard 自動選択がデフォルト -&gt; hash key を指定して格納シャードを制御出来る -&gt; doc 登録性能向上 -&gt; 検索対象の shard を絞りこみえる -&gt; 不可を軽減 バックアップ/リストア mysql にもデータ格納 -&gt; backup elasticsearch の index はバックアップ取らず -&gt; bug を踏みたくないのが理由 dynamic mapping の問題 入力データから型を推測 -&gt; 自動マッピング登録 -&gt; マッピング定義が肥大化 -&gt; データ型のコンフリクト mapping の肥大化 mapping 定義は type, field の数に応じてサイズが増加 -&gt; index 性能低下 -&gt; mapping を伴う doc 登録 3sec (mapping size 80MB) -&gt; 各 node への mapping 定義の同期 大量のデータを一気に登録するときは 1 node が速い -&gt; その後シャード再配置したことがある =&gt; dynamic mapping を使うのをやめた -&gt; app で指定 よく利用するツール bigdesk elasticsearch-head sense (chrome extention) unit test unit test はどうする？ nodeClient テスト開始時に起動 テストデータを配置して起動, 終了時に削除 memoryIndex で高速に実行 elasticsearch-test が便利 所感 運用の話はどの技術でも重要!!!" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/" />
+
+
+<meta property="og:updated_time" content="2013-11-13T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="第2回 Elasticsearch 勉強会参加レポート">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 第2回 Elasticsearch 勉強会に参加してきました。箇条書きですが参加レポートを記し ておきます。 開催日 : 2013/11/12 場所 : 東京駅 グラントウキョウサウスタワー リクルートテクノロジーズさま URL : http://elasticsearch.doorkeeper.jp/events/6532 Routing 周りの話 株式会社シーマーク 大谷純さん (@johtani) Index 構成 cluster の中に index -&gt; type が作成される index は shard という部分的な index の集まり shard 数は生成時のみ指定可能 node ごとに replica, primary を別ける replica 数は後に変えられる doc -&gt; hash 値を shard 数で割って replica, primary に登録 doc の id の ハッシュ値を利用 type も含める場合はかの設定を true に クライアントはどのノードに対してクエリを投げても OK routing id の代わりに routing (URL パラメータ) で登録 url リクエストパラメータとして登録時にルーティングパラメータを登録 id の代わりにパラメータで指定された値のハッシュ値を計算して利用 検索時 routing 指定で関係のある shard のみを指定出来る スケールアウト sharding によるスケールアウト数 = インデックス作成時に指定 shard によるインデックスの分割以外にインデックス自体を複数持つことによるスケール 複数のドキュメントをエイリアス書けることが可能 所感 個人的には非常に興味のあるところでした。mongodb のような sharding をイメージし てよいのか？そうでないのか？すら理解出来ていなかったので。sharding を理解する 前提知識の話もあって非常に参考になりました。 ElasticSearchを使ったBaaS基盤の開発 株式会社富士通ソフトウェアテクノロジーズ 滝田聖己さん（@pisatoshi） 運用の話。これは貴重&hellip;。 shard 数 : 10 , replica : 1 で運用している データは業務データ , トラッキングデータ マルチテナント, 更新の即時反映, ルーティングによる性能向上 が要件 登録更新 -&gt; 検索結果反映までタイムラグがある -&gt; replica 完了まで待つので高コスト replica 数を減らすことで性能向上 routing id を指定することで&hellip; doc id の has から shard 自動選択がデフォルト -&gt; hash key を指定して格納シャードを制御出来る -&gt; doc 登録性能向上 -&gt; 検索対象の shard を絞りこみえる -&gt; 不可を軽減 バックアップ/リストア mysql にもデータ格納 -&gt; backup elasticsearch の index はバックアップ取らず -&gt; bug を踏みたくないのが理由 dynamic mapping の問題 入力データから型を推測 -&gt; 自動マッピング登録 -&gt; マッピング定義が肥大化 -&gt; データ型のコンフリクト mapping の肥大化 mapping 定義は type, field の数に応じてサイズが増加 -&gt; index 性能低下 -&gt; mapping を伴う doc 登録 3sec (mapping size 80MB) -&gt; 各 node への mapping 定義の同期 大量のデータを一気に登録するときは 1 node が速い -&gt; その後シャード再配置したことがある =&gt; dynamic mapping を使うのをやめた -&gt; app で指定 よく利用するツール bigdesk elasticsearch-head sense (chrome extention) unit test unit test はどうする？ nodeClient テスト開始時に起動 テストデータを配置して起動, 終了時に削除 memoryIndex で高速に実行 elasticsearch-test が便利 所感 運用の話はどの技術でも重要!!!">
+
+
+<meta itemprop="dateModified" content="2013-11-13T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="395">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f&text=%e7%ac%ac2%e5%9b%9e%20Elasticsearch%20%e5%8b%89%e5%bc%b7%e4%bc%9a%e5%8f%82%e5%8a%a0%e3%83%ac%e3%83%9d%e3%83%bc%e3%83%88&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f&title=%e7%ac%ac2%e5%9b%9e%20Elasticsearch%20%e5%8b%89%e5%bc%b7%e4%bc%9a%e5%8f%82%e5%8a%a0%e3%83%ac%e3%83%9d%e3%83%bc%e3%83%88" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f&title=%e7%ac%ac2%e5%9b%9e%20Elasticsearch%20%e5%8b%89%e5%bc%b7%e4%bc%9a%e5%8f%82%e5%8a%a0%e3%83%ac%e3%83%9d%e3%83%bc%e3%83%88" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f&title=%e7%ac%ac2%e5%9b%9e%20Elasticsearch%20%e5%8b%89%e5%bc%b7%e4%bc%9a%e5%8f%82%e5%8a%a0%e3%83%ac%e3%83%9d%e3%83%bc%e3%83%88" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/">第2回 Elasticsearch 勉強会参加レポート</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-11-13'>
+            November 13, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f&text=%e7%ac%ac2%e5%9b%9e%20Elasticsearch%20%e5%8b%89%e5%bc%b7%e4%bc%9a%e5%8f%82%e5%8a%a0%e3%83%ac%e3%83%9d%e3%83%bc%e3%83%88&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f&title=%e7%ac%ac2%e5%9b%9e%20Elasticsearch%20%e5%8b%89%e5%bc%b7%e4%bc%9a%e5%8f%82%e5%8a%a0%e3%83%ac%e3%83%9d%e3%83%bc%e3%83%88" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f&title=%e7%ac%ac2%e5%9b%9e%20Elasticsearch%20%e5%8b%89%e5%bc%b7%e4%bc%9a%e5%8f%82%e5%8a%a0%e3%83%ac%e3%83%9d%e3%83%bc%e3%83%88" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f&title=%e7%ac%ac2%e5%9b%9e%20Elasticsearch%20%e5%8b%89%e5%bc%b7%e4%bc%9a%e5%8f%82%e5%8a%a0%e3%83%ac%e3%83%9d%e3%83%bc%e3%83%88" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f13%2felasticsearch-second-study-report%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>第2回 Elasticsearch 勉強会に参加してきました。箇条書きですが参加レポートを記し
+ておきます。</p>
+
+<pre><code>開催日 : 2013/11/12
+場所 : 東京駅 グラントウキョウサウスタワー リクルートテクノロジーズさま
+URL : http://elasticsearch.doorkeeper.jp/events/6532
+</code></pre>
+
+<h2 id="routing-周りの話">Routing 周りの話</h2>
+
+<pre><code>株式会社シーマーク　大谷純さん (@johtani)
+</code></pre>
+
+<h4 id="index-構成">Index 構成</h4>
+
+<ul>
+<li>cluster の中に index -&gt; type が作成される</li>
+<li>index は shard という部分的な index の集まり</li>
+<li>shard 数は生成時のみ指定可能</li>
+<li>node ごとに replica, primary を別ける</li>
+<li>replica 数は後に変えられる</li>
+<li>doc -&gt; hash 値を shard 数で割って replica, primary に登録</li>
+<li>doc の id の ハッシュ値を利用</li>
+<li>type も含める場合はかの設定を true に</li>
+<li>クライアントはどのノードに対してクエリを投げても OK</li>
+</ul>
+
+<h4 id="routing">routing</h4>
+
+<ul>
+<li>id の代わりに routing (URL パラメータ) で登録</li>
+<li>url リクエストパラメータとして登録時にルーティングパラメータを登録</li>
+<li>id の代わりにパラメータで指定された値のハッシュ値を計算して利用</li>
+<li>検索時 routing 指定で関係のある shard のみを指定出来る</li>
+</ul>
+
+<h4 id="スケールアウト">スケールアウト</h4>
+
+<ul>
+<li>sharding によるスケールアウト数 = インデックス作成時に指定</li>
+<li>shard によるインデックスの分割以外にインデックス自体を複数持つことによるスケール</li>
+<li>複数のドキュメントをエイリアス書けることが可能</li>
+</ul>
+
+<h4 id="所感">所感</h4>
+
+<p>個人的には非常に興味のあるところでした。mongodb のような sharding をイメージし
+てよいのか？そうでないのか？すら理解出来ていなかったので。sharding を理解する
+前提知識の話もあって非常に参考になりました。</p>
+
+<h2 id="elasticsearchを使ったbaas基盤の開発">ElasticSearchを使ったBaaS基盤の開発</h2>
+
+<pre><code>株式会社富士通ソフトウェアテクノロジーズ 滝田聖己さん（@pisatoshi）
+</code></pre>
+
+<p>運用の話。これは貴重&hellip;。</p>
+
+<ul>
+<li>shard 数 : 10 , replica : 1 で運用している</li>
+<li>データは業務データ , トラッキングデータ</li>
+<li>マルチテナント, 更新の即時反映, ルーティングによる性能向上 が要件</li>
+<li>登録更新 -&gt; 検索結果反映までタイムラグがある -&gt; replica 完了まで待つので高コスト</li>
+<li>replica 数を減らすことで性能向上</li>
+</ul>
+
+<h4 id="routing-id-を指定することで">routing id を指定することで&hellip;</h4>
+
+<ul>
+<li>doc id の has から shard 自動選択がデフォルト</li>
+<li>-&gt; hash key を指定して格納シャードを制御出来る</li>
+<li>-&gt; doc 登録性能向上</li>
+<li>-&gt; 検索対象の shard を絞りこみえる</li>
+<li>-&gt; 不可を軽減</li>
+</ul>
+
+<h4 id="バックアップ-リストア">バックアップ/リストア</h4>
+
+<ul>
+<li>mysql にもデータ格納 -&gt; backup</li>
+<li>elasticsearch の index はバックアップ取らず -&gt; bug を踏みたくないのが理由</li>
+</ul>
+
+<h4 id="dynamic-mapping-の問題">dynamic mapping の問題</h4>
+
+<ul>
+<li>入力データから型を推測 -&gt; 自動マッピング登録</li>
+<li>-&gt; マッピング定義が肥大化</li>
+<li>-&gt; データ型のコンフリクト</li>
+</ul>
+
+<h4 id="mapping-の肥大化">mapping の肥大化</h4>
+
+<ul>
+<li>mapping 定義は type, field の数に応じてサイズが増加</li>
+<li>-&gt; index 性能低下</li>
+<li>-&gt; mapping を伴う doc 登録 3sec (mapping size 80MB)</li>
+<li>-&gt; 各 node への mapping 定義の同期</li>
+<li>大量のデータを一気に登録するときは 1 node が速い</li>
+<li>-&gt; その後シャード再配置したことがある</li>
+</ul>
+
+<p>=&gt; dynamic mapping を使うのをやめた -&gt; app で指定</p>
+
+<h4 id="よく利用するツール">よく利用するツール</h4>
+
+<ul>
+<li>bigdesk</li>
+<li>elasticsearch-head</li>
+<li>sense (chrome extention)</li>
+</ul>
+
+<h4 id="unit-test">unit test</h4>
+
+<p>unit test はどうする？</p>
+
+<ul>
+<li>nodeClient テスト開始時に起動</li>
+<li>テストデータを配置して起動, 終了時に削除</li>
+<li>memoryIndex で高速に実行</li>
+<li>elasticsearch-test が便利</li>
+</ul>
+
+<h4 id="所感-1">所感</h4>
+
+<p>運用の話はどの技術でも重要!!! 実際に困った話、トラブル等聞けて貴重な時間でした。
+よく使うツールの話も意外と参考になるので聞けてよかった。</p>
+
+<h2 id="kibana">Kibana</h2>
+
+<pre><code>Cookpad 水戸祐介さん (@y_310)
+</code></pre>
+
+<ul>
+<li>作った dashboard は elasticsearch に保存される</li>
+<li>db 要らず , web サーバのみ, クライアントサイドの技術のみで実装されている</li>
+<li>term, trends, map, table, column&hellip; それぞれ図形式がある
+title = &ldquo;test&rdquo;, -title</li>
+<li>1つの index に異なるスキーマを持つデータを入れられる</li>
+<li>1つの index に入れることでグラフを重ねて比較出来る</li>
+<li>やはり dynamic mapping は使わないほうが良い</li>
+<li>m1.large x 1 : 1日のインデックスサイズが10GB 超えるあたりで ES が詰まる</li>
+</ul>
+
+<p>下記が当日の資料です。</p>
+
+<script async class="speakerdeck-embed"
+data-id="3d0776802ddb0131fdd042970ce72c15" data-ratio="1.33333333333333" src="//speakerdeck.com/assets/embed.js"></script>
+
+<h4 id="所感-2">所感</h4>
+
+<p>Cookpad さんで実際に利用されているとか。運用の話と同じくやはり dynamic routing
+でのトラブルの話があった。また Cookpad さんでのトラブル例の話もあってよかった。</p>
+
+<h2 id="elasticsearch-kibana-v3を利用する際の運用ノウハウ">ElasticSearch＋Kibana v3を利用する際の運用ノウハウ</h2>
+
+<pre><code>株式会社リブセンス Y.Kentaro さん (@yoshi_ken)
+</code></pre>
+
+<p>下記が発表資料。</p>
+
+<p><iframe src="http://www.slideshare.net/slideshow/embed_code/28165189"
+width="597" height="486" frameborder="0" marginwidth="0" marginheight="0"
+scrolling="no" style="border:1px solid #CCC;border-width:1px 1px
+0;margin-bottom:5px" allowfullscreen> </iframe> <div
+style="margin-bottom:5px"> <strong> <a
+href="https://www.slideshare.net/y-ken/elasticsearch-kibnana-fluentd-management-tips"
+title="ElasticSearch+Kibanaでログデータの検索と視覚化を実現するテクニックと運
+用ノウハウ" target="_blank">ElasticSearch+Kibanaでログデータの検索と視覚化を実
+現するテクニックと運用ノウハウ</a> </strong> from <strong><a
+href="http://www.slideshare.net/y-ken" target="_blank">Kentaro
+Yoshida</a></strong> </div></p>
+
+<ul>
+<li>nginx の basic 認証等でアクセス制限を掛ける例</li>
+</ul>
+
+<p>等など&hellip; ごめんなさい！メモが取れてなかった！&hellip;汗</p>
+
+<h2 id="fluentd-as-a-kibana">Fluentd as a Kibana</h2>
+
+<pre><code>@repeatedly さん
+</code></pre>
+
+<p>fluentd-plugin-kibana-server  というkibana をダウンロードしてくるのがめんどい
+ので fluentd の中で kibana を動かすプラグインを作った話。下記が発表資料。</p>
+
+<p><a href="https://gist.github.com/repeatedly/7427856">https://gist.github.com/repeatedly/7427856</a></p>
+
+<ul>
+<li>fluentd input plugin として実装</li>
+<li>logstash 版もあるらしい</li>
+</ul>
+
+<h4 id="所感-3">所感</h4>
+
+<p>さすが&hellip;。確かにサーバをいちいち作るのめんどいです。fluentd plugin の中で
+kibana を動かすって発想が&hellip;。</p>
+
+<h2 id="auth-プラグインでアクセスコントロール">auth プラグインでアクセスコントロール</h2>
+
+<pre><code>株式会社エヌツーエスエム 菅谷信介さん (@shinsuke_sugaya)
+</code></pre>
+
+<ul>
+<li>elasticsearch のアクセス制御をしたい</li>
+<li>rest api をアクセス制御する</li>
+<li>ユーザ管理, REST API のアクセス管理, ログイン・ログアウト・トーケン</li>
+<li>ユーザ管理は elasticsearch 内に格納</li>
+<li>path, http method, role の組み合わせで制御</li>
+</ul>
+
+<p>インストールは下記の通り elasticsearch plugin コマンドで。</p>
+
+<pre><code>% ./bin/plugin --install org.codelibs/elasticsearch-auth/1.0.0
+</code></pre>
+
+<ul>
+<li>ユーザ作成は POST で可能</li>
+</ul>
+
+<h2 id="所感とまとめ">所感とまとめ</h2>
+
+<p>箇条書きのざっくりしたまとめでしたが&hellip;。個人的には sharding の話はとても聞き
+たかったので貴重な時間でした。また、運用の話もとてもおもしろかったし plugin 作っ
+てみた話も「すごい..」って感じでした。僕はこれからアプリも書くけどインフラエン
+ジニアなのでアーキテクチャをまず知りたいかなぁという印象。と言うかスケールさせ
+るときにも横に並べて shard するだけの様な話に聞こえましたが、まだぼんやり感が
+あります。特に shard 周り。mongo の sharding と同じ様なものを想像していますが。
+またモチベーション上がったので週末やってみますー！</p>
+
+<p>kibana3 は一回使いました。javascript, html で実装されているのでクライアントか
+ら elasticsearch まで直接アクセス出来なければならないとなって、構成的にどうな
+のかな？と思っていたら菅谷さんの &lsquo;auth プラグイン&rsquo; の話があったりしたので、良
+かったです。使ってみます！</p>
+
+<p>主催の方々、発表者の方々、当日はありがとうございましたー。また参加させてもらい
+ます。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/11/10/serf/"
+                class="button big previous">Serf を使ってみた</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/"
+                class="button big next">OpenStack Havana を Chef でデプロイ</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/11\/13\/elasticsearch-second-study-report\/';
+    var disqus_title = '第2回 Elasticsearch 勉強会参加レポート';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/11\/13\/elasticsearch-second-study-report\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

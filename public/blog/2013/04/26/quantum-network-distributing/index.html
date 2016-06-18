@@ -1,0 +1,898 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Quantum Network ノードの分散・冗長</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Quantum Network ノードの分散・冗長"/>
+<meta name="twitter:description" content="こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機能につい て評価した結果をお伝えします。 Folsom までは Quantum L3-agent が落ちると、その OpenStack 一式の上にある仮想マシン全ての通 信が途絶える Quantum L3-agent に仮想マシンの全てのトラフィックが集まりボトルネックとなる。 という問題がありました。Folsom リリース時代にもし僕が職場で OpenStack を導入す るのであればこれらを理由に nova-network を選択していたかもしれません。 nova-network は compute ノードが落ちればその上の仮想マシンも同時に落ちるが、他 の compute ノード上の仮想マシンの通信には影響を与えないからです。もちろん仮想 ルータ・仮想ネットワークの生成等を API でユーザに提供したいなどの要望があれば Quantum を選択するしかありませんが。これに対して Grizzly リリースの Quantum は 改善に向けて大きな機能を提供してくれています。L3-agent, DHCP-agent の分散・冗 長機能です。 下記の構成が想定出来ます。ここでは Network ノードを2台用意しました。それ以上の 台数に増やすことも出来ます。 &#43;-------------&#43;-------------&#43;-------------------------- Public/API Network | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | |vm|vm|.. | | controller|"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Quantum Network ノードの分散・冗長" />
+<meta property="og:description" content="こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機能につい て評価した結果をお伝えします。 Folsom までは Quantum L3-agent が落ちると、その OpenStack 一式の上にある仮想マシン全ての通 信が途絶える Quantum L3-agent に仮想マシンの全てのトラフィックが集まりボトルネックとなる。 という問題がありました。Folsom リリース時代にもし僕が職場で OpenStack を導入す るのであればこれらを理由に nova-network を選択していたかもしれません。 nova-network は compute ノードが落ちればその上の仮想マシンも同時に落ちるが、他 の compute ノード上の仮想マシンの通信には影響を与えないからです。もちろん仮想 ルータ・仮想ネットワークの生成等を API でユーザに提供したいなどの要望があれば Quantum を選択するしかありませんが。これに対して Grizzly リリースの Quantum は 改善に向けて大きな機能を提供してくれています。L3-agent, DHCP-agent の分散・冗 長機能です。 下記の構成が想定出来ます。ここでは Network ノードを2台用意しました。それ以上の 台数に増やすことも出来ます。 &#43;-------------&#43;-------------&#43;-------------------------- Public/API Network | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | |vm|vm|.. | | controller|" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/" />
+
+
+<meta property="og:updated_time" content="2013-04-26T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Quantum Network ノードの分散・冗長">
+<meta itemprop="description" content="こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機能につい て評価した結果をお伝えします。 Folsom までは Quantum L3-agent が落ちると、その OpenStack 一式の上にある仮想マシン全ての通 信が途絶える Quantum L3-agent に仮想マシンの全てのトラフィックが集まりボトルネックとなる。 という問題がありました。Folsom リリース時代にもし僕が職場で OpenStack を導入す るのであればこれらを理由に nova-network を選択していたかもしれません。 nova-network は compute ノードが落ちればその上の仮想マシンも同時に落ちるが、他 の compute ノード上の仮想マシンの通信には影響を与えないからです。もちろん仮想 ルータ・仮想ネットワークの生成等を API でユーザに提供したいなどの要望があれば Quantum を選択するしかありませんが。これに対して Grizzly リリースの Quantum は 改善に向けて大きな機能を提供してくれています。L3-agent, DHCP-agent の分散・冗 長機能です。 下記の構成が想定出来ます。ここでは Network ノードを2台用意しました。それ以上の 台数に増やすことも出来ます。 &#43;-------------&#43;-------------&#43;-------------------------- Public/API Network | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | |vm|vm|.. | | controller|">
+
+
+<meta itemprop="dateModified" content="2013-04-26T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="458">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f&text=Quantum%20Network%20%e3%83%8e%e3%83%bc%e3%83%89%e3%81%ae%e5%88%86%e6%95%a3%e3%83%bb%e5%86%97%e9%95%b7&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f&title=Quantum%20Network%20%e3%83%8e%e3%83%bc%e3%83%89%e3%81%ae%e5%88%86%e6%95%a3%e3%83%bb%e5%86%97%e9%95%b7" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f&title=Quantum%20Network%20%e3%83%8e%e3%83%bc%e3%83%89%e3%81%ae%e5%88%86%e6%95%a3%e3%83%bb%e5%86%97%e9%95%b7" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f&title=Quantum%20Network%20%e3%83%8e%e3%83%bc%e3%83%89%e3%81%ae%e5%88%86%e6%95%a3%e3%83%bb%e5%86%97%e9%95%b7" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/">Quantum Network ノードの分散・冗長</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-04-26'>
+            April 26, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f&text=Quantum%20Network%20%e3%83%8e%e3%83%bc%e3%83%89%e3%81%ae%e5%88%86%e6%95%a3%e3%83%bb%e5%86%97%e9%95%b7&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f&title=Quantum%20Network%20%e3%83%8e%e3%83%bc%e3%83%89%e3%81%ae%e5%88%86%e6%95%a3%e3%83%bb%e5%86%97%e9%95%b7" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f&title=Quantum%20Network%20%e3%83%8e%e3%83%bc%e3%83%89%e3%81%ae%e5%88%86%e6%95%a3%e3%83%bb%e5%86%97%e9%95%b7" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f&title=Quantum%20Network%20%e3%83%8e%e3%83%bc%e3%83%89%e3%81%ae%e5%88%86%e6%95%a3%e3%83%bb%e5%86%97%e9%95%b7" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f04%2f26%2fquantum-network-distributing%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース
+まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機能につい
+て評価した結果をお伝えします。</p>
+
+<p>Folsom までは</p>
+
+<ul>
+<li>Quantum L3-agent が落ちると、その OpenStack 一式の上にある仮想マシン全ての通
+信が途絶える</li>
+<li>Quantum L3-agent に仮想マシンの全てのトラフィックが集まりボトルネックとなる。</li>
+</ul>
+
+<p>という問題がありました。Folsom リリース時代にもし僕が職場で OpenStack を導入す
+るのであればこれらを理由に nova-network を選択していたかもしれません。
+nova-network は compute ノードが落ちればその上の仮想マシンも同時に落ちるが、他
+の compute ノード上の仮想マシンの通信には影響を与えないからです。もちろん仮想
+ルータ・仮想ネットワークの生成等を API でユーザに提供したいなどの要望があれば
+Quantum を選択するしかありませんが。これに対して Grizzly リリースの Quantum は
+改善に向けて大きな機能を提供してくれています。L3-agent, DHCP-agent の分散・冗
+長機能です。</p>
+
+<p>下記の構成が想定出来ます。ここでは Network ノードを2台用意しました。それ以上の
+台数に増やすことも出来ます。</p>
+
+<pre><code>+-------------+-------------+-------------------------- Public/API Network
+|             |             |
++-----------+ +-----------+ +-----------+ +-----------+
+|           | |           | |           | |vm|vm|..   |
+| controller| |  network  | |  network  | +-----------+
+|           | |           | |           | |  compute  |
++-----------+ +-----------+ +-----------+ +-----------+
+|             |     |       |     |       |     |
++-------------+-----)-------+-----)-------+-----)------ Management/API Network
+                    |             |             |
+                    +-------------+-------------+------ Data Network
+</code></pre>
+
+<p>L3-agent の分散は仮想ルータ単位で行います。それに対し DHCP-agent は仮想
+ネットワーク単位で行います。</p>
+
+<h2 id="agent-一覧の取得">agent 一覧の取得</h2>
+
+<p>上記の構成を構築すると下記のように agent 一覧が取得出来ます。</p>
+
+<pre><code>% quantum agent-list # 'admin' ユーザでアクセス
++--------------------------------------+--------------------+-----------------------+-------+----------------+
+| id                                   | agent_type         | host                  | alive | admin_state_up |
++--------------------------------------+--------------------+-----------------------+-------+----------------+
+| 44795822-2d9f-434e-ba98-748f7411442f | DHCP agent         | grizzly03.example.com | :-)   | True           |
+| a5150a40-0405-4399-ac1a-be012f55d9f5 | DHCP agent         | grizzly02.example.com | :-)   | True           |
+| b7bf4e59-06ac-475c-84ab-413d8d29f293 | Open vSwitch agent | grizzly04.example.com | :-)   | True           |
+| cc5a6b94-6ddd-4109-8f2f-1b28c6aaf5e6 | L3 agent           | grizzly03.example.com | :-)   | True           |
+| d39803cf-19d3-47d7-8205-cf9a143dd0ea | Open vSwitch agent | grizzly02.example.com | :-)   | True           |
+| d8e59803-9aad-4c62-a47a-519bc788e0fb | Open vSwitch agent | grizzly03.example.com | :-)   | True           |
+| f6f747cf-ffb0-446c-a455-2947fd3e87e8 | L3 agent           | grizzly02.example.com | :-)   | True           |
++--------------------------------------+--------------------+-----------------------+-------+----------------+
+</code></pre>
+
+<p>ホスト名は下記。</p>
+
+<ul>
+<li>controller : grizzly01.exmaple.com</li>
+<li>network01  : grizzly02.exmaple.com</li>
+<li>network02  : grizzly03.exmaple.com</li>
+<li>compute    : grizzly04.exmaple.com</li>
+</ul>
+
+<h2 id="l3-agent-の分散方法-ノード移動">L3-agent の分散方法 (ノード移動)</h2>
+
+<p>仮想ルータ (ここでは &lsquo;router-test01&rsquo; とする) がどの L3-agent に属しているか確
+認を取る。</p>
+
+<pre><code>% quantum l3-agent-list-hosting-router router-demo
++--------------------------------------+-----------------------+----------------+-------+
+| id                                   | host                  | admin_state_up | alive |
++--------------------------------------+-----------------------+----------------+-------+
+| f6f747cf-ffb0-446c-a455-2947fd3e87e8 | grizzly02.example.com | True           | :-)   |
++--------------------------------------+-----------------------+----------------+-------+
+</code></pre>
+
+<p>1台目の Network ノード (grizzly02.example.com) 上の L3-agent に属していること
+が確認取れた。次にこの親子関係を削除する。</p>
+
+<pre><code>% quantum l3-agent-router-remove f6f747cf-ffb0-446c-a455-2947fd3e87e8 router-test01
+Removed Router router-demo to L3 agent
+</code></pre>
+
+<p>最後に仮想ルータ &lsquo;router-test01&rsquo; を2台目の Network ノード上の L3-agent の管理
+下に設定する。</p>
+
+<pre><code>% quantum l3-agent-router-add cc5a6b94-6ddd-4109-8f2f-1b28c6aaf5e6 router-demo
+Added router router-demo to L3 agent
+% quantum l3-agent-list-hosting-router router-demo
++--------------------------------------+-----------------------+----------------+-------+
+| id                                   | host                  | admin_state_up | alive |
++--------------------------------------+-----------------------+----------------+-------+
+| cc5a6b94-6ddd-4109-8f2f-1b28c6aaf5e6 | grizzly0404.cpi.ad.jp | True           | xxx   |
++--------------------------------------+-----------------------+----------------+-------+
+</code></pre>
+
+<h2 id="dhcp-agent-の分散方法-ノード移動">DHCP-Agent の分散方法 (ノード移動)</h2>
+
+<p>仮想マシンが所属しているネットワーク (ここでは &lsquo;int_net&rsquo;) がどの DHCP-agent に所属しているか確認する。</p>
+
+<pre><code>% quantum dhcp-agent-list-hosting-net int_net
++--------------------------------------+-----------------------+----------------+-------+
+| id                                   | host                  | admin_state_up | alive |
++--------------------------------------+-----------------------+----------------+-------+
+| a5150a40-0405-4399-ac1a-be012f55d9f5 | grizzly02.example.com | True           | :-)   |
++--------------------------------------+-----------------------+----------------+-------+
+</code></pre>
+
+<p>1台目のノードに所属しているのが確認できる。次に &lsquo;int_net&rsquo; が所属する DHCP-agent を削除行う。</p>
+
+<pre><code>% quantum dhcp-agent-network-remove a5150a40-0405-4399-ac1a-be012f55d9f5 int_net
+Removed network int_net to DHCP agent
+</code></pre>
+
+<p>2台目のノードの DHCP-agent を仮想ネットワーク &lsquo;int_net&rsquo; に紐付ける。</p>
+
+<pre><code>% quantum dhcp-agent-network-add 44795822-2d9f-434e-ba98-748f7411442f int_net
+Added network int_net to DHCP agent
+% quantum dhcp-agent-list-hosting-net int_net
++--------------------------------------+-----------------------+----------------+-------+
+| id                                   | host                  | admin_state_up | alive |
++--------------------------------------+-----------------------+----------------+-------+
+| 44795822-2d9f-434e-ba98-748f7411442f | grizzly0404.cpi.ad.jp | True           | :-)   |
++--------------------------------------+-----------------------+----------------+-------+
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>この様に仮想ルータ, 仮想ネットワーク単位で Network ノードの agent の分散が行え
+る。上記のように仮想ルータ・ネットワークが1つずつでは分散という意味では無いが
+運用の過程で仮想ルータ・ネットワークは増えることが想定出来るのでその際にはトラ
+フィック・DHCP 機能を分散することが可能になる、と言える。また片系の Network ノー
+ドに寄せておいてからの障害テスト -&gt; もう片系への移動も行なってみたが作業ととも
+に仮想マシンの通信が復旧した。このテストを行う前まで &lsquo;agent の移動だけ行えるの
+であって仮想ルータ自体が移動するわけではないので冗長という意味はない&rsquo; と考えて
+いたのだが、実際には上記の操作で namespace が移動していることが判り (Quantum
+の仮想ルータの実体は Linux Namespace) 障害テストの結果、うまくいった。
+OpenStack を導入するという意味で、この機能は非常に大きな前進だと僕は思っていま
+す。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/04/21/chef-for-openstack-grizzly-roadmap/"
+                class="button big previous">Chef for OpenStack</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/"
+                class="button big next">Ceph-Deploy で Ceph 分散ストレージ構築</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/04\/26\/quantum-network-distributing\/';
+    var disqus_title = 'Quantum Network ノードの分散・冗長';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/04\/26\/quantum-network-distributing\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

@@ -1,0 +1,865 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>NetBSD on OpenStack</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="NetBSD on OpenStack"/>
+<meta name="twitter:description" content="もう数日で OpenStack の次期バージョン版 Grizzly がリリースされるタイミングだが 現行バージョン Folsom の OpenStack の上に NetBSD を載せてみた。完全にお遊び だけど&hellip;。 結局、ほとんど何も特別な対応取ることなく NetBSD が動いた。もちろんハイパーバイ ザは KVM です。だけど少し条件がある。 qemu の不具合があり Ubuntu 12.04 LTS &#43; Ubuntu Cloud Archives の組み合わせでは NetBSD が動作しなかった。下記のようなカーネルパニックが発生。 panic: pci_make_tag: bad request この不具合に相当するんじゃないかと思ってる。 https://bugs.launchpad.net/qemu/&#43;bug/897771 よって下記の組み合わせで動作を確認した。 Ubuntu 12.10 &#43; OpenStack (Native Packages) qemu, kvm : 1.2.0&#43;noroms-0ubuntu2.12.10.3 NetBSD 6.1 RC2 amd64 前提条件 OpenStack Folsom が動作していること。 NetBSD OS イメージ作成 nova-compute が動作しているホストの qemu-kvm を利用する。OpenStack 上に何でも 良いので OS を動作させこの kvm プロセスのパラメータを参考に kvm コマンドを実行 し NetBSD をインストールさせた。一番確実な方法。 % cd ~/ % wget http://ftp.netbsd.org/pub/NetBSD/iso/6.1_RC2/NetBSD-6.1_RC2-amd64.iso % kvm-img create -f qcow2 netbsd.img 5G % /usr/bin/kvm -M pc-1.0 -cpu \ core2duo,&#43;lahf_lm,&#43;rdtscp,&#43;hypervisor,&#43;avx,&#43;osxsave,&#43;save,&#43;aes,&#43;popcnt,&#43;sse4.2,&#43;sse4.1,&#43;cx16,&#43;vmx,&#43;pclmuldq,&#43;ht,&#43;ss,&#43;ds \ -enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \ -drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \ -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \ -net nic,model=virtio -vnc :9 -cdrom ~/NetBSD-6.1_RC2-amd64.iso VNC :9 に接続して NetBSD を普通ににインストールする。 インストールが終わったら CDROM デバイスを外して起動。 % core2duo,&#43;lahf_lm,&#43;rdtscp,&#43;hypervisor,&#43;avx,&#43;osxsave,&#43;save,&#43;aes,&#43;popcnt,&#43;sse4.2,&#43;sse4.1,&#43;cx16,&#43;vmx,&#43;pclmuldq,&#43;ht,&#43;ss,&#43;ds \ -enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \ -drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \ -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \ -net nic,model=virtio -vnc :9 VNC :9 に接続し下記の操作を行う。 vioif0 という virtio なネットワークインターフェースが起動するので下記のように 追記する。 # vi /etc/rc.conf # 下記を追記 ifconfig_vioif0=dhcp sshd=YES OpenStack の metadata server から nova の管理するキーペア鍵を取得し authorized_keys に配置する様、/etc/rc.local に追記する。curl とか便利なツール はもちろん！入っていないので ftp コマンドでなんとかする。 # vi /etc/rc.local # 下記を追記 if [ !"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="NetBSD on OpenStack" />
+<meta property="og:description" content="もう数日で OpenStack の次期バージョン版 Grizzly がリリースされるタイミングだが 現行バージョン Folsom の OpenStack の上に NetBSD を載せてみた。完全にお遊び だけど&hellip;。 結局、ほとんど何も特別な対応取ることなく NetBSD が動いた。もちろんハイパーバイ ザは KVM です。だけど少し条件がある。 qemu の不具合があり Ubuntu 12.04 LTS &#43; Ubuntu Cloud Archives の組み合わせでは NetBSD が動作しなかった。下記のようなカーネルパニックが発生。 panic: pci_make_tag: bad request この不具合に相当するんじゃないかと思ってる。 https://bugs.launchpad.net/qemu/&#43;bug/897771 よって下記の組み合わせで動作を確認した。 Ubuntu 12.10 &#43; OpenStack (Native Packages) qemu, kvm : 1.2.0&#43;noroms-0ubuntu2.12.10.3 NetBSD 6.1 RC2 amd64 前提条件 OpenStack Folsom が動作していること。 NetBSD OS イメージ作成 nova-compute が動作しているホストの qemu-kvm を利用する。OpenStack 上に何でも 良いので OS を動作させこの kvm プロセスのパラメータを参考に kvm コマンドを実行 し NetBSD をインストールさせた。一番確実な方法。 % cd ~/ % wget http://ftp.netbsd.org/pub/NetBSD/iso/6.1_RC2/NetBSD-6.1_RC2-amd64.iso % kvm-img create -f qcow2 netbsd.img 5G % /usr/bin/kvm -M pc-1.0 -cpu \ core2duo,&#43;lahf_lm,&#43;rdtscp,&#43;hypervisor,&#43;avx,&#43;osxsave,&#43;save,&#43;aes,&#43;popcnt,&#43;sse4.2,&#43;sse4.1,&#43;cx16,&#43;vmx,&#43;pclmuldq,&#43;ht,&#43;ss,&#43;ds \ -enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \ -drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \ -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \ -net nic,model=virtio -vnc :9 -cdrom ~/NetBSD-6.1_RC2-amd64.iso VNC :9 に接続して NetBSD を普通ににインストールする。 インストールが終わったら CDROM デバイスを外して起動。 % core2duo,&#43;lahf_lm,&#43;rdtscp,&#43;hypervisor,&#43;avx,&#43;osxsave,&#43;save,&#43;aes,&#43;popcnt,&#43;sse4.2,&#43;sse4.1,&#43;cx16,&#43;vmx,&#43;pclmuldq,&#43;ht,&#43;ss,&#43;ds \ -enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \ -drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \ -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \ -net nic,model=virtio -vnc :9 VNC :9 に接続し下記の操作を行う。 vioif0 という virtio なネットワークインターフェースが起動するので下記のように 追記する。 # vi /etc/rc.conf # 下記を追記 ifconfig_vioif0=dhcp sshd=YES OpenStack の metadata server から nova の管理するキーペア鍵を取得し authorized_keys に配置する様、/etc/rc.local に追記する。curl とか便利なツール はもちろん！入っていないので ftp コマンドでなんとかする。 # vi /etc/rc.local # 下記を追記 if [ !" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/03/28/netbsd-on-openstack/" />
+
+
+<meta property="og:updated_time" content="2013-03-28T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="NetBSD on OpenStack">
+<meta itemprop="description" content="もう数日で OpenStack の次期バージョン版 Grizzly がリリースされるタイミングだが 現行バージョン Folsom の OpenStack の上に NetBSD を載せてみた。完全にお遊び だけど&hellip;。 結局、ほとんど何も特別な対応取ることなく NetBSD が動いた。もちろんハイパーバイ ザは KVM です。だけど少し条件がある。 qemu の不具合があり Ubuntu 12.04 LTS &#43; Ubuntu Cloud Archives の組み合わせでは NetBSD が動作しなかった。下記のようなカーネルパニックが発生。 panic: pci_make_tag: bad request この不具合に相当するんじゃないかと思ってる。 https://bugs.launchpad.net/qemu/&#43;bug/897771 よって下記の組み合わせで動作を確認した。 Ubuntu 12.10 &#43; OpenStack (Native Packages) qemu, kvm : 1.2.0&#43;noroms-0ubuntu2.12.10.3 NetBSD 6.1 RC2 amd64 前提条件 OpenStack Folsom が動作していること。 NetBSD OS イメージ作成 nova-compute が動作しているホストの qemu-kvm を利用する。OpenStack 上に何でも 良いので OS を動作させこの kvm プロセスのパラメータを参考に kvm コマンドを実行 し NetBSD をインストールさせた。一番確実な方法。 % cd ~/ % wget http://ftp.netbsd.org/pub/NetBSD/iso/6.1_RC2/NetBSD-6.1_RC2-amd64.iso % kvm-img create -f qcow2 netbsd.img 5G % /usr/bin/kvm -M pc-1.0 -cpu \ core2duo,&#43;lahf_lm,&#43;rdtscp,&#43;hypervisor,&#43;avx,&#43;osxsave,&#43;save,&#43;aes,&#43;popcnt,&#43;sse4.2,&#43;sse4.1,&#43;cx16,&#43;vmx,&#43;pclmuldq,&#43;ht,&#43;ss,&#43;ds \ -enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \ -drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \ -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \ -net nic,model=virtio -vnc :9 -cdrom ~/NetBSD-6.1_RC2-amd64.iso VNC :9 に接続して NetBSD を普通ににインストールする。 インストールが終わったら CDROM デバイスを外して起動。 % core2duo,&#43;lahf_lm,&#43;rdtscp,&#43;hypervisor,&#43;avx,&#43;osxsave,&#43;save,&#43;aes,&#43;popcnt,&#43;sse4.2,&#43;sse4.1,&#43;cx16,&#43;vmx,&#43;pclmuldq,&#43;ht,&#43;ss,&#43;ds \ -enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \ -drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \ -device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \ -net nic,model=virtio -vnc :9 VNC :9 に接続し下記の操作を行う。 vioif0 という virtio なネットワークインターフェースが起動するので下記のように 追記する。 # vi /etc/rc.conf # 下記を追記 ifconfig_vioif0=dhcp sshd=YES OpenStack の metadata server から nova の管理するキーペア鍵を取得し authorized_keys に配置する様、/etc/rc.local に追記する。curl とか便利なツール はもちろん！入っていないので ftp コマンドでなんとかする。 # vi /etc/rc.local # 下記を追記 if [ !">
+
+
+<meta itemprop="dateModified" content="2013-03-28T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="261">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f&text=NetBSD%20on%20OpenStack&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f&title=NetBSD%20on%20OpenStack" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f&title=NetBSD%20on%20OpenStack" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f&title=NetBSD%20on%20OpenStack" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/03/28/netbsd-on-openstack/">NetBSD on OpenStack</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-03-28'>
+            March 28, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f&text=NetBSD%20on%20OpenStack&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f&title=NetBSD%20on%20OpenStack" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f&title=NetBSD%20on%20OpenStack" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f&title=NetBSD%20on%20OpenStack" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f03%2f28%2fnetbsd-on-openstack%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>もう数日で OpenStack の次期バージョン版 Grizzly がリリースされるタイミングだが
+現行バージョン Folsom の OpenStack の上に NetBSD を載せてみた。完全にお遊び
+だけど&hellip;。</p>
+
+<p>結局、ほとんど何も特別な対応取ることなく NetBSD が動いた。もちろんハイパーバイ
+ザは KVM です。だけど少し条件がある。</p>
+
+<p>qemu の不具合があり Ubuntu 12.04 LTS + Ubuntu Cloud Archives の組み合わせでは
+NetBSD が動作しなかった。下記のようなカーネルパニックが発生。</p>
+
+<pre><code>panic: pci_make_tag: bad request
+</code></pre>
+
+<p>この不具合に相当するんじゃないかと思ってる。</p>
+
+<p><a href="https://bugs.launchpad.net/qemu/+bug/897771">https://bugs.launchpad.net/qemu/+bug/897771</a></p>
+
+<p>よって下記の組み合わせで動作を確認した。</p>
+
+<ul>
+<li>Ubuntu 12.10 + OpenStack (Native Packages)</li>
+<li>qemu, kvm : 1.2.0+noroms-0ubuntu2.12.10.3</li>
+<li>NetBSD 6.1 RC2 amd64</li>
+</ul>
+
+<h2 id="前提条件">前提条件</h2>
+
+<p>OpenStack Folsom が動作していること。</p>
+
+<h2 id="netbsd-os-イメージ作成">NetBSD OS イメージ作成</h2>
+
+<p>nova-compute が動作しているホストの qemu-kvm を利用する。OpenStack 上に何でも
+良いので OS を動作させこの kvm プロセスのパラメータを参考に kvm コマンドを実行
+し NetBSD をインストールさせた。一番確実な方法。</p>
+
+<pre><code>% cd ~/
+% wget http://ftp.netbsd.org/pub/NetBSD/iso/6.1_RC2/NetBSD-6.1_RC2-amd64.iso
+% kvm-img create -f qcow2 netbsd.img 5G
+% /usr/bin/kvm -M pc-1.0 -cpu \
+core2duo,+lahf_lm,+rdtscp,+hypervisor,+avx,+osxsave,+save,+aes,+popcnt,+sse4.2,+sse4.1,+cx16,+vmx,+pclmuldq,+ht,+ss,+ds \
+-enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \
+-drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \
+-device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
+-net nic,model=virtio -vnc :9 -cdrom ~/NetBSD-6.1_RC2-amd64.iso
+</code></pre>
+
+<p>VNC :9 に接続して NetBSD を普通ににインストールする。</p>
+
+<p>インストールが終わったら CDROM デバイスを外して起動。</p>
+
+<pre><code>% core2duo,+lahf_lm,+rdtscp,+hypervisor,+avx,+osxsave,+save,+aes,+popcnt,+sse4.2,+sse4.1,+cx16,+vmx,+pclmuldq,+ht,+ss,+ds \
+-enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \
+-drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \
+-device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
+-net nic,model=virtio -vnc :9
+</code></pre>
+
+<p>VNC :9 に接続し下記の操作を行う。</p>
+
+<p>vioif0 という virtio なネットワークインターフェースが起動するので下記のように
+追記する。</p>
+
+<pre><code># vi /etc/rc.conf # 下記を追記
+ifconfig_vioif0=dhcp
+sshd=YES
+</code></pre>
+
+<p>OpenStack の metadata server から nova の管理するキーペア鍵を取得し
+authorized_keys に配置する様、/etc/rc.local に追記する。curl とか便利なツール
+はもちろん！入っていないので ftp コマンドでなんとかする。</p>
+
+<pre><code class="language-bash"># vi /etc/rc.local # 下記を追記
+if [ ! -d /root/.ssh ]; then
+    mkdir -p /root/.ssh
+fi
+echo &gt;&gt; /root/.ssh/authorized_keys
+cd /tmp
+ftp http://169.254.169.254/latest/meta-data/public-keys/0/openssh-key
+cat openssh-key | grep 'ssh-rsa' &gt;&gt; /root/.ssh/authorized_keys
+echo &quot;AUTHORIZED_KEYS:&quot;
+echo &quot;*********************&quot;
+cat /root/.ssh/authorized_keys
+echo &quot;*********************&quot;
+</code></pre>
+
+<p>nova のキーペアでログインしたいので sshd は root ユーザでログイン出来るように
+修正行う。</p>
+
+<pre><code># vi /etc/ssh/sshd_config
+PermitRootLogin yes
+</code></pre>
+
+<p>OS をシャットダウンしてイメージ作成は終わり。</p>
+
+<h2 id="glance-へ登録">Glance へ登録</h2>
+
+<p>netbsd.img を Glance に接続できるホストへ移動しイメージ登録を行う。</p>
+
+<pre><code>% glance add name=&quot;NetBSD 6.1 RC2 amd64&quot; is_public=true \
+  container_format=ovf disk_format=qcow2 &lt; ~/netbsd.img
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>何も手を加えていない&hellip;。NetBSD 6.1 は最初から Virtio が有効になっているので何
+も考えることなくイメージ作成が出来た。コツは nova-compute が実際に動作している
+ホストでイメージを作ること。ハイパーバイザの OS が若干古いホストでも作業してみ
+たのだが、OpenStack に載せた途端カーネルパニックに陥った。Qemu はものすごいス
+ピードで進化しているのでバージョンの差異は致命的であると共に、日に日に快適な環
+境が整ってきているとも言える。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/03/17/berkshelf-chef-cookbook-manage/"
+                class="button big previous">Berkshelf で Chef Cookbook の管理</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/04/06/cloudmanagement/"
+                class="button big next">クラウドマネジメント勉強会レポ</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/03\/28\/netbsd-on-openstack\/';
+    var disqus_title = 'NetBSD on OpenStack';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/03\/28\/netbsd-on-openstack\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

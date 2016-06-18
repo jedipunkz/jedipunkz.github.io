@@ -1,0 +1,820 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>JTF2014 で Ceph について話してきた！</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="JTF2014 で Ceph について話してきた！"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 今日、JTF2014 (July Tech Festa 2014) というイベントで Ceph のことを話してきま した。Ceph ユーザ会の会員として話してきたのですが Ceph ユーザ会は実は最近発足 したばかりのユーザ会で、まだまだ活動が活発ではありません。もし興味がある方いらっ しゃいましたら是非参加よろしくお願いしますー。下記の Google Groups になります。 https://groups.google.com/forum/#!forum/ceph-jp ユーザ会としての勉強会として初になるのですが、今回このイベントで自分は Ceph-Deploy について話してきました。とりあえず皆さんに使ってもらいたかったので この話をしてきました。が、予定時間がメチャ短かったので超絶早口で頑張った分、皆 さんに理解してもらえなかった気がしてちょっと反省&hellip;。なので、このブログを利用 して少し細くさせてもらいます。 今日の発表資料はこちらです！ 今日のテーマは 「Ceph-Deploy を使って Ceph を構築してみる」だったのですが、下 記のテーマを持って資料を作っています。 単にミニマム構成ではなく運用を考慮した実用性のある構成 OSD, MON, MDS の各プロセスとノード・ディスクの数の関係を知ってもらう 特に「実用性のある..」は意識したつもりでした。そのために前提とした構成に下記の 特徴を持たせています。(資料 6 ページ目に構成図があります。確認してみてください。) オブジェクト格納用ディスクは複数/ノードを前提 OSD レプリケーションのためのクラスタネットワークを用いる構成 OSD の扱うジャーナル格納用ディスクは高速な SSD を用いる MDS は利用する HW リソースの特徴が異なるので別ノードへ配置 ストレージ全体を拡張したければ 図中 ceph01-03 の様なノードを増設する ceph01-03 にディスクとそれに対する OSD を増設する ですが、前者がベストでしょう。ノード増設の場合 ceph-deploy を用いて ceph-deploy mon create &lt;新規ホスト名&gt; で MON"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="JTF2014 で Ceph について話してきた！" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 今日、JTF2014 (July Tech Festa 2014) というイベントで Ceph のことを話してきま した。Ceph ユーザ会の会員として話してきたのですが Ceph ユーザ会は実は最近発足 したばかりのユーザ会で、まだまだ活動が活発ではありません。もし興味がある方いらっ しゃいましたら是非参加よろしくお願いしますー。下記の Google Groups になります。 https://groups.google.com/forum/#!forum/ceph-jp ユーザ会としての勉強会として初になるのですが、今回このイベントで自分は Ceph-Deploy について話してきました。とりあえず皆さんに使ってもらいたかったので この話をしてきました。が、予定時間がメチャ短かったので超絶早口で頑張った分、皆 さんに理解してもらえなかった気がしてちょっと反省&hellip;。なので、このブログを利用 して少し細くさせてもらいます。 今日の発表資料はこちらです！ 今日のテーマは 「Ceph-Deploy を使って Ceph を構築してみる」だったのですが、下 記のテーマを持って資料を作っています。 単にミニマム構成ではなく運用を考慮した実用性のある構成 OSD, MON, MDS の各プロセスとノード・ディスクの数の関係を知ってもらう 特に「実用性のある..」は意識したつもりでした。そのために前提とした構成に下記の 特徴を持たせています。(資料 6 ページ目に構成図があります。確認してみてください。) オブジェクト格納用ディスクは複数/ノードを前提 OSD レプリケーションのためのクラスタネットワークを用いる構成 OSD の扱うジャーナル格納用ディスクは高速な SSD を用いる MDS は利用する HW リソースの特徴が異なるので別ノードへ配置 ストレージ全体を拡張したければ 図中 ceph01-03 の様なノードを増設する ceph01-03 にディスクとそれに対する OSD を増設する ですが、前者がベストでしょう。ノード増設の場合 ceph-deploy を用いて ceph-deploy mon create &lt;新規ホスト名&gt; で MON" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2014/06/22/jtf2014-ceph/" />
+
+
+<meta property="og:updated_time" content="2014-06-22T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="JTF2014 で Ceph について話してきた！">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 今日、JTF2014 (July Tech Festa 2014) というイベントで Ceph のことを話してきま した。Ceph ユーザ会の会員として話してきたのですが Ceph ユーザ会は実は最近発足 したばかりのユーザ会で、まだまだ活動が活発ではありません。もし興味がある方いらっ しゃいましたら是非参加よろしくお願いしますー。下記の Google Groups になります。 https://groups.google.com/forum/#!forum/ceph-jp ユーザ会としての勉強会として初になるのですが、今回このイベントで自分は Ceph-Deploy について話してきました。とりあえず皆さんに使ってもらいたかったので この話をしてきました。が、予定時間がメチャ短かったので超絶早口で頑張った分、皆 さんに理解してもらえなかった気がしてちょっと反省&hellip;。なので、このブログを利用 して少し細くさせてもらいます。 今日の発表資料はこちらです！ 今日のテーマは 「Ceph-Deploy を使って Ceph を構築してみる」だったのですが、下 記のテーマを持って資料を作っています。 単にミニマム構成ではなく運用を考慮した実用性のある構成 OSD, MON, MDS の各プロセスとノード・ディスクの数の関係を知ってもらう 特に「実用性のある..」は意識したつもりでした。そのために前提とした構成に下記の 特徴を持たせています。(資料 6 ページ目に構成図があります。確認してみてください。) オブジェクト格納用ディスクは複数/ノードを前提 OSD レプリケーションのためのクラスタネットワークを用いる構成 OSD の扱うジャーナル格納用ディスクは高速な SSD を用いる MDS は利用する HW リソースの特徴が異なるので別ノードへ配置 ストレージ全体を拡張したければ 図中 ceph01-03 の様なノードを増設する ceph01-03 にディスクとそれに対する OSD を増設する ですが、前者がベストでしょう。ノード増設の場合 ceph-deploy を用いて ceph-deploy mon create &lt;新規ホスト名&gt; で MON">
+
+
+<meta itemprop="dateModified" content="2014-06-22T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="100">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f&text=JTF2014%20%e3%81%a7%20Ceph%20%e3%81%ab%e3%81%a4%e3%81%84%e3%81%a6%e8%a9%b1%e3%81%97%e3%81%a6%e3%81%8d%e3%81%9f%ef%bc%81&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f&title=JTF2014%20%e3%81%a7%20Ceph%20%e3%81%ab%e3%81%a4%e3%81%84%e3%81%a6%e8%a9%b1%e3%81%97%e3%81%a6%e3%81%8d%e3%81%9f%ef%bc%81" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f&title=JTF2014%20%e3%81%a7%20Ceph%20%e3%81%ab%e3%81%a4%e3%81%84%e3%81%a6%e8%a9%b1%e3%81%97%e3%81%a6%e3%81%8d%e3%81%9f%ef%bc%81" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f&title=JTF2014%20%e3%81%a7%20Ceph%20%e3%81%ab%e3%81%a4%e3%81%84%e3%81%a6%e8%a9%b1%e3%81%97%e3%81%a6%e3%81%8d%e3%81%9f%ef%bc%81" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2014/06/22/jtf2014-ceph/">JTF2014 で Ceph について話してきた！</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-06-22'>
+            June 22, 2014</time>
+        <span class="author"></span>
+        
+            <p>1 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f&text=JTF2014%20%e3%81%a7%20Ceph%20%e3%81%ab%e3%81%a4%e3%81%84%e3%81%a6%e8%a9%b1%e3%81%97%e3%81%a6%e3%81%8d%e3%81%9f%ef%bc%81&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f&title=JTF2014%20%e3%81%a7%20Ceph%20%e3%81%ab%e3%81%a4%e3%81%84%e3%81%a6%e8%a9%b1%e3%81%97%e3%81%a6%e3%81%8d%e3%81%9f%ef%bc%81" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f&title=JTF2014%20%e3%81%a7%20Ceph%20%e3%81%ab%e3%81%a4%e3%81%84%e3%81%a6%e8%a9%b1%e3%81%97%e3%81%a6%e3%81%8d%e3%81%9f%ef%bc%81" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f&title=JTF2014%20%e3%81%a7%20Ceph%20%e3%81%ab%e3%81%a4%e3%81%84%e3%81%a6%e8%a9%b1%e3%81%97%e3%81%a6%e3%81%8d%e3%81%9f%ef%bc%81" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2014%2f06%2f22%2fjtf2014-ceph%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>今日、JTF2014 (July Tech Festa 2014) というイベントで Ceph のことを話してきま
+した。Ceph ユーザ会の会員として話してきたのですが Ceph ユーザ会は実は最近発足
+したばかりのユーザ会で、まだまだ活動が活発ではありません。もし興味がある方いらっ
+しゃいましたら是非参加よろしくお願いしますー。下記の Google Groups になります。</p>
+
+<p><a href="https://groups.google.com/forum/#!forum/ceph-jp">https://groups.google.com/forum/#!forum/ceph-jp</a></p>
+
+<p>ユーザ会としての勉強会として初になるのですが、今回このイベントで自分は
+Ceph-Deploy について話してきました。とりあえず皆さんに使ってもらいたかったので
+この話をしてきました。が、予定時間がメチャ短かったので超絶早口で頑張った分、皆
+さんに理解してもらえなかった気がしてちょっと反省&hellip;。なので、このブログを利用
+して少し細くさせてもらいます。</p>
+
+<p>今日の発表資料はこちらです！</p>
+
+<script async class="speakerdeck-embed"
+data-id="592a0b90ceb30131a5d25ae3f95c3a1a" data-ratio="1.33333333333333" src="//speakerdeck.com/assets/embed.js"></script>
+
+<p>今日のテーマは 「Ceph-Deploy を使って Ceph を構築してみる」だったのですが、下
+記のテーマを持って資料を作っています。</p>
+
+<ul>
+<li>単にミニマム構成ではなく運用を考慮した実用性のある構成</li>
+<li>OSD, MON, MDS の各プロセスとノード・ディスクの数の関係を知ってもらう</li>
+</ul>
+
+<p>特に「実用性のある..」は意識したつもりでした。そのために前提とした構成に下記の
+特徴を持たせています。(資料 6 ページ目に構成図があります。確認してみてください。)</p>
+
+<ul>
+<li>オブジェクト格納用ディスクは複数/ノードを前提</li>
+<li>OSD レプリケーションのためのクラスタネットワークを用いる構成</li>
+<li>OSD の扱うジャーナル格納用ディスクは高速な SSD を用いる</li>
+<li>MDS は利用する HW リソースの特徴が異なるので別ノードへ配置</li>
+</ul>
+
+<p>ストレージ全体を拡張したければ</p>
+
+<ul>
+<li>図中 ceph01-03 の様なノードを増設する</li>
+<li>ceph01-03 にディスクとそれに対する OSD を増設する</li>
+</ul>
+
+<p>ですが、前者がベストでしょう。ノード増設の場合 ceph-deploy を用いて</p>
+
+<ul>
+<li>ceph-deploy mon create &lt;新規ホスト名&gt; で MON を稼働</li>
+<li>ceph-dploy disk zap, osd create で OSD を稼働</li>
+</ul>
+
+<p>で簡単に可能です。MDS の増設も負荷状況を見ながらするといいでしょう。自分はまだ
+Ceph を運用していないので、各プロセスがどのようなリソースの消費の仕方をするの
+か知りません。MDS がどのような数で運用していくべきなのか。早く運用から得たノウ
+ハウが共有されないかなぁと期待しています。</p>
+
+<p>また今回話すのを忘れたのですが SSD をジャーナル格納用ディスクとして用いたのは
+ハードディスクに対して高速でアクセス出来ること・またメタデータはファイルオブジェ
+クトに対して小容量で済む、といった理由からです。メタデータを扱うのに適している
+と思います。また将来的には幾つかの KVS データベースソフトウェアをメタデータ管
+理に使う実装がされるそうです。</p>
+
+<p>以上です。皆さん、是非 Ceph を使ってみてください！ また興味のある方はユーザ会
+への加入をご検討くださいー。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Categories
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+        <li><a href='/categoriesreport'>report</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/"
+                class="button big previous">Mesos &#43; Marathon &#43; Deimos &#43; Docker を試してみた!</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2014/07/16/chef-container/"
+                class="button big next">Chef-Container Beta を使ってみる</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2014\/06\/22\/jtf2014-ceph\/';
+    var disqus_title = 'JTF2014 で Ceph について話してきた！';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2014\/06\/22\/jtf2014-ceph\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

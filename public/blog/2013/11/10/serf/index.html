@@ -1,0 +1,963 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Serf を使ってみた</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Serf を使ってみた"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 僕は Chef 使いなのですが、Chef はオーケストレーションまで踏み込んだツールでは ないように思います。せいぜいインテグレーションが出来る程度なのかなぁと。 しかもインテグレーションするにも Cookbooks の工夫が必要です。以前聞いたことの ある話ですが Opscode 社のエンジニア曰く「オーケストレーション等へのアプローチ はそれぞれ好きにやってね」だそうです。 個人的にオーケストレーションをテーマに色々調べようかと考えているのですが、 Serf という面白いツールが出てきました。&rsquo;Serf&rsquo; はオーケストレーションを手助けし てくれるシンプルなツールになっています。 もう既にいろんな方が Serf について調べていますが、どのような動きをするのかを自 分なりに理解した点を記しておこうと思います。 参考にしたサイト 公式サイト http://www.serfdom.io/ クラスメソッド開発者ブログ http://dev.classmethod.jp/cloud/aws/serf_on_ec2/ Glidenote さん http://blog.glidenote.com/blog/2013/10/30/serf-haproxy/ Serf とは Serf は gossip protocol をクラスタにブロードキャストする。gossip protocol は SWIM : Scalable Weakly-consistent Infecton-style process Group Membership Protocol” をベースとして形成されている。 SWIM Protocol 概略 serf は新しいクラスタとして稼働するか、既存のクラスタに ‘join’ する形で稼働 するかのどちらかで起動する。 新しいメンバは TCP で状態を &lsquo;full state sync&rsquo; され既存のクラスタ内にて ‘gossipin (噂)される。この ’gosiping’ は UDP で通信されこれはネットワーク使 用量はノード数に比例することになる。 ランダムなノードとの &lsquo;full state sync&rsquo; は TCP で行われるけどこれは ‘gossiping’ に比べて少い ある一定期間、あるノードが fails 状態の場合、迂回経路を使ってそのノードに対し てチェックを行う。両方の経路にて fails な場合ノードが ‘suspiciou&rsquo; (容疑者) 状態になる。もし迂回経路のチェックが fails しなかった場合ネットワーク障害として 判断される。 Serf の SWIM Protocol からの改修点 Serf は SWIM Protocol をベースにしていると記しましたが、どのような点を改修した のかまとめました。 &lsquo;full state sync&rsquo; の TCP 化 serf は ‘full state sync’ を TCP にて行う。これにより serf はネットワーセグ メントが分離されている状態でも通信出来る。 gossip レイヤの分離 serf は failure detection protocol から完全に gossip レイヤを分離。これでより 高速にデータ増殖が行える。 dead node の扱い serf は デッドノードに対して回数を記憶している。これにより full state sync が 実施された場合、逆に死んだノードの情報を受取る。SWIM では full state sync を行 わないので死んだノードにを削除してしまう。これはクラスタに対する情報一点集中化 に役立つ。 使ってみる 早速使ってみます。下記の URL にある demo 用スクリプトを少し改修して使ってみま した。 https://github.com/hashicorp/serf/tree/master/demo/web-load-balancer 2つノードを立ち上げる AWS でも OpenStack でもベアメタルでも何でも良いのでノードを2台用意する。 下記のスクリプトを置いて両ノードで実行する。 #!/bin/sh set -e export SERF_ROLE=role01 sudo apt-get install -y unzip # Download and install Serf cd /tmp until wget -O serf.zip https://dl.bintray.com/mitchellh/serf/0.2.1_linux_amd64.zip; do sleep 1 done unzip serf.zip sudo mv serf /usr/local/bin/serf # The member join script is invoked when a member joins the Serf cluster."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Serf を使ってみた" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 僕は Chef 使いなのですが、Chef はオーケストレーションまで踏み込んだツールでは ないように思います。せいぜいインテグレーションが出来る程度なのかなぁと。 しかもインテグレーションするにも Cookbooks の工夫が必要です。以前聞いたことの ある話ですが Opscode 社のエンジニア曰く「オーケストレーション等へのアプローチ はそれぞれ好きにやってね」だそうです。 個人的にオーケストレーションをテーマに色々調べようかと考えているのですが、 Serf という面白いツールが出てきました。&rsquo;Serf&rsquo; はオーケストレーションを手助けし てくれるシンプルなツールになっています。 もう既にいろんな方が Serf について調べていますが、どのような動きをするのかを自 分なりに理解した点を記しておこうと思います。 参考にしたサイト 公式サイト http://www.serfdom.io/ クラスメソッド開発者ブログ http://dev.classmethod.jp/cloud/aws/serf_on_ec2/ Glidenote さん http://blog.glidenote.com/blog/2013/10/30/serf-haproxy/ Serf とは Serf は gossip protocol をクラスタにブロードキャストする。gossip protocol は SWIM : Scalable Weakly-consistent Infecton-style process Group Membership Protocol” をベースとして形成されている。 SWIM Protocol 概略 serf は新しいクラスタとして稼働するか、既存のクラスタに ‘join’ する形で稼働 するかのどちらかで起動する。 新しいメンバは TCP で状態を &lsquo;full state sync&rsquo; され既存のクラスタ内にて ‘gossipin (噂)される。この ’gosiping’ は UDP で通信されこれはネットワーク使 用量はノード数に比例することになる。 ランダムなノードとの &lsquo;full state sync&rsquo; は TCP で行われるけどこれは ‘gossiping’ に比べて少い ある一定期間、あるノードが fails 状態の場合、迂回経路を使ってそのノードに対し てチェックを行う。両方の経路にて fails な場合ノードが ‘suspiciou&rsquo; (容疑者) 状態になる。もし迂回経路のチェックが fails しなかった場合ネットワーク障害として 判断される。 Serf の SWIM Protocol からの改修点 Serf は SWIM Protocol をベースにしていると記しましたが、どのような点を改修した のかまとめました。 &lsquo;full state sync&rsquo; の TCP 化 serf は ‘full state sync’ を TCP にて行う。これにより serf はネットワーセグ メントが分離されている状態でも通信出来る。 gossip レイヤの分離 serf は failure detection protocol から完全に gossip レイヤを分離。これでより 高速にデータ増殖が行える。 dead node の扱い serf は デッドノードに対して回数を記憶している。これにより full state sync が 実施された場合、逆に死んだノードの情報を受取る。SWIM では full state sync を行 わないので死んだノードにを削除してしまう。これはクラスタに対する情報一点集中化 に役立つ。 使ってみる 早速使ってみます。下記の URL にある demo 用スクリプトを少し改修して使ってみま した。 https://github.com/hashicorp/serf/tree/master/demo/web-load-balancer 2つノードを立ち上げる AWS でも OpenStack でもベアメタルでも何でも良いのでノードを2台用意する。 下記のスクリプトを置いて両ノードで実行する。 #!/bin/sh set -e export SERF_ROLE=role01 sudo apt-get install -y unzip # Download and install Serf cd /tmp until wget -O serf.zip https://dl.bintray.com/mitchellh/serf/0.2.1_linux_amd64.zip; do sleep 1 done unzip serf.zip sudo mv serf /usr/local/bin/serf # The member join script is invoked when a member joins the Serf cluster." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/11/10/serf/" />
+
+
+<meta property="og:updated_time" content="2013-11-10T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Serf を使ってみた">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 僕は Chef 使いなのですが、Chef はオーケストレーションまで踏み込んだツールでは ないように思います。せいぜいインテグレーションが出来る程度なのかなぁと。 しかもインテグレーションするにも Cookbooks の工夫が必要です。以前聞いたことの ある話ですが Opscode 社のエンジニア曰く「オーケストレーション等へのアプローチ はそれぞれ好きにやってね」だそうです。 個人的にオーケストレーションをテーマに色々調べようかと考えているのですが、 Serf という面白いツールが出てきました。&rsquo;Serf&rsquo; はオーケストレーションを手助けし てくれるシンプルなツールになっています。 もう既にいろんな方が Serf について調べていますが、どのような動きをするのかを自 分なりに理解した点を記しておこうと思います。 参考にしたサイト 公式サイト http://www.serfdom.io/ クラスメソッド開発者ブログ http://dev.classmethod.jp/cloud/aws/serf_on_ec2/ Glidenote さん http://blog.glidenote.com/blog/2013/10/30/serf-haproxy/ Serf とは Serf は gossip protocol をクラスタにブロードキャストする。gossip protocol は SWIM : Scalable Weakly-consistent Infecton-style process Group Membership Protocol” をベースとして形成されている。 SWIM Protocol 概略 serf は新しいクラスタとして稼働するか、既存のクラスタに ‘join’ する形で稼働 するかのどちらかで起動する。 新しいメンバは TCP で状態を &lsquo;full state sync&rsquo; され既存のクラスタ内にて ‘gossipin (噂)される。この ’gosiping’ は UDP で通信されこれはネットワーク使 用量はノード数に比例することになる。 ランダムなノードとの &lsquo;full state sync&rsquo; は TCP で行われるけどこれは ‘gossiping’ に比べて少い ある一定期間、あるノードが fails 状態の場合、迂回経路を使ってそのノードに対し てチェックを行う。両方の経路にて fails な場合ノードが ‘suspiciou&rsquo; (容疑者) 状態になる。もし迂回経路のチェックが fails しなかった場合ネットワーク障害として 判断される。 Serf の SWIM Protocol からの改修点 Serf は SWIM Protocol をベースにしていると記しましたが、どのような点を改修した のかまとめました。 &lsquo;full state sync&rsquo; の TCP 化 serf は ‘full state sync’ を TCP にて行う。これにより serf はネットワーセグ メントが分離されている状態でも通信出来る。 gossip レイヤの分離 serf は failure detection protocol から完全に gossip レイヤを分離。これでより 高速にデータ増殖が行える。 dead node の扱い serf は デッドノードに対して回数を記憶している。これにより full state sync が 実施された場合、逆に死んだノードの情報を受取る。SWIM では full state sync を行 わないので死んだノードにを削除してしまう。これはクラスタに対する情報一点集中化 に役立つ。 使ってみる 早速使ってみます。下記の URL にある demo 用スクリプトを少し改修して使ってみま した。 https://github.com/hashicorp/serf/tree/master/demo/web-load-balancer 2つノードを立ち上げる AWS でも OpenStack でもベアメタルでも何でも良いのでノードを2台用意する。 下記のスクリプトを置いて両ノードで実行する。 #!/bin/sh set -e export SERF_ROLE=role01 sudo apt-get install -y unzip # Download and install Serf cd /tmp until wget -O serf.zip https://dl.bintray.com/mitchellh/serf/0.2.1_linux_amd64.zip; do sleep 1 done unzip serf.zip sudo mv serf /usr/local/bin/serf # The member join script is invoked when a member joins the Serf cluster.">
+
+
+<meta itemprop="dateModified" content="2013-11-10T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="372">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f&text=Serf%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%81%9f&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f&title=Serf%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%81%9f" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f&title=Serf%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%81%9f" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f&title=Serf%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%81%9f" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/11/10/serf/">Serf を使ってみた</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-11-10'>
+            November 10, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f&text=Serf%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%81%9f&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f&title=Serf%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%81%9f" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f&title=Serf%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%81%9f" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f&title=Serf%20%e3%82%92%e4%bd%bf%e3%81%a3%e3%81%a6%e3%81%bf%e3%81%9f" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f11%2f10%2fserf%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>僕は Chef 使いなのですが、Chef はオーケストレーションまで踏み込んだツールでは
+ないように思います。せいぜいインテグレーションが出来る程度なのかなぁと。
+しかもインテグレーションするにも Cookbooks の工夫が必要です。以前聞いたことの
+ある話ですが Opscode 社のエンジニア曰く「オーケストレーション等へのアプローチ
+はそれぞれ好きにやってね」だそうです。</p>
+
+<p>個人的にオーケストレーションをテーマに色々調べようかと考えているのですが、
+Serf という面白いツールが出てきました。&rsquo;Serf&rsquo; はオーケストレーションを手助けし
+てくれるシンプルなツールになっています。</p>
+
+<p>もう既にいろんな方が Serf について調べていますが、どのような動きをするのかを自
+分なりに理解した点を記しておこうと思います。</p>
+
+<h2 id="参考にしたサイト">参考にしたサイト</h2>
+
+<ul>
+<li>公式サイト <a href="http://www.serfdom.io/">http://www.serfdom.io/</a></li>
+<li>クラスメソッド開発者ブログ <a href="http://dev.classmethod.jp/cloud/aws/serf_on_ec2/">http://dev.classmethod.jp/cloud/aws/serf_on_ec2/</a></li>
+<li>Glidenote さん <a href="http://blog.glidenote.com/blog/2013/10/30/serf-haproxy/">http://blog.glidenote.com/blog/2013/10/30/serf-haproxy/</a></li>
+</ul>
+
+<h2 id="serf-とは">Serf とは</h2>
+
+<p>Serf は gossip protocol をクラスタにブロードキャストする。gossip protocol は
+SWIM : Scalable Weakly-consistent Infecton-style process Group Membership
+Protocol” をベースとして形成されている。</p>
+
+<h2 id="swim-protocol-概略">SWIM Protocol 概略</h2>
+
+<p>serf は新しいクラスタとして稼働するか、既存のクラスタに ‘join’ する形で稼働
+するかのどちらかで起動する。</p>
+
+<p>新しいメンバは TCP で状態を &lsquo;full state sync&rsquo; され既存のクラスタ内にて
+‘gossipin (噂)される。この ’gosiping’ は UDP で通信されこれはネットワーク使
+用量はノード数に比例することになる。</p>
+
+<p>ランダムなノードとの &lsquo;full state sync&rsquo; は TCP で行われるけどこれは
+‘gossiping’ に比べて少い</p>
+
+<p>ある一定期間、あるノードが fails 状態の場合、迂回経路を使ってそのノードに対し
+てチェックを行う。両方の経路にて fails な場合ノードが ‘suspiciou&rsquo; (容疑者)
+状態になる。もし迂回経路のチェックが fails しなかった場合ネットワーク障害として
+判断される。</p>
+
+<h2 id="serf-の-swim-protocol-からの改修点">Serf の SWIM Protocol からの改修点</h2>
+
+<p>Serf は SWIM Protocol をベースにしていると記しましたが、どのような点を改修した
+のかまとめました。</p>
+
+<ul>
+<li>&lsquo;full state sync&rsquo; の TCP 化</li>
+</ul>
+
+<p>serf は ‘full state sync’ を TCP にて行う。これにより serf はネットワーセグ
+メントが分離されている状態でも通信出来る。</p>
+
+<ul>
+<li>gossip レイヤの分離</li>
+</ul>
+
+<p>serf は failure detection protocol から完全に gossip レイヤを分離。これでより
+高速にデータ増殖が行える。</p>
+
+<ul>
+<li>dead node の扱い
+<br /></li>
+</ul>
+
+<p>serf は デッドノードに対して回数を記憶している。これにより full state sync が
+実施された場合、逆に死んだノードの情報を受取る。SWIM では full state sync を行
+わないので死んだノードにを削除してしまう。これはクラスタに対する情報一点集中化
+に役立つ。</p>
+
+<h2 id="使ってみる">使ってみる</h2>
+
+<p>早速使ってみます。下記の URL にある demo 用スクリプトを少し改修して使ってみま
+した。</p>
+
+<p><a href="https://github.com/hashicorp/serf/tree/master/demo/web-load-balancer">https://github.com/hashicorp/serf/tree/master/demo/web-load-balancer</a></p>
+
+<ul>
+<li>2つノードを立ち上げる</li>
+</ul>
+
+<p>AWS でも OpenStack でもベアメタルでも何でも良いのでノードを2台用意する。</p>
+
+<ul>
+<li>下記のスクリプトを置いて両ノードで実行する。</li>
+</ul>
+
+<pre><code class="language-bash">#!/bin/sh
+set -e
+
+export SERF_ROLE=role01
+
+sudo apt-get install -y unzip
+
+# Download and install Serf
+cd /tmp
+until wget -O serf.zip https://dl.bintray.com/mitchellh/serf/0.2.1_linux_amd64.zip; do
+sleep 1
+done
+unzip serf.zip
+sudo mv serf /usr/local/bin/serf
+
+# The member join script is invoked when a member joins the Serf cluster.
+# Our join script simply adds the node to the load balancer.
+cat &lt;&lt;EOF &gt;/tmp/join.sh
+#!/bin/sh
+echo 'member joined' &gt;&gt; /tmp/serf_join.log
+EOF
+sudo mv /tmp/join.sh /usr/local/bin/serf_member_join.sh
+chmod +x /usr/local/bin/serf_member_join.sh
+
+# Configure the agent
+cat &lt;&lt;EOF &gt;/tmp/agent.conf
+description &quot;Serf agent&quot;
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+exec /usr/local/bin/serf agent \\
+-event-handler &quot;member-join=/usr/local/bin/serf_member_join.sh&quot; \\
+-role=${SERF_ROLE} &gt;&gt;/var/log/serf.log 2&gt;&amp;1
+EOF
+sudo mv /tmp/agent.conf /etc/init/serf.conf
+
+# Start the agent!
+sudo start serf
+</code></pre>
+
+<p>実行すると &lsquo;role01&rsquo; という Role 名で serf agent が稼働しているはず。またスクリ
+プトを見てわかると思うが &ndash;event-handler &ldquo;member-join=&lt;スクリプト&gt;&rdquo; としている。
+これでクラスタに新しいメンバが join すると /tmp/serf_join.log に &lsquo;member
+joined&rsquo; というメッセージが出力されるはずだ。実際に実行してみる。</p>
+
+<pre><code class="language-bash">% sudo serf join &lt;もう片系ノードの IP&gt;
+% sudo serf members
+  vm01    10.0.2.1    alive    role01
+  vm02    10.0.2.3    alive    role01
+% tail /tmp/serf_join.log
+  ‘member joined
+  ‘member joined
+</code></pre>
+
+<p>イベントハンドラにはユーザ指定のものも扱える。</p>
+
+<pre><code>user:deploy=foo.sh
+</code></pre>
+
+<p>この場合のハンドラは下記のコマンドで発生出来る。</p>
+
+<pre><code class="language-bash">% serf event deploy
+</code></pre>
+
+<h2 id="コンフィギュレーションファイル">コンフィギュレーションファイル</h2>
+
+<p>今回は init 起動スクリプト内でイベントハンドラ発生時のスクリプト指定等を行った
+が、json 形式のコンフィギュレーションファイルにて記述することも可能。</p>
+
+<pre><code class="language-json">{
+  &quot;role&quot;: &quot;load-balancer&quot;,
+
+  &quot;event_handlers&quot;: [
+    &quot;member_join.sh&quot;,
+    &quot;user:deploy=foo.sh&quot;
+  ]
+}
+</code></pre>
+
+<p>上記ファイルを serf.conf とした場合、このコンフィグの指定は
+&ndash;config-file=serf.conf で行える。</p>
+
+<h2 id="ロードマップ">ロードマップ</h2>
+
+<p>最後に Serf の今後のロードマップについて記してあったので、まとめてみた。</p>
+
+<ul>
+<li>コンフィギュレーションファイル</li>
+</ul>
+
+<p>よりカスタマイズ可能なコンフィギュレーションファイルを扱えるようにする。</p>
+
+<ul>
+<li>SIGHUP</li>
+</ul>
+
+<p>SIGHUP 信号でリロード出来ないので、これに対応する。</p>
+
+<ul>
+<li>イベントハンドラライブラリ</li>
+</ul>
+
+<p>イベントハンドラを自作・シェアを容易に行えるようプラグイン化を進める。</p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>冒頭にオーケストレーションについて触れましたが、このツールを使うだけでは自分の
+考えているオーケストレーションにはならないと思いました。当たり前ですね。。複数
+ノードを束ねて構成を形成する、またそれをトリガするのが人間であればそれはインテ
+グレーションの範囲かなぁと。その先にオーケストレーションがあるとすればトリガ自
+身もソフトウェアにさせる必要があるのでそのアルゴリズムを人間が書く必要があるの
+かなぁと。もちろんそのためにこのSerf は貴重なパーツとなってくれそう。</p>
+
+<p>あと、ロードマップにも記しましたが開発が盛んにされているようなので今後が楽しみ
+です。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/10/27/swift-chef/"
+                class="button big previous">実用的な Swift 構成を Chef でデプロイ</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/"
+                class="button big next">第2回 Elasticsearch 勉強会参加レポート</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/11\/10\/serf\/';
+    var disqus_title = 'Serf を使ってみた';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/11\/10\/serf\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

@@ -1,0 +1,974 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>cAdvisor/influxDB/GrafanaでDockerリソース監視</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="cAdvisor/influxDB/GrafanaでDockerリソース監視"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 今回は Docker ネタです。Docker 導入するにしても監視はどうする？という話になる と思うのですが、各 Monitoring as a Service を使うにしてもエージェント入れない といけないしお金掛かることもあるし..で、調べていたら cAdvisor というキーワード が出てきました。今回は cAdvisor を使ってコンテナの監視が出来ないか、について書 いていきたいと想います。 cAdvisor とは ? cAdvisor は Kubernates で用いられているコンポーネントで単体でも利用可能とのこ と。Google が開発しています。また Docker コンテナの監視においてこの cAdvisor は一般化しつつあるようです。 https://github.com/google/cadvisor 収集したメトリクスの保存 cAdvisor 自体も Docker で起動して、同ホスト上に起動している Docker コンテナの リソースをモニタリングしてくれます。そのメトリクスデータは幾つかの DB に保存出 来るのですが、そのうちの一つが influxDB です。influxDB は時系列データベースで す。システムのメトリクスデータを収めるのにちょうどいいデータベースになります。 https://influxdb.com/ DB に収めたメトリクスの可視化 influxDB に収めたメトリクスデータを可視化するのが Grafana です。Grafana のデー タソースは influxDB の他にも幾つかあり Elasticsearch, KairosDB, Graphite 等が それです。 http://grafana.org/ では早速試してみましょう。 前提の環境 今回は Vagrant を使います。また"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="cAdvisor/influxDB/GrafanaでDockerリソース監視" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 今回は Docker ネタです。Docker 導入するにしても監視はどうする？という話になる と思うのですが、各 Monitoring as a Service を使うにしてもエージェント入れない といけないしお金掛かることもあるし..で、調べていたら cAdvisor というキーワード が出てきました。今回は cAdvisor を使ってコンテナの監視が出来ないか、について書 いていきたいと想います。 cAdvisor とは ? cAdvisor は Kubernates で用いられているコンポーネントで単体でも利用可能とのこ と。Google が開発しています。また Docker コンテナの監視においてこの cAdvisor は一般化しつつあるようです。 https://github.com/google/cadvisor 収集したメトリクスの保存 cAdvisor 自体も Docker で起動して、同ホスト上に起動している Docker コンテナの リソースをモニタリングしてくれます。そのメトリクスデータは幾つかの DB に保存出 来るのですが、そのうちの一つが influxDB です。influxDB は時系列データベースで す。システムのメトリクスデータを収めるのにちょうどいいデータベースになります。 https://influxdb.com/ DB に収めたメトリクスの可視化 influxDB に収めたメトリクスデータを可視化するのが Grafana です。Grafana のデー タソースは influxDB の他にも幾つかあり Elasticsearch, KairosDB, Graphite 等が それです。 http://grafana.org/ では早速試してみましょう。 前提の環境 今回は Vagrant を使います。また" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/" />
+
+
+<meta property="og:updated_time" content="2015-09-12T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="cAdvisor/influxDB/GrafanaでDockerリソース監視">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 今回は Docker ネタです。Docker 導入するにしても監視はどうする？という話になる と思うのですが、各 Monitoring as a Service を使うにしてもエージェント入れない といけないしお金掛かることもあるし..で、調べていたら cAdvisor というキーワード が出てきました。今回は cAdvisor を使ってコンテナの監視が出来ないか、について書 いていきたいと想います。 cAdvisor とは ? cAdvisor は Kubernates で用いられているコンポーネントで単体でも利用可能とのこ と。Google が開発しています。また Docker コンテナの監視においてこの cAdvisor は一般化しつつあるようです。 https://github.com/google/cadvisor 収集したメトリクスの保存 cAdvisor 自体も Docker で起動して、同ホスト上に起動している Docker コンテナの リソースをモニタリングしてくれます。そのメトリクスデータは幾つかの DB に保存出 来るのですが、そのうちの一つが influxDB です。influxDB は時系列データベースで す。システムのメトリクスデータを収めるのにちょうどいいデータベースになります。 https://influxdb.com/ DB に収めたメトリクスの可視化 influxDB に収めたメトリクスデータを可視化するのが Grafana です。Grafana のデー タソースは influxDB の他にも幾つかあり Elasticsearch, KairosDB, Graphite 等が それです。 http://grafana.org/ では早速試してみましょう。 前提の環境 今回は Vagrant を使います。また">
+
+
+<meta itemprop="dateModified" content="2015-09-12T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="415">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f&text=cAdvisor%2finfluxDB%2fGrafana%e3%81%a7Docker%e3%83%aa%e3%82%bd%e3%83%bc%e3%82%b9%e7%9b%a3%e8%a6%96&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f&title=cAdvisor%2finfluxDB%2fGrafana%e3%81%a7Docker%e3%83%aa%e3%82%bd%e3%83%bc%e3%82%b9%e7%9b%a3%e8%a6%96" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f&title=cAdvisor%2finfluxDB%2fGrafana%e3%81%a7Docker%e3%83%aa%e3%82%bd%e3%83%bc%e3%82%b9%e7%9b%a3%e8%a6%96" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f&title=cAdvisor%2finfluxDB%2fGrafana%e3%81%a7Docker%e3%83%aa%e3%82%bd%e3%83%bc%e3%82%b9%e7%9b%a3%e8%a6%96" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2015-09-12'>
+            September 12, 2015</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f&text=cAdvisor%2finfluxDB%2fGrafana%e3%81%a7Docker%e3%83%aa%e3%82%bd%e3%83%bc%e3%82%b9%e7%9b%a3%e8%a6%96&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f&title=cAdvisor%2finfluxDB%2fGrafana%e3%81%a7Docker%e3%83%aa%e3%82%bd%e3%83%bc%e3%82%b9%e7%9b%a3%e8%a6%96" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f&title=cAdvisor%2finfluxDB%2fGrafana%e3%81%a7Docker%e3%83%aa%e3%82%bd%e3%83%bc%e3%82%b9%e7%9b%a3%e8%a6%96" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f&title=cAdvisor%2finfluxDB%2fGrafana%e3%81%a7Docker%e3%83%aa%e3%82%bd%e3%83%bc%e3%82%b9%e7%9b%a3%e8%a6%96" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2015%2f09%2f12%2fcadvisor-influxdb-grafana-docker%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>今回は Docker ネタです。Docker 導入するにしても監視はどうする？という話になる
+と思うのですが、各 Monitoring as a Service を使うにしてもエージェント入れない
+といけないしお金掛かることもあるし..で、調べていたら cAdvisor というキーワード
+が出てきました。今回は cAdvisor を使ってコンテナの監視が出来ないか、について書
+いていきたいと想います。</p>
+
+<ul>
+<li>cAdvisor とは ?</li>
+</ul>
+
+<p>cAdvisor は Kubernates で用いられているコンポーネントで単体でも利用可能とのこ
+と。Google が開発しています。また Docker コンテナの監視においてこの cAdvisor
+は一般化しつつあるようです。</p>
+
+<p><a href="https://github.com/google/cadvisor">https://github.com/google/cadvisor</a></p>
+
+<ul>
+<li>収集したメトリクスの保存</li>
+</ul>
+
+<p>cAdvisor 自体も Docker で起動して、同ホスト上に起動している Docker コンテナの
+リソースをモニタリングしてくれます。そのメトリクスデータは幾つかの DB に保存出
+来るのですが、そのうちの一つが influxDB です。influxDB は時系列データベースで
+す。システムのメトリクスデータを収めるのにちょうどいいデータベースになります。</p>
+
+<p><a href="https://influxdb.com/">https://influxdb.com/</a></p>
+
+<ul>
+<li>DB に収めたメトリクスの可視化</li>
+</ul>
+
+<p>influxDB に収めたメトリクスデータを可視化するのが Grafana です。Grafana のデー
+タソースは influxDB の他にも幾つかあり Elasticsearch, KairosDB, Graphite 等が
+それです。</p>
+
+<p><a href="http://grafana.org/">http://grafana.org/</a></p>
+
+<p>では早速試してみましょう。</p>
+
+<h2 id="前提の環境">前提の環境</h2>
+
+<p>今回は Vagrant を使います。また Vagrant 上で上記の3つのソフトウェアを Docker
+で稼働します。またどうせなので docker-compose を使って3つのコンテナを一斉に立
+ち上げてみましょう。</p>
+
+<h2 id="vagrantfile-の準備">VagrantFile の準備</h2>
+
+<p>下記のような VagrantFile を作成します。各ソフトウェアはそれぞれ WebUI を持って
+いて、そこに手元のコンピュータから接続するため forwarded_port しています。</p>
+
+<pre><code># -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure(2) do |config|
+    config.vm.box = &quot;ubuntu/trusty64&quot;
+    config.vm.network &quot;forwarded_port&quot;, guest: 8080, host: 8080
+    config.vm.network &quot;forwarded_port&quot;, guest: 8083, host: 8083
+    config.vm.network &quot;forwarded_port&quot;, guest: 3000, host: 3000
+    config.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.10&quot;
+end
+</code></pre>
+
+<h2 id="docker-コンテナの起動と-docker-compose-yml-の準備">Docker コンテナの起動と docker-compose.yml の準備</h2>
+
+<p>Vagrant を起動し docker, docker-compose のインストールを行います。</p>
+
+<pre><code class="language-bash">$ vagrant up
+$ vagrant ssh
+vagrant$ sudo apt-get update ; sudo apt-get -y install curl
+vagrant$ curl -sSL https://get.docker.com/ | sh
+vagrant$ sudo -i
+vagrant# export VERSION_NUM=1.4.0
+vagrant# curl -L https://github.com/docker/compose/releases/download/VERSION_NUM/docker-compose-`uname -s`-`uname -m` &gt; /usr/local/bin/docker-compose
+vagrant# chmod +x /usr/local/bin/docker-compose
+</code></pre>
+
+<p>次に docker-compose.yml を作成します。上記3つのソフトウェアが稼働するコンテナ
+を起動するため下記のように記述しましょう。カレントディレクトリに作成します。</p>
+
+<pre><code>InfluxSrv:
+    image: &quot;tutum/influxdb:0.8.8&quot;
+    ports:
+        - &quot;8083:8083&quot;
+        - &quot;8086:8086&quot;
+    expose:
+        - &quot;8090&quot;
+        - &quot;8099&quot;
+    environment:
+        - PRE_CREATE_DB=cadvisor
+cadvisor:
+    image: &quot;google/cadvisor:0.16.0&quot;
+    volumes:
+        - &quot;/:/rootfs:ro&quot;
+        - &quot;/var/run:/var/run:rw&quot;
+        - &quot;/sys:/sys:ro&quot;
+        - &quot;/var/lib/docker/:/var/lib/docker:ro&quot;
+    links:
+        - &quot;InfluxSrv:influxsrv&quot;
+    ports:
+        - &quot;8080:8080&quot;
+    command: &quot;-storage_driver=influxdb -storage_driver_db=cadvisor -storage_driver_host=influxsrv:8086 -storage_driver_user=root -storage_driver_password=root -storage_driver_secure=False&quot;
+grafana:
+    image: &quot;grafana/grafana:2.1.3&quot;
+    ports:
+        - &quot;3000:3000&quot;
+    environment:
+        - INFLUXDB_HOST=localhost
+        - INFLUXDB_PORT=8086
+        - INFLUXDB_NAME=cadvisor
+        - INFLUXDB_USER=root
+        - INFLUXDB_PASS=root
+    links:
+        - &quot;InfluxSrv:influxsrv&quot;
+</code></pre>
+
+<p>コンテナの起動
++++</p>
+
+<p>docker コンテナを立ち上げます。</p>
+
+<pre><code>vagrant$ docker-compose -d
+</code></pre>
+
+<h2 id="influxdb-の-webui-に接続する">influxDB の WebUI に接続する</h2>
+
+<p>それでは起動したコンテナのうち一つ influxDB の WebUI に接続していましょう。
+上記の VagrantFile では IP アドレスを 192.168.33.10 と指定しました。</p>
+
+<p>URL : <a href="http://192.168.33.10:8083">http://192.168.33.10:8083</a></p>
+
+<p>データベースに接続します。</p>
+
+<p>ユーザ名 : root
+パスワード : root</p>
+
+<p>接続するとデータベース作成画面に飛びますので Database Datails 枠に &ldquo;cadvisor&rdquo;
+と入力、その他の項目はデフォルトのままで &ldquo;Create Database&rdquo; をクリックします。</p>
+
+<h2 id="cadvisor-の-webui-に接続する">cAdvisor の WebUI に接続する</h2>
+
+<p>続いて cAdvisor の WebUI に接続してみましょう。</p>
+
+<p>URL : <a href="http://192.168.33.10:8080">http://192.168.33.10:8080</a></p>
+
+<p>ここでは特に作業の必要はありません。コンテナの監視が行われグラフが描画されてい
+ることを確認します。</p>
+
+<h2 id="grafana-の-webui-に接続する">Grafana の WebUI に接続する</h2>
+
+<p>最後に Grafana の WebUI です。</p>
+
+<p>URL : <a href="http://192.168.33.10:3000">http://192.168.33.10:3000</a>
+ユーザ名 : admin
+パスワード : admin</p>
+
+<p>まずデータソースの設定を行います。左上のアイコンをクリックし &ldquo;Data Sources&rdquo; を
+選択します。次に &ldquo;Add New Data Source&rdquo; ボタンをクリックします。</p>
+
+<p>下記の情報を入力しましょう。</p>
+
+<ul>
+<li>Name : influxdb</li>
+<li>Type : influxDB 0.8.x</li>
+<li>Url  : <a href="http://influxsrv:8086">http://influxsrv:8086</a></li>
+<li>Access : proxy</li>
+<li>Basic Auth User admin</li>
+<li>Basic Auth Password admin</li>
+<li>Database : cadvisor</li>
+<li>User : root</li>
+<li>Password : root</li>
+</ul>
+
+<p>さて最後にグラフを作成していきます。左メニューの &ldquo;Dashboard&rdquo; を選択し上部の
+&ldquo;Home&rdquo; ボランを押し &ldquo;+New&rdquo; を押します。</p>
+
+<p>下記の画面を参考にし値に入力していきます。</p>
+
+<p>Metrics を選択しネットワークの受信転送量をグラフにしています。</p>
+
+<ul>
+<li>series : &lsquo;stats&rsquo;</li>
+<li>alias : RX Bytes</li>
+<li>select mean(rx_bytes)</li>
+</ul>
+
+<p>同じく送信転送量もグラフにします。Add Query を押すと追加できます。</p>
+
+<ul>
+<li>series : &lsquo;stats&rsquo;</li>
+<li>alias : TX Bytes</li>
+<li>select mean(tx_bytes)</li>
+</ul>
+
+<p><img src="http://jedipunkz.github.io/pix/grafana_input_data.png" width="80%"></p>
+
+<p>時間が経過すると下記のようにグラフが描画されます。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/grafana_graph.png" width="80%"></p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>3つのソフトウェア共に開発が活発であり、cAdvisor は特に Docker コンテナの監視と
+して一般化しつつあるよう。Kubernates の一部ということもありそう簡単には廃れな
+いと想います。コンテナの中にエージェント等を入れることもなく、これで Docker コ
+ンテナのリソース監視が出来そう。ただサービス監視は別途考えなくてはいけないなぁ
+という印象です。また、今回 docker-compose に記した各コンテナのバージョンは
+Docker Hub を確認すると別バージョンもあるので時期が経ってこのブログ記事をご覧
+になった方は修正すると良いと想います。ただこの記事を書いている時点では
+influxDB の 0.9.x 系では動作しませんでした。よって latest ではなくバージョン指
+定で記してあります。</p>
+
+<h2 id="参考にしたサイト">参考にしたサイト</h2>
+
+<ul>
+<li><a href="http://qiita.com/atskimura/items/4c4aaaaa554e2814e938">http://qiita.com/atskimura/items/4c4aaaaa554e2814e938</a></li>
+<li><a href="https://www.brianchristner.io/how-to-setup-docker-monitoring/">https://www.brianchristner.io/how-to-setup-docker-monitoring/</a></li>
+</ul>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2015/07/20/knife-zero-openstack-kilo/"
+                class="button big previous">Knife-ZeroでOpenStack Kiloデプロイ(複数台編)</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"
+                class="button big next">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2015\/09\/12\/cadvisor-influxdb-grafana-docker\/';
+    var disqus_title = 'cAdvisor\/influxDB\/GrafanaでDockerリソース監視';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2015\/09\/12\/cadvisor-influxdb-grafana-docker\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

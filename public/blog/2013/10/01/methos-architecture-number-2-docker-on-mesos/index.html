@@ -1,0 +1,887 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>Methos アーキテクチャ #2 (Docker on Mesos)</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="Methos アーキテクチャ #2 (Docker on Mesos)"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 Mesos アーキテクチャについて2つめの記事です。 http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/ 上記の前回の記事で Mesos 自体のアーキテクチャについて触れましたが、今回は Mesos &#43; Marathon &#43; Docker の構成について理解したことを書いていこうと思います。 mesos クラスタは 幾つかの mesos masters と沢山の mesos slaves から成っており、 mesos slaves の上では docker を操作する executor が稼働している。marathon は mesos master の上で稼働する mesos framework である。init や upstart の様な存在 であることが言え、REST API を持ち container の動作を制御する。marathon には ruby の client 等も存在する。下記がそれ。 https://github.com/mesosphere/marathon_client 構成 &#43;-----------------&#43; | docker registry | index.docker.io (もしくは local registry) &#43;-----------------&#43; | &#43;----------------&#43; | | &#43;--------------&#43; &#43;--------------&#43; | mesos master | | mesos master | &#43;--------------&#43; &#43;--------------&#43; | | |----------------&#43;-----------------------------------| &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; | mesos slave | | mesos slave | ..."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="Methos アーキテクチャ #2 (Docker on Mesos)" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 Mesos アーキテクチャについて2つめの記事です。 http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/ 上記の前回の記事で Mesos 自体のアーキテクチャについて触れましたが、今回は Mesos &#43; Marathon &#43; Docker の構成について理解したことを書いていこうと思います。 mesos クラスタは 幾つかの mesos masters と沢山の mesos slaves から成っており、 mesos slaves の上では docker を操作する executor が稼働している。marathon は mesos master の上で稼働する mesos framework である。init や upstart の様な存在 であることが言え、REST API を持ち container の動作を制御する。marathon には ruby の client 等も存在する。下記がそれ。 https://github.com/mesosphere/marathon_client 構成 &#43;-----------------&#43; | docker registry | index.docker.io (もしくは local registry) &#43;-----------------&#43; | &#43;----------------&#43; | | &#43;--------------&#43; &#43;--------------&#43; | mesos master | | mesos master | &#43;--------------&#43; &#43;--------------&#43; | | |----------------&#43;-----------------------------------| &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; | mesos slave | | mesos slave | ..." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/" />
+
+
+<meta property="og:updated_time" content="2013-10-01T00:00:00&#43;00:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="Methos アーキテクチャ #2 (Docker on Mesos)">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 Mesos アーキテクチャについて2つめの記事です。 http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/ 上記の前回の記事で Mesos 自体のアーキテクチャについて触れましたが、今回は Mesos &#43; Marathon &#43; Docker の構成について理解したことを書いていこうと思います。 mesos クラスタは 幾つかの mesos masters と沢山の mesos slaves から成っており、 mesos slaves の上では docker を操作する executor が稼働している。marathon は mesos master の上で稼働する mesos framework である。init や upstart の様な存在 であることが言え、REST API を持ち container の動作を制御する。marathon には ruby の client 等も存在する。下記がそれ。 https://github.com/mesosphere/marathon_client 構成 &#43;-----------------&#43; | docker registry | index.docker.io (もしくは local registry) &#43;-----------------&#43; | &#43;----------------&#43; | | &#43;--------------&#43; &#43;--------------&#43; | mesos master | | mesos master | &#43;--------------&#43; &#43;--------------&#43; | | |----------------&#43;-----------------------------------| &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; | mesos slave | | mesos slave | ...">
+
+
+<meta itemprop="dateModified" content="2013-10-01T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="451">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f&text=Methos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%232%20%28Docker%20on%20Mesos%29&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f&title=Methos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%232%20%28Docker%20on%20Mesos%29" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f&title=Methos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%232%20%28Docker%20on%20Mesos%29" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f&title=Methos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%232%20%28Docker%20on%20Mesos%29" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/">Methos アーキテクチャ #2 (Docker on Mesos)</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-10-01'>
+            October 1, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f&text=Methos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%232%20%28Docker%20on%20Mesos%29&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f&title=Methos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%232%20%28Docker%20on%20Mesos%29" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f&title=Methos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%232%20%28Docker%20on%20Mesos%29" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f&title=Methos%20%e3%82%a2%e3%83%bc%e3%82%ad%e3%83%86%e3%82%af%e3%83%81%e3%83%a3%20%232%20%28Docker%20on%20Mesos%29" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2013%2f10%2f01%2fmethos-architecture-number-2-docker-on-mesos%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>Mesos アーキテクチャについて2つめの記事です。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/">http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/</a></p>
+
+<p>上記の前回の記事で Mesos 自体のアーキテクチャについて触れましたが、今回は
+Mesos + Marathon + Docker の構成について理解したことを書いていこうと思います。</p>
+
+<p>mesos クラスタは 幾つかの mesos masters と沢山の mesos slaves から成っており、
+mesos slaves の上では docker を操作する executor が稼働している。marathon は
+mesos master の上で稼働する mesos framework である。init や upstart の様な存在
+であることが言え、REST API を持ち container の動作を制御する。marathon には
+ruby の client 等も存在する。下記がそれ。</p>
+
+<p><a href="https://github.com/mesosphere/marathon_client">https://github.com/mesosphere/marathon_client</a></p>
+
+<h2 id="構成">構成</h2>
+
+<pre><code>+-----------------+
+| docker registry | index.docker.io (もしくは local registry)
++-----------------+
+|
++----------------+
+|                |
++--------------+ +--------------+
+| mesos master | | mesos master |
++--------------+ +--------------+
+|                |
+|----------------+-----------------------------------|
+
++--------------+ +--------------+     +--------------+
+| mesos slave  | | mesos slave  | ... | mesos slave  | 
++--------------+ +--------------+     +--------------+
+|                |                    |
++--------------+ +--------------+     +--------------+
+| mesos slave  | | mesos slave  | ... | mesos slave  | 
++--------------+ +--------------+     +--------------+
+.                .                    .
+.                .                    .
+.                .                    .
++--------------+ +--------------+     +--------------+
+| mesos slave  | | mesos slave  | ... | mesos slave  |
++--------------+ +--------------+     +--------------+
+</code></pre>
+
+<h2 id="オファから-docker-が稼働するまでの流れ">オファから docker が稼働するまでの流れ</h2>
+
+<p>上記の構成の図を見ながら理解していきましょう。</p>
+
+<ul>
+<li>HTTP API もしくは web UI で marathon がリクエストを受ける</li>
+<li>marathon はリソースリクエストを作成しオファが受け付けられるのを待つ</li>
+<li>オファが受け付けられた後、mesos master は slave に task の仕様を送信する</li>
+<li>slave では docker コマンドラインツールを実行する mesos docker を mesos slave デーモンが呼び出す</li>
+<li>docker コマンドラインツールはローカルの docker デーモンと image cache, lxc ツールにより通信する</li>
+<li>もし image cache が存在すればそれを、無ければ docker registry から pull する。</li>
+<li>その時、index.docker.io の代わりにローカルの docker registry を稼働させることも可能</li>
+<li>docker デーモンが container を稼働させる</li>
+</ul>
+
+<h2 id="marathon-のクラスタとしての動作">marathon のクラスタとしての動作</h2>
+
+<p>marathon は init や upstart のようなモノだと上記で説明しましたが、図を交えて説明して
+いきましょう。</p>
+
+<p>marathon が &lsquo;serarch service&rsquo; と &lsquo;docker&rsquo; を稼働させている状態だとする。</p>
+
+<pre><code>+----------+ +----------+ +----------+
+|          | |          | |          | 
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+
++----------+ +----------+ +----------+
+|          | |          | |          | 
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+
++----------+ +----------+ +----------+
+|          | |          | |          | 
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+</code></pre>
+
+<p>サービスの状況によりオファが立て込んでくると下記のように docker をスケールアウ
+トが発生する。</p>
+
+<pre><code>+----------+ +----------+ +----------+
+| |docker| | | |docker| | |          | 
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+
++----------+ +----------+ +----------+
+|          | | |docker  | | |docker| | 
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+
++----------+ +----------+ +----------+
+| |docker| | | |docker| | | |docker| |
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+</code></pre>
+
+<p>システムに異常がありノードが落ちた場合、下記のように marathon は serach
+service と docker をノード間で移動させる処置を行う。</p>
+
+<pre><code>             +----------+ +----------+
+             | |docker| | | |search| | 
+             | |docker| | | |docker| |
+             +----------+ +----------+
+
++----------+ +----------+ +----------+
+| |docker|   | |docker| | | |docker| | 
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+
++----------+ +----------+ +----------+
+| |docker| | | |docker| | | |docker| |
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>mesos と docker, marathon の関係について記していきました。今度、実際にこの構成
+を組んでみて障害系のテストしてみたいです。あとは framework について理解してい
+く必要がありそう。あとは chronos についても。chronos については下記の URL が公
+式らしい。これは cron 代替な仕組みらしいです。</p>
+
+<p><a href="https://github.com/airbnb/chronos">https://github.com/airbnb/chronos</a></p>
+
+<p>まだまだ理解できていないことだらけだ&hellip;。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/09/29/devops-day-tokyo-2013-report/"
+                class="button big previous">DevOps Day Tokyo 2013 参加レポート</a></li>
+    
+
+    
+        <li><a href="http://jedipunkz.github.io/blog/2013/10/12/glusterfs-install/"
+                class="button big next">GlusterFS の各クラスタタイプ構築</a></li>
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2013\/10\/01\/methos-architecture-number-2-docker-on-mesos\/';
+    var disqus_title = 'Methos アーキテクチャ #2 (Docker on Mesos)';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2013\/10\/01\/methos-architecture-number-2-docker-on-mesos\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-11-15'>
+                                    November 15, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-09-12'>
+                                    September 12, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">97</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+
