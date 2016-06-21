@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-04-20T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-04-21T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,135 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/04/21/openstack-non-virtio/">OpenStack Grizzy で非 Virtio OS 稼働</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-04-21'>
+            April 21, 2013</time>
+        <span class="author"></span>
+        
+            <p>1 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは jedipunkz です。</p>
+
+<p>Virtio に対応していない OS を OpenStack で稼働させることが今まで出来なかったの
+ですが Grizzly から非 Virtio な OS イメージが扱えるようになった。今まで NetBSD
+やら古い FreeBSD やら virtio ドライバを OS イメージに入れることに苦労していたの
+だけど、これで問題無くなった。</p>
+
+<p>最初、この機能のこと調べるのに「どうせ libvirt が生成する xml を書き換えるのだ
+から nova 周りの設定なんだろうー」と思っていたら全く方法が見つからず&hellip;。結局
+OS イメージを格納している Glance の設定にありました。</p>
+
+<p>ここでは FreeBSD7.4 Release を例に挙げて説明していきます。</p>
+
+<h2 id="前提とする環境">前提とする環境</h2>
+
+<ul>
+<li>OpenStack Grizzly が稼働していること</li>
+<li>ホスト OS に Ubuntu 12.04.2 LTS が稼働していること</li>
+<li>ゲスト OS に FreeBSD 7.4 Release を用いる</li>
+</ul>
+
+<p>とします。OS のバージョンはホスト・ゲスト共に、上記以外でも構いません。Grizzly
+さえ動いていれば OK です。</p>
+
+<h2 id="os-イメージ作成">OS イメージ作成</h2>
+
+<p>KVM で OS イメージを作成します。もちろん virtio なインターフェースは指定せず</p>
+
+<ul>
+<li>IDE ディスクインターフェース</li>
+<li>e1000 (intel) ネットワークインターフェース</li>
+</ul>
+
+<p>を指定してあげてください。</p>
+
+<pre><code>% kvm-img create -f qcow2 &lt;IMAGE_NAME&gt; 5G
+% sudo kvm -m 1024 --cdrom FreeBSD-7.4-RELEASE-amd64-disc1.iso --drive \
+  file=./&lt;IMAGE_NAME&gt; -boot d -net nic,model=e1000 -net user -nographic \
+  -vnc :9
+</code></pre>
+
+<p>VNC クライアントソフトを用いてホスト :9 番に接続し OS をインストールする。</p>
+
+<h2 id="glance-への登録">Glance への登録</h2>
+
+<p>OpenStack API に接続する環境変数等を合わせ下記のコマンドを実行します。</p>
+
+<pre><code>% glance image-create --name=&quot;FreeBSD7.4&quot; --is-public \
+  true --container-format bare --disk-format qcow2 &lt; &lt;IMAGE_NAME&gt;
+% glance image-update --property hw_vif_model=e1000 &quot;FreeBSD7.4&quot;
+% glance image-update --property hw_disk_bus=ide &quot;FreeBSD7.4&quot;
+</code></pre>
+
+<p>&ndash;property オプションでディスク・ネットワークインターフェースの指定を変更して
+います。</p>
+
+<h2 id="vm-の稼働">VM の稼働</h2>
+
+<p>あとは普段通り nova boot コマンドで VM を稼働させるだけです。</p>
+
+<pre><code>% nova boot --nic net-id=&lt;network_id&gt; --image &lt;image_id&gt; --flavor &lt;flavor_number&gt; &lt;vm_name&gt;
+</code></pre>
+</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/04/21/openstack-non-virtio/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -643,307 +772,6 @@ m ( _ _ ) m</p>
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/04/06/cloudmanagement/">クラウドマネジメント勉強会レポ</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-04-06'>
-            April 6, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>クラウドマネジメント勉強会に参加してきた。今が旬なのか定員140名が埋まっていま
-した。クラウドフェデレーションサービス各種の話が聞ける貴重な勉強会の場でした。</p>
-
-<pre><code>場所 : スクエアエニックスさん
-日程 : 2013年4月5日 19:00 -
-</code></pre>
-
-<p>少し長くなるので、早速。</p>
-
-<h2 id="クラウド運用管理研究会">クラウド運用管理研究会</h2>
-
-<p>クラウド利用推進機構が運営するクラウド運用管理研究会は下記の3つに分別されるそ
-うです。今回は一項目の &lsquo;クラウドマネジメントツール研究会&rsquo; にあたるそう。別の研
-究会も既に勉強会を実施しているそうです。</p>
-
-<ul>
-<li>クラウドマネジメントツール研究会</li>
-<li>デザインパターン研究会</li>
-<li>運用管理・監視研究会</li>
-</ul>
-
-<h1 id="aws-opsworks">AWS OpsWorks</h1>
-
-<pre><code>アマゾンデータサービスジャパン AWS 片山さん, 船崎さん
-</code></pre>
-
-<p>OpsWorks は最近話題になった AWS 利用者に無料で提供されるクラウドフェデレーショ
-ンサービス。Web UI で操作し簡単デプロイを実現するサービスです。</p>
-
-<h2 id="opsworks-が自動化するモノ">OpsWorks が自動化するモノ</h2>
-
-<ul>
-<li>サーバ設定</li>
-<li>ミドルウェア構築</li>
-</ul>
-
-<h2 id="特徴">特徴</h2>
-
-<ul>
-<li>Chef フレームワークを利用 (chef-solo を内部的に利用)</li>
-<li>任意の cookbooks を利用可能</li>
-<li>LB, AP, DB などをレイヤ化, 任意のレイヤも作成可能</li>
-</ul>
-
-<h2 id="opsworks-の流れ">OpsWorks の流れ</h2>
-
-<ul>
-<li>Stack 作成</li>
-<li>レイヤ作成 (LB, AP, DB, 任意)</li>
-<li>レシピの作成</li>
-<li>レイヤにインスタンス作成</li>
-</ul>
-
-<h2 id="下記をレイヤ化で区別する">下記をレイヤ化で区別する</h2>
-
-<ul>
-<li>Package インストール</li>
-<li>OS 設定</li>
-<li>アプリデプロイ</li>
-</ul>
-
-<h2 id="所感">所感</h2>
-
-<p>AWS OpsWorks の登場で他のクラウドフェデレーションサービスがどうなるの？とさえ
-思った。AWS はインターネット・ホスティング業界のあらゆるサービスを押さえようと
-している感がある。もう隙間がない！ｗ OpsWorks に関してまだ問題は残っているそう
-だ。VPC, micro 現在未対応など。が解決に向けて作業しているそう。</p>
-
-<h1 id="aeolus-conductor">Aeolus Conductor</h1>
-
-<pre><code>RedHat 中井さん
-</code></pre>
-
-<h2 id="概要">概要</h2>
-
-<p>複数クラウドに対応したイメージ作成・アプリケーション環境構築の自動化ツール</p>
-
-<ul>
-<li>アプリのデプロイ機能にフォーカス</li>
-<li>Red Hat CoudForms が商用版</li>
-<li>マルチクラウド (ユーザにクラウドが割り当てられる, Hybrid, EC2, RHEV)</li>
-</ul>
-
-<h2 id="自動化について中井さんの案-手作り">自動化について中井さんの案 (手作り)</h2>
-
-<ul>
-<li>libvirt キック</li>
-<li>kickstart 実行</li>
-<li>post script にて puppet 実行</li>
-<li>manifest は github で管理</li>
-</ul>
-
-<p>これらは単一のサーバのみで実施できて、複数台構成等を前提に出来ない等の問題があ
-る。それらを解決するのが Aeolus Conductor。</p>
-
-<h2 id="aeolus-conductor-の要素">Aeolus Conductor の要素</h2>
-
-<ul>
-<li>システムテンプレート用意 (XML) : OS 構成内容が記されている</li>
-<li>マシンイメージ JEOS</li>
-<li>アプリケーションブループリント (アプリデプロイ設計書)
-shell script である。puppet, chef を呼び出しても OK.</li>
-<li>Config サーバを介して VM 間の構成を管理している : インテグレート！ DB, Web</li>
-</ul>
-
-<h2 id="aeolus-conductor-の不便な点">Aeolus Conductor の不便な点</h2>
-
-<ul>
-<li>特定のクラウド特有の機能には未対応</li>
-<li>複数 VM デプロイ時のワークフロー処理が不十分</li>
-</ul>
-
-<h2 id="所感-1">所感</h2>
-
-<p>画面を見させてもらったが AWS EC2, RHEV (RedHat の仮想化ソフト) とマルチクラウ
-ドに対応していた。ユーザにどのクラウドを割り当てるか？等の権限委譲が出来るもの
-ユニーク。</p>
-
-<h1 id="scalr">Scalr</h1>
-
-<pre><code>Scalr ユーザ会 梶川さん (IDC フロンティア)
-</code></pre>
-
-<h2 id="概要-特徴">概要, 特徴</h2>
-
-<ul>
-<li>オープンソースのマルチクラウド管理ツール</li>
-<li>利用出来るクラウド : AWS, Eucalyptus, RackSpace, nimbula, OpenStack, &hellip;</li>
-<li>冗長化・オートスケール可能</li>
-<li>モニタリングも自動で開始</li>
-<li>DNS 管理, オートスケール時、自動的に修正が行われる</li>
-<li>スクリプト実行 (任意のタイミングで可能、またタイミングを作成可能)</li>
-<li>各サービスのコンフィグプリセット管理 (ミドルウェアのパラメータ？)</li>
-</ul>
-
-<h2 id="所感-2">所感</h2>
-
-<p>Scalr ユーザ会のメンバ募集中だそうだ。個人的にオープンソースの Scalr を試そう
-と思ったことがあるのだが、手順の wiki が解りづらかった。商用サービスを使わせる
-ためにわざと解りづらくしているのか？と思うほど。ユーザ拡大のために是非ドキュメ
-ントの整備をお願いしたい。</p>
-
-<h1 id="rightscale-の利用効果と苦労話">RightScale の利用効果と苦労話</h1>
-
-<pre><code>So-net エンタテインメント 成田さん
-</code></pre>
-
-<h2 id="利用効果">利用効果</h2>
-
-<ul>
-<li>1つのスクリプトを複数台に対して実行可能</li>
-<li>手作業が自動化へ</li>
-<li>ベストプラクティスの利用が可能に</li>
-<li>モニタリングの自動化へ</li>
-<li>サーバ台数のスケジューリング化</li>
-<li>セキュリティグループはマクロで作成</li>
-<li>権限分離による開発者・プロデューサに役割移譲</li>
-<li>履歴管理の自動記録</li>
-<li>chef recipe が right スクリプトとして走らせられる</li>
-</ul>
-
-<h2 id="苦労話">苦労話</h2>
-
-<ul>
-<li>Alert 設定のミスでメール大量受信</li>
-<li>自動化スクリプトのエラー対応</li>
-<li>計画メンテナンスの後は要注意 (仕様変更)</li>
-<li>RightScale 上の表示を過信しない, 詳しくはクラウドサービス側を確認</li>
-<li>LANG=ja_JP.UTF-8 するとコケる</li>
-<li>メンテナンスは金曜日日中 (月に一回)</li>
-</ul>
-
-<h2 id="所感-3">所感</h2>
-
-<p>実際に運用している方の話はとても貴重。特に苦労ネタはなかなか知ることが出来ない
-ので。自動化のためにスクリプトを書くのがインフラ系エンジニアの仕事になると知ら
-せてくれた。Right スクリプトには Chef のレシピも走らせることが出来る、というも
-が魅力。またインフラ系エンジニア以外の職種の人にも権限委譲し UI を操作してもら
-える辺りは、業務の最適化のために大いに利用できると感じた。</p>
-
-<h1 id="chef-の話">Chef の話</h1>
-
-<pre><code>Engine Yard @yando さん
-</code></pre>
-
-<h2 id="engine-yard-とは">Engine Yard とは</h2>
-
-<ul>
-<li>PaaS</li>
-<li>AWS + Chef + サポート, 監視</li>
-<li>chef-solo をキック</li>
-<li>chef recipe の管理は Engine Yard が行う</li>
-</ul>
-
-<h2 id="chef-へのモチベーション">Chef へのモチベーション</h2>
-
-<ul>
-<li>冪等性</li>
-<li>シェルスクリプトだと構築直後の状態しか保証されない</li>
-</ul>
-
-<h2 id="chef-solo-の話">chef-solo の話</h2>
-
-<ul>
-<li>knife-solo でノードに SSH せずに実行</li>
-</ul>
-
-<h2 id="利用するにあたって直面する課題">利用するにあたって直面する課題</h2>
-
-<ul>
-<li>レシピの実装 -&gt; github 上のレシピを参照・利用</li>
-<li>Vagrant の利用でレシピの複数プラットフォーム上でのテスト</li>
-<li>レシピの配布方法 -&gt; github, berkshelf, knife solo, nfs, chef-server</li>
-<li>レシピの反映 -&gt; capistrano, chef-client, cron</li>
-</ul>
-
-<h2 id="engine-yard-local">Engine Yard Local</h2>
-
-<ul>
-<li>クラウドと同じレシピでローカルに開発環境を構築出来るツール</li>
-<li>クラウドはコストが掛かるし遅いので出来る事ならローカルで、という発想</li>
-</ul>
-
-<h2 id="所感-4">所感</h2>
-
-<p>Chef 流行ってますね。うんうん、(・∀・)ｲｲ!! 個人的には Chef の Cookbooks 開発
-はインフラエンジニアにしてもらいたい。Engine Yard のような PaaS 使うならアレだ
-けどクラウド使うなら運用は引き続き必要だし、運用を意識した Cookbooks 開発は絶
-対に必要になってくるからだ。Chef の関連技術がものすごいスピードで進化している
-のも魅力。より便利で旬な技術をすぐに利用し貢献する、という良いサイクルをうちの
-会社でも実現したい。だって楽しいから。chef-solo 使うの？chef サーバ使うの？と
-いう話はここでも挙がってた。どこかでブログにしようかな。僕は chef サーバ使わな
-い理由がないと思ってる。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/04/06/cloudmanagement/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Categories
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-        <li><a href='/categoriesreport'>report</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1060,6 +888,20 @@ shell script である。puppet, chef を呼び出しても OK.</li>
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-06-21'>
+                                    June 21, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
                                 
                                     
@@ -1099,20 +941,6 @@ shell script である。puppet, chef を呼び出しても OK.</li>
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-09-12'>
-                                    September 12, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1147,7 +975,7 @@ shell script である。puppet, chef を呼び出しても OK.</li>
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">97</span>
+                                <span style="float:right;">98</span>
                             </header>
                         </article>
                     </li>
