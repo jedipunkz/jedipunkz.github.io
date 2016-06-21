@@ -4,7 +4,7 @@ hugo -t hugo-future-imperfect
 
 git add .
 
-if [ $# -eq 1 ] then
+if [ $# -eq 1 ]; then
     msg="$1"
 fi
 git commit -m "$msg"

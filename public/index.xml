@@ -6,8 +6,190 @@
     <description>Recent content on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sun, 01 May 2016 15:00:27 +0900</lastBuildDate>
+    <lastBuildDate>Tue, 21 Jun 2016 17:05:25 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Vagrant で Mesosphere DC/OS を構築</title>
+      <link>http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/</link>
+      <pubDate>Tue, 21 Jun 2016 17:05:25 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;今回は DC/OS (&lt;a href=&#34;https://dcos.io/&#34;&gt;https://dcos.io/&lt;/a&gt;) を Vagrant を使って構築し評価してみようと思います。
+DC/OS はその名の通りデータセンタ OS として利用されることを期待され開発された OS で内部で
+Docker と Mesos が稼働しています。&lt;/p&gt;
+
+&lt;p&gt;一昔前に Mesos のマルチノード構成は構築したことあったのですが、DC/OS はデプロイ方法が全く変わっていました。
+はじめに想定する構成から説明していきます。&lt;/p&gt;
+
+&lt;h2 id=&#34;想定する構成&#34;&gt;想定する構成&lt;/h2&gt;
+
+&lt;p&gt;本来 DC/OS は public, private ネットワーク構成ですが利用するレポジトリではこのような構成が想定されていました。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;+----+ +----+ +----+ +------+
+| m1 | | a1 | | p1 | | boot |
++----+ +----+ +----+ +------+
+|      |      |      |
++------+------+------+--------- 192.168.65/24
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;各ノードは下記の通り動作します。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;m1 : Mesos マスタ, Marathon&lt;/li&gt;
+&lt;li&gt;a1 : Mesos スレーブ(Private Agent)&lt;/li&gt;
+&lt;li&gt;p1 : Mesos スレーブ(Public Agent)&lt;/li&gt;
+&lt;li&gt;boot : DC/OS インストレーションノード&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;前提の環境&#34;&gt;前提の環境&lt;/h2&gt;
+
+&lt;p&gt;Vagrant が動作するマシンであれば問題ないと思いますが私は下記の構成で利用しました。
+比較的たくさんのマシンリソースを使うのでメモリ 8GB はほしいところです。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Mac OSX&lt;/li&gt;
+&lt;li&gt;Vagrant&lt;/li&gt;
+&lt;li&gt;Virtualbox&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;事前の準備&#34;&gt;事前の準備&lt;/h2&gt;
+
+&lt;p&gt;事前の手順を記します。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;予め用意された dcos-vagrant を取得する&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ git clone https://github.com/dcos/dcos-vagrant
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Mac OSX の hosts ファイルをダイナミック編集する Vagrant プラグインをインストール&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ vagrant plugin install vagrant-hostmanager
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;構築手順&#34;&gt;構築手順&lt;/h2&gt;
+
+&lt;p&gt;それでは構築手順です。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;DC/OS が利用する config を環境変数に指定指定&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ export DCOS_CONFIG_PATH=etc/config-1.7.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;DC/OS をレポジトリのルートディレクトリに保存&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;DC/OS 1.7.0 (Early Access)(2016/06/21現在) をダウンロードしてレポジトリのルートディレクトリにインストール&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ cd dcos-vagrant
+$ wget https://downloads.dcos.io/dcos/EarlyAccess/dcos_generate_config.sh
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;VagrantConfig を作成&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&amp;lsquo;VagrantConfig.yaml.example&amp;rsquo; というファイルがレポジトリ内ルートディレクトリにあるのでこれを元に下記の通りファイルを生成。元のファイルのままだと比較的大きな CPU/Mem リソースが必要になるので環境に合わせてリソース量を指定。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-yaml&#34;&gt;m1:
+  ip: 192.168.65.90
+  cpus: 1
+  memory: 512
+  type: master
+a1:
+  ip: 192.168.65.111
+  cpus: 1
+  memory: 1024
+  memory-reserved: 512
+  type: agent-private
+p1:
+  ip: 192.168.65.60
+  cpus: 1
+  memory: 1024
+  memory-reserved: 512
+  type: agent-public
+  aliases:
+  - spring.acme.org
+  - oinker.acme.org
+boot:
+  ip: 192.168.65.50
+  cpus: 1
+  memory: 1024
+  type: boot
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;デプロイを実施&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ vagrant up m1 a1 p1 boot
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;dc-os-の-ui&#34;&gt;DC/OS の UI&lt;/h2&gt;
+
+&lt;p&gt;インストールが完了すると下記のアドレスで DC/OS の UI にアクセスできます。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://m1.dcos/&#34;&gt;http://m1.dcos/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/dcos-mesos.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;marathon-の-ui&#34;&gt;Marathon の UI&lt;/h2&gt;
+
+&lt;p&gt;下記のアドレスで Marathon の UI にアクセスできます
+Marathon は分散型の Linux Init 機構のようなものです。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://m1.dcos:8080/&#34;&gt;http://m1.dcos:8080/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/dcos-marathon.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;chronos-の-ui&#34;&gt;Chronos の UI&lt;/h2&gt;
+
+&lt;p&gt;下記のアドレスで Chronos の UI にアクセスできる
+Chronos は分散型のジョブスケジューラーであり cron のようなものです。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;http://a1.dcos:1370/&#34;&gt;http://a1.dcos:1370/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/dcos-chronos.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;marathon-で-redis-サーバを立ち上げる&#34;&gt;Marathon で redis サーバを立ち上げる&lt;/h2&gt;
+
+&lt;p&gt;テストで redis サーバを立ち上げてみる。Mesos-Slave (今回の環境だと a1 ホスト) 上に Docker コンテナとして redis サーバが立ち上がることになる。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Marathon の UI にて &amp;ldquo;Create Application&amp;rdquo; を選択&lt;/li&gt;
+&lt;li&gt;General タブの ID に任意の名前を入力&lt;/li&gt;
+&lt;li&gt;General タブの Command 欄に &amp;lsquo;redis-server&amp;rsquo; を入力&lt;/li&gt;
+&lt;li&gt;Docker Container タブの Image 欄に &amp;lsquo;redis&amp;rsquo; を入力&lt;/li&gt;
+&lt;li&gt;&amp;lsquo;Create Application&amp;rsquo; を選択&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;結果、下記の通りアプリケーションが生成される&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/dcos-marathon-redis.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
+
+&lt;p&gt;一昔前の Mesos + Marathon + Chronos とはだいぶデプロイ方法が変わっていた。だが構成には大きな変化は見られない。
+本来 Mesos 構成は public なネットワークと private なネットワークを別けた形とするが今回は簡易的な構成なため private のみで構築した。
+public なネットワークを構築した際の p1 ホスト上へのジョブのスケールがどのような動きをするか、今後調べる必要がありそうです。&lt;/p&gt;
+
+&lt;h2 id=&#34;参考-url&#34;&gt;参考 URL&lt;/h2&gt;
+
+&lt;p&gt;手順は右記のものを利用。
+&lt;a href=&#34;https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md&#34;&gt;https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md&lt;/a&gt;&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>about</title>
@@ -3515,271 +3697,6 @@ Ceph を運用していないので、各プロセスがどのようなリソー
 
 &lt;p&gt;以上です。皆さん、是非 Ceph を使ってみてください！ また興味のある方はユーザ会
 への加入をご検討くださいー。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>Mesos &#43; Marathon &#43; Deimos &#43; Docker を試してみた!</title>
-      <link>http://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/</link>
-      <pubDate>Fri, 13 Jun 2014 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;以前 Mesos, Docker について記事にしました。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/&#34;&gt;http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/&lt;/a&gt;
-&lt;a href=&#34;http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/&#34;&gt;http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Twitter で Docker 関連のオーケストレーションツールについて呟いていたら @everpeace さんから
-こんな情報をもらいました。&lt;/p&gt;
-
-&lt;p&gt;&lt;blockquote class=&#34;twitter-tweet&#34; lang=&#34;ja&#34;&gt;&lt;p&gt;&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; 元々meos-dockerっていうmesos executorがあったんですけど、mesosがcontainer部分をpluggableにしたので、それに合わせてdeimosっていうmesos用のexternal containerizer が作られました。&lt;/p&gt;&amp;mdash; Shingo Omura (@everpeace) &lt;a href=&#34;https://twitter.com/everpeace/statuses/476998842383347712&#34;&gt;2014, 6月 12&lt;/a&gt;&lt;/blockquote&gt;
-&lt;script async src=&#34;//platform.twitter.com/widgets.js&#34; charset=&#34;utf-8&#34;&gt;&lt;/script&gt;&lt;/p&gt;
-
-&lt;p&gt;Deimos !!! 知らなかった。Mesos の Docker プラグインらしく下記の場所にありました。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/mesosphere/deimos&#34;&gt;https://github.com/mesosphere/deimos&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;色々調べいたら、こんな資料が見つかりました。どうやらまだ公開されて4日しか経っていないようです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://mesosphere.io/learn/run-docker-on-mesosphere/&#34;&gt;http://mesosphere.io/learn/run-docker-on-mesosphere/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Mesos + Marathon + Deimos + Docker をオールインワン構成で構築する手順が書かれています。&lt;/p&gt;
-
-&lt;p&gt;内容はほぼ同じですが、一応自分がやってみて理解したことをまとめたいので下記に記していきます。&lt;/p&gt;
-
-&lt;h2 id=&#34;構築してみる&#34;&gt;構築してみる&lt;/h2&gt;
-
-&lt;p&gt;手順をまとめてスクリプトにしました。パッケージは Ubuntu 13.10 用のようですが 14.04 のホスト
-で実行出来ました。14.04 のパッケージはまだ見つかっていません。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;#!/bin/bash
-# disable ipv6
-echo &#39;net.ipv6.conf.all.disable_ipv6 = 1&#39; | sudo tee -a /etc/sysctl.conf
-echo &#39;net.ipv6.conf.default.disable_ipv6 = 1&#39; | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
-
-# install related tools
-sudo apt-get update
-sudo apt-get -y install curl python-setuptools python-pip python-dev python-protobuf
-
-# install zookeeper
-sudo apt-get -y install zookeeperd
-echo 1 | sudo dd of=/var/lib/zookeeper/myid
-
-# install docker
-sudo apt-get -y install docker.io
-sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker
-sudo sed -i &#39;$acomplete -F _docker docker&#39; /etc/bash_completion.d/docker.io
-sudo docker pull libmesos/ubuntu
-
-# install mesos
-curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.deb -o /tmp/mesos.deb
-sudo dpkg -i /tmp/mesos.deb
-sudo mkdir -p /etc/mesos-master
-echo in_memory  | sudo dd of=/etc/mesos-master/registry
-curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.egg -o /tmp/mesos.egg
-sudo easy_install /tmp/mesos.egg
-
-# install marathon
-curl -fL http://downloads.mesosphere.io/marathon/marathon_0.5.0-xcon2_noarch.deb -o /tmp/marathon.deb
-sudo dpkg -i /tmp/marathon.deb
-
-# restart each services
-sudo service docker.io restart
-sudo service zookeeper restart
-sudo service mesos-master restart
-sudo service mesos-slave restart
-
-# install deimos
-sudo pip install deimos
-sudo mkdir -p /etc/mesos-slave
-
-## Configure Deimos as a containerizer
-echo /usr/bin/deimos  | sudo dd of=/etc/mesos-slave/containerizer_path
-echo external     | sudo dd of=/etc/mesos-slave/isolation
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;プロセスの確認&#34;&gt;プロセスの確認&lt;/h2&gt;
-
-&lt;p&gt;実行が終わると各プロセスが確認出来ます。オプションでどのプロセスが何を見ているか大体
-わかりますので見ていきます。&lt;/p&gt;
-
-&lt;h4 id=&#34;mesos-master&#34;&gt;mesos-master&lt;/h4&gt;
-
-&lt;p&gt;mesos-master は zookeeper を参照して 5050 番ポートで起動しているようです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% ps ax | grep mesos-master
- 1224 ?        Ssl    0:30 /usr/local/sbin/mesos-master --zk=zk://localhost:2181/mesos --port=5050 --log_dir=/var/log/mesos --registry=in_memory
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h4 id=&#34;mesos-slave&#34;&gt;mesos-slave&lt;/h4&gt;
-
-&lt;p&gt;mesos-slave は同じく zookeeper を参照して containerizer を deimos として稼働していることが
-わかります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% ps ax | grep mesos-slave
- 1225 ?        Ssl    0:12 /usr/local/sbin/mesos-slave --master=zk://localhost:2181/mesos --log_dir=/var/log/mesos --containerizer_path=/usr/bin/deimos --isolation=external
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h4 id=&#34;zookeeper&#34;&gt;zookeeper&lt;/h4&gt;
-
-&lt;p&gt;zookeeper は OpenJDK7 で稼働している Java プロセスです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% ps ax | grep zookeeper
- 1073 ?        Ssl    1:07 /usr/bin/java -cp /etc/zookeeper/conf:/usr/share/java/jline.jar:/usr/share/java/log4j-1.2.jar:/usr/share/java/xercesImpl.jar:/usr/share/java/xmlParserAPIs.jar:/usr/share/java/netty.jar:/usr/share/java/slf4j-api.jar:/usr/share/java/slf4j-log4j12.jar:/usr/share/java/zookeeper.jar -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=false -Dzookeeper.log.dir=/var/log/zookeeper -Dzookeeper.root.logger=INFO,ROLLINGFILE org.apache.zookeeper.server.quorum.QuorumPeerMain /etc/zookeeper/conf/zoo.cfg
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h4 id=&#34;docker&#34;&gt;docker&lt;/h4&gt;
-
-&lt;p&gt;docker が起動していることも確認できます。設定は特にしていないです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% ps axuw | grep docker
-root       831  0.0  0.3 364776 14924 ?        Sl   01:30   0:01 /usr/bin/docker.io -d
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;marathon-の-webui-にアクセス&#34;&gt;Marathon の WebUI にアクセス&lt;/h2&gt;
-
-&lt;p&gt;Marathon の WebUI にアクセスしてみましょう。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.com/pix/deimos_01.png&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;まだ何も Tasks が実行されていないので一覧には何も表示されないと思います。&lt;/p&gt;
-
-&lt;h2 id=&#34;tasks-の実行&#34;&gt;Tasks の実行&lt;/h2&gt;
-
-&lt;p&gt;Marathon API に対してクエリを発行することで Mesos の Tasks として Docker コンテナを稼働させることが出来ます。
-下記のファイルを ubuntu.json として保存。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
-    &amp;quot;container&amp;quot;: {
-    &amp;quot;image&amp;quot;: &amp;quot;docker:///libmesos/ubuntu&amp;quot;
-  },
-  &amp;quot;id&amp;quot;: &amp;quot;ubuntu&amp;quot;,
-  &amp;quot;instances&amp;quot;: &amp;quot;1&amp;quot;,
-  &amp;quot;cpus&amp;quot;: &amp;quot;.5&amp;quot;,
-  &amp;quot;mem&amp;quot;: &amp;quot;512&amp;quot;,
-  &amp;quot;uris&amp;quot;: [ ]
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;下記の通り localhost:8080 が Marathon API の Endpoint になっているのでここに対して作成した JSON を POST します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X POST -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps -d@ubuntu.json
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Tasks の一覧を取得してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X GET -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps
-{&amp;quot;apps&amp;quot;:[{&amp;quot;id&amp;quot;:&amp;quot;ubuntu&amp;quot;,&amp;quot;cmd&amp;quot;:&amp;quot;&amp;quot;,&amp;quot;env&amp;quot;:{},&amp;quot;instances&amp;quot;:1,&amp;quot;cpus&amp;quot;:0.5,&amp;quot;mem&amp;quot;:512.0,&amp;quot;executor&amp;quot;:&amp;quot;&amp;quot;,&amp;quot;constraints&amp;quot;:[],&amp;quot;uris&amp;quot;:[],&amp;quot;ports&amp;quot;:[13049],&amp;quot;taskRateLimit&amp;quot;:1.0,&amp;quot;container&amp;quot;:{&amp;quot;image&amp;quot;:&amp;quot;docker:///libmesos/ubuntu&amp;quot;,&amp;quot;options&amp;quot;:[]},&amp;quot;version&amp;quot;:&amp;quot;2014-06-13T01:45:58.693Z&amp;quot;,&amp;quot;tasksStaged&amp;quot;:1,&amp;quot;tasksRunning&amp;quot;:0}]}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Tasks の一覧が JSON で返ってきます。id : ubuntu, インスタンス数 : 1, CPU 0.5, メモリー : 512MB で
-Task が稼働していることが確認出来ます。&lt;/p&gt;
-
-&lt;p&gt;ここで WebUI 側も見てみましょう。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.com/pix/deimos_05.png&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;一つ Task が稼働していることが確認出来ると思います。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.com/pix/deimos_04.png&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;その Task をクリックすると詳細が表示されます。&lt;/p&gt;
-
-&lt;p&gt;次に Tasks のスケーリングを行ってみましょう。
-下記の通り ubuntu.json を修正し instances : 2 とする。これによってインスタンス数が2に増えます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
-    &amp;quot;container&amp;quot;: {
-    &amp;quot;image&amp;quot;: &amp;quot;docker:///libmesos/ubuntu&amp;quot;
-  },
-  &amp;quot;id&amp;quot;: &amp;quot;ubuntu&amp;quot;,
-  &amp;quot;instances&amp;quot;: &amp;quot;2&amp;quot;,
-  &amp;quot;cpus&amp;quot;: &amp;quot;.5&amp;quot;,
-  &amp;quot;mem&amp;quot;: &amp;quot;512&amp;quot;,
-  &amp;quot;uris&amp;quot;: [ ]
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;修正した JSON を POST します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X PUT -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps/ubuntu -d@ubuntu.json
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Tasks の一覧を取得し containers が 2 になっていることが確認できます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X GET -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps
-{&amp;quot;apps&amp;quot;:[{&amp;quot;id&amp;quot;:&amp;quot;ubuntu&amp;quot;,&amp;quot;cmd&amp;quot;:&amp;quot;&amp;quot;,&amp;quot;env&amp;quot;:{},&amp;quot;instances&amp;quot;:2,&amp;quot;cpus&amp;quot;:0.5,&amp;quot;mem&amp;quot;:512.0,&amp;quot;executor&amp;quot;:&amp;quot;&amp;quot;,&amp;quot;constraints&amp;quot;:[],&amp;quot;uris&amp;quot;:[],&amp;quot;ports&amp;quot;:[17543],&amp;quot;taskRateLimit&amp;quot;:1.0,&amp;quot;container&amp;quot;:{&amp;quot;image&amp;quot;:&amp;quot;docker:///libmesos/ubuntu&amp;quot;,&amp;quot;options&amp;quot;:[]},&amp;quot;version&amp;quot;:&amp;quot;2014-06-13T02:40:04.536Z&amp;quot;,&amp;quot;tasksStaged&amp;quot;:3,&amp;quot;tasksRunning&amp;quot;:0}]}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;最後に Tasks を削除してみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X DELETE -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps/ubuntu
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Tasks が削除されたことを確認します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X GET -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps
-{&amp;quot;apps&amp;quot;:[]}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;marathon-api-v2&#34;&gt;Marathon API v2&lt;/h2&gt;
-
-&lt;p&gt;Marathon API v2 について下記の URL に仕様が載っています。上記に記したクエリ以外にも色々載っているので
-動作を確認してみるといいと思います。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md&#34;&gt;https://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md&lt;/a&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;オールインワン構成が出来ました。また動作確認も無事出来ています。
-以前試した時よりも大分、手順が簡潔になった印象があります。また参考資料中に&lt;/p&gt;
-
-&lt;p&gt;&amp;ldquo;checkout our other multi-node tutorials on how to scale Docker in your data center.&amp;rdquo;&lt;/p&gt;
-
-&lt;p&gt;とありますが、まだ見つかっていません(´・ω・｀)見つかった方教えてくださいー。&lt;/p&gt;
-
-&lt;p&gt;以前試した時は Mesos-Master の冗長化が出来なかったので今回こそ Multi Mesos-Masters,
-Multi Mesos-Slaves の構成を作ってみたいと思います。&lt;/p&gt;
-
-&lt;p&gt;また今月？になって続々と Docker のオーケストレーションツールを各社が公開しています。&lt;/p&gt;
-
-&lt;h5 id=&#34;centurion&#34;&gt;centurion&lt;/h5&gt;
-
-&lt;p&gt;New Relic が開発したオーケストレーションツール。
-&lt;a href=&#34;https://github.com/newrelic/centurion&#34;&gt;https://github.com/newrelic/centurion&lt;/a&gt;&lt;/p&gt;
-
-&lt;h5 id=&#34;helios&#34;&gt;helios&lt;/h5&gt;
-
-&lt;p&gt;Spotify が開発したオーケストレーションツール。
-&lt;a href=&#34;https://github.com/spotify/helios&#34;&gt;https://github.com/spotify/helios&lt;/a&gt;&lt;/p&gt;
-
-&lt;h5 id=&#34;fleet&#34;&gt;fleet&lt;/h5&gt;
-
-&lt;p&gt;CoreOS 標準搭載。
-&lt;a href=&#34;https://github.com/coreos/fleet&#34;&gt;https://github.com/coreos/fleet&lt;/a&gt;&lt;/p&gt;
-
-&lt;h5 id=&#34;geard&#34;&gt;geard&lt;/h5&gt;
-
-&lt;p&gt;RedHat が Red Hat Enterprise Linux Atomic Host に搭載しているツール。
-&lt;a href=&#34;http://openshift.github.io/geard/&#34;&gt;http://openshift.github.io/geard/&lt;/a&gt;&lt;/p&gt;
-
-&lt;h5 id=&#34;kubernetes&#34;&gt;Kubernetes&lt;/h5&gt;
-
-&lt;p&gt;Google が開発したオーケストレーションツール。
-&lt;a href=&#34;https://github.com/GoogleCloudPlatform/kubernetes&#34;&gt;https://github.com/GoogleCloudPlatform/kubernetes&lt;/a&gt;&lt;/p&gt;
-
-&lt;h5 id=&#34;shipper&#34;&gt;shipper&lt;/h5&gt;
-
-&lt;p&gt;Python のコードで Docker をオーケストレーション出来るツール。
-&lt;a href=&#34;https://github.com/mailgun/shipper&#34;&gt;https://github.com/mailgun/shipper&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;幾つか試したのですが、まだまだ動く所までいかないツールがありました。github の README にも
-&amp;ldquo;絶賛開発中なのでプロダクトレディではない&amp;rdquo; と書かれています。これからでしょう。&lt;/p&gt;
 </description>
     </item>
     

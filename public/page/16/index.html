@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2013-08-18T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-08-24T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/"><p>cAdvisor/influxDB/GrafanaでDockerリソース監視</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,159 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/08/24/vyatta-l2tp-ipsec-vpn/">Vyatta で L2TP over IPsec による VPN 構築</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-08-24'>
+            August 24, 2013</time>
+        <span class="author"></span>
+        
+            <p>1 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>以前、こんな記事をブログに記しました。2012/06 の記事です。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2012/06/13/vyatta-vpn/">http://jedipunkz.github.io/blog/2012/06/13/vyatta-vpn/</a></p>
+
+<p>その後、PPTP で保護されたネットワークの VPN パスワードを奪取出来るツールが公開
+されました。2012/07 のことです。よって今では VPN に PPTP を用いることが推奨さ
+れていません。</p>
+
+<p>ということで L2TP over IPsec による VPN 構築を Vyatta で行う方法を記します。</p>
+
+<h2 id="fig-1-home-lan-と-vyatta-のアドレス">fig.1 : home lan と vyatta のアドレス</h2>
+
+<pre><code>                +--------+                      +-----+
+    home lan ---| vyatta | --- the internet --- | CPE |
+                +--------+                      +-----+
+    X.X.X.X/X(NAT)     pppoe0
+                       Y.Y.Y.Y
+</code></pre>
+
+<p>この様に X.X.X.X/X と Y.Y.Y.Y/Y が関係しているとします。CPE は VPN により
+X.X.X.X/X に接続することが出来ます。</p>
+
+<h2 id="手順-ipsec">手順 : IPsec</h2>
+
+<p>下記の操作で IPsec を待ち受けるインターフェースの設定します。</p>
+
+<pre><code class="language-bash">% configure
+# edit vpn ipsec
+# set ipsec-interface interface pppoe0
+</code></pre>
+
+<p>インターフェース名は環境に合わせて設定してください。私の環境では pppoe0 です。</p>
+
+<p>IPsec パケットが NAT を超えるように設定します。</p>
+
+<pre><code class="language-bash"># set nat-traversal enable
+</code></pre>
+
+<p>CPE がどの環境にいるか、IPsec 接続を許可するネットワークアドレスを入力します。
+渡しの場合はどこからでも接続できるよう 0.0.0.0/0 を入力しました。</p>
+
+<pre><code class="language-bash"># set nat-networks allowed-network 0.0.0.0/0
+# exit
+</code></pre>
+
+<h2 id="手順-l2tp">手順 : L2TP</h2>
+
+<p>入力を省くために edit します。</p>
+
+<pre><code class="language-bash"># edit vpn l2tp remote-access
+</code></pre>
+
+<p>IPsec 認証モードに pre-shared-secret を選択し pre-shared-secret (パスワード)
+を設定します。このパスワードは接続するユーザ全員が知るものです。また認証モード
+を local に設定します。</p>
+
+<pre><code class="language-bash"># set ipsec-settings authentication mode pre-shared-secret
+# set ipsec-settings authentication pre-shared-secret &lt;パスワード&gt;
+# set authentication mode local
+</code></pre>
+
+<p>接続ユーザを作成します。パスワードはユーザに合わせたパスワードを入力します。先
+ほど設定した pre-shared-secret とは別のパスワードを設定するべきです。</p>
+
+<pre><code class="language-bash"># set authentication local-users username &lt;ユーザ名&gt; password &lt;パスワード&gt;
+</code></pre>
+
+<p>接続するネットワーク情報を記します。pool のアドレス範囲は環境に合わせて設定し
+てください。渡しの場合は第4オクテット 100 - 120 を設定しました。</p>
+
+<pre><code class="language-bash"># set outside-address Y.Y.Y.Y
+# set client-ip-pool start X.X.X.100
+# set client-ip-pool stop X.X.X.120
+</code></pre>
+
+<p>最後に commit &amp; save を忘れずに。</p>
+
+<pre><code class="language-bash"># commit
+# save
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>iPhone で接続を確認しました。iOS の場合は L2TP, PPTP, IPsec と3つのタブがあり、
+どれかを選択するようになっていますが、L2TP over IPsec の場合には L2TP タブの項
+目に情報を入力すれば OK です。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/08/24/vyatta-l2tp-ipsec-vpn/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -757,154 +910,6 @@ controller02% sudo chef-client
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/08/12/emacs-mew-gmail/">Emacs &#43; Mew で Gmail を読み書きする</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-08-12'>
-            August 12, 2013</time>
-        <span class="author"></span>
-        
-            <p>1 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>今日も軽めの話題を。</p>
-
-<p>Gmail を Emacs + Mew で読み書きする方法を何故かいつも忘れてしまうので自分のた
-めにもメモしておきます。Gmail はブラウザで読み書き出来るのに！と思われるかもし
-れませんが、Emacs で文章が書けるのは重要なことです。:D</p>
-
-<h2 id="対象-os">対象 OS</h2>
-
-<p>比較的新しい&hellip;</p>
-
-<ul>
-<li>Debian Gnu/Linux</li>
-<li>Ubuntu</li>
-</ul>
-
-<p>を使います。</p>
-
-<h2 id="手順">手順</h2>
-
-<p>Emacs, Mew, stunnel4 をインストールします。Emacs は好きな物を入れてください。</p>
-
-<pre><code class="language-bash">% sudo apt-get install emacs24-nox stunnel4 mew mew-bin ca-certificates
-</code></pre>
-
-<p>openssl コマンドで mail.pem を生成します。生成したものを /etc/stunnel 配下に設
-置します。</p>
-
-<pre><code class="language-bash">% openssl req -new -out mail.pem -keyout mail.pem -nodes -x509 -days 365
-% sudo cp mail.pem /etc/stunnel/
-</code></pre>
-
-<p>stunnel はインストール直後、起動してくれないので ENABLE=1 に修正します。</p>
-
-<pre><code class="language-bash">% sudo ${EDITOR} /etc/default/stunnel4
-ENABLE=1 # 0 -&gt; 1 へ変更
-</code></pre>
-
-<p>stunenl.conf のサンプルを /etc/stunnel 配下に設置します。</p>
-
-<pre><code class="language-bash">% sudo cp /usr/share/doc/stunnel4/examples/stunnel.conf-sample /etc/stunnel/stunnel.conf
-</code></pre>
-
-<p>$HOME/.mew.el ファイルを生成します。自分のアカウント情報などを入力します。</p>
-
-<pre><code class="language-lisp">; Stunnel
-(setq mew-prog-ssl &quot;/usr/bin/stunnel4&quot;)
-; IMAP for Gmail
-(setq mew-proto &quot;%&quot;)
-(setq mew-imap-server &quot;imap.gmail.com&quot;)
-(setq mew-imap-user &quot;example@gmail.com&quot;)
-(setq mew-imap-auth  t)
-(setq mew-imap-ssl t)
-(setq mew-imap-ssl-port &quot;993&quot;)
-(setq mew-smtp-auth t)
-(setq mew-smtp-ssl t)
-(setq mew-smtp-ssl-port &quot;465&quot;)
-(setq mew-smtp-user &quot;example@gmail.com&quot;)
-(setq mew-smtp-server &quot;smtp.gmail.com&quot;)
-(setq mew-fcc &quot;%Sent&quot;) ; 送信メイルを保存する
-(setq mew-imap-trash-folder &quot;%[Gmail]/ゴミ箱&quot;)
-(setq mew-use-cached-passwd t)
-(setq mew-ssl-verify-level 0)
-</code></pre>
-
-<p>$HOME/.emacs.d/init.el に Mew の記述を追記します。</p>
-
-<pre><code class="language-lisp">(autoload 'mew &quot;mew&quot; nil t)
-(autoload 'mew-send &quot;mew&quot; nil t)
-(setq mew-fcc &quot;+outbox&quot;) ; 送信メールを保存
-(setq exec-path (cons &quot;/usr/bin&quot; exec-path))
-</code></pre>
-
-<p>Emacs + Mew を起動します。</p>
-
-<pre><code class="language-bash">% emacs -e mew
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>以上です。他の distro だと ca-certificate とか無いので、大変だなぁといつも思っ
-てしまいます。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/08/12/emacs-mew-gmail/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriestools'>tools</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1021,6 +1026,20 @@ ENABLE=1 # 0 -&gt; 1 へ変更
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-06-21'>
+                                    June 21, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
                                 
                                     
@@ -1060,20 +1079,6 @@ ENABLE=1 # 0 -&gt; 1 へ変更
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-09-12'>
-                                    September 12, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1108,7 +1113,7 @@ ENABLE=1 # 0 -&gt; 1 へ変更
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">97</span>
+                                <span style="float:right;">98</span>
                             </header>
                         </article>
                     </li>
