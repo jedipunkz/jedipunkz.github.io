@@ -238,7 +238,7 @@ ga('send', 'pageview');
             June 21, 2016</time>
         <span class="author"></span>
         
-            <p>2 minute read</p>
+            <p>3 minute read</p>
         
         
     </div>
@@ -459,16 +459,154 @@ Chronos は分散型のジョブスケジューラーであり cron のような
 
 <p><img src="http://jedipunkz.github.io/pix/dcos-marathon-redis.png" width="70%"></p>
 
+<p>※ 20160625 下記追記</p>
+
+<h2 id="構成">構成</h2>
+
+<p>ここからは Mesosphere DC/OS の内部構成を理解していきます。主となる mesos-master, mesos-slave の構成は下記の通り。</p>
+
+<ul>
+<li>Mesos-Master Node 構成</li>
+</ul>
+
+<pre><code class="language-shell">+--------------+
+| mesos-master |
++--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+
+|   zookeeper  | | mesos-dns | | marathon | | adminRouter | | minuteman | | exhibitor |
++--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+
+|                  mesos-master node                                                  |
++-------------------------------------------------------------------------------------+
+</code></pre>
+
+<ul>
+<li>* * * * * * * Mesos-Slave (Mesos-Agent) Node 構成</li>
+</ul>
+
+<pre><code class="language-shell">+-------------+ +---+---+---+---+
+| m-executor  | | c | c | c | c |
++-------------+ +---+---+---+---+
+| mesos-slave | | docker-daemon |
++-------------------------------+
+|        mesos-slave node       |
++-------------------------------+
+</code></pre>
+
+<h2 id="各プロセスの役割">各プロセスの役割</h2>
+
+<p>上記の図の各要素を参考資料を元にまとめました。</p>
+
+<ul>
+<li>mesos-master</li>
+</ul>
+
+<p>masos-slave node からの情報を受け取り mesos-slave へプロセスを分配する
+役割。mesos-master は zookeeper によってリーダー選出により冗長構成が保
+たれている。</p>
+
+<ul>
+<li>mesos-dns</li>
+</ul>
+
+<p>mesos フレームワーク内での DNS 解決を行うプロセス。各 mesos-master ノー
+ド上に稼働している。通常の DNS でいうコンテンツ DNS (Authoritative
+DNS)になっており mesos-master からクラスタ情報を受け取って DNS レコー
+ド登録、それを mesos-slave が DNS 参照する。mesos-slave が内部レコード
+に無い DNS 名を解決しに来た際にはインターネット上の root DNS へ問い合
+わせ実施。</p>
+
+<ul>
+<li>marathon</li>
+</ul>
+
+<p>コンテナオーケストレーションを司り mesos-slave へ支持を出しコンテナを
+稼働する役割。各 mesos-master 上で稼働し zookeeper 越しに mesos-master
+のカレントリーダを探しだしリクエストを創出。他に下記の機能を持っている。
+&lsquo;HA&rsquo;, &lsquo;ロードバランス&rsquo;, &lsquo;アプリのヘルスチェック&rsquo;, &lsquo;Web UI&rsquo;, &lsquo;REST
+API&rsquo;, &lsquo;Metrics&rsquo;。</p>
+
+<ul>
+<li>adminRouter</li>
+</ul>
+
+<p>実態は nginx。各サービスの認証と Proxy の役割を担っている。</p>
+
+<ul>
+<li>minuteman</li>
+</ul>
+
+<p>L4 レイヤのロードバランサ。各 mesos-master ノードで稼働。</p>
+
+<ul>
+<li>zookeeper</li>
+</ul>
+
+<p>mesos-master プロセスを冗長構成させるためのソフトウェア。</p>
+
+<ul>
+<li>exhibitor</li>
+</ul>
+
+<p>zookeeper のコンフィギュレーションを実施。</p>
+
+<ul>
+<li>mesos-slave</li>
+</ul>
+
+<p>Task を実行する役割。内部で meosos-executor (上記 m-executor) を実行し
+ている。</p>
+
+<ul>
+<li>m-executor (mesos-executor)</li>
+</ul>
+
+<p>mesos-slave ノード上でサービスのための TASK を稼働させる。</p>
+
+<h2 id="起動シーケンス">起動シーケンス</h2>
+
+<p>ここからは mesos-master, mesos-slave の起動シーケンスについて、まとめてきます。</p>
+
+<p>mesos-master</p>
+
+<ul>
+<li>exhibitor が起動し zookeeper のコンフィギュレーションを実施し zookeeper を起動</li>
+<li>mesos-master が起動。自分自身をレジスト後、他の mesos-master ノードを探索</li>
+<li>mesos-dns が起動</li>
+<li>mesos-dns が leader.mesos にカレントリーダの mesos-master を登録</li>
+<li>marathon が起動し zookeeper 越しに mesos-master を探索。</li>
+<li>adminRouter が起動し各 UI (mesos, marathon, exhibitor) が閲覧可能に。</li>
+</ul>
+
+<p>mesos-slave</p>
+
+<ul>
+<li>leader.mesos に ping を打って mesos-master のカレントリーダを見つけ出し mesos-slave 稼働。</li>
+<li>mesos-master に対して自分自身を &lsquo;agent&rsquo; として登録。</li>
+<li>mesos-master はその登録された IP アドレスを元に接続を試みる</li>
+<li>mesos-slave が TASK 実行可能な状態に</li>
+</ul>
+
 <h2 id="まとめと考察">まとめと考察</h2>
 
 <p>一昔前の Mesos + Marathon + Chronos とはだいぶデプロイ方法が変わっていた。だが構成には大きな変化は見られない。
-本来 Mesos 構成は public なネットワークと private なネットワークを別けた形とするが今回は簡易的な構成なため private のみで構築した。
-public なネットワークを構築した際の p1 ホスト上へのジョブのスケールがどのような動きをするか、今後調べる必要がありそうです。</p>
+AWS のような public, private ネットワークが別れたプラットフォームでは mesos-slave (DC/OS 的には Agent とも呼ぶ)は public agent, private agent として別けて管理される模様。public agent は AWS の ELB 等で分散され各コンテナ上のアプリにクエリがインターネットからのリクエストに応える。private agent はプライベートネットワーク上に配置されて public agent からのリクエストにも応える。また、mesos-master 達は別途 admin なネットワークに配置するのが Mesosphare の推奨らしい。</p>
+
+<p>だがしかし public, private を別けずに DC/OS を構成することも可能なように思えた。下記のように p1 を削除して構成して物理・仮想ロードバランサでリクエストを private agent に送出することでも DC/OS は機能するので。</p>
+
+<pre><code class="language-shell">$ vagrant up m1 a1 boot
+</code></pre>
+
+<p>ちなみに a2, a3, &hellip; と数を増やすことで private agent ノードを増やすことが可能。</p>
+
+<p>あとマニュアルインストール手順(公式)を実施してみて解ったが、pulic, private ネットワークを各ノードにアタッチして mesos-master, mesos-slave, またその他の各機能はプライベートネットワークを、外部からのリクエストに応えるためのパブリックネットワーク、といった構成も可能でした。</p>
 
 <h2 id="参考-url">参考 URL</h2>
 
-<p>手順は右記のものを利用。
-<a href="https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md">https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md</a></p>
+<ul>
+<li>手順は右記のものを利用。
+<a href="https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md">https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md</a></li>
+<li><a href="https://docs.mesosphere.com/1.7/overview/architecture/">https://docs.mesosphere.com/1.7/overview/architecture/</a></li>
+<li><a href="https://docs.mesosphere.com/1.7/overview/security/">https://docs.mesosphere.com/1.7/overview/security/</a></li>
+</ul>
 
     </div>
 

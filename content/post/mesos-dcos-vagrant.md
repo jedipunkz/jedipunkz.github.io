@@ -169,16 +169,131 @@ Marathon で redis サーバを立ち上げる
 
 <img src="http://jedipunkz.github.io/pix/dcos-marathon-redis.png" width="70%">
 
+※ 20160625 下記追記
+
+構成
+----
+
+ここからは Mesosphere DC/OS の内部構成を理解していきます。主となる mesos-master, mesos-slave の構成は下記の通り。
+
+* Mesos-Master Node 構成
+
+```shell
++--------------+
+| mesos-master |
++--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+
+|   zookeeper  | | mesos-dns | | marathon | | adminRouter | | minuteman | | exhibitor |
++--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+
+|                  mesos-master node                                                  |
++-------------------------------------------------------------------------------------+
+```
+
+* * * * * * * * Mesos-Slave (Mesos-Agent) Node 構成
+
+```shell
++-------------+ +---+---+---+---+
+| m-executor  | | c | c | c | c |
++-------------+ +---+---+---+---+
+| mesos-slave | | docker-daemon |
++-------------------------------+
+|        mesos-slave node       |
++-------------------------------+
+```
+
+各プロセスの役割
+----
+
+上記の図の各要素を参考資料を元にまとめました。
+
+* mesos-master
+
+masos-slave node からの情報を受け取り mesos-slave へプロセスを分配する
+役割。mesos-master は zookeeper によってリーダー選出により冗長構成が保
+たれている。
+
+* mesos-dns
+
+mesos フレームワーク内での DNS 解決を行うプロセス。各 mesos-master ノー
+ド上に稼働している。通常の DNS でいうコンテンツ DNS (Authoritative
+DNS)になっており mesos-master からクラスタ情報を受け取って DNS レコー
+ド登録、それを mesos-slave が DNS 参照する。mesos-slave が内部レコード
+に無い DNS 名を解決しに来た際にはインターネット上の root DNS へ問い合
+わせ実施。
+
+* marathon
+
+コンテナオーケストレーションを司り mesos-slave へ支持を出しコンテナを
+稼働する役割。各 mesos-master 上で稼働し zookeeper 越しに mesos-master
+のカレントリーダを探しだしリクエストを創出。他に下記の機能を持っている。
+'HA', 'ロードバランス', 'アプリのヘルスチェック', 'Web UI', 'REST
+API', 'Metrics'。
+
+* adminRouter
+
+実態は nginx。各サービスの認証と Proxy の役割を担っている。
+
+* minuteman
+
+L4 レイヤのロードバランサ。各 mesos-master ノードで稼働。
+
+* zookeeper
+
+mesos-master プロセスを冗長構成させるためのソフトウェア。
+
+* exhibitor
+
+zookeeper のコンフィギュレーションを実施。
+
+* mesos-slave
+
+Task を実行する役割。内部で meosos-executor (上記 m-executor) を実行し
+ている。
+
+* m-executor (mesos-executor)
+
+mesos-slave ノード上でサービスのための TASK を稼働させる。
+
+起動シーケンス
+----
+
+ここからは mesos-master, mesos-slave の起動シーケンスについて、まとめてきます。
+
+mesos-master
+
+* exhibitor が起動し zookeeper のコンフィギュレーションを実施し zookeeper を起動
+* mesos-master が起動。自分自身をレジスト後、他の mesos-master ノードを探索
+* mesos-dns が起動
+* mesos-dns が leader.mesos にカレントリーダの mesos-master を登録
+* marathon が起動し zookeeper 越しに mesos-master を探索。
+* adminRouter が起動し各 UI (mesos, marathon, exhibitor) が閲覧可能に。
+
+mesos-slave
+
+* leader.mesos に ping を打って mesos-master のカレントリーダを見つけ出し mesos-slave 稼働。
+* mesos-master に対して自分自身を 'agent' として登録。
+* mesos-master はその登録された IP アドレスを元に接続を試みる
+* mesos-slave が TASK 実行可能な状態に
+
 まとめと考察
 ----
 
 一昔前の Mesos + Marathon + Chronos とはだいぶデプロイ方法が変わっていた。だが構成には大きな変化は見られない。
-本来 Mesos 構成は public なネットワークと private なネットワークを別けた形とするが今回は簡易的な構成なため private のみで構築した。
-public なネットワークを構築した際の p1 ホスト上へのジョブのスケールがどのような動きをするか、今後調べる必要がありそうです。
+AWS のような public, private ネットワークが別れたプラットフォームでは mesos-slave (DC/OS 的には Agent とも呼ぶ)は public agent, private agent として別けて管理される模様。public agent は AWS の ELB 等で分散され各コンテナ上のアプリにクエリがインターネットからのリクエストに応える。private agent はプライベートネットワーク上に配置されて public agent からのリクエストにも応える。また、mesos-master 達は別途 admin なネットワークに配置するのが Mesosphare の推奨らしい。
 
+だがしかし public, private を別けずに DC/OS を構成することも可能なように思えた。下記のように p1 を削除して構成して物理・仮想ロードバランサでリクエストを private agent に送出することでも DC/OS は機能するので。
+
+```shell
+$ vagrant up m1 a1 boot
+```
+
+ちなみに a2, a3, ... と数を増やすことで private agent ノードを増やすことが可能。
+
+あとマニュアルインストール手順(公式)を実施してみて解ったが、pulic, private ネットワークを各ノードにアタッチして mesos-master, mesos-slave, またその他の各機能はプライベートネットワークを、外部からのリクエストに応えるためのパブリックネットワーク、といった構成も可能でした。
 
 参考 URL
 ---
 
-手順は右記のものを利用。
+* 手順は右記のものを利用。
 https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md
+* https://docs.mesosphere.com/1.7/overview/architecture/
+* https://docs.mesosphere.com/1.7/overview/security/
