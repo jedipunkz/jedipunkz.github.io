@@ -32,7 +32,7 @@ https://docs.stackstorm.com/install/index.html
 自分は CentOS7 を使ったので下記のワンライナーでインストールできました。
 password は任意のものを入れてください。
 
-```shell
+```
 curl -sSL https://stackstorm.com/packages/install.sh | bash -s -- --user=st2admin --password=foo
 ```
 
@@ -50,7 +50,7 @@ StackStorm の基本
 まず CLI で操作するために TOKEN を取得して環境変数にセットする必要があります。
 上記で設定したユーザ名・パスワードを入力してください。
 
-```shell
+```
 export ST2_AUTH_TOKEN=`st2 auth -t -p foo st2admin`
 ```
 
@@ -58,7 +58,7 @@ export ST2_AUTH_TOKEN=`st2 auth -t -p foo st2admin`
 
 Action はイベントが発生した際に実行できるアクションになります。早速アクションの一覧を取得してみましょう。
 
-```shell
+```
 $ st2 action list
 +---------------------------------+---------+-------------------------------------------------------------+
 | ref                             | pack    | description                                                 |
