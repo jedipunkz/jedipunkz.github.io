@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2014-12-13T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2014-12-16T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,263 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2014/12/16/vyos-vxlan/">VyOS で VXLAN を使ってみる</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-12-16'>
+            December 16, 2014</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。@jedipunkz です。</p>
+
+<p>VyOS に VXLAN が実装されたと聞いて少し触ってみました。この情報を知ったきっかけ
+は @upaa さんの下記の資料です。</p>
+
+<p>参考資料 : <a href="http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan">http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan</a></p>
+
+<p>VyOS は御存知の通り実体は Debian Gnu/Linux 系の OS でその上に OSS なミドル
+ウェアが搭載されていて CLI でミドルウェアのコンフィギュレーション等が行えるモ
+ノになっています。Linux で VXLAN といえば OVS を使ったモノがよく知られています
+が VyOS の VXLAN 機能は Linux Kernel の実装を使っているようです。</p>
+
+<h2 id="要件">要件</h2>
+
+<ul>
+<li>トンネルを張るためのセグメントを用意</li>
+<li>VyOS 1.1.1 (現在最新ステーブルバージョン) が必要</li>
+<li>Ubuntu Server 14.04 LTS (同じく Linux VXLAN 搭載バージョン)</li>
+</ul>
+
+<h2 id="構成">構成</h2>
+
+<p>特徴</p>
+
+<ul>
+<li>マネージメント用セグメント 10.0.1.0/24 を用意</li>
+<li>GRE と同じくトンネル終端が必要なのでそのためのセグメント 10.0.2.0/24 を用意</li>
+<li>各 eth1 は IP reachable である必要があるので予め IP アドレスの設定と疎通を確認</li>
+<li>VXLAN を喋れる Ubuntu 14.04 LTS x 1 台と VyOS 1.1.1 x 2 台で相互に疎通確認</li>
+</ul>
+
+<pre><code>+-------------+-------------+------------ Management 10.0.1.0/24
+|10.0.0.254   |10.0.0.253   |10.0.0.1
+|eth0         |eth0         |eth0
++----------+  +----------+  +----------+ 
+|  vyos01  |  |  vyos02  |  |  ubuntu  |
++-+--------+  +----------+  +----------+ 
+| |eth1       | |eth1       | |eth1
+| |10.0.2.254 | |10.0.2.253 | |10.0.2.1
+| +-----------)-+-----------)-+---------- Tunneling 10.0.2.0/24
+|             |             |
++-------------+-------------+------------ VXLAN(eth1にlink) 10.0.1.0/24
+10.0.1.254     10.0.1.253    10.0.1.1
+</code></pre>
+
+<h2 id="設定を投入">設定を投入</h2>
+
+<p>vyos01 の設定を行う。VXLAN の設定に必要なものは&hellip;</p>
+
+<ul>
+<li>VNI (VXLAN Network Ideintity)という識別子</li>
+<li>Multicast Group Address</li>
+<li>互いに IP reachable なトンネルを張るためのインターフェース</li>
+</ul>
+
+<p>です。これらを意識して下記の設定を vyos01 に投入します。</p>
+
+<pre><code class="language-bash">$ configure
+% set interfaces vxlan vxlan0
+% set interfaces vxlan vxlan0 group 239.1.1.1
+% set interfaces vxlan vxlan0 vni 42
+% set interfaces vxlan vxlan0 address '10.0.1.254/24'
+% set interfaces vxlan vxlan0 link eth1
+</code></pre>
+
+<p>設定を確認します</p>
+
+<pre><code class="language-bash">% exit
+$ show int
+...&lt;省略&gt;...
+    vxlan vxlan0 {
+     address 10.0.1.254/24
+     group 239.1.1.1
+     link eth1
+     vni 42
+}
+</code></pre>
+
+<p>VyOS の CLI を介さず直 Linux の設定を iproute2 で確認してみましょう。
+VNI, Multicast Group Address と共に &lsquo;link eth1&rsquo; で設定したトンネルを終端するための物理 NIC が確認できます。</p>
+
+<pre><code class="language-bash">vyos@vyos01# ip -d link show vxlan0
+5: vxlan0: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
+    link/ether 86:24:26:b2:11:5c brd ff:ff:ff:ff:ff:ff promiscuity 0
+    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ttl 16 ageing 300
+</code></pre>
+
+<p>vyos02 の設定を同様に行います。</p>
+
+<pre><code class="language-bash">$ congigure
+% set interfaces vxlan vxlan0 address '10.0.1.253/24'
+% set interfaces vxlan vxlan0 vni 42
+% set interfaces vxlan vxlan0 group 239.1.1.1
+% set interfaces vxlan vxlan0 link eth1
+</code></pre>
+
+<p>設定の確認を行います。</p>
+
+<pre><code class="language-bash">... 省略 ...
+vxlan vxlan0 {
+     address 10.0.1.254/24
+     group 239.1.1.1
+     link eth1
+     vni 42
+}
+</code></pre>
+
+<p>同じく Linux の iproute2 で確認します。</p>
+
+<pre><code class="language-bash">vyos@vyos01# ip -d link show vxlan0
+5: vxlan0: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
+    link/ether 86:24:26:b2:11:5c brd ff:ff:ff:ff:ff:ff promiscuity 0
+    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ttl 16 ageing 300
+</code></pre>
+
+<p>ubuntu ホストの設定を行っていきます。</p>
+
+<p>Ubuntu Server 14.04 LTS であればパッチを当てること無く Linux Kernel の VXLAN 機能を使うことができます。
+設定内容は VyOS と同等です。VyOS がこの Linux の実装を使っているのがよく分かります。</p>
+
+<pre><code class="language-bash">sudo modprobe vxlan
+sudo ip link add vxlan0 type vxlan id 42 group 239.1.1.1 dev eth1
+sudo ip link set up vxlan0
+sudo ip a add 10.0.1.1/24 dev vxlan0
+</code></pre>
+
+<p>同じく Linux iproute2 で確認を行います。</p>
+
+<pre><code class="language-bash"> ip -d link show vxlan0
+5: vxlan0: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
+    link/ether d6:ff:c1:27:69:a0 brd ff:ff:ff:ff:ff:ff promiscuity 0
+    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ageing 300
+</code></pre>
+
+<h2 id="疎通確認">疎通確認</h2>
+
+<p>疎通確認を行います。</p>
+
+<p>ubuntu -&gt; vyos01 の疎通確認です。ICMP で疎通が取れることを確認できます。</p>
+
+<pre><code class="language-bash">thirai@ubuntu:~$ ping 10.0.1.254 -c 3
+PING 10.0.1.254 (10.0.1.254) 56(84) bytes of data.
+64 bytes from 10.0.1.254: icmp_seq=1 ttl=64 time=0.272 ms
+64 bytes from 10.0.1.254: icmp_seq=2 ttl=64 time=0.336 ms
+64 bytes from 10.0.1.254: icmp_seq=3 ttl=64 time=0.490 ms
+
+--- 10.0.1.254 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 1999ms
+rtt min/avg/max/mdev = 0.272/0.366/0.490/0.091 ms
+</code></pre>
+
+<p>次に ubuntu -&gt; vyos02 の疎通確認です。</p>
+
+<pre><code class="language-bash">thirai@ubuntu:~$ ping 10.0.1.253 -c 3
+PING 10.0.1.253 (10.0.1.253) 56(84) bytes of data.
+64 bytes from 10.0.1.253: icmp_seq=1 ttl=64 time=0.272 ms
+64 bytes from 10.0.1.253: icmp_seq=2 ttl=64 time=0.418 ms
+64 bytes from 10.0.1.253: icmp_seq=3 ttl=64 time=0.451 ms
+
+--- 10.0.1.253 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 1998ms
+rtt min/avg/max/mdev = 0.272/0.380/0.451/0.079 ms
+</code></pre>
+
+<p>この時点で ubuntu ホストの fdb (forwarding db) の内容を確認します。</p>
+
+<pre><code class="language-bash">$ bridge fdb show dev vxlan0
+00:00:00:00:00:00 dst 239.1.1.1 via eth1 self permanent
+4e:69:a4:a7:ef:1c dst 10.0.2.253 self
+86:24:26:b2:11:5c dst 10.0.2.254 self
+</code></pre>
+
+<p>vyos01, vyos02 のトンネル終端 IP アドレスと Mac アドレスが確認できます。ubuntu ホストから見ると
+送信先は vyos0[12] の VXLAN インターフェースではなく、あくまでもトンネル終端を行っているインターフェース
+になることがわかります。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>VyOS ver 1.1.0 には VXLAN を物理インターフェースに link する機能に不具合がありそうなので今ら ver 1.1.1 を使うしか
+なさそう。とは言え、ver 1.1.1 なら普通に動作しました。</p>
+
+<p>VyOS は仮想ルータという位置付けなので今回紹介したようにインターフェースを VXLAN ネットワークに所属させる
+機能があるのみです。VXLAN Trunk を行うような設定はありません。これはハイパーバイザ上で動作させることを前提
+に設計されているので仕方ないです..というかスイッチで行うべき機能ですよね..。VM を接続して云々するには OVS
+のようなソフトウェアスイッチを使えばできます。</p>
+
+<p>また fdb は時間が経つと情報が消えます。これは VXLAN のメッシュ構造なトンネルがその都度張られているのかどうか
+気になるところです。ICMP の送信で一発目のみマルチキャストでその後ユニキャストになることを確認しましたが、その
+一発目のマルチキャストでトンネリングがされるものなのでしょうか&hellip;。あとで調べてみます。OVS のように CLI で
+トンネルがどのように張られているか確認する手段があれば良いのですが。</p>
+
+<p>以上です。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2014/12/16/vyos-vxlan/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -951,277 +1208,6 @@ Chef サーバ構成にする必要が出てきます。</p>
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2014/11/04/midostack/">MidoStack を動かしてみる</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2014-11-04'>
-            November 4, 2014</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>昨晩 Midokura さんが Midonet を OSS 化したとニュースになりました。公式サイトは
-下記の URL になっています。Midonet は OpenStack Neutron のプラグインとして動作
-するソフトウェアです。</p>
-
-<p><a href="http://www.midonet.org">http://www.midonet.org</a></p>
-
-<p>下記のGithub 上でソースを公開しています。</p>
-
-<p><a href="https://github.com/midonet">https://github.com/midonet</a></p>
-
-<p>本体の midonet と共に midostack というレポジトリがあってどうやら公式サイトの
-QuickStart を見ても devstack を交えての簡単な midonet の動作が確認できそう。</p>
-
-<p><a href="https://github.com/midonet/midostack">https://github.com/midonet/midostack</a></p>
-
-<h2 id="早速使ってみる">早速使ってみる</h2>
-
-<p>早速 midostack を使って midonet を体験してみましょう。QuickStart には
-Vagrant + VirtualBox を用いた使い方が改定ありますが手元の PC 端末だとリソース
-が足らなくて CirrOS VM 一個すら立ち上がりませんでした。よって普通にリソースの
-沢山あるサーバで稼働してみます。Vagrantfile 見ても</p>
-
-<pre><code>config.vm.synced_folder &quot;./&quot;, &quot;/midostack&quot;
-</code></pre>
-
-<p>としているだけなので、Vagrant ではなくても大丈夫でしょう。</p>
-
-<p>Ubuntu Server 14.04 をインストールしたマシンを用意して midostack を取得します。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/midonet/midostack.git
-</code></pre>
-
-<p>midonet_stack.sh を実行します。</p>
-
-<pre><code class="language-bash">% cd midostack
-% ./midonet_stack.sh
-</code></pre>
-
-<p>暫く待つと Neutron Middonet Plugin が有効になった OpenStack が立ち上がります。
-Horizon にアクセスしましょう。ユーザ名 : admin, パスワード : gogomid0 (デフォ
-ルト) です。</p>
-
-<p>VM も普通に立ち上がりますし VM 同士の通信も良好です。</p>
-
-<h2 id="neutron-プロセスを確認する">Neutron プロセスを確認する</h2>
-
-<p>Neutron-Server は下記のように立ち上がっています。</p>
-
-<pre><code class="language-bash">16229 pts/13   S+     0:06 python /usr/local/bin/neutron-server --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/midonet/midonet.ini
-</code></pre>
-
-<p>/etc/neutron/neutron.conf の midonet の指定はこんな感じ。</p>
-
-<pre><code>core_plugin = midonet.neutron.plugin.MidonetPluginV2
-api_extensions_path = /opt/stack/midonet/python-neutron-plugin-midonet/midonet/neutron/extensions
-</code></pre>
-
-<p>次に /etc/neutron/plugins/midonet/midonet.ini を確認してみましょう。</p>
-
-<pre><code>[midonet]
-# MidoNet API server URI
-# midonet_uri = http://localhost:8080/midonet-api
-
-# MidoNet admin username
-# username = admin
-
-# MidoNet admin password
-# password = passw0rd
-
-# ID of the project that MidoNet admin user belongs to
-# project_id = 77777777-7777-7777-7777-777777777777
-
-# Virtual provider router ID
-# provider_router_id = 00112233-0011-0011-0011-001122334455
-
-# Path to midonet host uuid file
-# midonet_host_uuid_path = /etc/midolman/host_uuid.properties
-
-[MIDONET]
-project_id = admin
-password = gogomid0
-username = admin
-midonet_uri = http://localhost:8081/midonet-api
-</code></pre>
-
-<h2 id="midonet-api-にアクセスする">Midonet API にアクセスする</h2>
-
-<p>Midonet API のリファレンスが下記の URL で公開されていました。</p>
-
-<p><a href="http://docs.midonet.org/docs/v1.8/rest-api/api/rest-api-specification.html">http://docs.midonet.org/docs/v1.8/rest-api/api/rest-api-specification.html</a></p>
-
-<p>早速使ってみましょう。まず Token を得ます。</p>
-
-<pre><code class="language-bash">curl -i 'http://127.0.0.1:5000/v2.0/tokens' -X POST -H &quot;Content-Type: application/json&quot; -H &quot;Accept: application/json&quot;  -d '{&quot;auth&quot;: {&quot;tenantName&quot;: &quot;admin&quot;, &quot;passwordCredentials&quot;: {&quot;username&quot;: &quot;admin&quot;, &quot;password&quot;: &quot;gogomid0&quot;}}}'
-</code></pre>
-
-<p>Token ID を取得したら &ldquo;/&rdquo; に対してアクセスしてみましょう。</p>
-
-<pre><code class="language-bash">% curl -i -X GET http://localhost:8081/midonet-api/ -H &quot;User-Agent: python-keystoneclient&quot; -H &quot;X-Auth-Token: &lt;TokenID&gt;&quot;
-</code></pre>
-
-<p>レスポンス</p>
-
-<pre><code class="language-json">{
-&quot;routerTemplate&quot;: &quot;http://localhost:8081/midonet-api/routers/{id}&quot;,
-&quot;portTemplate&quot;: &quot;http://localhost:8081/midonet-api/ports/{id}&quot;,
-&quot;vipTemplate&quot;: &quot;http://localhost:8081/midonet-api/vips/{id}&quot;,
-&quot;poolTemplate&quot;: &quot;http://localhost:8081/midonet-api/pools/{id}&quot;,
-&quot;healthMonitorTemplate&quot;: &quot;http://localhost:8081/midonet-api/health_monitors/{id}&quot;,
-&quot;healthMonitors&quot;: &quot;http://localhost:8081/midonet-api/health_monitors&quot;,
-&quot;loadBalancers&quot;: &quot;http://localhost:8081/midonet-api/load_balancers&quot;,
-&quot;ipAddrGroupTemplate&quot;: &quot;http://localhost:8081/midonet-api/ip_addr_groups/{id}&quot;,
-&quot;tenants&quot;: &quot;http://localhost:8081/midonet-api/tenants&quot;,
-&quot;tenantTemplate&quot;: &quot;http://localhost:8081/midonet-api/tenants/{id}&quot;,
-&quot;portGroupTemplate&quot;: &quot;http://localhost:8081/midonet-api/port_groups/{id}&quot;,
-&quot;loadBalancerTemplate&quot;: &quot;http://localhost:8081/midonet-api/load_balancers/{id}&quot;,
-&quot;poolMemberTemplate&quot;: &quot;http://localhost:8081/midonet-api/pool_members/{id}&quot;,
-&quot;hostVersions&quot;: &quot;http://localhost:8081/midonet-api/versions&quot;,
-&quot;version&quot;: &quot;v1.7&quot;,
-&quot;bridgeTemplate&quot;: &quot;http://localhost:8081/midonet-api/bridges/{id}&quot;,
-&quot;hostTemplate&quot;: &quot;http://localhost:8081/midonet-api/hosts/{id}&quot;,
-&quot;uri&quot;: &quot;http://localhost:8081/midonet-api/&quot;,
-&quot;vteps&quot;: &quot;http://localhost:8081/midonet-api/vteps&quot;,
-&quot;tunnelZoneTemplate&quot;: &quot;http://localhost:8081/midonet-api/tunnel_zones/{id}&quot;,
-&quot;ipAddrGroups&quot;: &quot;http://localhost:8081/midonet-api/ip_addr_groups&quot;,
-&quot;writeVersion&quot;: &quot;http://localhost:8081/midonet-api/write_version&quot;,
-&quot;chainTemplate&quot;: &quot;http://localhost:8081/midonet-api/chains/{id}&quot;,
-&quot;vtepTemplate&quot;: &quot;http://localhost:8081/midonet-api/vteps/{ipAddr}&quot;,
-&quot;adRouteTemplate&quot;: &quot;http://localhost:8081/midonet-api/ad_routes/{id}&quot;,
-&quot;bgpTemplate&quot;: &quot;http://localhost:8081/midonet-api/bgps/{id}&quot;,
-&quot;hosts&quot;: &quot;http://localhost:8081/midonet-api/hosts&quot;,
-&quot;routeTemplate&quot;: &quot;http://localhost:8081/midonet-api/routes/{id}&quot;,
-&quot;ruleTemplate&quot;: &quot;http://localhost:8081/midonet-api/rules/{id}&quot;,
-&quot;systemState&quot;: &quot;http://localhost:8081/midonet-api/system_state&quot;,
-&quot;vips&quot;: &quot;http://localhost:8081/midonet-api/vips&quot;,
-&quot;pools&quot;: &quot;http://localhost:8081/midonet-api/pools&quot;,
-&quot;routers&quot;: &quot;http://localhost:8081/midonet-api/routers&quot;,
-&quot;bridges&quot;: &quot;http://localhost:8081/midonet-api/bridges&quot;,
-&quot;chains&quot;: &quot;http://localhost:8081/midonet-api/chains&quot;,
-&quot;portGroups&quot;: &quot;http://localhost:8081/midonet-api/port_groups&quot;,
-&quot;poolMembers&quot;: &quot;http://localhost:8081/midonet-api/pool_members&quot;,
-&quot;tunnelZones&quot;: &quot;http://localhost:8081/midonet-api/tunnel_zones&quot;
-}
-</code></pre>
-
-<p>なんとなく引数にこれらの文字列を渡せばいいのだなと分かります。</p>
-
-<p>次に neutron の管理している subnets を確認してみましょう。</p>
-
-<pre><code class="language-bash">% curl -i -X GET http://localhost:8081/midonet-api/neutron/subnets -H &quot;User-Agent: python-keystoneclient&quot; -H &quot;X-Auth-Token: &lt;TokenID&gt;&quot;
-</code></pre>
-
-<p>レスポンス</p>
-
-<pre><code class="language-json">[
-  {
-    &quot;enable_dhcp&quot;: false,
-    &quot;tenant_id&quot;: &quot;65f7012145d84ac5afc36572eabe5b09&quot;,
-    &quot;host_routes&quot;: [],
-    &quot;dns_nameservers&quot;: [],
-    &quot;id&quot;: &quot;3dbe5cff-8a8c-4790-85b5-b789d8ede863&quot;,
-    &quot;name&quot;: &quot;public-subnet&quot;,
-    &quot;cidr&quot;: &quot;200.200.200.0/24&quot;,
-    &quot;shared&quot;: false,
-    &quot;ip_version&quot;: 4,
-    &quot;network_id&quot;: &quot;45269fba-e32f-40b0-a542-f5cfe34ce1a1&quot;,
-    &quot;gateway_ip&quot;: &quot;200.200.200.1&quot;,
-    &quot;allocation_pools&quot;: [
-      {
-        &quot;last_ip&quot;: null,
-        &quot;first_ip&quot;: null
-      }
-    ]
-  },
-  {
-    &quot;enable_dhcp&quot;: true,
-    &quot;tenant_id&quot;: &quot;f34b4398015546b8b84f50c731ed6c51&quot;,
-    &quot;host_routes&quot;: [],
-    &quot;dns_nameservers&quot;: [],
-    &quot;id&quot;: &quot;3dbcf04a-9738-4b1f-b084-76f2a4b17cbc&quot;,
-    &quot;name&quot;: &quot;private-subnet&quot;,
-    &quot;cidr&quot;: &quot;10.0.0.0/24&quot;,
-    &quot;shared&quot;: false,
-    &quot;ip_version&quot;: 4,
-    &quot;network_id&quot;: &quot;2edb78c3-0f23-4e29-a3e6-cc97f55baa6a&quot;,
-    &quot;gateway_ip&quot;: &quot;10.0.0.1&quot;,
-    &quot;allocation_pools&quot;: [
-      {
-        &quot;last_ip&quot;: null,
-        &quot;first_ip&quot;: null
-      }
-    ]
-  }
-]
-</code></pre>
-
-<p>２つのサブネットが確認出来ました。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>勉強不足でまだ全く midonet で出来る事がわからない..汗。でもとりあえず動かせた
-し、API も引っ張れるのでこれから色々試せそうですね。OSS 化されたことで、コミュ
-ニティの間でも使われていくことも想像出来ますし、自分たち技術者としてはとても有
-り難いことでした。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/11/04/midostack/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1338,6 +1324,20 @@ midonet_uri = http://localhost:8081/midonet-api
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-02'>
+                                    July 2, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
                                 
                                     
@@ -1377,20 +1377,6 @@ midonet_uri = http://localhost:8081/midonet-api
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-11-15'>
-                                    November 15, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1425,7 +1411,7 @@ midonet_uri = http://localhost:8081/midonet-api
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">98</span>
+                                <span style="float:right;">99</span>
                             </header>
                         </article>
                     </li>

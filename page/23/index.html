@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2013-04-06T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-04-20T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,257 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/04/20/openstack-grizzly-installation-script/">OpenStack Grizzly 構築スクリプト</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-04-20'>
+            April 20, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>OpenStack Grizzly がリリースされて2週間ほど経過しました。皆さん動かしてみまし
+たか？今回、毎度の構築 Bash スクリプトを開発したので公開します。</p>
+
+<p>下記のサイトで公開しています。</p>
+
+<p><a href="https://github.com/jedipunkz/openstack_grizzly_install">https://github.com/jedipunkz/openstack_grizzly_install</a></p>
+
+<p>このスクリプト、複数台構成とオールインワン構成の両方が構成出来るようなっていま
+すが、今回は簡単なオールインワン構成の組み方をを簡単に説明したいと思います。</p>
+
+<h2 id="前提の環境">前提の環境</h2>
+
+<ul>
+<li>Ubuntu 12.04 LTS が稼働している</li>
+<li>Cinder のためのディスクを OS 領域と別に用意 (/dev/sdb1 など)</li>
+<li>オールインワン構成の場合は 2 NICs 準備</li>
+</ul>
+
+<p>Ubuntu 13.04 の daily build も完成度上がっている時期ですが OVS 側の対応が
+OpenStack 構成に問題を生じさせるため 12.04 LTS + Ubuntu Cloud Archive の組み合
+わせで構築するのが主流になっているようです。また、Cinder 用のディスクは OS 領
+域を保持しているディスクとは別 (もしくはパーティションを切ってディスクデバイス
+を別けても可) が必要です。オールインワン構成の場合は NIC を2つ用意する必要があ
+ります。通常 OpenStack を複数台構成する場合は</p>
+
+<ul>
+<li>コントローラノード x 1 台</li>
+<li>ネットワークノード x 1 台</li>
+<li>コンピュートノード x n 台</li>
+</ul>
+
+<p>で組み、VM はコンピュートノードからネットワークノードを介してインターネットに
+接続します。よってそのため更に NIC が必要になるのですが、オールインワン構成の
+場合は</p>
+
+<ul>
+<li>マネージメントネットワーク, API ネットワーク(内部通信用)</li>
+<li>パブリックネットワーク (VM のためのブリッジインターフェース)</li>
+</ul>
+
+<p>の計2つを用意してください。</p>
+
+<h2 id="実行前の準備">実行前の準備</h2>
+
+<h4 id="os-のインストール">OS のインストール</h4>
+
+<p>OS のインストール方法は割愛しますが</p>
+
+<ul>
+<li>&lsquo;openssh-server&rsquo; のみをインストール</li>
+<li>ディスクが1つしかない場合は cinder 用のパーティションを用意</li>
+</ul>
+
+<p>の条件が満たされていれば OK です。</p>
+
+<h4 id="cinder-用のディスクデバイスパーティショニング">Cinder 用のディスクデバイスパーティショニング</h4>
+
+<p>Cinder 用に信頼性のあるディスクを用意している場合は fdisk 等を用いてパーティショ
+ニングしてください。近々 loopback デバイスでも構築できるようスクリプトの改修を
+する予定です。ディスクが一つしかない場合は先程述べたとおり、OS インストール時
+にパーティショニングしたディスクデバイスを使います。</p>
+
+<pre><code>% sudo fdisk /dev/sdb
+</code></pre>
+
+<h2 id="ネットワークインターフェースの設定">ネットワークインターフェースの設定</h2>
+
+<p>下記のように2つのネットワークインターフェースを設定してください。</p>
+
+<pre><code>% sudo ${EDITOR} /etc/network/interfaces
+auto lo
+iface lo inet loopback
+
+# this NIC will be used for VM traffic to the internet
+auto eth0
+iface eth0 inet static
+    up ifconfig $IFACE 0.0.0.0 up
+    up ip link set $IFACE promisc on
+    down ip link set $IFACE promisc off
+    down ifconfig $IFACE down
+    address 10.200.9.10
+    netmask 255.255.255.0
+    dns-nameservers &lt;DNS_RESOLVER1&gt; &lt;DNS_RESOLVER&gt;
+    dns-search example.com
+
+# this NIC must be on management network
+auto eth1
+iface eth1 inet static
+    address 10.200.10.10
+    netmask 255.255.255.0
+    gateway 10.200.10.1
+    dns-nameservers &lt;DNS_RESOLVER1&gt; &lt;DNS_RESOLVER&gt;
+</code></pre>
+
+<p>eth0 が VM のためのブリッジインターフェースになります。eth1 はマネージメントネッ
+トワーク用・内部 API 通信用の兼務です。</p>
+
+<h2 id="スクリプトの取得とパラメータ設定">スクリプトの取得とパラメータ設定</h2>
+
+<p>スクリプトの取得を行います。</p>
+
+<pre><code>% git clone git://github.com/jedipunkz/openstack_grizlly_install.git
+% cd openstack_grizzly_install
+</code></pre>
+
+<p>パラメータを設定するため setup.conf 内の各パラメータを設定変更します。数多くの
+パラメータがありますが、最低限のパラメータということで&hellip;</p>
+
+<pre><code>HOST_IP='10.200.10.10'
+HOST_PUB_IP='10.200.9.10'
+PUBLIC_NIC='eth0'
+</code></pre>
+
+<p>を設定してください。HOST_IP は eth1 の IP アドレス、HOST_PUB_IP は eth0 の IP
+アドレス、PUBLIC_NIC は eth0 (HOST_PUB_IP のインターフェース名) を指定します。</p>
+
+<h2 id="スクリプトの実行">スクリプトの実行</h2>
+
+<p>いよいよスクリプトを実行します。</p>
+
+<pre><code>% sudo ./setup.sh allinone
+</code></pre>
+
+<p>しばらくすると構築が完了します。あとは</p>
+
+<pre><code>http://${HOST_IP}/horizon/
+</code></pre>
+
+<p>にブラウザでアクセスすると WEB I/F である Horizon のログイン画面が表示されます。
+パラメータをいじっていなければユーザ : demo, パスワード : demo でアクセス出来
+ます。</p>
+
+<h2 id="各-api-にコマンドでアクセスする">各 API にコマンドでアクセスする</h2>
+
+<p>API にアクセスするためにコマンドを用いることも出来ます。スクリプトを実行した結
+果、下記のファイルが生成されているはずです。</p>
+
+<pre><code>~/openstackrc-demo # 'demo' ユーザで API にアクセス
+~/openstackrc      # 'admin' ユーザで API にアクセス
+</code></pre>
+
+<p>&lsquo;demo&rsquo; ユーザでアクセスするためには</p>
+
+<pre><code>% source ~/openstackrc-demo
+</code></pre>
+
+<p>を実行してください。環境変数が設定され API にアクセス出来るようになります。例
+として下記のコマンドを実行してみてください。</p>
+
+<pre><code>% glnace image-list
++--------------------------------------+---------------------+-------------+------------------+------------+--------+
+| ID                                   | Name                | Disk Format | Container Format | Size       | Status |
++--------------------------------------+---------------------+-------------+------------------+------------+--------+
+| 1a7943a5-8f8f-4c02-9763-5a6d519c31bb | Cirros 0.3.0 x86_64 | qcow2       | bare             | 9761280    | active |
++--------------------------------------+---------------------+-------------+------------------+------------+--------+
+</code></pre>
+
+<p>OS イメージ一覧が取得出来ます。スクリプトで予め Glance に登録した Cirros とい
+う小さな OS イメージが確認出来るはずです。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>本格的な構成を組むのであれば上記の URL にも知る指定ある複数台構成を組んでみて
+ください。同じくスクリプトで構築出来ます。また今回から Quantum に実装された
+LBaaS も組めるようになっています。構築出来た OpenStack で LB を組んでみてくだ
+さい。LBaaS の説明については OpenStack ユーザ会の中島さんのブログが参考になり
+ます。</p>
+
+<p><a href="http://aikotobaha.blogspot.jp/2013/04/use-full-function-of-openstack-grizzly.html">http://aikotobaha.blogspot.jp/2013/04/use-full-function-of-openstack-grizzly.html</a></p>
+
+<p>LBaaS で組める負荷分散方式が &lsquo;ROUND_ROBIN&rsquo; 以外にも選択出来るぽいのでもう少し
+調べたら、僕のブログでも紹介しようかと思います。また Grizzly になって数多くの
+機能が新たに実装されているので引き続き紹介していこうかと思います。</p>
+
+<p>OpenStack は多くの機能がありますし構成の仕方も様々。予め理解しなければいけない
+技術も多岐にわたるのでブログだけではなかなか説明し切れないところです。
+OpenStack のコミュニティが書いた &lsquo;OpenStack Operations Guide&rsquo; なるドキュメント
+が最近リリースされました。</p>
+
+<p><a href="http://docs.openstack.org/ops/">http://docs.openstack.org/ops/</a></p>
+
+<p>日本のユーザ会でもこのドキュメントを翻訳しようという活動がされている最中です。
+興味があるかたは一度読むことをオススメしますし、もし更に興味が有る方は翻訳活動
+に協力するのはいかがでしょうか。ユーザ会の ML で現在話が進んでいます。</p>
+
+<p>引き続き、OpenStack ネタはアップしていきますー。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/04/20/openstack-grizzly-installation-script/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -691,181 +942,6 @@ shell script である。puppet, chef を呼び出しても OK.</li>
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/03/28/netbsd-on-openstack/">NetBSD on OpenStack</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-03-28'>
-            March 28, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>もう数日で OpenStack の次期バージョン版 Grizzly がリリースされるタイミングだが
-現行バージョン Folsom の OpenStack の上に NetBSD を載せてみた。完全にお遊び
-だけど&hellip;。</p>
-
-<p>結局、ほとんど何も特別な対応取ることなく NetBSD が動いた。もちろんハイパーバイ
-ザは KVM です。だけど少し条件がある。</p>
-
-<p>qemu の不具合があり Ubuntu 12.04 LTS + Ubuntu Cloud Archives の組み合わせでは
-NetBSD が動作しなかった。下記のようなカーネルパニックが発生。</p>
-
-<pre><code>panic: pci_make_tag: bad request
-</code></pre>
-
-<p>この不具合に相当するんじゃないかと思ってる。</p>
-
-<p><a href="https://bugs.launchpad.net/qemu/+bug/897771">https://bugs.launchpad.net/qemu/+bug/897771</a></p>
-
-<p>よって下記の組み合わせで動作を確認した。</p>
-
-<ul>
-<li>Ubuntu 12.10 + OpenStack (Native Packages)</li>
-<li>qemu, kvm : 1.2.0+noroms-0ubuntu2.12.10.3</li>
-<li>NetBSD 6.1 RC2 amd64</li>
-</ul>
-
-<h2 id="前提条件">前提条件</h2>
-
-<p>OpenStack Folsom が動作していること。</p>
-
-<h2 id="netbsd-os-イメージ作成">NetBSD OS イメージ作成</h2>
-
-<p>nova-compute が動作しているホストの qemu-kvm を利用する。OpenStack 上に何でも
-良いので OS を動作させこの kvm プロセスのパラメータを参考に kvm コマンドを実行
-し NetBSD をインストールさせた。一番確実な方法。</p>
-
-<pre><code>% cd ~/
-% wget http://ftp.netbsd.org/pub/NetBSD/iso/6.1_RC2/NetBSD-6.1_RC2-amd64.iso
-% kvm-img create -f qcow2 netbsd.img 5G
-% /usr/bin/kvm -M pc-1.0 -cpu \
-core2duo,+lahf_lm,+rdtscp,+hypervisor,+avx,+osxsave,+save,+aes,+popcnt,+sse4.2,+sse4.1,+cx16,+vmx,+pclmuldq,+ht,+ss,+ds \
--enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \
--drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \
--device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
--net nic,model=virtio -vnc :9 -cdrom ~/NetBSD-6.1_RC2-amd64.iso
-</code></pre>
-
-<p>VNC :9 に接続して NetBSD を普通ににインストールする。</p>
-
-<p>インストールが終わったら CDROM デバイスを外して起動。</p>
-
-<pre><code>% core2duo,+lahf_lm,+rdtscp,+hypervisor,+avx,+osxsave,+save,+aes,+popcnt,+sse4.2,+sse4.1,+cx16,+vmx,+pclmuldq,+ht,+ss,+ds \
--enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \
--drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \
--device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
--net nic,model=virtio -vnc :9
-</code></pre>
-
-<p>VNC :9 に接続し下記の操作を行う。</p>
-
-<p>vioif0 という virtio なネットワークインターフェースが起動するので下記のように
-追記する。</p>
-
-<pre><code># vi /etc/rc.conf # 下記を追記
-ifconfig_vioif0=dhcp
-sshd=YES
-</code></pre>
-
-<p>OpenStack の metadata server から nova の管理するキーペア鍵を取得し
-authorized_keys に配置する様、/etc/rc.local に追記する。curl とか便利なツール
-はもちろん！入っていないので ftp コマンドでなんとかする。</p>
-
-<pre><code class="language-bash"># vi /etc/rc.local # 下記を追記
-if [ ! -d /root/.ssh ]; then
-    mkdir -p /root/.ssh
-fi
-echo &gt;&gt; /root/.ssh/authorized_keys
-cd /tmp
-ftp http://169.254.169.254/latest/meta-data/public-keys/0/openssh-key
-cat openssh-key | grep 'ssh-rsa' &gt;&gt; /root/.ssh/authorized_keys
-echo &quot;AUTHORIZED_KEYS:&quot;
-echo &quot;*********************&quot;
-cat /root/.ssh/authorized_keys
-echo &quot;*********************&quot;
-</code></pre>
-
-<p>nova のキーペアでログインしたいので sshd は root ユーザでログイン出来るように
-修正行う。</p>
-
-<pre><code># vi /etc/ssh/sshd_config
-PermitRootLogin yes
-</code></pre>
-
-<p>OS をシャットダウンしてイメージ作成は終わり。</p>
-
-<h2 id="glance-へ登録">Glance へ登録</h2>
-
-<p>netbsd.img を Glance に接続できるホストへ移動しイメージ登録を行う。</p>
-
-<pre><code>% glance add name=&quot;NetBSD 6.1 RC2 amd64&quot; is_public=true \
-  container_format=ovf disk_format=qcow2 &lt; ~/netbsd.img
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>何も手を加えていない&hellip;。NetBSD 6.1 は最初から Virtio が有効になっているので何
-も考えることなくイメージ作成が出来た。コツは nova-compute が実際に動作している
-ホストでイメージを作ること。ハイパーバイザの OS が若干古いホストでも作業してみ
-たのだが、OpenStack に載せた途端カーネルパニックに陥った。Qemu はものすごいス
-ピードで進化しているのでバージョンの差異は致命的であると共に、日に日に快適な環
-境が整ってきているとも言える。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/03/28/netbsd-on-openstack/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -982,6 +1058,20 @@ PermitRootLogin yes
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-02'>
+                                    July 2, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
                                 
                                     
@@ -1021,20 +1111,6 @@ PermitRootLogin yes
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-11-15'>
-                                    November 15, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1069,7 +1145,7 @@ PermitRootLogin yes
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">98</span>
+                                <span style="float:right;">99</span>
                             </header>
                         </article>
                     </li>

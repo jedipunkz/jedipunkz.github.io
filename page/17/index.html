@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2013-08-12T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-08-16T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,381 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/08/16/rcbops-cookbooks-neutron-openstack/">rcbops Cookbooks で Neutron 構成 OpenStack</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-08-16'>
+            August 16, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>rcbops Cookbooks で Neutron 構成の OpenStack をデプロイする方法を書きたいと思
+います。先日紹介した openstack-chef-repo にも Neutron のレシピが含まれているの
+ですが、まだまだ未完成で手作業をおりまぜながらのデプロイになっていまうので、今
+現在のところ Neutron 構成を組みたいのであればこの rcbops の Cookbooks を用いる
+しかないと思います。</p>
+
+<p>今回は VLAN モードの構築を紹介します。GRE モードも少し手順を修正すれば構成可能
+です。最後のまとめに GRE モードの構築について少し触れています。</p>
+
+<h2 id="構成">構成</h2>
+
+<pre><code>                                                                                 public network
++----------------+----------------+----------------+----------------+----------------
+|                |                |                                  
++--------------+ +--------------+ +--------------+ +--------------+ +--------------+
+| controller01 | |  network01   | |  network02   | |  compute01   | |  compute02   |
++--------------+ +-------+------+ +-------+------+ +-------+------+ +-------+------+
+|                |       |        |       |        |       |        |       |    management network
++----------------+-------o--------+-------o--------+-------o--------+-------o--------
+                         |                |                |                |    vm network
+                         +----------------+----------------+----------------+--------
+</code></pre>
+
+<p>特徴は&hellip;</p>
+
+<ul>
+<li>network ノード 2台 (何台でも可)</li>
+<li>compute ノード 2台 (何台でも可)</li>
+<li>api ネットワークは management ネットワーク上に展開 (別けても可)</li>
+<li>controller ノードは1台 (ha な cookbooks を使うので2台構成も可)</li>
+<li>図には表現されていませんが management ネットワーク上に Chef ワークステーションと Chef サーバが必要</li>
+</ul>
+
+<h2 id="物理-nic-のマッピング情報">物理 NIC のマッピング情報</h2>
+
+<ul>
+<li>controller : management(eth0), public(eth1)</li>
+<li>network : management(eth0), vm(eth1), public(eth2)</li>
+<li>compute : management(eth0), vm(eth1)</li>
+</ul>
+
+<h2 id="前提のネットワークセグメント情報">前提のネットワークセグメント情報</h2>
+
+<p>ここでは仮に下記のネットワークセグメントを前提として手順を記します。</p>
+
+<ul>
+<li>public ネットワーク : 10.0.0.0/24</li>
+<li>vm ネットワーク : 10.0.1.0/24</li>
+<li>management(api) ネットワーク : 10.0.2.0/24</li>
+</ul>
+
+<h2 id="デプロイの準備">デプロイの準備</h2>
+
+<p>Chef 的なワークステーション端末から操作を行います。皆さんの使っているノート PC 等で OK です。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ~/chef-repo
+% cd ~/chef-repo
+</code></pre>
+
+<p>v4.0.0 (安定した最新版) を利用します。</p>
+
+<pre><code class="language-bash">% git checkout v4.0.0
+% git submodule init
+% git submodule sync
+% git submodule update
+</code></pre>
+
+<p>Chef サーバに Cookbooks をアップロードします。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
+</code></pre>
+
+<p>Chef サーバに Roles をアップロードします。</p>
+
+<pre><code class="language-bash">% knife role from file roles/*rb
+</code></pre>
+
+<p>environment を json 形式で生成します。これは各 Cookbooks の attributes を上書きし、一つの構成
+を作るために用いられます。</p>
+
+<pre><code class="language-json">% ${EDITOR} environments/env-neutron.json
+{
+  &quot;name&quot;: &quot;env-neutron&quot;,
+  &quot;description&quot;: &quot;&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;package_component&quot;: &quot;grizzly&quot;,
+    &quot;osops_networks&quot;: {
+      &quot;management&quot;: &quot;10.0.2.0/24&quot;,
+      &quot;public&quot;: &quot;10.0.0.0/24&quot;,
+      &quot;nova&quot;: &quot;10.0.2.0/24&quot;
+    },
+    &quot;nova&quot;: {
+      &quot;config&quot;: {
+        &quot;use_single_default_gateway&quot;: false,
+        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
+        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
+      },
+      &quot;network&quot;: {
+        &quot;provider&quot;: &quot;quantum&quot;,
+        &quot;network_type&quot;: &quot;vlan&quot;
+      },
+      &quot;apply_patches&quot;: true,
+      &quot;libvirt&quot;: {
+        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
+        &quot;virt_type&quot;: &quot;kvm&quot;
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;nova&quot;
+      },
+      &quot;services&quot;: {
+        &quot;novnc-proxy&quot;: {
+          &quot;network&quot;: &quot;public&quot;
+        }
+      }
+    },
+    &quot;cinder&quot;: {
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;cinder&quot;
+      }
+    },
+    &quot;keystone&quot;: {
+      &quot;admin_user&quot;: &quot;admin&quot;,
+      &quot;tenants&quot;: [
+        &quot;admin&quot;,
+        &quot;service&quot;
+      ],
+      &quot;users&quot;: {
+        &quot;admin&quot;: {
+          &quot;password&quot;: &quot;secrete&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [
+              &quot;admin&quot;
+            ]
+          }
+        },
+        &quot;demo&quot;: {
+          &quot;password&quot;: &quot;demo&quot;,
+          &quot;default_tenant&quot; : &quot;service&quot;,
+          &quot;roles&quot;: {
+            &quot;service&quot;: [ &quot;service&quot; ]
+          }
+        }
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;keystone&quot;
+      }
+    },
+    &quot;horizon&quot;: {
+      &quot;theme&quot;: &quot;Default&quot;,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;horizon&quot;
+      }
+    },
+    &quot;mysql&quot;: {
+      &quot;root_network_acl&quot;: &quot;%&quot;,
+      &quot;allow_remote_root&quot;: true,
+      &quot;server_root_password&quot;: &quot;secrete&quot;,
+      &quot;server_repl_password&quot;: &quot;secrete&quot;,
+      &quot;server_debian_password&quot;: &quot;secrete&quot;
+    },
+    &quot;monitoring&quot;: {
+      &quot;procmon_provider&quot;: &quot;monit&quot;,
+      &quot;metric_provider&quot;: &quot;collectd&quot;
+    },
+    &quot;glance&quot;: {
+      &quot;images&quot;: [
+        &quot;precise&quot;, &quot;cirros&quot;
+      ],
+      &quot;image&quot;: {
+      },
+      &quot;image_upload&quot;: false,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;glance&quot;
+      }
+    },
+    &quot;quantum&quot;: {
+      &quot;service_pass&quot;: &quot;quantum&quot;,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;quantum&quot;
+      }
+    },
+    &quot;developer_mode&quot;: false
+  }
+}
+</code></pre>
+
+<p>生成した environment ファイルを Chef サーバにアップロードします。</p>
+
+<pre><code class="language-bash">% knife environment from file environments/env-neutron.json
+</code></pre>
+
+<h2 id="デプロイ">デプロイ</h2>
+
+<p>各ノード、下記の通りデプロイします。</p>
+
+<h4 id="controller-ノード">controller ノード</h4>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_of_controller01&gt; -N controller01 -r \
+  'role[ha-controller1]','role[cinder-volume]' -E env-neutron --sudo -x &lt;your_accout&gt;
+</code></pre>
+
+<p>cinder-volumes 用のディスクがある場合は下記の手順で Cinder が利用できるように
+なります。</p>
+
+<pre><code class="language-bash">% sudo pvcreate /dev/sdb #デバイス名は仮
+% sudo vgcreate cinder-volumes /dev/sdb
+% sudo service cinder-volume restart
+</code></pre>
+
+<h4 id="network-ノード">network ノード</h4>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_of_network01&gt; -N network01 -r \
+  'role[single-network-node]','recipe[nova-network::quantum-l3-agent]' \
+  -E env-neutron --sudo -x &lt;your_account&gt;
+</code></pre>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_of_network02&gt; -N network02 -r \
+  'role[single-network-node]','recipe[nova-network::quantum-l3-agent]' \
+  -E env-neutron --sudo -x &lt;your_account&gt;
+</code></pre>
+
+<h4 id="compute-ノード">compute ノード</h4>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_of_compute01&gt; -N compute01 -r 'role[single-compute]' \
+  -E env-neutron --sudo -x &lt;your_account&gt;
+</code></pre>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_of_compute02&gt; -N compute02 -r 'role[single-compute]' \
+  -E env-neutron --sudo -x &lt;your_account&gt;
+</code></pre>
+
+<h2 id="物理-nic-のブリッジインターフェースへのマッピング操作">物理 NIC のブリッジインターフェースへのマッピング操作</h2>
+
+<p>Open vSwitch が管理しているブリッジインターフェースと物理インターフェースをマッ
+ピングしてあげます。</p>
+
+<p>network ノードの2台にて下記の操作を行います。</p>
+
+<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
+% sudo ovs-vsctl add-port br-ex eth2
+</code></pre>
+
+<p>compute ノードの2台にて下記の操作を行います。</p>
+
+<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
+</code></pre>
+
+<h2 id="仮想ネットワークと仮想マシンの生成">仮想ネットワークと仮想マシンの生成</h2>
+
+<p>環境によって仮想ネットワークの構成が異なりますので手順は割愛しますが、Horizon
+かコマンドライン・API を使って仮想ネットワークを生成し仮想マシンを接続すれば完
+了です。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>network ノードを2台構成にしましたが何が嬉しいかと言うと、l3-agent, dhcp-agent
+を冗長取ることが可能になります。障害時、手作業になりますが切り替えが可能です。
+l3-agent は仮想ルータ毎に、dhcp-agent は仮想ネットワーク毎に切り替えが可能です。
+詳しくは私の以前の記事を参考にしてください。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/">http://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/</a></p>
+
+<p>また、compute ノードを更に増やせば仮想マシンの数を増やすことが出来ます。</p>
+
+<p>今回は controller ノードを1台構成にしましたが、更に下記の手順で controller02
+ノードを増やし controller ノードの HA 化を行うことも出来ます。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_of_controller02&gt; -N controller02 -r \
+  'role[ha-controller1]' -E env-neutron --sudo -x &lt;your_accout&gt;
+</code></pre>
+
+<p>HA 構成を各々のノードに構成させるため各ノードで chef-client を1回ずつ実行しま
+す。</p>
+
+<pre><code class="language-bash">controller01% sudo chef-client
+controller02% sudo chef-client
+</code></pre>
+
+<p>HA 構成は haproxy, keepalived で形成されています。</p>
+
+<p>また、environment ファイルを下記のように修正すると VLAN の代わりに GRE トンネ
+ルが扱えます。</p>
+
+<pre><code class="language-json">&quot;nova&quot;: {
+  &quot;network&quot;: {
+    &quot;provider&quot;: &quot;quantum&quot;,
+    &quot;network_type&quot;: &quot;gre&quot;
+  }
+},
+
+&lt;snip&gt;...
+
+&quot;quantum&quot;: {
+  &quot;ovs&quot;: {
+    &quot;network_type&quot; : &quot;gre&quot;,
+    &quot;tunnnel_range&quot; : &quot;1:1000&quot;
+  }
+},
+</code></pre>
+
+<p>以上です。roles ディレクトリ配下に様々な Roles があるので、各コンポーネント毎
+にノードを別けるなどの構成も可能そうです。皆さん試してみてください。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/08/16/rcbops-cookbooks-neutron-openstack/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -529,381 +904,6 @@ Unstable だと apt-get install stumpwm したバイナリがコケる&hellip;�
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/08/06/opscode-cookbooks-openstack-deploy/">openstack-chef-repo で OpenStack 複数台構成をデプロイ</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-08-06'>
-            August 6, 2013</time>
-        <span class="author"></span>
-        
-            <p>4 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>前回、github.com/rcbops の Cookbooks を利用した OpenStack デプロイ方法を紹介し
-ました。これは RackSpace 社の Private Cloud Service で使われている Cookbooks
-で Apache ライセンスの元、誰でも利用できるようになっているものです。HA 構成を
-組めたり Swift の操作 (Rings 情報管理など) も Chef で出来る優れた Cookbooks な
-わけですが、運用するにあたり幾つか考えなくてはならないこともありそうです。</p>
-
-<ul>
-<li>chef-client の実行順番と実行回数が密接に関わっていること</li>
-<li>HA 構成の手動切替等、運用上必要な操作について考慮する必要性</li>
-</ul>
-
-<p>※ 後者については OpenStack ユーザ会の方々に意見もらいました。</p>
-
-<p>特に前項は Chef を利用する一番の意義である &ldquo;冪等性&rdquo; をある程度 (全くという意味
-ではありませんが) 犠牲にしていると言えます。また chef-client の実行回数、タイ
-ミング等 Cookbooks を完全に理解していないと運用は難しいでしょう。自ら管理して
-いる Cookbooks なら問題ないですが、rcbops が管理しているので常に更新状況を追っ
-ていく必要もありそうです。</p>
-
-<p>一方、Opscode, RackSpace, AT&amp;T 等のエンジニアが管理している Cookbooks がありま
-す。これは以前、日本の OpenStack 勉強会で私が話した &lsquo;openstack-chef-repo&rsquo; を利
-用したモノです。github.com/stackforge の元に管理されています。
-openstack-chef-repo は Berksfile, Roles, Environments のみの構成で各 Cookbooks
-は Berksfile を元に取得する形になります。取得先は同じく github.com/stackforge
-上で管理されています。</p>
-
-<p>こちらの Cookbooks を利用するメリットとしては</p>
-
-<ul>
-<li>冪等性が保たれる</li>
-<li>複数ベンダ管理なのでリスクがある程度軽減される</li>
-</ul>
-
-<p>などです。逆にデメリットは&hellip;</p>
-
-<ul>
-<li>容易に HA 構成を組むことが出来ない</li>
-<li>node, environment, role による search で自律的に構成してくれない</li>
-</ul>
-
-<p>です。一長一短ですが、運用し切れない HA 構成を組むのであれば、冪等性が保たれる
-こちらの Cookbooks を使う、というのも一つの考えだと思います。</p>
-
-<p>今回は nova-network を用いた複数台構成 (controller + compute x n) を
-この Stackforge Cookbooks を使ってデプロイする方法を紹介しようと思います！</p>
-
-<h2 id="前提条件">前提条件</h2>
-
-<ul>
-<li>Chef サーバの構築は済ませている</li>
-<li>knife をワークショテーションで扱えるまでの準備は出来ている</li>
-<li>デプロイする先のノード (controller01 , compute0[12]) は sshd が起動している</li>
-</ul>
-
-<h2 id="構成">構成</h2>
-
-<pre><code>+----------------+----------------+------------------------------------------------- public
-| eth0           | eth0           | eth0                                                 network
-+--------------+ +--------------+ +--------------+ +--------------+ +--------------+ 
-| controller01 | |   compute01  | |   compute02  | | chef server  | |  workstation |
-+--------------+ +--------------+ +--------------+ +--------------+ +--------------+ 
-| eth1           | eth2  |        | eth2  |        | eth0           | eth0 
-+----------------+-------o--------+-------o--------+----------------+--------------- api/management
-                         | eth1           | eth1                                            network
-                         +----------------+----------------------------------------- vm network
-</code></pre>
-
-<p>特徴は&hellip;</p>
-
-<ul>
-<li>controller01 ノードは OpenStack コントローラノード</li>
-<li>compute0[12] ノードは OpenStack コンピュートノード</li>
-<li>Chef サーバ、ワークステーションは api/management ネットワーク上に配置</li>
-<li>compute0[12] は 3 本目の NIC (eth1) を出し vm ネットワークをマッピング (bridge デバイス)</li>
-<li>API endpoint は controller01 の eth1 で受ける</li>
-<li>仮想マシンは compute ノードの eth1 にブリッジ接続し eth0 を介してインターネットへ</li>
-</ul>
-
-<p>IP アドレス情報&hellip;</p>
-
-<ul>
-<li>controller01,  eth0 : 10.0.0.10, eth1 : 10.0.1.10</li>
-<li>compute01, eth0 : 10.0.0.11, eth1 : 172.24.18.11, eth2 : 10.0.1.11</li>
-<li>compute02, eth0 : 10.0.0.12, eth1 : 172.24.18.12, eth2 : 10.0.1.12</li>
-<li>chef server, eth0 : 10.0.1.13</li>
-<li>workstation, eth0 : 10.0.1.14</li>
-</ul>
-
-<h2 id="デプロイ手順">デプロイ手順</h2>
-
-<p>ここからの操作は全てワークステーション上から行います。</p>
-
-<p>まず、openstakc-chef-repo を取得します。私のアカウント上のものを利用します。stackforge のモノは
-管理が追いついていないため、動作しません&hellip;。私のモノは fork して Roles を主に修正しています。</p>
-
-<pre><code class="language-bash">% git clone git://github.com/jedipunkz/openstack-chef-repo.git ~/openstack-chef-repo
-% cd ~/openstack-chef-repo
-</code></pre>
-
-<p>Cookbooks を取得します。Berksfile に従って取得しますが予め berkshelf を gem で
-インストールしましょう。</p>
-
-<pre><code class="language-bash">% gem install berkshelf --no-ri --no-rdoc
-% rbenv rehash # rbenv を利用している場合
-% berks install --path=./coobooks
-</code></pre>
-
-<p>上記の環境に合わせ environment を作成します。この environment は各 Cookbooks の attributes を上書きし
-1つの environment で 1つの構成 (controller, compute..) を形成します。knife bootstrap, chef-client を
-実行するとこの environment をサーチし、それぞれが連携し合ってくれます。</p>
-
-<pre><code class="language-json">% ${EDITOR} environments/openstack-cluster01.rb
-
-name &quot;separated&quot;
-description &quot;separated nodes environment&quot;
-
-override_attributes(
-    &quot;release&quot; =&gt; &quot;grizzly&quot;,
-    &quot;osops_networks&quot; =&gt; {
-      &quot;management&quot; =&gt; &quot;10.0.1.0/24&quot;,
-      &quot;public&quot; =&gt; &quot;10.0.1.0/24&quot;,
-      &quot;nova&quot; =&gt; &quot;10.0.1.0/24&quot;
-    },
-    &quot;mysql&quot; =&gt; {
-      &quot;bind_address&quot; =&gt; &quot;0.0.0.0&quot;,
-      &quot;root_network_acl&quot; =&gt; &quot;%&quot;,
-      &quot;allow_remote_root&quot; =&gt; true,
-      &quot;server_root_password&quot; =&gt; &quot;secrete&quot;,
-      &quot;server_repl_password&quot; =&gt; &quot;secrete&quot;,
-      &quot;server_debian_password&quot; =&gt; &quot;secrete&quot;
-    },
-    &quot;nova&quot; =&gt; {
-      &quot;network&quot; =&gt; {
-        &quot;fixed_range&quot; =&gt; &quot;172.18.0.0/24&quot;,
-        &quot;public_interface&quot; =&gt; &quot;eth0&quot;
-      }
-    },
-    &quot;openstack&quot; =&gt; {
-      &quot;developer_mode&quot; =&gt; true,
-      &quot;compute&quot; =&gt; {
-        &quot;rabbit&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
-        },
-        &quot;novnc_proxy&quot; =&gt; {
-          &quot;bind_interface&quot; =&gt; &quot;eth1&quot;
-        },
-        &quot;libvirt&quot; =&gt; {
-          &quot;bind_interface&quot; =&gt; &quot;eth1&quot;
-        },
-        &quot;network&quot; =&gt; {
-          &quot;fixed_range&quot; =&gt; &quot;172.18.0.0/24&quot;
-        },
-        &quot;networks&quot; =&gt; [
-        {
-          &quot;label&quot; =&gt; &quot;private&quot;,
-          &quot;ipv4_cidr&quot; =&gt; &quot;172.18.0.0/24&quot;,
-          &quot;num_networks&quot; =&gt; &quot;1&quot;,
-          &quot;network_size&quot; =&gt; &quot;255&quot;,
-          &quot;bridge&quot; =&gt; &quot;br200&quot;,
-          &quot;bridge_dev&quot; =&gt; &quot;eth1&quot;,
-          &quot;dns1&quot; =&gt; &quot;8.8.8.8&quot;,
-          &quot;dns2&quot; =&gt; &quot;8.8.4.4&quot;,
-          &quot;multi_host&quot; =&gt; &quot;T&quot;
-        }
-        ]
-      },
-      &quot;identity&quot; =&gt; {
-        &quot;bind_interface&quot; =&gt; &quot;eth1&quot;,
-        &quot;users&quot; =&gt; {
-          &quot;demo&quot; =&gt; {
-            &quot;password&quot; =&gt; &quot;demo&quot;,
-            &quot;default_tenant&quot; =&gt; &quot;service&quot;,
-            &quot;roles&quot; =&gt; {
-              &quot;Member&quot; =&gt; [ &quot;Member&quot; ]
-            }
-          }
-        }
-      },
-      &quot;image&quot; =&gt; {
-        &quot;bind_interface&quot; =&gt; &quot;eth1&quot;,
-      },
-      &quot;network&quot; =&gt; {
-        &quot;api&quot; =&gt; {
-          &quot;bind_interface&quot; =&gt; &quot;eth1&quot;,
-        }
-      },
-      &quot;db&quot; =&gt; {
-        &quot;bind_interface&quot; =&gt; &quot;eth1&quot;,
-        &quot;compute&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
-        },
-        &quot;identity&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
-        },
-        &quot;image&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
-        },
-        &quot;network&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
-        },
-        &quot;volume&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
-        },
-        &quot;dashboard&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
-        }
-      },
-      &quot;mq&quot; =&gt; {
-        &quot;bind_interface&quot; =&gt; &quot;eth1&quot;
-      },
-      &quot;endpoints&quot; =&gt; {
-        &quot;identity-api&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
-        },
-        &quot;identity-admin&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
-        },
-        &quot;compute-api&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
-        },
-        &quot;compute-ec2-api&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
-        },
-        &quot;compute-ec2-admin&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
-        },
-        &quot;compute-novnc&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;,
-        },
-        &quot;network-api&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;,
-        },
-        &quot;image-api&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;,
-        },
-        &quot;image-registry&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;,
-        },
-        &quot;volume-api&quot; =&gt; {
-          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;,
-        }
-      }
-    }
-)
-</code></pre>
-
-<p>spiceweasel を gem でインストールします。これは Cookbooks, Roles, Environments
-等を Chef サーバへアップロードしたり、knife bootstrap を一気に行なってくれるツー
-ルです。knife bootstrap コマンドの書式も書く必要がありません。</p>
-
-<pre><code class="language-bash">% gem install spiceweasel --no-ri --no-rdoc
-% rbenv rehash # rbenv を使っている場合
-</code></pre>
-
-<p>infrastracture.yml を修正します。作成した environments 名の修正と node: を修正
-します。</p>
-
-<pre><code class="language-yaml">...&lt;snip&gt;...
-
-environments:
-- separated:
-
-...&lt;snip&gt;...
-
-nodes:
-- 10.0.0.10:
-  run_list: role[os-compute-single-controller]
-  options: -N controller01 -E separated --sudo -x &lt;your_accout_name&gt; 
-- 10.0.0.11:
-  run_list: role[os-compute-worker]
-  options: -N compute01 -E separated --sudo -x &lt;your_accout_name&gt; 
-- 10.0.0.12:
-  run_list: role[os-compute-worker]
-  options: -N compute02 -E separated --sudo -x &lt;your_accout_name&gt;    
-</code></pre>
-
-<p>spiceweasel を実行します。すると knife コマンドの一覧が出力されますので実行さ
-れる内容を確認します。ここではまだ実行が行われません。</p>
-
-<pre><code class="language-bash">% spiceweasel infrastructure.yml
-</code></pre>
-
-<p>-e オプションをつけて実行すると先ほど出力された knife コマンドが順に実行されま
- す。この操作で3台のデプロイが完了します。</p>
-
-<pre><code class="language-bash">% spiceweasel -e infrastructure.yml
-</code></pre>
-
-<h2 id="まとめと考察">まとめと考察</h2>
-
-<p>以上の操作で OpenStack 複数台構成が組める。Neutron 構成についても
-&lsquo;openstack-network&rsquo; Cookbook に実装が入っている様子なので以後試してみたいです。
-今回は public ネットワーク・api/management ネットワーク・vm ネットワークの3つ
-のネットワーク構成で組みました。運用するのであれば public と api/management が
-別れている必要があると思いますので。自宅で作ってみたい！でもネットワークが&hellip;と
-いう場合、environment ファイルの内容を修正すれば pubcic/api/management ネット
-ワーク・vm ネットワークの2つのネットワーク構成でも組めるので試してみてください。
-もしくは bridge_dev の記述を environment から削除すると仮想ネットワークの物理
-ネットワークへのマッピングがされないので、1つのネットワークでも構成出来ます。</p>
-
-<p>また、オールインワン構成も組めます。オールインワン構成の場合</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;ip_addr&gt; -N allinone01 -E allinone \
-  -r 'role[allinone-compute]' --sudo --x &lt;your_account&gt;
-</code></pre>
-
-<p>でデプロイ出来ます。こちらもネットワーク構成は1つでも2つでも3つでも組めます。もう少し
-詳しい手順をオールインワン構成については別途ブログにまとめるかもしれませんー。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/08/06/opscode-cookbooks-openstack-deploy/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1020,6 +1020,20 @@ nodes:
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-02'>
+                                    July 2, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
                                 
                                     
@@ -1059,20 +1073,6 @@ nodes:
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-11-15'>
-                                    November 15, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1107,7 +1107,7 @@ nodes:
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">98</span>
+                                <span style="float:right;">99</span>
                             </header>
                         </article>
                     </li>

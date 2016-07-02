@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2013-07-28T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-08-06T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,381 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/08/06/opscode-cookbooks-openstack-deploy/">openstack-chef-repo で OpenStack 複数台構成をデプロイ</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-08-06'>
+            August 6, 2013</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>前回、github.com/rcbops の Cookbooks を利用した OpenStack デプロイ方法を紹介し
+ました。これは RackSpace 社の Private Cloud Service で使われている Cookbooks
+で Apache ライセンスの元、誰でも利用できるようになっているものです。HA 構成を
+組めたり Swift の操作 (Rings 情報管理など) も Chef で出来る優れた Cookbooks な
+わけですが、運用するにあたり幾つか考えなくてはならないこともありそうです。</p>
+
+<ul>
+<li>chef-client の実行順番と実行回数が密接に関わっていること</li>
+<li>HA 構成の手動切替等、運用上必要な操作について考慮する必要性</li>
+</ul>
+
+<p>※ 後者については OpenStack ユーザ会の方々に意見もらいました。</p>
+
+<p>特に前項は Chef を利用する一番の意義である &ldquo;冪等性&rdquo; をある程度 (全くという意味
+ではありませんが) 犠牲にしていると言えます。また chef-client の実行回数、タイ
+ミング等 Cookbooks を完全に理解していないと運用は難しいでしょう。自ら管理して
+いる Cookbooks なら問題ないですが、rcbops が管理しているので常に更新状況を追っ
+ていく必要もありそうです。</p>
+
+<p>一方、Opscode, RackSpace, AT&amp;T 等のエンジニアが管理している Cookbooks がありま
+す。これは以前、日本の OpenStack 勉強会で私が話した &lsquo;openstack-chef-repo&rsquo; を利
+用したモノです。github.com/stackforge の元に管理されています。
+openstack-chef-repo は Berksfile, Roles, Environments のみの構成で各 Cookbooks
+は Berksfile を元に取得する形になります。取得先は同じく github.com/stackforge
+上で管理されています。</p>
+
+<p>こちらの Cookbooks を利用するメリットとしては</p>
+
+<ul>
+<li>冪等性が保たれる</li>
+<li>複数ベンダ管理なのでリスクがある程度軽減される</li>
+</ul>
+
+<p>などです。逆にデメリットは&hellip;</p>
+
+<ul>
+<li>容易に HA 構成を組むことが出来ない</li>
+<li>node, environment, role による search で自律的に構成してくれない</li>
+</ul>
+
+<p>です。一長一短ですが、運用し切れない HA 構成を組むのであれば、冪等性が保たれる
+こちらの Cookbooks を使う、というのも一つの考えだと思います。</p>
+
+<p>今回は nova-network を用いた複数台構成 (controller + compute x n) を
+この Stackforge Cookbooks を使ってデプロイする方法を紹介しようと思います！</p>
+
+<h2 id="前提条件">前提条件</h2>
+
+<ul>
+<li>Chef サーバの構築は済ませている</li>
+<li>knife をワークショテーションで扱えるまでの準備は出来ている</li>
+<li>デプロイする先のノード (controller01 , compute0[12]) は sshd が起動している</li>
+</ul>
+
+<h2 id="構成">構成</h2>
+
+<pre><code>+----------------+----------------+------------------------------------------------- public
+| eth0           | eth0           | eth0                                                 network
++--------------+ +--------------+ +--------------+ +--------------+ +--------------+ 
+| controller01 | |   compute01  | |   compute02  | | chef server  | |  workstation |
++--------------+ +--------------+ +--------------+ +--------------+ +--------------+ 
+| eth1           | eth2  |        | eth2  |        | eth0           | eth0 
++----------------+-------o--------+-------o--------+----------------+--------------- api/management
+                         | eth1           | eth1                                            network
+                         +----------------+----------------------------------------- vm network
+</code></pre>
+
+<p>特徴は&hellip;</p>
+
+<ul>
+<li>controller01 ノードは OpenStack コントローラノード</li>
+<li>compute0[12] ノードは OpenStack コンピュートノード</li>
+<li>Chef サーバ、ワークステーションは api/management ネットワーク上に配置</li>
+<li>compute0[12] は 3 本目の NIC (eth1) を出し vm ネットワークをマッピング (bridge デバイス)</li>
+<li>API endpoint は controller01 の eth1 で受ける</li>
+<li>仮想マシンは compute ノードの eth1 にブリッジ接続し eth0 を介してインターネットへ</li>
+</ul>
+
+<p>IP アドレス情報&hellip;</p>
+
+<ul>
+<li>controller01,  eth0 : 10.0.0.10, eth1 : 10.0.1.10</li>
+<li>compute01, eth0 : 10.0.0.11, eth1 : 172.24.18.11, eth2 : 10.0.1.11</li>
+<li>compute02, eth0 : 10.0.0.12, eth1 : 172.24.18.12, eth2 : 10.0.1.12</li>
+<li>chef server, eth0 : 10.0.1.13</li>
+<li>workstation, eth0 : 10.0.1.14</li>
+</ul>
+
+<h2 id="デプロイ手順">デプロイ手順</h2>
+
+<p>ここからの操作は全てワークステーション上から行います。</p>
+
+<p>まず、openstakc-chef-repo を取得します。私のアカウント上のものを利用します。stackforge のモノは
+管理が追いついていないため、動作しません&hellip;。私のモノは fork して Roles を主に修正しています。</p>
+
+<pre><code class="language-bash">% git clone git://github.com/jedipunkz/openstack-chef-repo.git ~/openstack-chef-repo
+% cd ~/openstack-chef-repo
+</code></pre>
+
+<p>Cookbooks を取得します。Berksfile に従って取得しますが予め berkshelf を gem で
+インストールしましょう。</p>
+
+<pre><code class="language-bash">% gem install berkshelf --no-ri --no-rdoc
+% rbenv rehash # rbenv を利用している場合
+% berks install --path=./coobooks
+</code></pre>
+
+<p>上記の環境に合わせ environment を作成します。この environment は各 Cookbooks の attributes を上書きし
+1つの environment で 1つの構成 (controller, compute..) を形成します。knife bootstrap, chef-client を
+実行するとこの environment をサーチし、それぞれが連携し合ってくれます。</p>
+
+<pre><code class="language-json">% ${EDITOR} environments/openstack-cluster01.rb
+
+name &quot;separated&quot;
+description &quot;separated nodes environment&quot;
+
+override_attributes(
+    &quot;release&quot; =&gt; &quot;grizzly&quot;,
+    &quot;osops_networks&quot; =&gt; {
+      &quot;management&quot; =&gt; &quot;10.0.1.0/24&quot;,
+      &quot;public&quot; =&gt; &quot;10.0.1.0/24&quot;,
+      &quot;nova&quot; =&gt; &quot;10.0.1.0/24&quot;
+    },
+    &quot;mysql&quot; =&gt; {
+      &quot;bind_address&quot; =&gt; &quot;0.0.0.0&quot;,
+      &quot;root_network_acl&quot; =&gt; &quot;%&quot;,
+      &quot;allow_remote_root&quot; =&gt; true,
+      &quot;server_root_password&quot; =&gt; &quot;secrete&quot;,
+      &quot;server_repl_password&quot; =&gt; &quot;secrete&quot;,
+      &quot;server_debian_password&quot; =&gt; &quot;secrete&quot;
+    },
+    &quot;nova&quot; =&gt; {
+      &quot;network&quot; =&gt; {
+        &quot;fixed_range&quot; =&gt; &quot;172.18.0.0/24&quot;,
+        &quot;public_interface&quot; =&gt; &quot;eth0&quot;
+      }
+    },
+    &quot;openstack&quot; =&gt; {
+      &quot;developer_mode&quot; =&gt; true,
+      &quot;compute&quot; =&gt; {
+        &quot;rabbit&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
+        },
+        &quot;novnc_proxy&quot; =&gt; {
+          &quot;bind_interface&quot; =&gt; &quot;eth1&quot;
+        },
+        &quot;libvirt&quot; =&gt; {
+          &quot;bind_interface&quot; =&gt; &quot;eth1&quot;
+        },
+        &quot;network&quot; =&gt; {
+          &quot;fixed_range&quot; =&gt; &quot;172.18.0.0/24&quot;
+        },
+        &quot;networks&quot; =&gt; [
+        {
+          &quot;label&quot; =&gt; &quot;private&quot;,
+          &quot;ipv4_cidr&quot; =&gt; &quot;172.18.0.0/24&quot;,
+          &quot;num_networks&quot; =&gt; &quot;1&quot;,
+          &quot;network_size&quot; =&gt; &quot;255&quot;,
+          &quot;bridge&quot; =&gt; &quot;br200&quot;,
+          &quot;bridge_dev&quot; =&gt; &quot;eth1&quot;,
+          &quot;dns1&quot; =&gt; &quot;8.8.8.8&quot;,
+          &quot;dns2&quot; =&gt; &quot;8.8.4.4&quot;,
+          &quot;multi_host&quot; =&gt; &quot;T&quot;
+        }
+        ]
+      },
+      &quot;identity&quot; =&gt; {
+        &quot;bind_interface&quot; =&gt; &quot;eth1&quot;,
+        &quot;users&quot; =&gt; {
+          &quot;demo&quot; =&gt; {
+            &quot;password&quot; =&gt; &quot;demo&quot;,
+            &quot;default_tenant&quot; =&gt; &quot;service&quot;,
+            &quot;roles&quot; =&gt; {
+              &quot;Member&quot; =&gt; [ &quot;Member&quot; ]
+            }
+          }
+        }
+      },
+      &quot;image&quot; =&gt; {
+        &quot;bind_interface&quot; =&gt; &quot;eth1&quot;,
+      },
+      &quot;network&quot; =&gt; {
+        &quot;api&quot; =&gt; {
+          &quot;bind_interface&quot; =&gt; &quot;eth1&quot;,
+        }
+      },
+      &quot;db&quot; =&gt; {
+        &quot;bind_interface&quot; =&gt; &quot;eth1&quot;,
+        &quot;compute&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
+        },
+        &quot;identity&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
+        },
+        &quot;image&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
+        },
+        &quot;network&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
+        },
+        &quot;volume&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
+        },
+        &quot;dashboard&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
+        }
+      },
+      &quot;mq&quot; =&gt; {
+        &quot;bind_interface&quot; =&gt; &quot;eth1&quot;
+      },
+      &quot;endpoints&quot; =&gt; {
+        &quot;identity-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
+        },
+        &quot;identity-admin&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
+        },
+        &quot;compute-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
+        },
+        &quot;compute-ec2-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
+        },
+        &quot;compute-ec2-admin&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;
+        },
+        &quot;compute-novnc&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;,
+        },
+        &quot;network-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;,
+        },
+        &quot;image-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;,
+        },
+        &quot;image-registry&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;,
+        },
+        &quot;volume-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.0.1.10&quot;,
+        }
+      }
+    }
+)
+</code></pre>
+
+<p>spiceweasel を gem でインストールします。これは Cookbooks, Roles, Environments
+等を Chef サーバへアップロードしたり、knife bootstrap を一気に行なってくれるツー
+ルです。knife bootstrap コマンドの書式も書く必要がありません。</p>
+
+<pre><code class="language-bash">% gem install spiceweasel --no-ri --no-rdoc
+% rbenv rehash # rbenv を使っている場合
+</code></pre>
+
+<p>infrastracture.yml を修正します。作成した environments 名の修正と node: を修正
+します。</p>
+
+<pre><code class="language-yaml">...&lt;snip&gt;...
+
+environments:
+- separated:
+
+...&lt;snip&gt;...
+
+nodes:
+- 10.0.0.10:
+  run_list: role[os-compute-single-controller]
+  options: -N controller01 -E separated --sudo -x &lt;your_accout_name&gt; 
+- 10.0.0.11:
+  run_list: role[os-compute-worker]
+  options: -N compute01 -E separated --sudo -x &lt;your_accout_name&gt; 
+- 10.0.0.12:
+  run_list: role[os-compute-worker]
+  options: -N compute02 -E separated --sudo -x &lt;your_accout_name&gt;    
+</code></pre>
+
+<p>spiceweasel を実行します。すると knife コマンドの一覧が出力されますので実行さ
+れる内容を確認します。ここではまだ実行が行われません。</p>
+
+<pre><code class="language-bash">% spiceweasel infrastructure.yml
+</code></pre>
+
+<p>-e オプションをつけて実行すると先ほど出力された knife コマンドが順に実行されま
+ す。この操作で3台のデプロイが完了します。</p>
+
+<pre><code class="language-bash">% spiceweasel -e infrastructure.yml
+</code></pre>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>以上の操作で OpenStack 複数台構成が組める。Neutron 構成についても
+&lsquo;openstack-network&rsquo; Cookbook に実装が入っている様子なので以後試してみたいです。
+今回は public ネットワーク・api/management ネットワーク・vm ネットワークの3つ
+のネットワーク構成で組みました。運用するのであれば public と api/management が
+別れている必要があると思いますので。自宅で作ってみたい！でもネットワークが&hellip;と
+いう場合、environment ファイルの内容を修正すれば pubcic/api/management ネット
+ワーク・vm ネットワークの2つのネットワーク構成でも組めるので試してみてください。
+もしくは bridge_dev の記述を environment から削除すると仮想ネットワークの物理
+ネットワークへのマッピングがされないので、1つのネットワークでも構成出来ます。</p>
+
+<p>また、オールインワン構成も組めます。オールインワン構成の場合</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_addr&gt; -N allinone01 -E allinone \
+  -r 'role[allinone-compute]' --sudo --x &lt;your_account&gt;
+</code></pre>
+
+<p>でデプロイ出来ます。こちらもネットワーク構成は1つでも2つでも3つでも組めます。もう少し
+詳しい手順をオールインワン構成については別途ブログにまとめるかもしれませんー。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/08/06/opscode-cookbooks-openstack-deploy/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -842,348 +1217,6 @@ swift-storage01# swift list container01
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/07/17/openstach-ha-chef-deploy/">OpenStack HA 構成を Chef でデプロイ</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-07-17'>
-            July 17, 2013</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>OpenStack を運用する中でコントローラは重要です。コントローラノードが落ちると、
-仮想マシンの操作等が利用出来ません。コントローラの冗長構成を取るポイントは公式
-wiki サイトに記述あるのですが PaceMaker を使った構成でしんどいです。何より運用
-する人が混乱する仕組みは避けたいです。</p>
-
-<p>RackSpace 社の管理している Chef Cookbooks の Roles に &lsquo;ha-controller1&rsquo;,
-&lsquo;ha-controller2&rsquo; というモノがあります。今回はこれを使った HA 構成の構築方法に
-ついて書いていこうかと思います。</p>
-
-<h2 id="構成">構成</h2>
-
-<p>最小構成を作りたいと思います。HA のためのコントローラノード2台, コンピュートノー
-ド1台, Chef ワークショテーション1台, Chef サーバノード1台。</p>
-
-<pre><code>+----------------+----------------+----------------+----------------+--------------- public network
-|                |                | eth0           |                |                10.0.0.0/24
-+--------------+ +--------------+ +--------------+ +--------------+ +--------------+
-| controller01 | | controller01 | |  compute01   | | chef server  | | workstation  |
-+--------------+ +--------------+ +--------------+ +--------------+ +--------------+
-                                  | eth1
-                                  +------------------------------------------------- fixed range network
-                                                                                     172.16.0.0/24
-</code></pre>
-
-<h4 id="特徴">特徴</h4>
-
-<ul>
-<li>&lsquo;controller01&rsquo;, &lsquo;controller02&rsquo; で HA 化コントローラ</li>
-<li>&lsquo;compute01&rsquo; はコンピュートノード</li>
-<li>&lsquo;chef server&rsquo; は Chef サーバ、Chef11 推奨</li>
-<li>ほとんどの作業を行う &lsquo;workstaion&rsquo; は Chef ワークステーション</li>
-<li>nova-network 構成</li>
-</ul>
-
-<h2 id="chef-サーバの構築">Chef サーバの構築</h2>
-
-<p>Chef サーバの構築方法は本題から外れるので割愛します。今は Omnibus インストーラで一発です。</p>
-
-<h2 id="wokstation-ノードでの準備">wokstation ノードでの準備</h2>
-
-<ul>
-<li>workstation で knife を使えるまでの準備についても割愛します。</li>
-<li>プロンプトに何もホスト名が記されていないモノは全て workstation ノード上での操作です。</li>
-</ul>
-
-<p>Rackspace 管理の Cookbook を取得します。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo
-% cd ~/openstack-chef-repo
-</code></pre>
-
-<p>v4.0.0 というタグ (現在 2013/07/16 最新リリース版) をチェックアウトします。また submodue update で関連
-する Cookbooks を全て取得する事ができます。</p>
-
-<pre><code class="language-bash">% git checkout v4.0.0
-% git submodule init
-% git submodule sync
-% git submodule update
-</code></pre>
-
-<p>取得した Cookbooks を Chef サーバにアップロードします。</p>
-
-<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
-</code></pre>
-
-<p>同様に Roles も Chef サーバにアップロードします。</p>
-
-<pre><code class="language-bash">% knife role from file roles/*rb
-</code></pre>
-
-<p>environment ファイルを生成します。ここで指定するパラメターは各々の Cookbooks の Attributes を上書き出来ます。
-また、Recipe 内でノードサーチする際に同じ environment 名が指定されているノードをクラスタ構成の一部と判断出来る
-といった仕組みです。</p>
-
-<pre><code class="language-json">% ${EDITOR} environments/Cluster01.json
-{
-  &quot;name&quot;: &quot;Cluster01&quot;,
-  &quot;description&quot;: &quot;&quot;,
-  &quot;cookbook_versions&quot;: {
-  },
-  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
-  &quot;chef_type&quot;: &quot;environment&quot;,
-  &quot;default_attributes&quot;: {
-  },
-  &quot;override_attributes&quot;: {
-    &quot;package_component&quot;: &quot;grizzly&quot;,
-    &quot;osops_networks&quot;: {
-      &quot;management&quot;: &quot;10.0.0.0/24&quot;,
-      &quot;public&quot;: &quot;10.0.0.0/24&quot;,
-      &quot;nova&quot;: &quot;10.0.0.0/24&quot;
-    },
-    &quot;nova&quot;: {
-      &quot;networks&quot;: [
-        {
-          &quot;bridge&quot;: &quot;br100&quot;,
-          &quot;num_networks&quot;: &quot;1&quot;,
-          &quot;dns2&quot;: &quot;8.8.4.4&quot;,
-          &quot;dns1&quot;: &quot;8.8.8.8&quot;,
-          &quot;ipv4_cidr&quot;: &quot;172.16.0.0/24&quot;,
-          &quot;network_size&quot;: &quot;256&quot;,
-          &quot;label&quot;: &quot;private&quot;,
-          &quot;bridge_dev&quot;: &quot;eth1&quot;
-        }
-      ],
-      &quot;config&quot;: {
-        &quot;use_single_default_gateway&quot;: false,
-        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
-        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
-      },
-      &quot;network&quot;: {
-        &quot;dmz_cidr&quot;: &quot;172.18.0.0/24&quot;,
-        &quot;public_interface&quot;: &quot;eth0&quot;,
-        &quot;multi_host&quot;: true,
-        &quot;fixed_range&quot;: &quot;172.16.0.0/24&quot;
-      },
-      &quot;apply_patches&quot;: true,
-      &quot;libvirt&quot;: {
-        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
-        &quot;virt_type&quot;: &quot;kvm&quot;
-      },
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;nova&quot;
-      }
-    },
-    &quot;cinder&quot;: {
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;cinder&quot;
-      }
-    },
-    &quot;keystone&quot;: {
-      &quot;admin_user&quot;: &quot;admin&quot;,
-      &quot;tenants&quot;: [
-        &quot;admin&quot;,
-        &quot;service&quot;
-      ],
-      &quot;users&quot;: {
-        &quot;admin&quot;: {
-          &quot;password&quot;: &quot;secrete&quot;,
-          &quot;roles&quot;: {
-            &quot;admin&quot;: [
-              &quot;admin&quot;
-            ]
-          }
-        },
-        &quot;demo&quot;: {
-          &quot;password&quot;: &quot;demo&quot;,
-          &quot;default_tenant&quot; : &quot;service&quot;,
-          &quot;roles&quot;: {
-            &quot;service&quot;: [ &quot;service&quot; ]
-          }
-        }
-      },
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;keystone&quot;
-      }
-    },
-    &quot;horizon&quot;: {
-      &quot;theme&quot;: &quot;Rackspace&quot;,
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;horizon&quot;
-      }
-    },
-    &quot;mysql&quot;: {
-      &quot;root_network_acl&quot;: &quot;%&quot;,
-      &quot;allow_remote_root&quot;: true
-    },
-    &quot;monitoring&quot;: {
-      &quot;procmon_provider&quot;: &quot;monit&quot;,
-      &quot;metric_provider&quot;: &quot;collectd&quot;
-    },
-    &quot;glance&quot;: {
-      &quot;images&quot;: [
-        &quot;precise&quot;, &quot;cirros&quot;
-      ],
-      &quot;image&quot;: {
-      },
-      &quot;image_upload&quot;: true,
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;glance&quot;
-      }
-    },
-    &quot;vips&quot;: {
-      &quot;cinder-api&quot;: &quot;10.0.0.22&quot;,
-      &quot;glance-api&quot;: &quot;10.0.0.22&quot;,
-      &quot;glance-registry&quot;: &quot;10.0.0.22&quot;,
-      &quot;horizon-dash&quot;: &quot;10.0.0.22&quot;,
-      &quot;horizon-dash_ssl&quot;: &quot;10.0.0.22&quot;,
-      &quot;keystone-admin-api&quot;: &quot;10.0.0.22&quot;,
-      &quot;keystone-service-api&quot;: &quot;10.0.0.22&quot;,
-      &quot;keystone-internal-api&quot;: &quot;10.0.0.22&quot;,
-      &quot;mysql-db&quot;: &quot;10.0.0.21&quot;,
-      &quot;nova-api&quot;: &quot;10.0.0.22&quot;,
-      &quot;nova-ec2-public&quot;: &quot;10.0.0.22&quot;,
-      &quot;nova-novnc-proxy&quot;: &quot;10.0.0.22&quot;,
-      &quot;nova-xvpvnc-proxy&quot;: &quot;10.0.0.22&quot;,
-      &quot;rabbitmq-queue&quot;: &quot;10.0.0.23&quot;
-    },
-    &quot;developer_mode&quot;: false
-  }
-}
-</code></pre>
-
-<p>作成した environment を Chef サーバにアップロードします。</p>
-
-<pre><code class="language-bash">% knife environment from file environments/Cluster01.json
-</code></pre>
-
-<h2 id="ha-コントローラデプロイ">HA コントローラデプロイ</h2>
-
-<p>controller01, controller02 ノードを HA 化するわけですが、この操作を全て Chef
-で行います。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;ip_controller01&gt; -N controller01 -r 'role[ha-controller1]' -E Cluster01 --sudo -x jedipunkz
-% knife bootstrap &lt;ip_controller02&gt; -N controller02 -r 'role[ha-controller2]' -E Cluster01 --sudo -x jedipunkz
-</code></pre>
-
-<p>chef サーバに node の情報が登録されました。ここから environment で指定した VIP を利用した
-HA 構成を組むため再度 chef-client を実行します。chef-client をデーモン化しておいた場合は
-時間と共に自動で構築されるはずです。</p>
-
-<pre><code class="language-bash">controller01# chef-client
-controller02# chef-client
-</code></pre>
-
-<p>Cinder の利用に関しては片系のコントローラノードに寄せる必要があります。&rsquo;cinder-volumes&rsquo; という名前の Volume Group を
-controller01 ノードに作成し下記の操作を行います。</p>
-
-<pre><code class="language-bash">% knife node run_list add controller01 'role[cinder-volume]'
-</code></pre>
-
-<pre><code class="language-bash">controller01# chef-client
-controller01# service cinder-volume restart
-</code></pre>
-
-<h2 id="compute-ノードのデプロイ">Compute ノードのデプロイ</h2>
-
-<p>compute ノードのデプロイも同様に Chef を用います。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;ip_compute01&gt; -N compute01 -r 'role[single-compute]' -E Cluster01 --sudo -x jedipunkz
-</code></pre>
-
-<p>compute ノードの追加に関しても同様に行なっていくことで仮想マシンの数を拡張出来ます。</p>
-
-<h2 id="デプロイされた-ha-構成の内部">デプロイされた HA 構成の内部</h2>
-
-<p>PaceMaker は今回使われていないようです。デプロイされた構成の内部を覗いてみると下記のような特徴がありました。</p>
-
-<h4 id="各-openstack-apis">各 OpenStack APIs</h4>
-
-<p>Keepalived で VRRP 構成。active/passive 構成で明示的な Master は存在しない。その都度、評価の高いノードが VIP
-を引き継ぎサービスリクエストに応じる。また、リクエストを受けたコントローラノードは haproxy により HA の2台に対して
-それぞれリクエストを分散。ラウンドロビンの冗長が取られている。</p>
-
-<h4 id="rabbitmq">RabbitMQ</h4>
-
-<p>Keepalived で VRRP 構成。APIs と同様に active/passive 構成。その後は HA 内片系のコントローラの RabbitMQ が全てのリクエストに
-応え処理を行う。</p>
-
-<h4 id="mysql">MySQL</h4>
-
-<p>Keepalived で VRRP 構成。APIs と同様に active/passive 構成。MySQL はミドルウェアベースで master/master, active/passive
-レプリケーションが組まれている。</p>
-
-<h2 id="障害系の対処">障害系の対処</h2>
-
-<p>ここまで来ると、HA 構成が壊れた際に Chef で復旧を自動化してみたくなります。試したところ HA 構成の MySQL 的な passive 側
-が壊れた際には knife bootstrap で直ちに復旧することが出来ました。ただし active (master) 側が壊れた際にはバックアップした
-データからのリストア作業が必要でした。つまり Chef での自動復旧はできませんでした。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>keepalived と haproxy によるシンプルな HA 構成のため運用する人間が理解・対処する事も容易になると考えられます。
-コントローラノード障害といっても、大抵は disk 交換や筐体交換で復旧出来るわけですから、HA さえ組まれていればかなり
-安心して運用が出来そうです。今回は nova-network を試してみましたが、neutron 構成も組める Cookbooks になっているので
-時間を見つけてやってみようかなと考えています。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/07/17/openstach-ha-chef-deploy/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1300,6 +1333,20 @@ controller01# service cinder-volume restart
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-02'>
+                                    July 2, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
                                 
                                     
@@ -1339,20 +1386,6 @@ controller01# service cinder-volume restart
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-11-15'>
-                                    November 15, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1387,7 +1420,7 @@ controller01# service cinder-volume restart
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">98</span>
+                                <span style="float:right;">99</span>
                             </header>
                         </article>
                     </li>

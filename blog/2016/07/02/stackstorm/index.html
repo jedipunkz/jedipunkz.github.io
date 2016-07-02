@@ -1,0 +1,974 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>イベントドリブンな StackStorm で運用自動化</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.16" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="イベントドリブンな StackStorm で運用自動化"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。 今回は StackStorm (https://stackstorm.com/) というイベントドリブンオートメーションツールを使ってみましたので 紹介したいと思います。 クラウドとプロビジョニングツールの登場で昨今はエンジニアがほぼ全ての操作を自動化出来るようになりました。 ですが監視についてはどうでしょうか？監視システムを自動で構築することが出来ても障害発生時に対応を行う のは手動になっていませんでしょうか。もちろんクラスタ組んでいれば大抵のアラートは放置出来ますが、クラスタ を組むことが出来ないような箇所はクラウドを使ってもどうしても出てきます。 そこで登場するのが今回紹介する StackStorm のようなツールかなぁと考えるようになりました。 インストール インストール手順は下記の URL にあります。 https://docs.stackstorm.com/install/index.html 自分は CentOS7 を使ったので下記のワンライナーでインストールできました。 password は任意のものを入れてください。 curl -sSL https://stackstorm.com/packages/install.sh | bash -s -- --user=st2admin --password=foo MongoDB, postgreSQL が依存してインストールされます。 80番ポートで下記のような WEB UI も起動します。 StackStorm の基本 基本を知るために幾つかの要素について説明していきます。 まず CLI で操作するために TOKEN を取得して環境変数にセットする必要があります。 上記で設定したユーザ名・パスワードを入力してください。 export ST2_AUTH_TOKEN=`st2 auth -t -p foo st2admin` Action Action はイベントが発生した際に実行できるアクションになります。早速アクションの一覧を取得してみましょう。 $ st2 action list &#43;---------------------------------&#43;---------&#43;-------------------------------------------------------------&#43; | ref | pack | description | &#43;---------------------------------&#43;---------&#43;-------------------------------------------------------------&#43; | chatops.format_execution_result | chatops | Format an execution result for chatops | | chatops.post_message | chatops | Post a message to stream for chatops | | chatops.post_result | chatops | Post an execution result to stream for chatops | &lt;省略&gt; | core.http | core | Action that performs an http request."/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="イベントドリブンな StackStorm で運用自動化" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。 今回は StackStorm (https://stackstorm.com/) というイベントドリブンオートメーションツールを使ってみましたので 紹介したいと思います。 クラウドとプロビジョニングツールの登場で昨今はエンジニアがほぼ全ての操作を自動化出来るようになりました。 ですが監視についてはどうでしょうか？監視システムを自動で構築することが出来ても障害発生時に対応を行う のは手動になっていませんでしょうか。もちろんクラスタ組んでいれば大抵のアラートは放置出来ますが、クラスタ を組むことが出来ないような箇所はクラウドを使ってもどうしても出てきます。 そこで登場するのが今回紹介する StackStorm のようなツールかなぁと考えるようになりました。 インストール インストール手順は下記の URL にあります。 https://docs.stackstorm.com/install/index.html 自分は CentOS7 を使ったので下記のワンライナーでインストールできました。 password は任意のものを入れてください。 curl -sSL https://stackstorm.com/packages/install.sh | bash -s -- --user=st2admin --password=foo MongoDB, postgreSQL が依存してインストールされます。 80番ポートで下記のような WEB UI も起動します。 StackStorm の基本 基本を知るために幾つかの要素について説明していきます。 まず CLI で操作するために TOKEN を取得して環境変数にセットする必要があります。 上記で設定したユーザ名・パスワードを入力してください。 export ST2_AUTH_TOKEN=`st2 auth -t -p foo st2admin` Action Action はイベントが発生した際に実行できるアクションになります。早速アクションの一覧を取得してみましょう。 $ st2 action list &#43;---------------------------------&#43;---------&#43;-------------------------------------------------------------&#43; | ref | pack | description | &#43;---------------------------------&#43;---------&#43;-------------------------------------------------------------&#43; | chatops.format_execution_result | chatops | Format an execution result for chatops | | chatops.post_message | chatops | Post a message to stream for chatops | | chatops.post_result | chatops | Post an execution result to stream for chatops | &lt;省略&gt; | core.http | core | Action that performs an http request." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/" />
+
+
+<meta property="og:updated_time" content="2016-07-02T23:37:17&#43;09:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="イベントドリブンな StackStorm で運用自動化">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。 今回は StackStorm (https://stackstorm.com/) というイベントドリブンオートメーションツールを使ってみましたので 紹介したいと思います。 クラウドとプロビジョニングツールの登場で昨今はエンジニアがほぼ全ての操作を自動化出来るようになりました。 ですが監視についてはどうでしょうか？監視システムを自動で構築することが出来ても障害発生時に対応を行う のは手動になっていませんでしょうか。もちろんクラスタ組んでいれば大抵のアラートは放置出来ますが、クラスタ を組むことが出来ないような箇所はクラウドを使ってもどうしても出てきます。 そこで登場するのが今回紹介する StackStorm のようなツールかなぁと考えるようになりました。 インストール インストール手順は下記の URL にあります。 https://docs.stackstorm.com/install/index.html 自分は CentOS7 を使ったので下記のワンライナーでインストールできました。 password は任意のものを入れてください。 curl -sSL https://stackstorm.com/packages/install.sh | bash -s -- --user=st2admin --password=foo MongoDB, postgreSQL が依存してインストールされます。 80番ポートで下記のような WEB UI も起動します。 StackStorm の基本 基本を知るために幾つかの要素について説明していきます。 まず CLI で操作するために TOKEN を取得して環境変数にセットする必要があります。 上記で設定したユーザ名・パスワードを入力してください。 export ST2_AUTH_TOKEN=`st2 auth -t -p foo st2admin` Action Action はイベントが発生した際に実行できるアクションになります。早速アクションの一覧を取得してみましょう。 $ st2 action list &#43;---------------------------------&#43;---------&#43;-------------------------------------------------------------&#43; | ref | pack | description | &#43;---------------------------------&#43;---------&#43;-------------------------------------------------------------&#43; | chatops.format_execution_result | chatops | Format an execution result for chatops | | chatops.post_message | chatops | Post a message to stream for chatops | | chatops.post_result | chatops | Post an execution result to stream for chatops | &lt;省略&gt; | core.http | core | Action that performs an http request.">
+
+
+<meta itemprop="dateModified" content="2016-07-02T23:37:17&#43;09:00" />
+<meta itemprop="wordCount" content="786">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+<script>
+(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+ga('create', 'UA-30563095-1', 'auto');
+ga('send', 'pageview');
+</script>
+
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f&text=%e3%82%a4%e3%83%99%e3%83%b3%e3%83%88%e3%83%89%e3%83%aa%e3%83%96%e3%83%b3%e3%81%aa%20StackStorm%20%e3%81%a7%e9%81%8b%e7%94%a8%e8%87%aa%e5%8b%95%e5%8c%96&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f&title=%e3%82%a4%e3%83%99%e3%83%b3%e3%83%88%e3%83%89%e3%83%aa%e3%83%96%e3%83%b3%e3%81%aa%20StackStorm%20%e3%81%a7%e9%81%8b%e7%94%a8%e8%87%aa%e5%8b%95%e5%8c%96" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f&title=%e3%82%a4%e3%83%99%e3%83%b3%e3%83%88%e3%83%89%e3%83%aa%e3%83%96%e3%83%b3%e3%81%aa%20StackStorm%20%e3%81%a7%e9%81%8b%e7%94%a8%e8%87%aa%e5%8b%95%e5%8c%96" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f&title=%e3%82%a4%e3%83%99%e3%83%b3%e3%83%88%e3%83%89%e3%83%aa%e3%83%96%e3%83%b3%e3%81%aa%20StackStorm%20%e3%81%a7%e9%81%8b%e7%94%a8%e8%87%aa%e5%8b%95%e5%8c%96" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2016-07-02'>
+            July 2, 2016</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f&text=%e3%82%a4%e3%83%99%e3%83%b3%e3%83%88%e3%83%89%e3%83%aa%e3%83%96%e3%83%b3%e3%81%aa%20StackStorm%20%e3%81%a7%e9%81%8b%e7%94%a8%e8%87%aa%e5%8b%95%e5%8c%96&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f&title=%e3%82%a4%e3%83%99%e3%83%b3%e3%83%88%e3%83%89%e3%83%aa%e3%83%96%e3%83%b3%e3%81%aa%20StackStorm%20%e3%81%a7%e9%81%8b%e7%94%a8%e8%87%aa%e5%8b%95%e5%8c%96" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+<li><a href="//www.linkedin.com/shareArticle?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f&title=%e3%82%a4%e3%83%99%e3%83%b3%e3%83%88%e3%83%89%e3%83%aa%e3%83%96%e3%83%b3%e3%81%aa%20StackStorm%20%e3%81%a7%e9%81%8b%e7%94%a8%e8%87%aa%e5%8b%95%e5%8c%96" target="_blank" class="share-btn linkedin">
+    <i class="fa fa-linkedin"></i>
+    <p>LinkedIn</p>
+</a></li>
+
+
+<li><a href="//www.stumbleupon.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f&title=%e3%82%a4%e3%83%99%e3%83%b3%e3%83%88%e3%83%89%e3%83%aa%e3%83%96%e3%83%b3%e3%81%aa%20StackStorm%20%e3%81%a7%e9%81%8b%e7%94%a8%e8%87%aa%e5%8b%95%e5%8c%96" target="_blank" class="share-btn stumbleupon">
+    <i class="fa fa-stumbleupon"></i>
+    <p>StumbleUpon</p>
+</a></li>
+
+
+<li><a href="mailto:?subject=Check out this post by &body=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f07%2f02%2fstackstorm%2f" target="_blank" class="share-btn email">
+    <i class="fa fa-envelope"></i>
+    <p>Email</p>
+</a></li>
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>今回は StackStorm (<a href="https://stackstorm.com/">https://stackstorm.com/</a>) というイベントドリブンオートメーションツールを使ってみましたので
+紹介したいと思います。</p>
+
+<p>クラウドとプロビジョニングツールの登場で昨今はエンジニアがほぼ全ての操作を自動化出来るようになりました。
+ですが監視についてはどうでしょうか？監視システムを自動で構築することが出来ても障害発生時に対応を行う
+のは手動になっていませんでしょうか。もちろんクラスタ組んでいれば大抵のアラートは放置出来ますが、クラスタ
+を組むことが出来ないような箇所はクラウドを使ってもどうしても出てきます。</p>
+
+<p>そこで登場するのが今回紹介する StackStorm のようなツールかなぁと考えるようになりました。</p>
+
+<h2 id="インストール">インストール</h2>
+
+<p>インストール手順は下記の URL にあります。</p>
+
+<p><a href="https://docs.stackstorm.com/install/index.html">https://docs.stackstorm.com/install/index.html</a></p>
+
+<p>自分は CentOS7 を使ったので下記のワンライナーでインストールできました。
+password は任意のものを入れてください。</p>
+
+<pre><code class="language-shell">curl -sSL https://stackstorm.com/packages/install.sh | bash -s -- --user=st2admin --password=foo
+</code></pre>
+
+<p>MongoDB, postgreSQL が依存してインストールされます。</p>
+
+<p>80番ポートで下記のような WEB UI も起動します。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/stackstorm.png" width="70%"></p>
+
+<h2 id="stackstorm-の基本">StackStorm の基本</h2>
+
+<p>基本を知るために幾つかの要素について説明していきます。</p>
+
+<p>まず CLI で操作するために TOKEN を取得して環境変数にセットする必要があります。
+上記で設定したユーザ名・パスワードを入力してください。</p>
+
+<pre><code class="language-shell">export ST2_AUTH_TOKEN=`st2 auth -t -p foo st2admin`
+</code></pre>
+
+<ul>
+<li>Action</li>
+</ul>
+
+<p>Action はイベントが発生した際に実行できるアクションになります。早速アクションの一覧を取得してみましょう。</p>
+
+<pre><code class="language-shell">$ st2 action list
++---------------------------------+---------+-------------------------------------------------------------+
+| ref                             | pack    | description                                                 |
++---------------------------------+---------+-------------------------------------------------------------+
+| chatops.format_execution_result | chatops | Format an execution result for chatops                      |
+| chatops.post_message            | chatops | Post a message to stream for chatops                        |
+| chatops.post_result             | chatops | Post an execution result to stream for chatops              |
+&lt;省略&gt;
+| core.http                       | core    | Action that performs an http request.                       |
+| core.local                      | core    | Action that executes an arbitrary Linux command on the      |
+|                                 |         | localhost.                                                  |
+| core.local_sudo                 | core    | Action that executes an arbitrary Linux command on the      |
+|                                 |         | localhost.                                                  |
+| core.remote                     | core    | Action to execute arbitrary linux command remotely.         |
+| core.remote_sudo                | core    | Action to execute arbitrary linux command remotely.         |
+| core.sendmail                   | core    | This sends an email                                         |
+| core.windows_cmd                | core    | Action to execute arbitrary Windows command remotely.       |
+&lt;省略&gt;
+| linux.cp                        | linux   | Copy file(s)                                                |
+| linux.diag_loadavg              | linux   | Diagnostic workflow for high load alert                     |
+| linux.dig                       | linux   | Dig action                                                  |
+&lt;省略&gt;
+| st2.kv.get                      | st2     | Get value from datastore                                    |
+| st2.kv.set                      | st2     | Set value in datastore                                      |
++---------------------------------+---------+-------------------------------------------------------------+
+</code></pre>
+
+<p>上記のように Linux のコマンドや ChatOps, HTTP でクエリを投げるもの、Key Value の読み書きを行うモノまであります。
+上記はかなり咲楽して貼り付けたので本来はもっと沢山のアクションがあります。</p>
+
+<ul>
+<li>Trigger</li>
+</ul>
+
+<p>Trigger は Action を実行する際のトリガになります。同様に一覧を見てみましょう。</p>
+
+<pre><code>$ st2 trigger list
++--------------------------------------+-------+----------------------------------------------------------------+
+| ref                                  | pack  | description                                                    |
++--------------------------------------+-------+----------------------------------------------------------------+
+| core.st2.generic.actiontrigger       | core  | Trigger encapsulating the completion of an action execution.   |
+| core.st2.IntervalTimer               | core  | Triggers on specified intervals. e.g. every 30s, 1week etc.    |
+| core.st2.generic.notifytrigger       | core  | Notification trigger.                                          |
+| core.st2.DateTimer                   | core  | Triggers exactly once when the current time matches the        |
+|                                      |       | specified time. e.g. timezone:UTC date:2014-12-31 23:59:59.    |
+| core.st2.action.file_writen          | core  | Trigger encapsulating action file being written on disk.       |
+| core.st2.CronTimer                   | core  | Triggers whenever current time matches the specified time      |
+|                                      |       | constaints like a UNIX cron scheduler.                         |
+| core.st2.key_value_pair.create       | core  | Trigger encapsulating datastore item creation.                 |
+| core.st2.key_value_pair.update       | core  | Trigger encapsulating datastore set action.                    |
+| core.st2.key_value_pair.value_change | core  | Trigger encapsulating a change of datastore item value.        |
+| core.st2.key_value_pair.delete       | core  | Trigger encapsulating datastore item deletion.                 |
+| core.st2.sensor.process_spawn        | core  | Trigger indicating sensor process is started up.               |
+| core.st2.sensor.process_exit         | core  | Trigger indicating sensor process is stopped.                  |
+| core.st2.webhook                     | core  | Trigger type for registering webhooks that can consume         |
+|                                      |       | arbitrary payload.                                             |
+| linux.file_watch.line                | linux | Trigger which indicates a new line has been detected           |
++--------------------------------------+-------+----------------------------------------------------------------+
+</code></pre>
+
+<p>CronTimer はその名の通り Cron であることが分かります。IntervalTimer は同じように一定時間間隔で実行するようです。
+その他 webhook や Key Value のペアが生成・削除・変更されたタイミング、等あります。</p>
+
+<ul>
+<li>Rule</li>
+</ul>
+
+<p>Rule は Trigger が発生して Action を実行する際のルールを記述するものになります。</p>
+
+<pre><code>$ st2 rule list
++----------------+---------+-------------------------------------------------+---------+
+| ref            | pack    | description                                     | enabled |
++----------------+---------+-------------------------------------------------+---------+
+| chatops.notify | chatops | Notification rule to send results of action     | True    |
+|                |         | executions to stream for chatops                |         |
++----------------+---------+-------------------------------------------------+---------+
+</code></pre>
+
+<p>初期では上記の chatops.notify のみがあります。</p>
+
+<h2 id="実際に使ってみる">実際に使ってみる</h2>
+
+<p>core.local というアクションを実行してみました。</p>
+
+<pre><code>$ st2 run core.local -- uname -a
+id: 5774c022e138230c66f2eefc
+status: succeeded
+parameters:
+  cmd: uname -a
+result:
+  failed: false
+  return_code: 0
+  stderr: ''
+  stdout: 'Linux localhost.localdomain 3.10.0-327.el7.x86_64 #1 SMP Thu Nov 19 22:10:57 UTC 2015 x86_64 x86_64 x86_64 GNU/Linux'
+  succeeded: true
+</code></pre>
+
+<p>stdout に実行結果が出力されています。また下記のように実行結果の一覧を得ることが出来ます。</p>
+
+<pre><code>$ st2 execution list
++----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
+| id                         | action.ref    | context.user | status                  | start_timestamp             | end_timestamp                 |
++----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
+|   5774bdbee138230c66f2eeef | core.local    | st2admin     | succeeded (0s elapsed)  | Thu, 30 Jun 2016 06:35:42   | Thu, 30 Jun 2016 06:35:42 UTC |
+|                            |               |              |                         | UTC                         |                               |
++----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
+</code></pre>
+
+<h2 id="応用した使い方">応用した使い方</h2>
+
+<p>上記のように core.local, core.remote 等でホスト上のコマンドを実行できることが分かりました。
+ここで応用した使い方をしてみます。と言いますか、上記の基本的な使い方だけでは StackStorm を
+使うメリットが無いように思えます。</p>
+
+<p>下記のような Rule を作成します。ファイル名は st2_sample_rule_webhook_remote_command.yaml とします。</p>
+
+<pre><code>---
+    name: &quot;st2_sample_rule_webhook_remote_command&quot;
+    pack: &quot;examples&quot;
+    description: &quot;Sample rule of webhook.&quot;
+    enabled: true
+
+    trigger:
+        type: &quot;core.st2.webhook&quot;
+        parameters:
+            url: &quot;restart&quot;
+
+    criteria:
+
+    action:
+        ref: &quot;core.remote&quot;
+        parameters:
+            hosts: &quot;10.0.1.250&quot;
+            username: &quot;thirai&quot;
+            private_key: &quot;/root/.ssh/id_rsa&quot;
+            cmd: &quot;sudo service cron restart&quot;
+</code></pre>
+
+<p>StackStorm の基本要素 Action, Criteria(Rule の基準), Trigger から成っていることが分かります。
+Triger は webhoook です。url: &ldquo;restart&rdquo; となっているのは URL : https://<stackstorm_ip_addr>/api/v1/webhooks/restart という名前で
+アクセスを受けるようになるという意味です。criteria は今回は無条件で action を実行したいので空行にします。
+action では core.remote が選択されていて hosts: &lsquo;10.0.1.250&rsquo; に username で SSH してコマンドを実行しています。</p>
+
+<p>要するに https://<stackstorm_ip_addr>/api/v1/webhooks/restart というアドレスでリクエストを受けると
+10.0.1.250 に &lsquo;foo&rsquo; というユーザで SSH してコマンドを実行する、というルールになっています。</p>
+
+<p>下記のコマンドで上記の yaml ファイルをルールに読み込みます。</p>
+
+<pre><code>st2 rule create st2_sample_rule_webhook_remote_command.yaml
+</code></pre>
+
+<p>実際にリクエストを投げてみましょう。Token は読み替えてください。</p>
+
+<pre><code>curl -k https://localhost/api/v1/webhooks/restart -d '{}' -H 'Content-Type: application/json' -H 'X-Auth-Token: &lt;Your_Token&gt;'
+</code></pre>
+
+<p>するとリモートホストで &lsquo;cron&rsquo; プロセスの再起動が掛かります。</p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>StackStorm は紹介した以外にも沢山のアクションがあり応用が効きます。また監視ツールでアラートが発生した際に webhook 通知するようにして
+障害対応を自動で行うといった操作も可能な事がわかりました。ChatOps でも応用が可能なことが分かります。従来、ChatOps ではリモートホストで
+コマンドなどを実行しようとした場合には Hubot 等のプロセスが稼働しているホストもしくはそのホストから SSH 出来るホストで実行する必要がありましたが
+StackStorm を介すことで実行結果の閲覧やルールに従った実行等が可能になります。</p>
+
+<p>自分はまだ少しのアクション・ルールを試用しただけなのですが、他に良い運用上の応用例がないか探してみようと思います。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"
+                class="button big previous">Vagrant で Mesosphere DC/OS を構築</a></li>
+    
+
+    
+</ul>
+
+
+
+    
+        <article class="post">
+            <div id="disqus_thread"></div>
+<script type="text/javascript">
+    var disqus_shortname = 'shortname';
+    var disqus_identifier = 'http:\/\/jedipunkz.github.io\/blog\/2016\/07\/02\/stackstorm\/';
+    var disqus_title = 'イベントドリブンな StackStorm で運用自動化';
+    var disqus_url = 'http:\/\/jedipunkz.github.io\/blog\/2016\/07\/02\/stackstorm\/';
+
+    (function() {
+        var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+        dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+        (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+    })();
+</script>
+<noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+<a href="http://disqus.com" class="dsq-brlink">comments powered by <span class="logo-disqus">Disqus</span></a>
+        </article>
+    
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-02'>
+                                    July 2, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-06-21'>
+                                    June 21, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-22'>
+                                    December 22, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">99</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

@@ -6,8 +6,231 @@
     <description>Recent content on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Tue, 21 Jun 2016 17:05:25 +0900</lastBuildDate>
+    <lastBuildDate>Sat, 02 Jul 2016 23:37:17 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>イベントドリブンな StackStorm で運用自動化</title>
+      <link>http://jedipunkz.github.io/blog/2016/07/02/stackstorm/</link>
+      <pubDate>Sat, 02 Jul 2016 23:37:17 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/07/02/stackstorm/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;今回は StackStorm (&lt;a href=&#34;https://stackstorm.com/&#34;&gt;https://stackstorm.com/&lt;/a&gt;) というイベントドリブンオートメーションツールを使ってみましたので
+紹介したいと思います。&lt;/p&gt;
+
+&lt;p&gt;クラウドとプロビジョニングツールの登場で昨今はエンジニアがほぼ全ての操作を自動化出来るようになりました。
+ですが監視についてはどうでしょうか？監視システムを自動で構築することが出来ても障害発生時に対応を行う
+のは手動になっていませんでしょうか。もちろんクラスタ組んでいれば大抵のアラートは放置出来ますが、クラスタ
+を組むことが出来ないような箇所はクラウドを使ってもどうしても出てきます。&lt;/p&gt;
+
+&lt;p&gt;そこで登場するのが今回紹介する StackStorm のようなツールかなぁと考えるようになりました。&lt;/p&gt;
+
+&lt;h2 id=&#34;インストール&#34;&gt;インストール&lt;/h2&gt;
+
+&lt;p&gt;インストール手順は下記の URL にあります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://docs.stackstorm.com/install/index.html&#34;&gt;https://docs.stackstorm.com/install/index.html&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;自分は CentOS7 を使ったので下記のワンライナーでインストールできました。
+password は任意のものを入れてください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;curl -sSL https://stackstorm.com/packages/install.sh | bash -s -- --user=st2admin --password=foo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;MongoDB, postgreSQL が依存してインストールされます。&lt;/p&gt;
+
+&lt;p&gt;80番ポートで下記のような WEB UI も起動します。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/stackstorm.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;stackstorm-の基本&#34;&gt;StackStorm の基本&lt;/h2&gt;
+
+&lt;p&gt;基本を知るために幾つかの要素について説明していきます。&lt;/p&gt;
+
+&lt;p&gt;まず CLI で操作するために TOKEN を取得して環境変数にセットする必要があります。
+上記で設定したユーザ名・パスワードを入力してください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;export ST2_AUTH_TOKEN=`st2 auth -t -p foo st2admin`
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Action&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Action はイベントが発生した際に実行できるアクションになります。早速アクションの一覧を取得してみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ st2 action list
++---------------------------------+---------+-------------------------------------------------------------+
+| ref                             | pack    | description                                                 |
++---------------------------------+---------+-------------------------------------------------------------+
+| chatops.format_execution_result | chatops | Format an execution result for chatops                      |
+| chatops.post_message            | chatops | Post a message to stream for chatops                        |
+| chatops.post_result             | chatops | Post an execution result to stream for chatops              |
+&amp;lt;省略&amp;gt;
+| core.http                       | core    | Action that performs an http request.                       |
+| core.local                      | core    | Action that executes an arbitrary Linux command on the      |
+|                                 |         | localhost.                                                  |
+| core.local_sudo                 | core    | Action that executes an arbitrary Linux command on the      |
+|                                 |         | localhost.                                                  |
+| core.remote                     | core    | Action to execute arbitrary linux command remotely.         |
+| core.remote_sudo                | core    | Action to execute arbitrary linux command remotely.         |
+| core.sendmail                   | core    | This sends an email                                         |
+| core.windows_cmd                | core    | Action to execute arbitrary Windows command remotely.       |
+&amp;lt;省略&amp;gt;
+| linux.cp                        | linux   | Copy file(s)                                                |
+| linux.diag_loadavg              | linux   | Diagnostic workflow for high load alert                     |
+| linux.dig                       | linux   | Dig action                                                  |
+&amp;lt;省略&amp;gt;
+| st2.kv.get                      | st2     | Get value from datastore                                    |
+| st2.kv.set                      | st2     | Set value in datastore                                      |
++---------------------------------+---------+-------------------------------------------------------------+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上記のように Linux のコマンドや ChatOps, HTTP でクエリを投げるもの、Key Value の読み書きを行うモノまであります。
+上記はかなり咲楽して貼り付けたので本来はもっと沢山のアクションがあります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Trigger&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Trigger は Action を実行する際のトリガになります。同様に一覧を見てみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ st2 trigger list
++--------------------------------------+-------+----------------------------------------------------------------+
+| ref                                  | pack  | description                                                    |
++--------------------------------------+-------+----------------------------------------------------------------+
+| core.st2.generic.actiontrigger       | core  | Trigger encapsulating the completion of an action execution.   |
+| core.st2.IntervalTimer               | core  | Triggers on specified intervals. e.g. every 30s, 1week etc.    |
+| core.st2.generic.notifytrigger       | core  | Notification trigger.                                          |
+| core.st2.DateTimer                   | core  | Triggers exactly once when the current time matches the        |
+|                                      |       | specified time. e.g. timezone:UTC date:2014-12-31 23:59:59.    |
+| core.st2.action.file_writen          | core  | Trigger encapsulating action file being written on disk.       |
+| core.st2.CronTimer                   | core  | Triggers whenever current time matches the specified time      |
+|                                      |       | constaints like a UNIX cron scheduler.                         |
+| core.st2.key_value_pair.create       | core  | Trigger encapsulating datastore item creation.                 |
+| core.st2.key_value_pair.update       | core  | Trigger encapsulating datastore set action.                    |
+| core.st2.key_value_pair.value_change | core  | Trigger encapsulating a change of datastore item value.        |
+| core.st2.key_value_pair.delete       | core  | Trigger encapsulating datastore item deletion.                 |
+| core.st2.sensor.process_spawn        | core  | Trigger indicating sensor process is started up.               |
+| core.st2.sensor.process_exit         | core  | Trigger indicating sensor process is stopped.                  |
+| core.st2.webhook                     | core  | Trigger type for registering webhooks that can consume         |
+|                                      |       | arbitrary payload.                                             |
+| linux.file_watch.line                | linux | Trigger which indicates a new line has been detected           |
++--------------------------------------+-------+----------------------------------------------------------------+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;CronTimer はその名の通り Cron であることが分かります。IntervalTimer は同じように一定時間間隔で実行するようです。
+その他 webhook や Key Value のペアが生成・削除・変更されたタイミング、等あります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Rule&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Rule は Trigger が発生して Action を実行する際のルールを記述するものになります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ st2 rule list
++----------------+---------+-------------------------------------------------+---------+
+| ref            | pack    | description                                     | enabled |
++----------------+---------+-------------------------------------------------+---------+
+| chatops.notify | chatops | Notification rule to send results of action     | True    |
+|                |         | executions to stream for chatops                |         |
++----------------+---------+-------------------------------------------------+---------+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;初期では上記の chatops.notify のみがあります。&lt;/p&gt;
+
+&lt;h2 id=&#34;実際に使ってみる&#34;&gt;実際に使ってみる&lt;/h2&gt;
+
+&lt;p&gt;core.local というアクションを実行してみました。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ st2 run core.local -- uname -a
+id: 5774c022e138230c66f2eefc
+status: succeeded
+parameters:
+  cmd: uname -a
+result:
+  failed: false
+  return_code: 0
+  stderr: &#39;&#39;
+  stdout: &#39;Linux localhost.localdomain 3.10.0-327.el7.x86_64 #1 SMP Thu Nov 19 22:10:57 UTC 2015 x86_64 x86_64 x86_64 GNU/Linux&#39;
+  succeeded: true
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;stdout に実行結果が出力されています。また下記のように実行結果の一覧を得ることが出来ます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ st2 execution list
++----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
+| id                         | action.ref    | context.user | status                  | start_timestamp             | end_timestamp                 |
++----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
+|   5774bdbee138230c66f2eeef | core.local    | st2admin     | succeeded (0s elapsed)  | Thu, 30 Jun 2016 06:35:42   | Thu, 30 Jun 2016 06:35:42 UTC |
+|                            |               |              |                         | UTC                         |                               |
++----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;応用した使い方&#34;&gt;応用した使い方&lt;/h2&gt;
+
+&lt;p&gt;上記のように core.local, core.remote 等でホスト上のコマンドを実行できることが分かりました。
+ここで応用した使い方をしてみます。と言いますか、上記の基本的な使い方だけでは StackStorm を
+使うメリットが無いように思えます。&lt;/p&gt;
+
+&lt;p&gt;下記のような Rule を作成します。ファイル名は st2_sample_rule_webhook_remote_command.yaml とします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;---
+    name: &amp;quot;st2_sample_rule_webhook_remote_command&amp;quot;
+    pack: &amp;quot;examples&amp;quot;
+    description: &amp;quot;Sample rule of webhook.&amp;quot;
+    enabled: true
+
+    trigger:
+        type: &amp;quot;core.st2.webhook&amp;quot;
+        parameters:
+            url: &amp;quot;restart&amp;quot;
+
+    criteria:
+
+    action:
+        ref: &amp;quot;core.remote&amp;quot;
+        parameters:
+            hosts: &amp;quot;10.0.1.250&amp;quot;
+            username: &amp;quot;thirai&amp;quot;
+            private_key: &amp;quot;/root/.ssh/id_rsa&amp;quot;
+            cmd: &amp;quot;sudo service cron restart&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;StackStorm の基本要素 Action, Criteria(Rule の基準), Trigger から成っていることが分かります。
+Triger は webhoook です。url: &amp;ldquo;restart&amp;rdquo; となっているのは URL : https://&lt;stackstorm_ip_addr&gt;/api/v1/webhooks/restart という名前で
+アクセスを受けるようになるという意味です。criteria は今回は無条件で action を実行したいので空行にします。
+action では core.remote が選択されていて hosts: &amp;lsquo;10.0.1.250&amp;rsquo; に username で SSH してコマンドを実行しています。&lt;/p&gt;
+
+&lt;p&gt;要するに https://&lt;stackstorm_ip_addr&gt;/api/v1/webhooks/restart というアドレスでリクエストを受けると
+10.0.1.250 に &amp;lsquo;foo&amp;rsquo; というユーザで SSH してコマンドを実行する、というルールになっています。&lt;/p&gt;
+
+&lt;p&gt;下記のコマンドで上記の yaml ファイルをルールに読み込みます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;st2 rule create st2_sample_rule_webhook_remote_command.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;実際にリクエストを投げてみましょう。Token は読み替えてください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;curl -k https://localhost/api/v1/webhooks/restart -d &#39;{}&#39; -H &#39;Content-Type: application/json&#39; -H &#39;X-Auth-Token: &amp;lt;Your_Token&amp;gt;&#39;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;するとリモートホストで &amp;lsquo;cron&amp;rsquo; プロセスの再起動が掛かります。&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
+
+&lt;p&gt;StackStorm は紹介した以外にも沢山のアクションがあり応用が効きます。また監視ツールでアラートが発生した際に webhook 通知するようにして
+障害対応を自動で行うといった操作も可能な事がわかりました。ChatOps でも応用が可能なことが分かります。従来、ChatOps ではリモートホストで
+コマンドなどを実行しようとした場合には Hubot 等のプロセスが稼働しているホストもしくはそのホストから SSH 出来るホストで実行する必要がありましたが
+StackStorm を介すことで実行結果の閲覧やルールに従った実行等が可能になります。&lt;/p&gt;
+
+&lt;p&gt;自分はまだ少しのアクション・ルールを試用しただけなのですが、他に良い運用上の応用例がないか探してみようと思います。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>Vagrant で Mesosphere DC/OS を構築</title>
@@ -3761,80 +3984,6 @@ CONTAINER ID        IMAGE               COMMAND              CREATED            
 &lt;li&gt;CreationLine さんブログ &lt;a href=&#34;http://www.creationline.com/lab/5346&#34;&gt;http://www.creationline.com/lab/5346&lt;/a&gt;&lt;/li&gt;
 &lt;li&gt;公式サイト &lt;a href=&#34;http://docs.opscode.com/containers.html&#34;&gt;http://docs.opscode.com/containers.html&lt;/a&gt;&lt;/li&gt;
 &lt;/ul&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>JTF2014 で Ceph について話してきた！</title>
-      <link>http://jedipunkz.github.io/blog/2014/06/22/jtf2014-ceph/</link>
-      <pubDate>Sun, 22 Jun 2014 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2014/06/22/jtf2014-ceph/</guid>
-      <description>&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;今日、JTF2014 (July Tech Festa 2014) というイベントで Ceph のことを話してきま
-した。Ceph ユーザ会の会員として話してきたのですが Ceph ユーザ会は実は最近発足
-したばかりのユーザ会で、まだまだ活動が活発ではありません。もし興味がある方いらっ
-しゃいましたら是非参加よろしくお願いしますー。下記の Google Groups になります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://groups.google.com/forum/#!forum/ceph-jp&#34;&gt;https://groups.google.com/forum/#!forum/ceph-jp&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;ユーザ会としての勉強会として初になるのですが、今回このイベントで自分は
-Ceph-Deploy について話してきました。とりあえず皆さんに使ってもらいたかったので
-この話をしてきました。が、予定時間がメチャ短かったので超絶早口で頑張った分、皆
-さんに理解してもらえなかった気がしてちょっと反省&amp;hellip;。なので、このブログを利用
-して少し細くさせてもらいます。&lt;/p&gt;
-
-&lt;p&gt;今日の発表資料はこちらです！&lt;/p&gt;
-
-&lt;script async class=&#34;speakerdeck-embed&#34;
-data-id=&#34;592a0b90ceb30131a5d25ae3f95c3a1a&#34; data-ratio=&#34;1.33333333333333&#34; src=&#34;//speakerdeck.com/assets/embed.js&#34;&gt;&lt;/script&gt;
-
-&lt;p&gt;今日のテーマは 「Ceph-Deploy を使って Ceph を構築してみる」だったのですが、下
-記のテーマを持って資料を作っています。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;単にミニマム構成ではなく運用を考慮した実用性のある構成&lt;/li&gt;
-&lt;li&gt;OSD, MON, MDS の各プロセスとノード・ディスクの数の関係を知ってもらう&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;特に「実用性のある..」は意識したつもりでした。そのために前提とした構成に下記の
-特徴を持たせています。(資料 6 ページ目に構成図があります。確認してみてください。)&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;オブジェクト格納用ディスクは複数/ノードを前提&lt;/li&gt;
-&lt;li&gt;OSD レプリケーションのためのクラスタネットワークを用いる構成&lt;/li&gt;
-&lt;li&gt;OSD の扱うジャーナル格納用ディスクは高速な SSD を用いる&lt;/li&gt;
-&lt;li&gt;MDS は利用する HW リソースの特徴が異なるので別ノードへ配置&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;ストレージ全体を拡張したければ&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;図中 ceph01-03 の様なノードを増設する&lt;/li&gt;
-&lt;li&gt;ceph01-03 にディスクとそれに対する OSD を増設する&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;ですが、前者がベストでしょう。ノード増設の場合 ceph-deploy を用いて&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;ceph-deploy mon create &amp;lt;新規ホスト名&amp;gt; で MON を稼働&lt;/li&gt;
-&lt;li&gt;ceph-dploy disk zap, osd create で OSD を稼働&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;で簡単に可能です。MDS の増設も負荷状況を見ながらするといいでしょう。自分はまだ
-Ceph を運用していないので、各プロセスがどのようなリソースの消費の仕方をするの
-か知りません。MDS がどのような数で運用していくべきなのか。早く運用から得たノウ
-ハウが共有されないかなぁと期待しています。&lt;/p&gt;
-
-&lt;p&gt;また今回話すのを忘れたのですが SSD をジャーナル格納用ディスクとして用いたのは
-ハードディスクに対して高速でアクセス出来ること・またメタデータはファイルオブジェ
-クトに対して小容量で済む、といった理由からです。メタデータを扱うのに適している
-と思います。また将来的には幾つかの KVS データベースソフトウェアをメタデータ管
-理に使う実装がされるそうです。&lt;/p&gt;
-
-&lt;p&gt;以上です。皆さん、是非 Ceph を使ってみてください！ また興味のある方はユーザ会
-への加入をご検討くださいー。&lt;/p&gt;
 </description>
     </item>
     

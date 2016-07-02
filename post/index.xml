@@ -6,8 +6,231 @@
     <description>Recent content in Posts on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Tue, 21 Jun 2016 17:05:25 +0900</lastBuildDate>
+    <lastBuildDate>Sat, 02 Jul 2016 23:37:17 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/post/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>イベントドリブンな StackStorm で運用自動化</title>
+      <link>http://jedipunkz.github.io/blog/2016/07/02/stackstorm/</link>
+      <pubDate>Sat, 02 Jul 2016 23:37:17 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/07/02/stackstorm/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;今回は StackStorm (&lt;a href=&#34;https://stackstorm.com/&#34;&gt;https://stackstorm.com/&lt;/a&gt;) というイベントドリブンオートメーションツールを使ってみましたので
+紹介したいと思います。&lt;/p&gt;
+
+&lt;p&gt;クラウドとプロビジョニングツールの登場で昨今はエンジニアがほぼ全ての操作を自動化出来るようになりました。
+ですが監視についてはどうでしょうか？監視システムを自動で構築することが出来ても障害発生時に対応を行う
+のは手動になっていませんでしょうか。もちろんクラスタ組んでいれば大抵のアラートは放置出来ますが、クラスタ
+を組むことが出来ないような箇所はクラウドを使ってもどうしても出てきます。&lt;/p&gt;
+
+&lt;p&gt;そこで登場するのが今回紹介する StackStorm のようなツールかなぁと考えるようになりました。&lt;/p&gt;
+
+&lt;h2 id=&#34;インストール&#34;&gt;インストール&lt;/h2&gt;
+
+&lt;p&gt;インストール手順は下記の URL にあります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://docs.stackstorm.com/install/index.html&#34;&gt;https://docs.stackstorm.com/install/index.html&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;自分は CentOS7 を使ったので下記のワンライナーでインストールできました。
+password は任意のものを入れてください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;curl -sSL https://stackstorm.com/packages/install.sh | bash -s -- --user=st2admin --password=foo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;MongoDB, postgreSQL が依存してインストールされます。&lt;/p&gt;
+
+&lt;p&gt;80番ポートで下記のような WEB UI も起動します。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/stackstorm.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;stackstorm-の基本&#34;&gt;StackStorm の基本&lt;/h2&gt;
+
+&lt;p&gt;基本を知るために幾つかの要素について説明していきます。&lt;/p&gt;
+
+&lt;p&gt;まず CLI で操作するために TOKEN を取得して環境変数にセットする必要があります。
+上記で設定したユーザ名・パスワードを入力してください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;export ST2_AUTH_TOKEN=`st2 auth -t -p foo st2admin`
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Action&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Action はイベントが発生した際に実行できるアクションになります。早速アクションの一覧を取得してみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ st2 action list
++---------------------------------+---------+-------------------------------------------------------------+
+| ref                             | pack    | description                                                 |
++---------------------------------+---------+-------------------------------------------------------------+
+| chatops.format_execution_result | chatops | Format an execution result for chatops                      |
+| chatops.post_message            | chatops | Post a message to stream for chatops                        |
+| chatops.post_result             | chatops | Post an execution result to stream for chatops              |
+&amp;lt;省略&amp;gt;
+| core.http                       | core    | Action that performs an http request.                       |
+| core.local                      | core    | Action that executes an arbitrary Linux command on the      |
+|                                 |         | localhost.                                                  |
+| core.local_sudo                 | core    | Action that executes an arbitrary Linux command on the      |
+|                                 |         | localhost.                                                  |
+| core.remote                     | core    | Action to execute arbitrary linux command remotely.         |
+| core.remote_sudo                | core    | Action to execute arbitrary linux command remotely.         |
+| core.sendmail                   | core    | This sends an email                                         |
+| core.windows_cmd                | core    | Action to execute arbitrary Windows command remotely.       |
+&amp;lt;省略&amp;gt;
+| linux.cp                        | linux   | Copy file(s)                                                |
+| linux.diag_loadavg              | linux   | Diagnostic workflow for high load alert                     |
+| linux.dig                       | linux   | Dig action                                                  |
+&amp;lt;省略&amp;gt;
+| st2.kv.get                      | st2     | Get value from datastore                                    |
+| st2.kv.set                      | st2     | Set value in datastore                                      |
++---------------------------------+---------+-------------------------------------------------------------+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;上記のように Linux のコマンドや ChatOps, HTTP でクエリを投げるもの、Key Value の読み書きを行うモノまであります。
+上記はかなり咲楽して貼り付けたので本来はもっと沢山のアクションがあります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Trigger&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Trigger は Action を実行する際のトリガになります。同様に一覧を見てみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ st2 trigger list
++--------------------------------------+-------+----------------------------------------------------------------+
+| ref                                  | pack  | description                                                    |
++--------------------------------------+-------+----------------------------------------------------------------+
+| core.st2.generic.actiontrigger       | core  | Trigger encapsulating the completion of an action execution.   |
+| core.st2.IntervalTimer               | core  | Triggers on specified intervals. e.g. every 30s, 1week etc.    |
+| core.st2.generic.notifytrigger       | core  | Notification trigger.                                          |
+| core.st2.DateTimer                   | core  | Triggers exactly once when the current time matches the        |
+|                                      |       | specified time. e.g. timezone:UTC date:2014-12-31 23:59:59.    |
+| core.st2.action.file_writen          | core  | Trigger encapsulating action file being written on disk.       |
+| core.st2.CronTimer                   | core  | Triggers whenever current time matches the specified time      |
+|                                      |       | constaints like a UNIX cron scheduler.                         |
+| core.st2.key_value_pair.create       | core  | Trigger encapsulating datastore item creation.                 |
+| core.st2.key_value_pair.update       | core  | Trigger encapsulating datastore set action.                    |
+| core.st2.key_value_pair.value_change | core  | Trigger encapsulating a change of datastore item value.        |
+| core.st2.key_value_pair.delete       | core  | Trigger encapsulating datastore item deletion.                 |
+| core.st2.sensor.process_spawn        | core  | Trigger indicating sensor process is started up.               |
+| core.st2.sensor.process_exit         | core  | Trigger indicating sensor process is stopped.                  |
+| core.st2.webhook                     | core  | Trigger type for registering webhooks that can consume         |
+|                                      |       | arbitrary payload.                                             |
+| linux.file_watch.line                | linux | Trigger which indicates a new line has been detected           |
++--------------------------------------+-------+----------------------------------------------------------------+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;CronTimer はその名の通り Cron であることが分かります。IntervalTimer は同じように一定時間間隔で実行するようです。
+その他 webhook や Key Value のペアが生成・削除・変更されたタイミング、等あります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Rule&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Rule は Trigger が発生して Action を実行する際のルールを記述するものになります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ st2 rule list
++----------------+---------+-------------------------------------------------+---------+
+| ref            | pack    | description                                     | enabled |
++----------------+---------+-------------------------------------------------+---------+
+| chatops.notify | chatops | Notification rule to send results of action     | True    |
+|                |         | executions to stream for chatops                |         |
++----------------+---------+-------------------------------------------------+---------+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;初期では上記の chatops.notify のみがあります。&lt;/p&gt;
+
+&lt;h2 id=&#34;実際に使ってみる&#34;&gt;実際に使ってみる&lt;/h2&gt;
+
+&lt;p&gt;core.local というアクションを実行してみました。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ st2 run core.local -- uname -a
+id: 5774c022e138230c66f2eefc
+status: succeeded
+parameters:
+  cmd: uname -a
+result:
+  failed: false
+  return_code: 0
+  stderr: &#39;&#39;
+  stdout: &#39;Linux localhost.localdomain 3.10.0-327.el7.x86_64 #1 SMP Thu Nov 19 22:10:57 UTC 2015 x86_64 x86_64 x86_64 GNU/Linux&#39;
+  succeeded: true
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;stdout に実行結果が出力されています。また下記のように実行結果の一覧を得ることが出来ます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ st2 execution list
++----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
+| id                         | action.ref    | context.user | status                  | start_timestamp             | end_timestamp                 |
++----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
+|   5774bdbee138230c66f2eeef | core.local    | st2admin     | succeeded (0s elapsed)  | Thu, 30 Jun 2016 06:35:42   | Thu, 30 Jun 2016 06:35:42 UTC |
+|                            |               |              |                         | UTC                         |                               |
++----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;応用した使い方&#34;&gt;応用した使い方&lt;/h2&gt;
+
+&lt;p&gt;上記のように core.local, core.remote 等でホスト上のコマンドを実行できることが分かりました。
+ここで応用した使い方をしてみます。と言いますか、上記の基本的な使い方だけでは StackStorm を
+使うメリットが無いように思えます。&lt;/p&gt;
+
+&lt;p&gt;下記のような Rule を作成します。ファイル名は st2_sample_rule_webhook_remote_command.yaml とします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;---
+    name: &amp;quot;st2_sample_rule_webhook_remote_command&amp;quot;
+    pack: &amp;quot;examples&amp;quot;
+    description: &amp;quot;Sample rule of webhook.&amp;quot;
+    enabled: true
+
+    trigger:
+        type: &amp;quot;core.st2.webhook&amp;quot;
+        parameters:
+            url: &amp;quot;restart&amp;quot;
+
+    criteria:
+
+    action:
+        ref: &amp;quot;core.remote&amp;quot;
+        parameters:
+            hosts: &amp;quot;10.0.1.250&amp;quot;
+            username: &amp;quot;thirai&amp;quot;
+            private_key: &amp;quot;/root/.ssh/id_rsa&amp;quot;
+            cmd: &amp;quot;sudo service cron restart&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;StackStorm の基本要素 Action, Criteria(Rule の基準), Trigger から成っていることが分かります。
+Triger は webhoook です。url: &amp;ldquo;restart&amp;rdquo; となっているのは URL : https://&lt;stackstorm_ip_addr&gt;/api/v1/webhooks/restart という名前で
+アクセスを受けるようになるという意味です。criteria は今回は無条件で action を実行したいので空行にします。
+action では core.remote が選択されていて hosts: &amp;lsquo;10.0.1.250&amp;rsquo; に username で SSH してコマンドを実行しています。&lt;/p&gt;
+
+&lt;p&gt;要するに https://&lt;stackstorm_ip_addr&gt;/api/v1/webhooks/restart というアドレスでリクエストを受けると
+10.0.1.250 に &amp;lsquo;foo&amp;rsquo; というユーザで SSH してコマンドを実行する、というルールになっています。&lt;/p&gt;
+
+&lt;p&gt;下記のコマンドで上記の yaml ファイルをルールに読み込みます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;st2 rule create st2_sample_rule_webhook_remote_command.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;実際にリクエストを投げてみましょう。Token は読み替えてください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;curl -k https://localhost/api/v1/webhooks/restart -d &#39;{}&#39; -H &#39;Content-Type: application/json&#39; -H &#39;X-Auth-Token: &amp;lt;Your_Token&amp;gt;&#39;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;するとリモートホストで &amp;lsquo;cron&amp;rsquo; プロセスの再起動が掛かります。&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
+
+&lt;p&gt;StackStorm は紹介した以外にも沢山のアクションがあり応用が効きます。また監視ツールでアラートが発生した際に webhook 通知するようにして
+障害対応を自動で行うといった操作も可能な事がわかりました。ChatOps でも応用が可能なことが分かります。従来、ChatOps ではリモートホストで
+コマンドなどを実行しようとした場合には Hubot 等のプロセスが稼働しているホストもしくはそのホストから SSH 出来るホストで実行する必要がありましたが
+StackStorm を介すことで実行結果の閲覧やルールに従った実行等が可能になります。&lt;/p&gt;
+
+&lt;p&gt;自分はまだ少しのアクション・ルールを試用しただけなのですが、他に良い運用上の応用例がないか探してみようと思います。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>Vagrant で Mesosphere DC/OS を構築</title>
@@ -3821,271 +4044,6 @@ Ceph を運用していないので、各プロセスがどのようなリソー
 
 &lt;p&gt;以上です。皆さん、是非 Ceph を使ってみてください！ また興味のある方はユーザ会
 への加入をご検討くださいー。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>Mesos &#43; Marathon &#43; Deimos &#43; Docker を試してみた!</title>
-      <link>http://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/</link>
-      <pubDate>Fri, 13 Jun 2014 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;以前 Mesos, Docker について記事にしました。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/&#34;&gt;http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/&lt;/a&gt;
-&lt;a href=&#34;http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/&#34;&gt;http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Twitter で Docker 関連のオーケストレーションツールについて呟いていたら @everpeace さんから
-こんな情報をもらいました。&lt;/p&gt;
-
-&lt;p&gt;&lt;blockquote class=&#34;twitter-tweet&#34; lang=&#34;ja&#34;&gt;&lt;p&gt;&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; 元々meos-dockerっていうmesos executorがあったんですけど、mesosがcontainer部分をpluggableにしたので、それに合わせてdeimosっていうmesos用のexternal containerizer が作られました。&lt;/p&gt;&amp;mdash; Shingo Omura (@everpeace) &lt;a href=&#34;https://twitter.com/everpeace/statuses/476998842383347712&#34;&gt;2014, 6月 12&lt;/a&gt;&lt;/blockquote&gt;
-&lt;script async src=&#34;//platform.twitter.com/widgets.js&#34; charset=&#34;utf-8&#34;&gt;&lt;/script&gt;&lt;/p&gt;
-
-&lt;p&gt;Deimos !!! 知らなかった。Mesos の Docker プラグインらしく下記の場所にありました。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/mesosphere/deimos&#34;&gt;https://github.com/mesosphere/deimos&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;色々調べいたら、こんな資料が見つかりました。どうやらまだ公開されて4日しか経っていないようです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://mesosphere.io/learn/run-docker-on-mesosphere/&#34;&gt;http://mesosphere.io/learn/run-docker-on-mesosphere/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Mesos + Marathon + Deimos + Docker をオールインワン構成で構築する手順が書かれています。&lt;/p&gt;
-
-&lt;p&gt;内容はほぼ同じですが、一応自分がやってみて理解したことをまとめたいので下記に記していきます。&lt;/p&gt;
-
-&lt;h2 id=&#34;構築してみる&#34;&gt;構築してみる&lt;/h2&gt;
-
-&lt;p&gt;手順をまとめてスクリプトにしました。パッケージは Ubuntu 13.10 用のようですが 14.04 のホスト
-で実行出来ました。14.04 のパッケージはまだ見つかっていません。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;#!/bin/bash
-# disable ipv6
-echo &#39;net.ipv6.conf.all.disable_ipv6 = 1&#39; | sudo tee -a /etc/sysctl.conf
-echo &#39;net.ipv6.conf.default.disable_ipv6 = 1&#39; | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
-
-# install related tools
-sudo apt-get update
-sudo apt-get -y install curl python-setuptools python-pip python-dev python-protobuf
-
-# install zookeeper
-sudo apt-get -y install zookeeperd
-echo 1 | sudo dd of=/var/lib/zookeeper/myid
-
-# install docker
-sudo apt-get -y install docker.io
-sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker
-sudo sed -i &#39;$acomplete -F _docker docker&#39; /etc/bash_completion.d/docker.io
-sudo docker pull libmesos/ubuntu
-
-# install mesos
-curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.deb -o /tmp/mesos.deb
-sudo dpkg -i /tmp/mesos.deb
-sudo mkdir -p /etc/mesos-master
-echo in_memory  | sudo dd of=/etc/mesos-master/registry
-curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.egg -o /tmp/mesos.egg
-sudo easy_install /tmp/mesos.egg
-
-# install marathon
-curl -fL http://downloads.mesosphere.io/marathon/marathon_0.5.0-xcon2_noarch.deb -o /tmp/marathon.deb
-sudo dpkg -i /tmp/marathon.deb
-
-# restart each services
-sudo service docker.io restart
-sudo service zookeeper restart
-sudo service mesos-master restart
-sudo service mesos-slave restart
-
-# install deimos
-sudo pip install deimos
-sudo mkdir -p /etc/mesos-slave
-
-## Configure Deimos as a containerizer
-echo /usr/bin/deimos  | sudo dd of=/etc/mesos-slave/containerizer_path
-echo external     | sudo dd of=/etc/mesos-slave/isolation
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;プロセスの確認&#34;&gt;プロセスの確認&lt;/h2&gt;
-
-&lt;p&gt;実行が終わると各プロセスが確認出来ます。オプションでどのプロセスが何を見ているか大体
-わかりますので見ていきます。&lt;/p&gt;
-
-&lt;h4 id=&#34;mesos-master&#34;&gt;mesos-master&lt;/h4&gt;
-
-&lt;p&gt;mesos-master は zookeeper を参照して 5050 番ポートで起動しているようです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% ps ax | grep mesos-master
- 1224 ?        Ssl    0:30 /usr/local/sbin/mesos-master --zk=zk://localhost:2181/mesos --port=5050 --log_dir=/var/log/mesos --registry=in_memory
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h4 id=&#34;mesos-slave&#34;&gt;mesos-slave&lt;/h4&gt;
-
-&lt;p&gt;mesos-slave は同じく zookeeper を参照して containerizer を deimos として稼働していることが
-わかります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% ps ax | grep mesos-slave
- 1225 ?        Ssl    0:12 /usr/local/sbin/mesos-slave --master=zk://localhost:2181/mesos --log_dir=/var/log/mesos --containerizer_path=/usr/bin/deimos --isolation=external
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h4 id=&#34;zookeeper&#34;&gt;zookeeper&lt;/h4&gt;
-
-&lt;p&gt;zookeeper は OpenJDK7 で稼働している Java プロセスです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% ps ax | grep zookeeper
- 1073 ?        Ssl    1:07 /usr/bin/java -cp /etc/zookeeper/conf:/usr/share/java/jline.jar:/usr/share/java/log4j-1.2.jar:/usr/share/java/xercesImpl.jar:/usr/share/java/xmlParserAPIs.jar:/usr/share/java/netty.jar:/usr/share/java/slf4j-api.jar:/usr/share/java/slf4j-log4j12.jar:/usr/share/java/zookeeper.jar -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=false -Dzookeeper.log.dir=/var/log/zookeeper -Dzookeeper.root.logger=INFO,ROLLINGFILE org.apache.zookeeper.server.quorum.QuorumPeerMain /etc/zookeeper/conf/zoo.cfg
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h4 id=&#34;docker&#34;&gt;docker&lt;/h4&gt;
-
-&lt;p&gt;docker が起動していることも確認できます。設定は特にしていないです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% ps axuw | grep docker
-root       831  0.0  0.3 364776 14924 ?        Sl   01:30   0:01 /usr/bin/docker.io -d
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;marathon-の-webui-にアクセス&#34;&gt;Marathon の WebUI にアクセス&lt;/h2&gt;
-
-&lt;p&gt;Marathon の WebUI にアクセスしてみましょう。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.com/pix/deimos_01.png&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;まだ何も Tasks が実行されていないので一覧には何も表示されないと思います。&lt;/p&gt;
-
-&lt;h2 id=&#34;tasks-の実行&#34;&gt;Tasks の実行&lt;/h2&gt;
-
-&lt;p&gt;Marathon API に対してクエリを発行することで Mesos の Tasks として Docker コンテナを稼働させることが出来ます。
-下記のファイルを ubuntu.json として保存。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
-    &amp;quot;container&amp;quot;: {
-    &amp;quot;image&amp;quot;: &amp;quot;docker:///libmesos/ubuntu&amp;quot;
-  },
-  &amp;quot;id&amp;quot;: &amp;quot;ubuntu&amp;quot;,
-  &amp;quot;instances&amp;quot;: &amp;quot;1&amp;quot;,
-  &amp;quot;cpus&amp;quot;: &amp;quot;.5&amp;quot;,
-  &amp;quot;mem&amp;quot;: &amp;quot;512&amp;quot;,
-  &amp;quot;uris&amp;quot;: [ ]
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;下記の通り localhost:8080 が Marathon API の Endpoint になっているのでここに対して作成した JSON を POST します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X POST -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps -d@ubuntu.json
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Tasks の一覧を取得してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X GET -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps
-{&amp;quot;apps&amp;quot;:[{&amp;quot;id&amp;quot;:&amp;quot;ubuntu&amp;quot;,&amp;quot;cmd&amp;quot;:&amp;quot;&amp;quot;,&amp;quot;env&amp;quot;:{},&amp;quot;instances&amp;quot;:1,&amp;quot;cpus&amp;quot;:0.5,&amp;quot;mem&amp;quot;:512.0,&amp;quot;executor&amp;quot;:&amp;quot;&amp;quot;,&amp;quot;constraints&amp;quot;:[],&amp;quot;uris&amp;quot;:[],&amp;quot;ports&amp;quot;:[13049],&amp;quot;taskRateLimit&amp;quot;:1.0,&amp;quot;container&amp;quot;:{&amp;quot;image&amp;quot;:&amp;quot;docker:///libmesos/ubuntu&amp;quot;,&amp;quot;options&amp;quot;:[]},&amp;quot;version&amp;quot;:&amp;quot;2014-06-13T01:45:58.693Z&amp;quot;,&amp;quot;tasksStaged&amp;quot;:1,&amp;quot;tasksRunning&amp;quot;:0}]}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Tasks の一覧が JSON で返ってきます。id : ubuntu, インスタンス数 : 1, CPU 0.5, メモリー : 512MB で
-Task が稼働していることが確認出来ます。&lt;/p&gt;
-
-&lt;p&gt;ここで WebUI 側も見てみましょう。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.com/pix/deimos_05.png&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;一つ Task が稼働していることが確認出来ると思います。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.com/pix/deimos_04.png&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;その Task をクリックすると詳細が表示されます。&lt;/p&gt;
-
-&lt;p&gt;次に Tasks のスケーリングを行ってみましょう。
-下記の通り ubuntu.json を修正し instances : 2 とする。これによってインスタンス数が2に増えます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
-    &amp;quot;container&amp;quot;: {
-    &amp;quot;image&amp;quot;: &amp;quot;docker:///libmesos/ubuntu&amp;quot;
-  },
-  &amp;quot;id&amp;quot;: &amp;quot;ubuntu&amp;quot;,
-  &amp;quot;instances&amp;quot;: &amp;quot;2&amp;quot;,
-  &amp;quot;cpus&amp;quot;: &amp;quot;.5&amp;quot;,
-  &amp;quot;mem&amp;quot;: &amp;quot;512&amp;quot;,
-  &amp;quot;uris&amp;quot;: [ ]
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;修正した JSON を POST します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X PUT -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps/ubuntu -d@ubuntu.json
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Tasks の一覧を取得し containers が 2 になっていることが確認できます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X GET -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps
-{&amp;quot;apps&amp;quot;:[{&amp;quot;id&amp;quot;:&amp;quot;ubuntu&amp;quot;,&amp;quot;cmd&amp;quot;:&amp;quot;&amp;quot;,&amp;quot;env&amp;quot;:{},&amp;quot;instances&amp;quot;:2,&amp;quot;cpus&amp;quot;:0.5,&amp;quot;mem&amp;quot;:512.0,&amp;quot;executor&amp;quot;:&amp;quot;&amp;quot;,&amp;quot;constraints&amp;quot;:[],&amp;quot;uris&amp;quot;:[],&amp;quot;ports&amp;quot;:[17543],&amp;quot;taskRateLimit&amp;quot;:1.0,&amp;quot;container&amp;quot;:{&amp;quot;image&amp;quot;:&amp;quot;docker:///libmesos/ubuntu&amp;quot;,&amp;quot;options&amp;quot;:[]},&amp;quot;version&amp;quot;:&amp;quot;2014-06-13T02:40:04.536Z&amp;quot;,&amp;quot;tasksStaged&amp;quot;:3,&amp;quot;tasksRunning&amp;quot;:0}]}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;最後に Tasks を削除してみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X DELETE -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps/ubuntu
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Tasks が削除されたことを確認します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -X GET -H &amp;quot;Content-Type: application/json&amp;quot; localhost:8080/v2/apps
-{&amp;quot;apps&amp;quot;:[]}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;marathon-api-v2&#34;&gt;Marathon API v2&lt;/h2&gt;
-
-&lt;p&gt;Marathon API v2 について下記の URL に仕様が載っています。上記に記したクエリ以外にも色々載っているので
-動作を確認してみるといいと思います。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md&#34;&gt;https://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md&lt;/a&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;オールインワン構成が出来ました。また動作確認も無事出来ています。
-以前試した時よりも大分、手順が簡潔になった印象があります。また参考資料中に&lt;/p&gt;
-
-&lt;p&gt;&amp;ldquo;checkout our other multi-node tutorials on how to scale Docker in your data center.&amp;rdquo;&lt;/p&gt;
-
-&lt;p&gt;とありますが、まだ見つかっていません(´・ω・｀)見つかった方教えてくださいー。&lt;/p&gt;
-
-&lt;p&gt;以前試した時は Mesos-Master の冗長化が出来なかったので今回こそ Multi Mesos-Masters,
-Multi Mesos-Slaves の構成を作ってみたいと思います。&lt;/p&gt;
-
-&lt;p&gt;また今月？になって続々と Docker のオーケストレーションツールを各社が公開しています。&lt;/p&gt;
-
-&lt;h5 id=&#34;centurion&#34;&gt;centurion&lt;/h5&gt;
-
-&lt;p&gt;New Relic が開発したオーケストレーションツール。
-&lt;a href=&#34;https://github.com/newrelic/centurion&#34;&gt;https://github.com/newrelic/centurion&lt;/a&gt;&lt;/p&gt;
-
-&lt;h5 id=&#34;helios&#34;&gt;helios&lt;/h5&gt;
-
-&lt;p&gt;Spotify が開発したオーケストレーションツール。
-&lt;a href=&#34;https://github.com/spotify/helios&#34;&gt;https://github.com/spotify/helios&lt;/a&gt;&lt;/p&gt;
-
-&lt;h5 id=&#34;fleet&#34;&gt;fleet&lt;/h5&gt;
-
-&lt;p&gt;CoreOS 標準搭載。
-&lt;a href=&#34;https://github.com/coreos/fleet&#34;&gt;https://github.com/coreos/fleet&lt;/a&gt;&lt;/p&gt;
-
-&lt;h5 id=&#34;geard&#34;&gt;geard&lt;/h5&gt;
-
-&lt;p&gt;RedHat が Red Hat Enterprise Linux Atomic Host に搭載しているツール。
-&lt;a href=&#34;http://openshift.github.io/geard/&#34;&gt;http://openshift.github.io/geard/&lt;/a&gt;&lt;/p&gt;
-
-&lt;h5 id=&#34;kubernetes&#34;&gt;Kubernetes&lt;/h5&gt;
-
-&lt;p&gt;Google が開発したオーケストレーションツール。
-&lt;a href=&#34;https://github.com/GoogleCloudPlatform/kubernetes&#34;&gt;https://github.com/GoogleCloudPlatform/kubernetes&lt;/a&gt;&lt;/p&gt;
-
-&lt;h5 id=&#34;shipper&#34;&gt;shipper&lt;/h5&gt;
-
-&lt;p&gt;Python のコードで Docker をオーケストレーション出来るツール。
-&lt;a href=&#34;https://github.com/mailgun/shipper&#34;&gt;https://github.com/mailgun/shipper&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;幾つか試したのですが、まだまだ動く所までいかないツールがありました。github の README にも
-&amp;ldquo;絶賛開発中なのでプロダクトレディではない&amp;rdquo; と書かれています。これからでしょう。&lt;/p&gt;
 </description>
     </item>
     

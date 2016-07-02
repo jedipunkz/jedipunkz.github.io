@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2014-04-22T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2014-04-23T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,243 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2014/04/23/mirantis-openstack/">Mirantis OpenStack (Neutron GRE)を組んでみた！</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-04-23'>
+            April 23, 2014</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>皆さん、Mirantis OpenStack はご存知ですか？ OpenStack ディストリビューションの
+1つです。以下、公式サイトです。</p>
+
+<p><a href="http://software.mirantis.com/main/">http://software.mirantis.com/main/</a></p>
+
+<p>この Mirantis OpenStack を使って OpenStack Havana (Neutron GRE) 構成を作ってみ
+ました。その時のメモを書いていきたいと思います。</p>
+
+<h2 id="構成は">構成は?</h2>
+
+<p>構成は下記の通り。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/mirantis_gre.jpg"></p>
+
+<p>※ CreativeCommon</p>
+
+<p>特徴は</p>
+
+<ul>
+<li>Administrative Network : Fuel Node, DHCP + PXE ブート用</li>
+<li>Management Network : 各コンポーネント間 API 用</li>
+<li>Public/Floating IP Network : パブリック API, VM Floating IP 用</li>
+<li>Storage Network : Cinder 配下ストレージ &lt;-&gt; インスタンス間用</li>
+<li>要インターネット接続 : Public/Floating Networks</li>
+<li>Neutron(GRE) 構成</li>
+</ul>
+
+<p>です。タグ VLAN 使って物理ネットワークの本数を減らすことも出来るはずですが、僕
+の環境では何故かダメだったので上記の4つの物理ネットワークを別々に用意しました。</p>
+
+<h2 id="fuel-ノードの構築">Fuel ノードの構築</h2>
+
+<p>Fuel ノードとは、OpenStack の各ノードをデプロイするための管理ノードのことです。
+DHCP + PXE を管理する Cobbler やデプロイツールの Puppet が内部で稼働し、
+Administrative Network 上で稼働したノードを管理・その後デプロイします。</p>
+
+<p>構築方法は&hellip;</p>
+
+<p>下記の URL より ISO ファイルをダウンロード。</p>
+
+<p><a href="http://software.mirantis.com/main/">http://software.mirantis.com/main/</a></p>
+
+<p>Administrative Network に NIC を出したノードを上記の ISO から起動。</p>
+
+<p>Grub メニューが表示されたタイミングで &ldquo;Tab&rdquo; キーを押下。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/grub.png"></p>
+
+<p>上記画面にてカーネルオプションにて hostname, ip, gw, dns を修正。下記は例。</p>
+
+<pre><code class="language-bash">vmlinuz initrd=initrd.img biosdevname=0 ks=cdrom:/ks.cfg ip=10.200.10.76
+gw=10.200.10.1 dns1=8.8.8.8 netmask=255.255.255.0 hostname=fuel.cpi.ad.jp
+showmenu=no_
+</code></pre>
+
+<p>ブラウザで <a href="http://10.200.10.76:8080">http://10.200.10.76:8080</a> (上記例)にアクセスし、新しい &lsquo;OpenStack
+Environment&rsquo; を作成する。</p>
+
+<pre><code>Name : 任意
+OpenStack Release : Havana on CentOS6.4
+</code></pre>
+
+<p>なお、Ubuntu 構成も組めるが、私の環境では途中でエラーが出力した。</p>
+
+<p>Next を押下し、ネットワーク設定を行う。今回は &lsquo;Nuetron GRE&rsquo; を選択。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/mirantis_network.png"></p>
+
+<p>&lsquo;Save Settings&rsquo; を押下し設定を保存。この時点では &lsquo;Verify Networks&rsquo; は行えない。
+少なくとも 2 ノードが必要。次のステップで2ノードの追加を行う。</p>
+
+<h2 id="ノードの追加">ノードの追加</h2>
+
+<p>下記の4つのネットワークセグメントに NIC を出したノードを用意し、起動する。起動
+すると Administrative Network 上で稼働している Cobbler によりノードが PXE 起動
+しミニマムな OS がインストールされる。これは後に Fuel ノードよりログインがされ、
+各インターフェースの Mac アドレス等の情報を知るためです。ネットワークベリファ
+イ等もこのミニマムな OS 越しに実施されます。</p>
+
+<ul>
+<li>Administrative Network</li>
+<li>Public/Floating IP Network</li>
+<li>Storage Network</li>
+<li>Management Network</li>
+</ul>
+
+<p>ノードが稼働した時点で Fuel によりノードが認識されるので、ここでは2つのノード
+をそれぞれ</p>
+
+<ul>
+<li>Controller ノード</li>
+<li>Compute ノード</li>
+</ul>
+
+<p>として画面上で割り当てます。</p>
+
+<h2 id="インターフェースの設定">インターフェースの設定</h2>
+
+<p><img src="http://jedipunkz.github.io/pix/mirantis_mac.png"></p>
+
+<p><a href="http://10.200.10.76:8000/#cluster/1/nodes">http://10.200.10.76:8000/#cluster/1/nodes</a> にログインし作成した Environment
+を選択。その後、&rsquo;Nodes&rsquo; タブを押下。ノードを選択し、&rsquo;Configure Interfaces&rsquo; を
+選択。各ノードのインターフェースの Mac アドレスを確認し、各々のネットワークセ
+グメントを紐付ける。尚、Fuel ノードから &lsquo;root&rsquo; ユーザで SSH(22番ポート) にノン
+パスフレーズで公開鍵認証ログインが可能となっている。Fuel ノードに対しては SSH
+(22番ポート) にて下記のユーザにてログインが可能です。</p>
+
+<pre><code>username : root
+password : r00tme
+</code></pre>
+
+<h2 id="ネットワークの確認">ネットワークの確認</h2>
+
+<p><a href="http://10.200.10.76:8000/#cluster/1/network">http://10.200.10.76:8000/#cluster/1/network</a> にて &lsquo;Networks&rsquo; タブを開き、&rsquo;Verify
+Networks&rsquo; を押下。ネットワーク設定が正しく行われているか否かを確認。</p>
+
+<h2 id="デプロイ">デプロイ</h2>
+
+<p><a href="http://10.200.10.76:8000/#cluster/1/nodes">http://10.200.10.76:8000/#cluster/1/nodes</a> にて &lsquo;Deploy Changes&rsquo; を押下しデプ
+ロイ開始。kickstart にて OS が自動でインストールされ puppet にて fuel ノードか
+ら自動で OpenStack がインストールされます。</p>
+
+<h2 id="openstack-へのアクセス">OpenStack へのアクセス</h2>
+
+<p>SSH では下記のステップで OpenStack コントローラノードにログイン。</p>
+
+<p>fuel ノード (SSH) -&gt; node-1 (OpenStack コントローラノード)(SSH)</p>
+
+<p>ブラウザで Horizon にアクセスするには</p>
+
+<p><a href="http://10.200.10.2">http://10.200.10.2</a></p>
+
+<p>にアクセス。これは例。Administrative Network に接続している NIC の IP アドレス
+へ HTTP でログイン。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>Mirantis OpenStack Neutron (GRE) 構成が組めた。上記構成図を見て疑問に思ってい
+た &ldquo;VM 間通信のネットワークセグメント&rdquo; であるが、Administrative Network のセグ
+メントを用いている事が判った。これは利用者が意図しているとは考えづらいので、正
+直、あるべき姿では無いように思える。が、上記構成図に VM ネットワークが無い理由
+はこれにて判った。</p>
+
+<p>下記はノード上で ovs-vsctl show コマンドを打った結果の抜粋です。</p>
+
+<pre><code class="language-bash">    Bridge &quot;br-eth1&quot;
+        Port &quot;br-eth1&quot;
+            Interface &quot;br-eth1&quot;
+                type: internal
+        Port &quot;br-eth1--br-fw-admin&quot;
+            trunks: [0]
+            Interface &quot;br-eth1--br-fw-admin&quot;
+                type: patch
+                options: {peer=&quot;br-fw-admin--br-eth1&quot;}
+        Port &quot;eth1&quot;
+            Interface &quot;eth1&quot;
+</code></pre>
+
+<p>今回の構成は eth1 は Administrative Network に割り当てていました。</p>
+
+<p>一昔前は OS のディストリビュータが有料サポートをビジネスにしていました。Redhat
+がその代表格だと思いますが、今は OS 上で何かを実現するにもソフトウェアの完成度
+が高く、エンジニアが困るシチュエーションがそれほど無くなった気がします。そこで
+その OS の上で稼働する OpenStack のサポートビジネスが出てきたか！という印象で
+す。OpenStack はまだまだエンジニアにとって敷居の高いソフトウェアです。自らクラ
+ウドプラットフォームを構築出来るのは魅力的ですが、サポート無しに構築・運用する
+には、まだ難しい技術かもしれません。こういったディストリビューションが出てくる
+辺りが時代だなぁと感じます。</p>
+
+<p>尚、ISO をダウンロードして利用するだけでしたら無償で OK です。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2014/04/23/mirantis-openstack/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -764,459 +1001,6 @@ controller ノードの /var/lib/nova 配下にファイルとしてインスタ
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0.deploy/">rcbops/chef-cookbooks で Keystone 2013.2.2(Havana) &#43; Swift 1.10.0 を構築</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2014-03-16'>
-            March 16, 2014</time>
-        <span class="author"></span>
-        
-            <p>6 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<h4 id="追記">追記</h4>
-
-<p>2014/03/20 : 一旦削除していた記事なのですが、無事動作が確認出来たので再度アッ
-プします！</p>
-
-<p>第17回 OpenStack 勉強会で rcbops/chef-cookbooks の話をしてきたのですが会場から
-質問がありました。「Havana の Swift 構成を作る Cookbooks はどこにありますか？」
-と。私が試したのが Grizzly 時代のモノで、よく rcbops/chef-cookbooks を見てみる
-と Havana ブランチ又は Havana に対応したリリースタグのファイル構成に Swift が
-綺麗サッパリ消えているではありませんか・・！下記の Swift の Cookbooks は幸い
-github 上に残っていました。</p>
-
-<p><a href="https://github.com/rcbops-cookbooks/swift">https://github.com/rcbops-cookbooks/swift</a></p>
-
-<p>が rcbops/chef-cookbooks との関連付けが切れています・・。ぐあぁ。</p>
-
-<p>ということで Havana 構成の Keystone 2013.2.2 と Swift 1.10.0 の構成を Chef で
-作らねば！と思い色々試していたら結構あっさりと出来ました。今回はその方法を書い
-ていきたいと思います！</p>
-
-<h2 id="構成">構成</h2>
-
-<p>構成は&hellip;以前の記事 <a href="http://jedipunkz.github.io/blog/2013/10/27/swift-chef/">http://jedipunkz.github.io/blog/2013/10/27/swift-chef/</a> と同じです。</p>
-
-<pre><code>+-----------------+
-|  load balancer  |
-+-----------------+
-|
-+-------------------+-------------------+-------------------+-------------------+---------------------- proxy network
-|                   |                   |                   |                   |                   
-+-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+
-|   chef server   | | chef workstation| |   swift-mange   | |  swift-proxy01  | |  swift-proxy02  | 
-+-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ ...&gt; scaling
-|                   |                   |                   |                   |                   
-+-------------------+-------------------+-------------------+-------------------+-------------------+-- storage network
-|                   |                   |                   |                   |                   |
-+-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ 
-| swift-storage01 | | swift-storage02 | | swift-storage03 | | swift-account01 | | swift-account02 | | swift-account03 |
-+-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ ..&gt; scaling
-</code></pre>
-
-<h2 id="手順">手順</h2>
-
-<p>では早速手順を記していきますね。毎回なのですが Chef ワークステーション・Chef
-サーバの環境構築については割愛します。オムニバスインストーラを使えば Chef サー
-バの構築は簡単ですし、ワークステーションの構築も Ruby インストール -&gt; gem で
-Chef をインストール -&gt; .chef 配下を整える、で出来ます。</p>
-
-<p>rcbops/chef-cookbooks の取得。現在 Stable バージョンの refs/tags/v4.2.1 を用いる。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ./chef-cookbooks-4.2.1
-% cd ./chef-cookbooks-4.2.1
-% git checkout -b v4.2.1 refs/tags/v4.2.1
-% git submodule init
-% git submodule sync
-% git submodule update
-</code></pre>
-
-<p>ここで本家 rcbops/chef-cookbooks と関連付けが消えている rcbops-cookbooks/swift
-を cookbooks ディレクトリ配下にクローンします。あと念のため &lsquo;havana&rsquo; ブランチ
-を指定します。コードを確認したところ何も変化はありませんでしたが。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/rcbops-cookbooks/swift.git cookbooks/swift
-% cd cookbooks/swift
-% git checkout -b havana remotes/origin/havana
-% cd ../..
-</code></pre>
-
-<p>cookbooks, roles の Chef サーバへのアップロードを行います。</p>
-
-<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
-% knife role from file role/*.rb
-</code></pre>
-
-<p>今回の構成 (1クラスタ) 用の environments/swift-havana.json を作成します。json
-ファイルの名前は任意です。</p>
-
-<pre><code class="language-json">{
-  &quot;name&quot;: &quot;swift-havana&quot;,
-  &quot;description&quot;: &quot;&quot;,
-  &quot;cookbook_versions&quot;: {
-  },
-  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
-  &quot;chef_type&quot;: &quot;environment&quot;,
-  &quot;default_attributes&quot;: {
-  },
-  &quot;override_attributes&quot;: {
-    &quot;package_component&quot;: &quot;havana&quot;,
-    &quot;osops_networks&quot;: {
-      &quot;management&quot;: &quot;10.200.9.0/24&quot;,
-      &quot;public&quot;: &quot;10.200.10.0/24&quot;,
-      &quot;swift&quot;: &quot;10.200.9.0/24&quot;
-    },
-    &quot;keystone&quot;: {
-      &quot;pki&quot;: {
-        &quot;enabled&quot;: false
-      },
-      &quot;admin_port&quot;: &quot;35357&quot;,
-      &quot;admin_token&quot;: &quot;admin&quot;,
-      &quot;admin_user&quot;: &quot;admin&quot;,
-      &quot;tenants&quot;: [
-        &quot;admin&quot;,
-        &quot;service&quot;
-      ],
-      &quot;users&quot;: {
-        &quot;admin&quot;: {
-          &quot;password&quot;: &quot;secrete&quot;,
-          &quot;roles&quot;: {
-            &quot;admin&quot;: [
-              &quot;admin&quot;
-            ]
-          }
-        },
-        &quot;demo&quot;: {
-          &quot;password&quot;: &quot;demo&quot;,
-          &quot;default_tenant&quot; : &quot;service&quot;,
-          &quot;roles&quot;: {
-            &quot;admin&quot;: [ &quot;admin&quot; ]
-          }
-        }
-      },
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;keystone&quot;
-      }
-    },
-    &quot;mysql&quot;: {
-      &quot;root_network_acl&quot;: &quot;%&quot;,
-      &quot;allow_remote_root&quot;: true,
-      &quot;server_root_password&quot;: &quot;secrete&quot;,
-      &quot;server_repl_password&quot;: &quot;secrete&quot;,
-      &quot;server_debian_password&quot;: &quot;secrete&quot;
-    },
-    &quot;monitoring&quot;: {
-      &quot;procmon_provider&quot;: &quot;monit&quot;,
-      &quot;metric_provider&quot;: &quot;collectd&quot;
-    },
-    &quot;vips&quot;: {
-      &quot;keystone-admin-api&quot;: &quot;10.200.9.11&quot;,
-      &quot;keystone-service-api&quot;: &quot;10.200.9.11&quot;,
-      &quot;keystone-internal-api&quot;: &quot;10.200.9.11&quot;,
-      &quot;swift-proxy&quot;: &quot;10.200.9.11&quot;,
-      &quot;config&quot;: {
-        &quot;10.200.9.112&quot;: {
-          &quot;vrid&quot;: 12,
-          &quot;network&quot;: &quot;management&quot;
-        }
-      }
-    },
-    &quot;developer_mode&quot;: false,
-    &quot;swift&quot;: {
-      &quot;swift_hash&quot;: &quot;307c0568ea84&quot;,
-      &quot;authmode&quot;: &quot;keystone&quot;,
-      &quot;authkey&quot;: &quot;20281b71-ce89-4b27-a2ad-ad873d3f2760&quot;
-    }
-  }
-}
-</code></pre>
-
-<p>作成した environment ファイル environments/swift-havana.json を chef-server へアップ
-ロードする。</p>
-
-<pre><code class="language-bash">% knife environment from file environments/swift-havana.json
-</code></pre>
-
-<h2 id="cookbooks-の修正">Cookbooks の修正</h2>
-
-<p>swift cookbooks を修正します。havana からは keystone を扱うクライアントは
-keystone.middleware.auth_token でなく keystoneclient.middleware.auth_token を
-使うように変更掛かっていますので、下記のように修正しました。</p>
-
-<pre><code class="language-bash">% cd cookbooks/swift/templates/default
-% diff -u proxy-server.conf.erb.org proxy-server.conf.erb
---- proxy-server.conf.erb.org   2014-03-20 16:28:28.000000000 +0900
-+++ proxy-server.conf.erb       2014-03-20 16:28:13.000000000 +0900
-@@ -243,7 +243,8 @@
- use = egg:swift#keystoneauth
- 
- [filter:authtoken]
--paste.filter_factory = keystone.middleware.auth_token:filter_factory
-+#paste.filter_factory = keystone.middleware.auth_token:filter_factory
-+paste.filter_factory = keystoneclient.middleware.auth_token:filter_factory
- auth_host = &lt;%= @keystone_api_ipaddress %&gt;
- auth_port = &lt;%= @keystone_admin_port %&gt;
- auth_protocol = &lt;%= @keystone_admin_protocol %&gt;
-% cd ../../../..
-</code></pre>
-
-<h2 id="デプロイ">デプロイ</h2>
-
-<p>かきのとおり knife bootstrap する。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;manage_ip_addr&gt; -N swift-manage -r 'role[base]','role[mysql-master]','role[keystone]','role[swift-management-server]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;proxy01_ip_addr&gt; -N swift-proxy01 -r &quot;role[base]&quot;,&quot;role[swift-proxy-server]&quot;,'role[swift-setup]','role[openstack-ha]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;proxy02_ip_addr&gt; -N swift-proxy02 -r &quot;role[base]&quot;,&quot;role[swift-proxy-server]&quot;,'role[openstack-ha]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;storage01_ip_addr&gt; -N swift-storage01 -r 'role[base]','role[swift-object-server]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;storage02_ip_addr&gt; -N swift-storage02 -r 'role[base]','role[swift-object-server]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;storage03_ip_addr&gt; -N swift-storage03 -r 'role[base]','role[swift-object-server]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;account01_ip_addr&gt; -N swift-account01 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;account02_ip_addr&gt; -N swift-account02 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;account03_ip_addr&gt; -N swift-account03 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift-havana --sudo -x thirai
-</code></pre>
-
-<p>ここでバグ対策。Swift 1.10.0 にはバグがあるので下記の通り対処します。</p>
-
-<p>keystone.middleware.s3_token に既知のバグがあり、下記のように対処します。この
-状態ではバグにより swift-proxy が稼働してない状態ですが後の各ノードでの
-chef-client 実行時に稼働する予定です。</p>
-
-<pre><code class="language-python">% diff /usr/lib/python2.7/dist-packages/keystone/exception.py.org /usr/lib/python2.7/dist-packages/keystone/exception.py 
---- exception.py.org    2014-03-12 16:45:00.181420694 +0900
-+++ exception.py        2014-03-12 16:44:47.173177081 +0900
-@@ -18,6 +18,7 @@
-
- from keystone.common import config
- from keystone.openstack.common import log as logging
-+from keystone.openstack.common.gettextutils import _
- from keystone.openstack.common import strutils
-</code></pre>
-
-<p>上記のバグ報告は下記の URL にあります。</p>
-
-<p><a href="https://bugs.launchpad.net/ubuntu/+source/swift/+bug/1231339">https://bugs.launchpad.net/ubuntu/+source/swift/+bug/1231339</a></p>
-
-<p>zone 番号を付与します。</p>
-
-<pre><code class="language-bash">% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
-</code></pre>
-
-<p>zone 番号が付与されたこと下記の通りを確認します</p>
-
-<p>account-server の確認</p>
-
-<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-account-server&quot;) \
-  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
-  [swift-account-server] and is in swift zone #{z}&quot;; }'
-swift-account01 has the role       [swift-account-server] and is in swift zone 1
-swift-account02 has the role       [swift-account-server] and is in swift zone 2
-swift-account03 has the role       [swift-account-server] and is in swift zone 3
-</code></pre>
-
-<p>container-server の確認</p>
-
-<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-container-server&quot;) \
-  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
-  [swift-container-server] and is in swift zone #{z}&quot;; }'
-swift-account01 has the role       [swift-container-server] and is in swift zone 1
-swift-account02 has the role       [swift-container-server] and is in swift zone 2
-swift-account03 has the role       [swift-container-server] and is in swift zone 3
-</code></pre>
-
-<p>object-server の確認</p>
-
-<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-object-server&quot;) \
-  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
-  [swift-object-server] and is in swift zone #{z}&quot;; }'
-swift-storage01 has the role   [swift-object-server] and is in swift zone 1
-swift-storage02 has the role   [swift-object-server] and is in swift zone 2
-swift-storage03 has the role   [swift-object-server] and is in swift zone 3
-</code></pre>
-
-<p>Chef が各々のノードに搭載された Disk を検知出来るか否かを確認する。</p>
-
-<pre><code class="language-ruby">% knife exec -E \
-  'search(:node,&quot;role:swift-object-server OR \
-  role:swift-account-server \
-  OR role:swift-container-server&quot;) \
-  { |n| puts &quot;#{n.name}&quot;; \
-  begin; n[:swift][:state][:devs].each do |d| \
-  puts &quot;\tdevice #{d[1][&quot;device&quot;]}&quot;; \
-  end; rescue; puts \
-  &quot;no candidate drives found&quot;; end; }'
-    swift-storage02
-            device sdb1
-    swift-storage03
-            device sdb1
-    swift-account01
-            device sdb1
-    swift-account02
-            device sdb1
-    swift-account03
-            device sdb1
-    swift-storage01
-            device sdb1
-</code></pre>
-
-<p>swift-manage ノードにて chef-client を実行し
-/etc/swift/ring-workspace/generate-rings.sh を更新します。</p>
-
-<pre><code class="language-bash">swift-manage% sudo chef-client
-</code></pre>
-
-<p>generate-rings.sh の &lsquo;exit 0&rsquo; 行をコメントアウトし実行します。</p>
-
-<pre><code class="language-bash">swift-manage% sudo ${EDITOR} /etc/swift/ring-workspace/generage-rings.sh
-swift-manage% sudo /etc/swift/ring-workspace/generate-rings.sh
-</code></pre>
-
-<p>この操作で /etc/swift/ring-workspace/rings 配下に account, container, object
-用の Rings ファイル群が生成されたことを確認出来るはずです。これらを
-swift-manage 上で既に稼働している git サーバに push し管理します。</p>
-
-<pre><code class="language-bash">swift-manage# cd /etc/swift/ring-workspace/rings
-swift-manage# git add account.builder container.builder object.builder
-swift-manage# git add account.ring.gz container.ring.gz object.ring.gz
-swift-manage# git commit -m &quot;initial commit&quot;
-swift-manage# git push
-</code></pre>
-
-<p>各々のノードにて chef-client を実行することで git サーバ上の Rings ファイル群
-を取得し、swift プロセスを稼働させます。</p>
-
-<pre><code class="language-bash">swift-proxy01# chef-client
-swift-proxy02# chef-client
-swift-storage01# chef-client
-swift-storage02# chef-client
-swift-storage03# chef-client
-swift-account01# chef-client
-swift-account02# chef-client
-swift-account03# chef-client
-</code></pre>
-
-<p>3台のノードが登録されたかどうかを下記の通り確認行います。</p>
-
-<pre><code class="language-bash">swift-proxy01% sudo swift-recon --md5
-[sudo] password for thirai:
-===============================================================================
---&gt; Starting reconnaissance on 3 hosts
-===============================================================================
-[2013-10-18 11:14:43] Checking ring md5sums
-3/3 hosts matched, 0 error[s] while checking hosts.
-===============================================================================
-</code></pre>
-
-<h2 id="動作確認">動作確認</h2>
-
-<p>構築が出来ました！ということで動作の確認をしてみましょう。</p>
-
-<p>テストコンテナ &lsquo;container01&rsquo; にテストファイル &lsquo;test&rsquo; をアップロードしてみる。</p>
-
-<pre><code class="language-bash">swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete stat
-swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete post container01
-swift-storage01% echo &quot;test&quot; &gt; test
-swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete upload container01 test
-swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete list
-container01
-swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete list container01 test
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>前回「実用的な Swift 構成を Chef でデプロイ」の記事で記した内容とほぼ手順は変
-わりませんでした。rcbops-cookbooks/rcbops-utils 内にソフトウェアの取得先レポジ
-トリを記すレシピが下記の場所にあります。</p>
-
-<p><a href="https://github.com/rcbops-cookbooks/osops-utils/blob/master/recipes/packages.rb">https://github.com/rcbops-cookbooks/osops-utils/blob/master/recipes/packages.rb</a></p>
-
-<p>そして havana ブランチの attributes を確認すると Ubuntu Cloud Archive の URL
-が記されていることが確認出来ます。下記のファイルです。</p>
-
-<p><a href="https://github.com/rcbops-cookbooks/osops-utils/blob/havana/attributes/repos.rb">https://github.com/rcbops-cookbooks/osops-utils/blob/havana/attributes/repos.rb</a></p>
-
-<p>ファイルの中身の抜粋です。</p>
-
-<pre><code class="language-json">    &quot;havana&quot; =&gt; {
-      &quot;uri&quot; =&gt; &quot;http://ubuntu-cloud.archive.canonical.com/ubuntu&quot;,
-      &quot;distribution&quot; =&gt; &quot;precise-updates/havana&quot;,
-      &quot;components&quot; =&gt; [&quot;main&quot;],
-      &quot;keyserver&quot; =&gt; &quot;hkp://keyserver.ubuntu.com:80&quot;,
-      &quot;key&quot; =&gt; &quot;EC4926EA&quot;
-    },
-</code></pre>
-
-<p>これらのことより、rcbops-utils の attibutes で havana (実際には
-&lsquo;havana-proposed&rsquo;) をレポジトリ指定するように Cookbooks 構成を管理してあげれば
-Havana 構成の Keystone, Swift が構築出来ることになります。ちなみに
-havana-proposed で Swift や Keystone のどのバージョンがインストールされるかは、
-下記の Packages ファイルを確認すると判断出来ます。</p>
-
-<p><a href="http://ubuntu-cloud.archive.canonical.com/ubuntu/dists/precise-proposed/havana/main/binary-amd64/Packages">http://ubuntu-cloud.archive.canonical.com/ubuntu/dists/precise-proposed/havana/main/binary-amd64/Packages</a></p>
-
-<p>以上です。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0.deploy/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1333,6 +1117,20 @@ havana-proposed で Swift や Keystone のどのバージョンがインスト�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-02'>
+                                    July 2, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
                                 
                                     
@@ -1372,20 +1170,6 @@ havana-proposed で Swift や Keystone のどのバージョンがインスト�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-11-15'>
-                                    November 15, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1420,7 +1204,7 @@ havana-proposed で Swift や Keystone のどのバージョンがインスト�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">98</span>
+                                <span style="float:right;">99</span>
                             </header>
                         </article>
                     </li>

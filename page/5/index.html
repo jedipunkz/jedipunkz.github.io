@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2014-07-16T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2014-11-04T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,277 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2014/11/04/midostack/">MidoStack を動かしてみる</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-11-04'>
+            November 4, 2014</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。@jedipunkz です。</p>
+
+<p>昨晩 Midokura さんが Midonet を OSS 化したとニュースになりました。公式サイトは
+下記の URL になっています。Midonet は OpenStack Neutron のプラグインとして動作
+するソフトウェアです。</p>
+
+<p><a href="http://www.midonet.org">http://www.midonet.org</a></p>
+
+<p>下記のGithub 上でソースを公開しています。</p>
+
+<p><a href="https://github.com/midonet">https://github.com/midonet</a></p>
+
+<p>本体の midonet と共に midostack というレポジトリがあってどうやら公式サイトの
+QuickStart を見ても devstack を交えての簡単な midonet の動作が確認できそう。</p>
+
+<p><a href="https://github.com/midonet/midostack">https://github.com/midonet/midostack</a></p>
+
+<h2 id="早速使ってみる">早速使ってみる</h2>
+
+<p>早速 midostack を使って midonet を体験してみましょう。QuickStart には
+Vagrant + VirtualBox を用いた使い方が改定ありますが手元の PC 端末だとリソース
+が足らなくて CirrOS VM 一個すら立ち上がりませんでした。よって普通にリソースの
+沢山あるサーバで稼働してみます。Vagrantfile 見ても</p>
+
+<pre><code>config.vm.synced_folder &quot;./&quot;, &quot;/midostack&quot;
+</code></pre>
+
+<p>としているだけなので、Vagrant ではなくても大丈夫でしょう。</p>
+
+<p>Ubuntu Server 14.04 をインストールしたマシンを用意して midostack を取得します。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/midonet/midostack.git
+</code></pre>
+
+<p>midonet_stack.sh を実行します。</p>
+
+<pre><code class="language-bash">% cd midostack
+% ./midonet_stack.sh
+</code></pre>
+
+<p>暫く待つと Neutron Middonet Plugin が有効になった OpenStack が立ち上がります。
+Horizon にアクセスしましょう。ユーザ名 : admin, パスワード : gogomid0 (デフォ
+ルト) です。</p>
+
+<p>VM も普通に立ち上がりますし VM 同士の通信も良好です。</p>
+
+<h2 id="neutron-プロセスを確認する">Neutron プロセスを確認する</h2>
+
+<p>Neutron-Server は下記のように立ち上がっています。</p>
+
+<pre><code class="language-bash">16229 pts/13   S+     0:06 python /usr/local/bin/neutron-server --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/midonet/midonet.ini
+</code></pre>
+
+<p>/etc/neutron/neutron.conf の midonet の指定はこんな感じ。</p>
+
+<pre><code>core_plugin = midonet.neutron.plugin.MidonetPluginV2
+api_extensions_path = /opt/stack/midonet/python-neutron-plugin-midonet/midonet/neutron/extensions
+</code></pre>
+
+<p>次に /etc/neutron/plugins/midonet/midonet.ini を確認してみましょう。</p>
+
+<pre><code>[midonet]
+# MidoNet API server URI
+# midonet_uri = http://localhost:8080/midonet-api
+
+# MidoNet admin username
+# username = admin
+
+# MidoNet admin password
+# password = passw0rd
+
+# ID of the project that MidoNet admin user belongs to
+# project_id = 77777777-7777-7777-7777-777777777777
+
+# Virtual provider router ID
+# provider_router_id = 00112233-0011-0011-0011-001122334455
+
+# Path to midonet host uuid file
+# midonet_host_uuid_path = /etc/midolman/host_uuid.properties
+
+[MIDONET]
+project_id = admin
+password = gogomid0
+username = admin
+midonet_uri = http://localhost:8081/midonet-api
+</code></pre>
+
+<h2 id="midonet-api-にアクセスする">Midonet API にアクセスする</h2>
+
+<p>Midonet API のリファレンスが下記の URL で公開されていました。</p>
+
+<p><a href="http://docs.midonet.org/docs/v1.8/rest-api/api/rest-api-specification.html">http://docs.midonet.org/docs/v1.8/rest-api/api/rest-api-specification.html</a></p>
+
+<p>早速使ってみましょう。まず Token を得ます。</p>
+
+<pre><code class="language-bash">curl -i 'http://127.0.0.1:5000/v2.0/tokens' -X POST -H &quot;Content-Type: application/json&quot; -H &quot;Accept: application/json&quot;  -d '{&quot;auth&quot;: {&quot;tenantName&quot;: &quot;admin&quot;, &quot;passwordCredentials&quot;: {&quot;username&quot;: &quot;admin&quot;, &quot;password&quot;: &quot;gogomid0&quot;}}}'
+</code></pre>
+
+<p>Token ID を取得したら &ldquo;/&rdquo; に対してアクセスしてみましょう。</p>
+
+<pre><code class="language-bash">% curl -i -X GET http://localhost:8081/midonet-api/ -H &quot;User-Agent: python-keystoneclient&quot; -H &quot;X-Auth-Token: &lt;TokenID&gt;&quot;
+</code></pre>
+
+<p>レスポンス</p>
+
+<pre><code class="language-json">{
+&quot;routerTemplate&quot;: &quot;http://localhost:8081/midonet-api/routers/{id}&quot;,
+&quot;portTemplate&quot;: &quot;http://localhost:8081/midonet-api/ports/{id}&quot;,
+&quot;vipTemplate&quot;: &quot;http://localhost:8081/midonet-api/vips/{id}&quot;,
+&quot;poolTemplate&quot;: &quot;http://localhost:8081/midonet-api/pools/{id}&quot;,
+&quot;healthMonitorTemplate&quot;: &quot;http://localhost:8081/midonet-api/health_monitors/{id}&quot;,
+&quot;healthMonitors&quot;: &quot;http://localhost:8081/midonet-api/health_monitors&quot;,
+&quot;loadBalancers&quot;: &quot;http://localhost:8081/midonet-api/load_balancers&quot;,
+&quot;ipAddrGroupTemplate&quot;: &quot;http://localhost:8081/midonet-api/ip_addr_groups/{id}&quot;,
+&quot;tenants&quot;: &quot;http://localhost:8081/midonet-api/tenants&quot;,
+&quot;tenantTemplate&quot;: &quot;http://localhost:8081/midonet-api/tenants/{id}&quot;,
+&quot;portGroupTemplate&quot;: &quot;http://localhost:8081/midonet-api/port_groups/{id}&quot;,
+&quot;loadBalancerTemplate&quot;: &quot;http://localhost:8081/midonet-api/load_balancers/{id}&quot;,
+&quot;poolMemberTemplate&quot;: &quot;http://localhost:8081/midonet-api/pool_members/{id}&quot;,
+&quot;hostVersions&quot;: &quot;http://localhost:8081/midonet-api/versions&quot;,
+&quot;version&quot;: &quot;v1.7&quot;,
+&quot;bridgeTemplate&quot;: &quot;http://localhost:8081/midonet-api/bridges/{id}&quot;,
+&quot;hostTemplate&quot;: &quot;http://localhost:8081/midonet-api/hosts/{id}&quot;,
+&quot;uri&quot;: &quot;http://localhost:8081/midonet-api/&quot;,
+&quot;vteps&quot;: &quot;http://localhost:8081/midonet-api/vteps&quot;,
+&quot;tunnelZoneTemplate&quot;: &quot;http://localhost:8081/midonet-api/tunnel_zones/{id}&quot;,
+&quot;ipAddrGroups&quot;: &quot;http://localhost:8081/midonet-api/ip_addr_groups&quot;,
+&quot;writeVersion&quot;: &quot;http://localhost:8081/midonet-api/write_version&quot;,
+&quot;chainTemplate&quot;: &quot;http://localhost:8081/midonet-api/chains/{id}&quot;,
+&quot;vtepTemplate&quot;: &quot;http://localhost:8081/midonet-api/vteps/{ipAddr}&quot;,
+&quot;adRouteTemplate&quot;: &quot;http://localhost:8081/midonet-api/ad_routes/{id}&quot;,
+&quot;bgpTemplate&quot;: &quot;http://localhost:8081/midonet-api/bgps/{id}&quot;,
+&quot;hosts&quot;: &quot;http://localhost:8081/midonet-api/hosts&quot;,
+&quot;routeTemplate&quot;: &quot;http://localhost:8081/midonet-api/routes/{id}&quot;,
+&quot;ruleTemplate&quot;: &quot;http://localhost:8081/midonet-api/rules/{id}&quot;,
+&quot;systemState&quot;: &quot;http://localhost:8081/midonet-api/system_state&quot;,
+&quot;vips&quot;: &quot;http://localhost:8081/midonet-api/vips&quot;,
+&quot;pools&quot;: &quot;http://localhost:8081/midonet-api/pools&quot;,
+&quot;routers&quot;: &quot;http://localhost:8081/midonet-api/routers&quot;,
+&quot;bridges&quot;: &quot;http://localhost:8081/midonet-api/bridges&quot;,
+&quot;chains&quot;: &quot;http://localhost:8081/midonet-api/chains&quot;,
+&quot;portGroups&quot;: &quot;http://localhost:8081/midonet-api/port_groups&quot;,
+&quot;poolMembers&quot;: &quot;http://localhost:8081/midonet-api/pool_members&quot;,
+&quot;tunnelZones&quot;: &quot;http://localhost:8081/midonet-api/tunnel_zones&quot;
+}
+</code></pre>
+
+<p>なんとなく引数にこれらの文字列を渡せばいいのだなと分かります。</p>
+
+<p>次に neutron の管理している subnets を確認してみましょう。</p>
+
+<pre><code class="language-bash">% curl -i -X GET http://localhost:8081/midonet-api/neutron/subnets -H &quot;User-Agent: python-keystoneclient&quot; -H &quot;X-Auth-Token: &lt;TokenID&gt;&quot;
+</code></pre>
+
+<p>レスポンス</p>
+
+<pre><code class="language-json">[
+  {
+    &quot;enable_dhcp&quot;: false,
+    &quot;tenant_id&quot;: &quot;65f7012145d84ac5afc36572eabe5b09&quot;,
+    &quot;host_routes&quot;: [],
+    &quot;dns_nameservers&quot;: [],
+    &quot;id&quot;: &quot;3dbe5cff-8a8c-4790-85b5-b789d8ede863&quot;,
+    &quot;name&quot;: &quot;public-subnet&quot;,
+    &quot;cidr&quot;: &quot;200.200.200.0/24&quot;,
+    &quot;shared&quot;: false,
+    &quot;ip_version&quot;: 4,
+    &quot;network_id&quot;: &quot;45269fba-e32f-40b0-a542-f5cfe34ce1a1&quot;,
+    &quot;gateway_ip&quot;: &quot;200.200.200.1&quot;,
+    &quot;allocation_pools&quot;: [
+      {
+        &quot;last_ip&quot;: null,
+        &quot;first_ip&quot;: null
+      }
+    ]
+  },
+  {
+    &quot;enable_dhcp&quot;: true,
+    &quot;tenant_id&quot;: &quot;f34b4398015546b8b84f50c731ed6c51&quot;,
+    &quot;host_routes&quot;: [],
+    &quot;dns_nameservers&quot;: [],
+    &quot;id&quot;: &quot;3dbcf04a-9738-4b1f-b084-76f2a4b17cbc&quot;,
+    &quot;name&quot;: &quot;private-subnet&quot;,
+    &quot;cidr&quot;: &quot;10.0.0.0/24&quot;,
+    &quot;shared&quot;: false,
+    &quot;ip_version&quot;: 4,
+    &quot;network_id&quot;: &quot;2edb78c3-0f23-4e29-a3e6-cc97f55baa6a&quot;,
+    &quot;gateway_ip&quot;: &quot;10.0.0.1&quot;,
+    &quot;allocation_pools&quot;: [
+      {
+        &quot;last_ip&quot;: null,
+        &quot;first_ip&quot;: null
+      }
+    ]
+  }
+]
+</code></pre>
+
+<p>２つのサブネットが確認出来ました。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>勉強不足でまだ全く midonet で出来る事がわからない..汗。でもとりあえず動かせた
+し、API も引っ張れるのでこれから色々試せそうですね。OSS 化されたことで、コミュ
+ニティの間でも使われていくことも想像出来ますし、自分たち技術者としてはとても有
+り難いことでした。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2014/11/04/midostack/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -566,325 +837,6 @@ Ceph を運用していないので、各プロセスがどのようなリソー
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/">Mesos &#43; Marathon &#43; Deimos &#43; Docker を試してみた!</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2014-06-13'>
-            June 13, 2014</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>以前 Mesos, Docker について記事にしました。</p>
-
-<p><a href="http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/">http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/</a>
-<a href="http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/">http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/</a></p>
-
-<p>Twitter で Docker 関連のオーケストレーションツールについて呟いていたら @everpeace さんから
-こんな情報をもらいました。</p>
-
-<p><blockquote class="twitter-tweet" lang="ja"><p><a href="https://twitter.com/jedipunkz">@jedipunkz</a> 元々meos-dockerっていうmesos executorがあったんですけど、mesosがcontainer部分をpluggableにしたので、それに合わせてdeimosっていうmesos用のexternal containerizer が作られました。</p>&mdash; Shingo Omura (@everpeace) <a href="https://twitter.com/everpeace/statuses/476998842383347712">2014, 6月 12</a></blockquote>
-<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script></p>
-
-<p>Deimos !!! 知らなかった。Mesos の Docker プラグインらしく下記の場所にありました。</p>
-
-<p><a href="https://github.com/mesosphere/deimos">https://github.com/mesosphere/deimos</a></p>
-
-<p>色々調べいたら、こんな資料が見つかりました。どうやらまだ公開されて4日しか経っていないようです。</p>
-
-<p><a href="http://mesosphere.io/learn/run-docker-on-mesosphere/">http://mesosphere.io/learn/run-docker-on-mesosphere/</a></p>
-
-<p>Mesos + Marathon + Deimos + Docker をオールインワン構成で構築する手順が書かれています。</p>
-
-<p>内容はほぼ同じですが、一応自分がやってみて理解したことをまとめたいので下記に記していきます。</p>
-
-<h2 id="構築してみる">構築してみる</h2>
-
-<p>手順をまとめてスクリプトにしました。パッケージは Ubuntu 13.10 用のようですが 14.04 のホスト
-で実行出来ました。14.04 のパッケージはまだ見つかっていません。</p>
-
-<pre><code class="language-bash">#!/bin/bash
-# disable ipv6
-echo 'net.ipv6.conf.all.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf
-echo 'net.ipv6.conf.default.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
-
-# install related tools
-sudo apt-get update
-sudo apt-get -y install curl python-setuptools python-pip python-dev python-protobuf
-
-# install zookeeper
-sudo apt-get -y install zookeeperd
-echo 1 | sudo dd of=/var/lib/zookeeper/myid
-
-# install docker
-sudo apt-get -y install docker.io
-sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker
-sudo sed -i '$acomplete -F _docker docker' /etc/bash_completion.d/docker.io
-sudo docker pull libmesos/ubuntu
-
-# install mesos
-curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.deb -o /tmp/mesos.deb
-sudo dpkg -i /tmp/mesos.deb
-sudo mkdir -p /etc/mesos-master
-echo in_memory  | sudo dd of=/etc/mesos-master/registry
-curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.egg -o /tmp/mesos.egg
-sudo easy_install /tmp/mesos.egg
-
-# install marathon
-curl -fL http://downloads.mesosphere.io/marathon/marathon_0.5.0-xcon2_noarch.deb -o /tmp/marathon.deb
-sudo dpkg -i /tmp/marathon.deb
-
-# restart each services
-sudo service docker.io restart
-sudo service zookeeper restart
-sudo service mesos-master restart
-sudo service mesos-slave restart
-
-# install deimos
-sudo pip install deimos
-sudo mkdir -p /etc/mesos-slave
-
-## Configure Deimos as a containerizer
-echo /usr/bin/deimos  | sudo dd of=/etc/mesos-slave/containerizer_path
-echo external     | sudo dd of=/etc/mesos-slave/isolation
-</code></pre>
-
-<h2 id="プロセスの確認">プロセスの確認</h2>
-
-<p>実行が終わると各プロセスが確認出来ます。オプションでどのプロセスが何を見ているか大体
-わかりますので見ていきます。</p>
-
-<h4 id="mesos-master">mesos-master</h4>
-
-<p>mesos-master は zookeeper を参照して 5050 番ポートで起動しているようです。</p>
-
-<pre><code class="language-bash">% ps ax | grep mesos-master
- 1224 ?        Ssl    0:30 /usr/local/sbin/mesos-master --zk=zk://localhost:2181/mesos --port=5050 --log_dir=/var/log/mesos --registry=in_memory
-</code></pre>
-
-<h4 id="mesos-slave">mesos-slave</h4>
-
-<p>mesos-slave は同じく zookeeper を参照して containerizer を deimos として稼働していることが
-わかります。</p>
-
-<pre><code class="language-bash">% ps ax | grep mesos-slave
- 1225 ?        Ssl    0:12 /usr/local/sbin/mesos-slave --master=zk://localhost:2181/mesos --log_dir=/var/log/mesos --containerizer_path=/usr/bin/deimos --isolation=external
-</code></pre>
-
-<h4 id="zookeeper">zookeeper</h4>
-
-<p>zookeeper は OpenJDK7 で稼働している Java プロセスです。</p>
-
-<pre><code class="language-bash">% ps ax | grep zookeeper
- 1073 ?        Ssl    1:07 /usr/bin/java -cp /etc/zookeeper/conf:/usr/share/java/jline.jar:/usr/share/java/log4j-1.2.jar:/usr/share/java/xercesImpl.jar:/usr/share/java/xmlParserAPIs.jar:/usr/share/java/netty.jar:/usr/share/java/slf4j-api.jar:/usr/share/java/slf4j-log4j12.jar:/usr/share/java/zookeeper.jar -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=false -Dzookeeper.log.dir=/var/log/zookeeper -Dzookeeper.root.logger=INFO,ROLLINGFILE org.apache.zookeeper.server.quorum.QuorumPeerMain /etc/zookeeper/conf/zoo.cfg
-</code></pre>
-
-<h4 id="docker">docker</h4>
-
-<p>docker が起動していることも確認できます。設定は特にしていないです。</p>
-
-<pre><code class="language-bash">% ps axuw | grep docker
-root       831  0.0  0.3 364776 14924 ?        Sl   01:30   0:01 /usr/bin/docker.io -d
-</code></pre>
-
-<h2 id="marathon-の-webui-にアクセス">Marathon の WebUI にアクセス</h2>
-
-<p>Marathon の WebUI にアクセスしてみましょう。</p>
-
-<p><img src="http://jedipunkz.github.com/pix/deimos_01.png"></p>
-
-<p>まだ何も Tasks が実行されていないので一覧には何も表示されないと思います。</p>
-
-<h2 id="tasks-の実行">Tasks の実行</h2>
-
-<p>Marathon API に対してクエリを発行することで Mesos の Tasks として Docker コンテナを稼働させることが出来ます。
-下記のファイルを ubuntu.json として保存。</p>
-
-<pre><code class="language-json">{
-    &quot;container&quot;: {
-    &quot;image&quot;: &quot;docker:///libmesos/ubuntu&quot;
-  },
-  &quot;id&quot;: &quot;ubuntu&quot;,
-  &quot;instances&quot;: &quot;1&quot;,
-  &quot;cpus&quot;: &quot;.5&quot;,
-  &quot;mem&quot;: &quot;512&quot;,
-  &quot;uris&quot;: [ ]
-}
-</code></pre>
-
-<p>下記の通り localhost:8080 が Marathon API の Endpoint になっているのでここに対して作成した JSON を POST します。</p>
-
-<pre><code class="language-bash">% curl -X POST -H &quot;Content-Type: application/json&quot; localhost:8080/v2/apps -d@ubuntu.json
-</code></pre>
-
-<p>Tasks の一覧を取得してみます。</p>
-
-<pre><code class="language-bash">% curl -X GET -H &quot;Content-Type: application/json&quot; localhost:8080/v2/apps
-{&quot;apps&quot;:[{&quot;id&quot;:&quot;ubuntu&quot;,&quot;cmd&quot;:&quot;&quot;,&quot;env&quot;:{},&quot;instances&quot;:1,&quot;cpus&quot;:0.5,&quot;mem&quot;:512.0,&quot;executor&quot;:&quot;&quot;,&quot;constraints&quot;:[],&quot;uris&quot;:[],&quot;ports&quot;:[13049],&quot;taskRateLimit&quot;:1.0,&quot;container&quot;:{&quot;image&quot;:&quot;docker:///libmesos/ubuntu&quot;,&quot;options&quot;:[]},&quot;version&quot;:&quot;2014-06-13T01:45:58.693Z&quot;,&quot;tasksStaged&quot;:1,&quot;tasksRunning&quot;:0}]}
-</code></pre>
-
-<p>Tasks の一覧が JSON で返ってきます。id : ubuntu, インスタンス数 : 1, CPU 0.5, メモリー : 512MB で
-Task が稼働していることが確認出来ます。</p>
-
-<p>ここで WebUI 側も見てみましょう。</p>
-
-<p><img src="http://jedipunkz.github.com/pix/deimos_05.png"></p>
-
-<p>一つ Task が稼働していることが確認出来ると思います。</p>
-
-<p><img src="http://jedipunkz.github.com/pix/deimos_04.png"></p>
-
-<p>その Task をクリックすると詳細が表示されます。</p>
-
-<p>次に Tasks のスケーリングを行ってみましょう。
-下記の通り ubuntu.json を修正し instances : 2 とする。これによってインスタンス数が2に増えます。</p>
-
-<pre><code class="language-json">{
-    &quot;container&quot;: {
-    &quot;image&quot;: &quot;docker:///libmesos/ubuntu&quot;
-  },
-  &quot;id&quot;: &quot;ubuntu&quot;,
-  &quot;instances&quot;: &quot;2&quot;,
-  &quot;cpus&quot;: &quot;.5&quot;,
-  &quot;mem&quot;: &quot;512&quot;,
-  &quot;uris&quot;: [ ]
-}
-</code></pre>
-
-<p>修正した JSON を POST します。</p>
-
-<pre><code class="language-bash">% curl -X PUT -H &quot;Content-Type: application/json&quot; localhost:8080/v2/apps/ubuntu -d@ubuntu.json
-</code></pre>
-
-<p>Tasks の一覧を取得し containers が 2 になっていることが確認できます。</p>
-
-<pre><code class="language-bash">% curl -X GET -H &quot;Content-Type: application/json&quot; localhost:8080/v2/apps
-{&quot;apps&quot;:[{&quot;id&quot;:&quot;ubuntu&quot;,&quot;cmd&quot;:&quot;&quot;,&quot;env&quot;:{},&quot;instances&quot;:2,&quot;cpus&quot;:0.5,&quot;mem&quot;:512.0,&quot;executor&quot;:&quot;&quot;,&quot;constraints&quot;:[],&quot;uris&quot;:[],&quot;ports&quot;:[17543],&quot;taskRateLimit&quot;:1.0,&quot;container&quot;:{&quot;image&quot;:&quot;docker:///libmesos/ubuntu&quot;,&quot;options&quot;:[]},&quot;version&quot;:&quot;2014-06-13T02:40:04.536Z&quot;,&quot;tasksStaged&quot;:3,&quot;tasksRunning&quot;:0}]}
-</code></pre>
-
-<p>最後に Tasks を削除してみましょう。</p>
-
-<pre><code class="language-bash">% curl -X DELETE -H &quot;Content-Type: application/json&quot; localhost:8080/v2/apps/ubuntu
-</code></pre>
-
-<p>Tasks が削除されたことを確認します。</p>
-
-<pre><code class="language-bash">% curl -X GET -H &quot;Content-Type: application/json&quot; localhost:8080/v2/apps
-{&quot;apps&quot;:[]}
-</code></pre>
-
-<h2 id="marathon-api-v2">Marathon API v2</h2>
-
-<p>Marathon API v2 について下記の URL に仕様が載っています。上記に記したクエリ以外にも色々載っているので
-動作を確認してみるといいと思います。</p>
-
-<p><a href="https://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md">https://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md</a></p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>オールインワン構成が出来ました。また動作確認も無事出来ています。
-以前試した時よりも大分、手順が簡潔になった印象があります。また参考資料中に</p>
-
-<p>&ldquo;checkout our other multi-node tutorials on how to scale Docker in your data center.&rdquo;</p>
-
-<p>とありますが、まだ見つかっていません(´・ω・｀)見つかった方教えてくださいー。</p>
-
-<p>以前試した時は Mesos-Master の冗長化が出来なかったので今回こそ Multi Mesos-Masters,
-Multi Mesos-Slaves の構成を作ってみたいと思います。</p>
-
-<p>また今月？になって続々と Docker のオーケストレーションツールを各社が公開しています。</p>
-
-<h5 id="centurion">centurion</h5>
-
-<p>New Relic が開発したオーケストレーションツール。
-<a href="https://github.com/newrelic/centurion">https://github.com/newrelic/centurion</a></p>
-
-<h5 id="helios">helios</h5>
-
-<p>Spotify が開発したオーケストレーションツール。
-<a href="https://github.com/spotify/helios">https://github.com/spotify/helios</a></p>
-
-<h5 id="fleet">fleet</h5>
-
-<p>CoreOS 標準搭載。
-<a href="https://github.com/coreos/fleet">https://github.com/coreos/fleet</a></p>
-
-<h5 id="geard">geard</h5>
-
-<p>RedHat が Red Hat Enterprise Linux Atomic Host に搭載しているツール。
-<a href="http://openshift.github.io/geard/">http://openshift.github.io/geard/</a></p>
-
-<h5 id="kubernetes">Kubernetes</h5>
-
-<p>Google が開発したオーケストレーションツール。
-<a href="https://github.com/GoogleCloudPlatform/kubernetes">https://github.com/GoogleCloudPlatform/kubernetes</a></p>
-
-<h5 id="shipper">shipper</h5>
-
-<p>Python のコードで Docker をオーケストレーション出来るツール。
-<a href="https://github.com/mailgun/shipper">https://github.com/mailgun/shipper</a></p>
-
-<p>幾つか試したのですが、まだまだ動く所までいかないツールがありました。github の README にも
-&ldquo;絶賛開発中なのでプロダクトレディではない&rdquo; と書かれています。これからでしょう。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1001,6 +953,20 @@ Multi Mesos-Slaves の構成を作ってみたいと思います。</p>
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-02'>
+                                    July 2, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
                                 
                                     
@@ -1040,20 +1006,6 @@ Multi Mesos-Slaves の構成を作ってみたいと思います。</p>
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-11-15'>
-                                    November 15, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1088,7 +1040,7 @@ Multi Mesos-Slaves の構成を作ってみたいと思います。</p>
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">98</span>
+                                <span style="float:right;">99</span>
                             </header>
                         </article>
                     </li>
