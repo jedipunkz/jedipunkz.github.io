@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2013-05-18T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-05-19T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,259 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/05/19/openstack-ceph/">OpenStack &#43; Ceph 連携</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-05-19'>
+            May 19, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。最近 OpenStack の導入に向けて保守性や可用性について調査している
+<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>OpenStack は MySQL のダンプや OS イメージ・スナップショットのバックアップをとっ
+ておけばコントローラの復旧も出来ますし、Grizzly 版の Quantum では冗長や分散が
+取れるので障害時に耐えられます。また Quantum の復旧は手動もで可能です。最後の
+悩みだった Cinder の接続先ストレージですが、OpenStack のスタンスとしては高価な
+ストレージの機能を使ってバックアップ取るか、Ceph, SheepDog のようなオープンソー
+スを使うか、でした。で、今回は Ceph を OpenStack に連携させようと思いました。</p>
+
+<p>この作業により Cinder の接続先ストレージが Ceph になるのと Glance の OS イメー
+ジ・スナップショットの保管先が Ceph になります。</p>
+
+<p>下記の参考資料が完成度高く、ほぼ内容はそのままです。若干付け足していますが。</p>
+
+<h2 id="参考資料">参考資料</h2>
+
+<p><a href="http://ceph.com/docs/master/rbd/rbd-openstack/">http://ceph.com/docs/master/rbd/rbd-openstack/</a></p>
+
+<h2 id="前提の構成">前提の構成</h2>
+
+<pre><code>+-------------+-------------+--------------------------------------------- Public/API Network
+|             |             |             
++-----------+ +-----------+ +-----------+ +-----------+ +-----------+ +-----------+
+|           | |           | |vm|vm|..   | |           | |           | |           |
+| controller| |  network  | +-----------+ |  ceph01   | |  ceph01   | |  ceph01   |
+|           | |           | |  compute  | |           | |           | |           |
+|           | |           | |           | |           | |           | |           |
++-----------+ +-----------+ +-----------+ +-----------+ +-----------+ +-----------+
+|             |     |       |     |       |             |             |
++-------------+-----)-------+-----)-------+-------------+-------------+-- Management/API Network
+                    |             |                       
+                    +-------------+-----------------------------------+-- Data Network
+</code></pre>
+
+<ul>
+<li>Ceph は OpenStack の Management Network 上に配置</li>
+<li>Ceph は3台構成 (何台でも可)</li>
+<li>OpenStack も3台構成 (何台でも可)</li>
+<li>連携処理するのは controller, compute ノード</li>
+</ul>
+
+<p>では早速手順ですが、OpenStack と Ceph の構築手順は割愛します。私の他の記事を参
+考にしていただければと思います。</p>
+
+<ul>
+<li><a href="http://jedipunkz.github.io/blog/2013/04/20/openstack-grizzly-installation-script/">構築スクリプト</a></li>
+<li><a href="http://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/">ceph-deploy で Ceph 構築</a></li>
+</ul>
+
+<h2 id="ceph-openstack-連携手順">Ceph + OpenStack 連携手順</h2>
+
+<h4 id="openstack-用に-ceph-pool-を作成する">OpenStack 用に Ceph Pool を作成する</h4>
+
+<pre><code>ceph01% sudo ceph pool create volumes 128
+ceph01% sudo ceph pool create images 128
+</code></pre>
+
+<h4 id="sudoers-の設定">sudoers の設定</h4>
+
+<p>controller, compute ノードにて sudoers の設定</p>
+
+<pre><code>jedipunkz ALL = (root) NOPASSWD:ALL
+</code></pre>
+
+<h4 id="ceph-パッケージのインストール">ceph パッケージのインストール</h4>
+
+<p>controller, compute ノードに ceph をインストールする。</p>
+
+<pre><code>controller% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add -
+controller% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list
+controller% sudo apt-get update &amp;&amp; sudo apt-get install -y python-ceph ceph-common
+</code></pre>
+
+<h4 id="etc-ceph-作成">/etc/ceph 作成</h4>
+
+<pre><code>controller% sudo mkdir /etc/ceph
+compute   % sudo mkdir /etc/ceph
+</code></pre>
+
+<h4 id="ceph-コンフィギュレーションのコピー">ceph コンフィギュレーションのコピー</h4>
+
+<p>controller, compute ノードに ceph コンフィギュレーションをコピーする。尚、接続
+先の OpenStack ノードでの sudoers 設定は予め済ませること。</p>
+
+<pre><code>ceph01% sudo -i
+ceph01# ssh &lt;controller&gt; sudo tee /etc/ceph/ceph.conf &lt;/etc/ceph/ceph.conf
+ceph01# ssh &lt;compute&gt; sudo tee /etc/ceph/ceph.conf &lt;/etc/ceph/ceph.conf
+</code></pre>
+
+<h4 id="認証設定">認証設定</h4>
+
+<p>nova, cinder, glance 用にユーザを作成する。</p>
+
+<pre><code>ceph01% sudo ceph auth get-or-create client.volumes mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=volumes, allow rx pool=images'
+ceph01% sudo ceph auth get-or-create client.images mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=images'
+</code></pre>
+
+<h4 id="キーリングの作成">キーリングの作成</h4>
+
+<p>Ceph キーリングの作成を行う。Glance, Cinder が起動しているホスト controller ノードに
+キーリングを配置する。</p>
+
+<pre><code>ceph01% sudo ceph auth get-or-create client.images | ssh {your-glance-api-server} sudo tee /etc/ceph/ceph.client.images.keyring
+ceph01% ssh {your-glance-api-server} sudo chown glance:glance /etc/ceph/ceph.client.images.keyring
+ceph01% sudo ceph auth get-or-create client.volumes | ssh {your-volume-server} sudo tee /etc/ceph/ceph.client.volumes.keyring
+ceph01% ssh {your-volume-server} sudo chown cinder:cinder /etc/ceph/ceph.client.volumes.keyring
+</code></pre>
+
+<p>compute ノードにて libvirt に secret key を格納する。ここで登場する uuid は後
+に利用するためメモをとっておくこと。</p>
+
+<pre><code>ceph01 % sudo ceph auth get-key client.volumes | ssh 10.200.10.59 tee client.volumes.key
+
+compute% cat &gt; secret.xml &lt;&lt;EOF
+&lt;secret ephemeral='no' private='no'&gt;
+  &lt;usage type='ceph'&gt;
+    &lt;name&gt;client.volumes secret&lt;/name&gt;
+  &lt;/usage&gt;
+&lt;/secret&gt;
+EOF
+comupte% sudo virsh secret-define --file secret.xml
+&lt;uuid of secret is output here&gt;
+compute% sudo virsh secret-set-value --secret {uuid of secret} --base64 $(cat client.volumes.key) &amp;&amp; rm client.volumes.key secret.xml
+</code></pre>
+
+<h4 id="openstack-連携のための設定">OpenStack 連携のための設定</h4>
+
+<p>controller:/etc/glance/glance-api.conf に下記を追記。</p>
+
+<pre><code>default_store=rbd
+rbd_store_user=images
+rbd_store_pool=images
+show_image_direct_url=True
+</code></pre>
+
+<p>controller:/etc/cinder/cinder.conf に下記を追記。先ほど登場した uuid を入力す
+る。</p>
+
+<pre><code>volume_driver=cinder.volume.driver.RBDDriver
+rbd_pool=volumes
+rbd_user=volumes
+rbd_secret_uuid={uuid of secret}
+</code></pre>
+
+<p>controller:/etc/init/cinder-volume.conf の冒頭に下記の記述を追記する。</p>
+
+<pre><code>env CEPH_ARGS=&quot;--id volumes&quot;
+</code></pre>
+
+<p>OpenStack の各サービスを再起動もしくはホストの再起動を行う。</p>
+
+<pre><code>sudo service glance-api restart
+sudo service nova-compute restart
+sudo service cinder-volume restart
+</code></pre>
+
+<h4 id="確認">確認</h4>
+
+<p>実際にインスタンスを作成して Volume をアタッチしディスクを消費していくと Ceph
+のディスク使用量が増えていきます。</p>
+
+<pre><code>% cinder create --display-name test 5
+% nova volumeattach &lt;instance_id&gt; &lt;volume_id&gt; auto
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>Cinder は分散ストレージですので各ファイルのレプリカが全て失われない限りデータ
+はロストしません。ただし Ceph 自体の完成度は以前に比べ高くはなったものの、運用
+に耐えられるかどうかまだ私にも分かりません。先日の OpenStack Day に来日してい
+たファウンデーションの方が「ベンダロックインするな」と言っていました。僕もオー
+プンソースでなんとかしたいと思っています。OpenStack を導入するためには今、Ceph
+は欠かすことが出来ないコンポーネントな気がしています。皆で Ceph も盛り上げて行
+きたいです。</p>
+
+<p>また、この構成の際のOpenStack 全体の保全について考えると&hellip;</p>
+
+<ul>
+<li>MySQL のデータさえダンプの取得すれば OK</li>
+<li>OS イメージ・スナップショットは Ceph 上にあるのでバックアップ不要</li>
+<li>Ceph はなんとしても守る。バックアップ取るのは難しい</li>
+<li>Network ノードは分散・冗長可能, データのバックアップは不要</li>
+<li>Compute ノード上のインスタンスデータは Ceph のスナップショットから復旧</li>
+</ul>
+
+<p>といったことが考えられます。つまり MySQL のデータさえダンプしておけば
+OpenStack 全体が復旧できることになります。実際にやってみましたが可能でした。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/05/19/openstack-ceph/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -656,214 +909,6 @@ Glance のイメージ置き場としても利用可能らしい。Cinder の接
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/">Quantum Network ノードの分散・冗長</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-04-26'>
-            April 26, 2013</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース
-まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機能につい
-て評価した結果をお伝えします。</p>
-
-<p>Folsom までは</p>
-
-<ul>
-<li>Quantum L3-agent が落ちると、その OpenStack 一式の上にある仮想マシン全ての通
-信が途絶える</li>
-<li>Quantum L3-agent に仮想マシンの全てのトラフィックが集まりボトルネックとなる。</li>
-</ul>
-
-<p>という問題がありました。Folsom リリース時代にもし僕が職場で OpenStack を導入す
-るのであればこれらを理由に nova-network を選択していたかもしれません。
-nova-network は compute ノードが落ちればその上の仮想マシンも同時に落ちるが、他
-の compute ノード上の仮想マシンの通信には影響を与えないからです。もちろん仮想
-ルータ・仮想ネットワークの生成等を API でユーザに提供したいなどの要望があれば
-Quantum を選択するしかありませんが。これに対して Grizzly リリースの Quantum は
-改善に向けて大きな機能を提供してくれています。L3-agent, DHCP-agent の分散・冗
-長機能です。</p>
-
-<p>下記の構成が想定出来ます。ここでは Network ノードを2台用意しました。それ以上の
-台数に増やすことも出来ます。</p>
-
-<pre><code>+-------------+-------------+-------------------------- Public/API Network
-|             |             |
-+-----------+ +-----------+ +-----------+ +-----------+
-|           | |           | |           | |vm|vm|..   |
-| controller| |  network  | |  network  | +-----------+
-|           | |           | |           | |  compute  |
-+-----------+ +-----------+ +-----------+ +-----------+
-|             |     |       |     |       |     |
-+-------------+-----)-------+-----)-------+-----)------ Management/API Network
-                    |             |             |
-                    +-------------+-------------+------ Data Network
-</code></pre>
-
-<p>L3-agent の分散は仮想ルータ単位で行います。それに対し DHCP-agent は仮想
-ネットワーク単位で行います。</p>
-
-<h2 id="agent-一覧の取得">agent 一覧の取得</h2>
-
-<p>上記の構成を構築すると下記のように agent 一覧が取得出来ます。</p>
-
-<pre><code>% quantum agent-list # 'admin' ユーザでアクセス
-+--------------------------------------+--------------------+-----------------------+-------+----------------+
-| id                                   | agent_type         | host                  | alive | admin_state_up |
-+--------------------------------------+--------------------+-----------------------+-------+----------------+
-| 44795822-2d9f-434e-ba98-748f7411442f | DHCP agent         | grizzly03.example.com | :-)   | True           |
-| a5150a40-0405-4399-ac1a-be012f55d9f5 | DHCP agent         | grizzly02.example.com | :-)   | True           |
-| b7bf4e59-06ac-475c-84ab-413d8d29f293 | Open vSwitch agent | grizzly04.example.com | :-)   | True           |
-| cc5a6b94-6ddd-4109-8f2f-1b28c6aaf5e6 | L3 agent           | grizzly03.example.com | :-)   | True           |
-| d39803cf-19d3-47d7-8205-cf9a143dd0ea | Open vSwitch agent | grizzly02.example.com | :-)   | True           |
-| d8e59803-9aad-4c62-a47a-519bc788e0fb | Open vSwitch agent | grizzly03.example.com | :-)   | True           |
-| f6f747cf-ffb0-446c-a455-2947fd3e87e8 | L3 agent           | grizzly02.example.com | :-)   | True           |
-+--------------------------------------+--------------------+-----------------------+-------+----------------+
-</code></pre>
-
-<p>ホスト名は下記。</p>
-
-<ul>
-<li>controller : grizzly01.exmaple.com</li>
-<li>network01  : grizzly02.exmaple.com</li>
-<li>network02  : grizzly03.exmaple.com</li>
-<li>compute    : grizzly04.exmaple.com</li>
-</ul>
-
-<h2 id="l3-agent-の分散方法-ノード移動">L3-agent の分散方法 (ノード移動)</h2>
-
-<p>仮想ルータ (ここでは &lsquo;router-test01&rsquo; とする) がどの L3-agent に属しているか確
-認を取る。</p>
-
-<pre><code>% quantum l3-agent-list-hosting-router router-demo
-+--------------------------------------+-----------------------+----------------+-------+
-| id                                   | host                  | admin_state_up | alive |
-+--------------------------------------+-----------------------+----------------+-------+
-| f6f747cf-ffb0-446c-a455-2947fd3e87e8 | grizzly02.example.com | True           | :-)   |
-+--------------------------------------+-----------------------+----------------+-------+
-</code></pre>
-
-<p>1台目の Network ノード (grizzly02.example.com) 上の L3-agent に属していること
-が確認取れた。次にこの親子関係を削除する。</p>
-
-<pre><code>% quantum l3-agent-router-remove f6f747cf-ffb0-446c-a455-2947fd3e87e8 router-test01
-Removed Router router-demo to L3 agent
-</code></pre>
-
-<p>最後に仮想ルータ &lsquo;router-test01&rsquo; を2台目の Network ノード上の L3-agent の管理
-下に設定する。</p>
-
-<pre><code>% quantum l3-agent-router-add cc5a6b94-6ddd-4109-8f2f-1b28c6aaf5e6 router-demo
-Added router router-demo to L3 agent
-% quantum l3-agent-list-hosting-router router-demo
-+--------------------------------------+-----------------------+----------------+-------+
-| id                                   | host                  | admin_state_up | alive |
-+--------------------------------------+-----------------------+----------------+-------+
-| cc5a6b94-6ddd-4109-8f2f-1b28c6aaf5e6 | grizzly0404.cpi.ad.jp | True           | xxx   |
-+--------------------------------------+-----------------------+----------------+-------+
-</code></pre>
-
-<h2 id="dhcp-agent-の分散方法-ノード移動">DHCP-Agent の分散方法 (ノード移動)</h2>
-
-<p>仮想マシンが所属しているネットワーク (ここでは &lsquo;int_net&rsquo;) がどの DHCP-agent に所属しているか確認する。</p>
-
-<pre><code>% quantum dhcp-agent-list-hosting-net int_net
-+--------------------------------------+-----------------------+----------------+-------+
-| id                                   | host                  | admin_state_up | alive |
-+--------------------------------------+-----------------------+----------------+-------+
-| a5150a40-0405-4399-ac1a-be012f55d9f5 | grizzly02.example.com | True           | :-)   |
-+--------------------------------------+-----------------------+----------------+-------+
-</code></pre>
-
-<p>1台目のノードに所属しているのが確認できる。次に &lsquo;int_net&rsquo; が所属する DHCP-agent を削除行う。</p>
-
-<pre><code>% quantum dhcp-agent-network-remove a5150a40-0405-4399-ac1a-be012f55d9f5 int_net
-Removed network int_net to DHCP agent
-</code></pre>
-
-<p>2台目のノードの DHCP-agent を仮想ネットワーク &lsquo;int_net&rsquo; に紐付ける。</p>
-
-<pre><code>% quantum dhcp-agent-network-add 44795822-2d9f-434e-ba98-748f7411442f int_net
-Added network int_net to DHCP agent
-% quantum dhcp-agent-list-hosting-net int_net
-+--------------------------------------+-----------------------+----------------+-------+
-| id                                   | host                  | admin_state_up | alive |
-+--------------------------------------+-----------------------+----------------+-------+
-| 44795822-2d9f-434e-ba98-748f7411442f | grizzly0404.cpi.ad.jp | True           | :-)   |
-+--------------------------------------+-----------------------+----------------+-------+
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>この様に仮想ルータ, 仮想ネットワーク単位で Network ノードの agent の分散が行え
-る。上記のように仮想ルータ・ネットワークが1つずつでは分散という意味では無いが
-運用の過程で仮想ルータ・ネットワークは増えることが想定出来るのでその際にはトラ
-フィック・DHCP 機能を分散することが可能になる、と言える。また片系の Network ノー
-ドに寄せておいてからの障害テスト -&gt; もう片系への移動も行なってみたが作業ととも
-に仮想マシンの通信が復旧した。このテストを行う前まで &lsquo;agent の移動だけ行えるの
-であって仮想ルータ自体が移動するわけではないので冗長という意味はない&rsquo; と考えて
-いたのだが、実際には上記の操作で namespace が移動していることが判り (Quantum
-の仮想ルータの実体は Linux Namespace) 障害テストの結果、うまくいった。
-OpenStack を導入するという意味で、この機能は非常に大きな前進だと僕は思っていま
-す。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -980,6 +1025,20 @@ OpenStack を導入するという意味で、この機能は非常に大きな�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-02'>
+                                    July 2, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
                                 
                                     
@@ -1019,20 +1078,6 @@ OpenStack を導入するという意味で、この機能は非常に大きな�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-11-15'>
-                                    November 15, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1067,7 +1112,7 @@ OpenStack を導入するという意味で、この機能は非常に大きな�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">98</span>
+                                <span style="float:right;">99</span>
                             </header>
                         </article>
                     </li>

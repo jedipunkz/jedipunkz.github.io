@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2013-03-17T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-03-28T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,181 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/03/28/netbsd-on-openstack/">NetBSD on OpenStack</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-03-28'>
+            March 28, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>もう数日で OpenStack の次期バージョン版 Grizzly がリリースされるタイミングだが
+現行バージョン Folsom の OpenStack の上に NetBSD を載せてみた。完全にお遊び
+だけど&hellip;。</p>
+
+<p>結局、ほとんど何も特別な対応取ることなく NetBSD が動いた。もちろんハイパーバイ
+ザは KVM です。だけど少し条件がある。</p>
+
+<p>qemu の不具合があり Ubuntu 12.04 LTS + Ubuntu Cloud Archives の組み合わせでは
+NetBSD が動作しなかった。下記のようなカーネルパニックが発生。</p>
+
+<pre><code>panic: pci_make_tag: bad request
+</code></pre>
+
+<p>この不具合に相当するんじゃないかと思ってる。</p>
+
+<p><a href="https://bugs.launchpad.net/qemu/+bug/897771">https://bugs.launchpad.net/qemu/+bug/897771</a></p>
+
+<p>よって下記の組み合わせで動作を確認した。</p>
+
+<ul>
+<li>Ubuntu 12.10 + OpenStack (Native Packages)</li>
+<li>qemu, kvm : 1.2.0+noroms-0ubuntu2.12.10.3</li>
+<li>NetBSD 6.1 RC2 amd64</li>
+</ul>
+
+<h2 id="前提条件">前提条件</h2>
+
+<p>OpenStack Folsom が動作していること。</p>
+
+<h2 id="netbsd-os-イメージ作成">NetBSD OS イメージ作成</h2>
+
+<p>nova-compute が動作しているホストの qemu-kvm を利用する。OpenStack 上に何でも
+良いので OS を動作させこの kvm プロセスのパラメータを参考に kvm コマンドを実行
+し NetBSD をインストールさせた。一番確実な方法。</p>
+
+<pre><code>% cd ~/
+% wget http://ftp.netbsd.org/pub/NetBSD/iso/6.1_RC2/NetBSD-6.1_RC2-amd64.iso
+% kvm-img create -f qcow2 netbsd.img 5G
+% /usr/bin/kvm -M pc-1.0 -cpu \
+core2duo,+lahf_lm,+rdtscp,+hypervisor,+avx,+osxsave,+save,+aes,+popcnt,+sse4.2,+sse4.1,+cx16,+vmx,+pclmuldq,+ht,+ss,+ds \
+-enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \
+-drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \
+-device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
+-net nic,model=virtio -vnc :9 -cdrom ~/NetBSD-6.1_RC2-amd64.iso
+</code></pre>
+
+<p>VNC :9 に接続して NetBSD を普通ににインストールする。</p>
+
+<p>インストールが終わったら CDROM デバイスを外して起動。</p>
+
+<pre><code>% core2duo,+lahf_lm,+rdtscp,+hypervisor,+avx,+osxsave,+save,+aes,+popcnt,+sse4.2,+sse4.1,+cx16,+vmx,+pclmuldq,+ht,+ss,+ds \
+-enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \
+-drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \
+-device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
+-net nic,model=virtio -vnc :9
+</code></pre>
+
+<p>VNC :9 に接続し下記の操作を行う。</p>
+
+<p>vioif0 という virtio なネットワークインターフェースが起動するので下記のように
+追記する。</p>
+
+<pre><code># vi /etc/rc.conf # 下記を追記
+ifconfig_vioif0=dhcp
+sshd=YES
+</code></pre>
+
+<p>OpenStack の metadata server から nova の管理するキーペア鍵を取得し
+authorized_keys に配置する様、/etc/rc.local に追記する。curl とか便利なツール
+はもちろん！入っていないので ftp コマンドでなんとかする。</p>
+
+<pre><code class="language-bash"># vi /etc/rc.local # 下記を追記
+if [ ! -d /root/.ssh ]; then
+    mkdir -p /root/.ssh
+fi
+echo &gt;&gt; /root/.ssh/authorized_keys
+cd /tmp
+ftp http://169.254.169.254/latest/meta-data/public-keys/0/openssh-key
+cat openssh-key | grep 'ssh-rsa' &gt;&gt; /root/.ssh/authorized_keys
+echo &quot;AUTHORIZED_KEYS:&quot;
+echo &quot;*********************&quot;
+cat /root/.ssh/authorized_keys
+echo &quot;*********************&quot;
+</code></pre>
+
+<p>nova のキーペアでログインしたいので sshd は root ユーザでログイン出来るように
+修正行う。</p>
+
+<pre><code># vi /etc/ssh/sshd_config
+PermitRootLogin yes
+</code></pre>
+
+<p>OS をシャットダウンしてイメージ作成は終わり。</p>
+
+<h2 id="glance-へ登録">Glance へ登録</h2>
+
+<p>netbsd.img を Glance に接続できるホストへ移動しイメージ登録を行う。</p>
+
+<pre><code>% glance add name=&quot;NetBSD 6.1 RC2 amd64&quot; is_public=true \
+  container_format=ovf disk_format=qcow2 &lt; ~/netbsd.img
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>何も手を加えていない&hellip;。NetBSD 6.1 は最初から Virtio が有効になっているので何
+も考えることなくイメージ作成が出来た。コツは nova-compute が実際に動作している
+ホストでイメージを作ること。ハイパーバイザの OS が若干古いホストでも作業してみ
+たのだが、OpenStack に載せた途端カーネルパニックに陥った。Qemu はものすごいス
+ピードで進化しているのでバージョンの差異は致命的であると共に、日に日に快適な環
+境が整ってきているとも言える。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/03/28/netbsd-on-openstack/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -656,203 +831,6 @@ bootstrap_version_string を指定し gem でインストールしている。</
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/03/06/pry/">pry のススメ</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-03-06'>
-            March 6, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>OpenStack をコードで管理するためのフレームワークは幾つか存在するのだけど Ruby
-で記述出来る Fog が良い！と隣に座ってるアプリエンジニアが言うので僕も最近少し
-触ってます。</p>
-
-<p>Fog を使った OpenStack を管理するコードを書くことも大事なのだけど、Fog のコン
-トリビュートってことで幾つかの機能を付け足して (Quantum Router 周り) ってこと
-をやってました。まだ取り込まれてないけど。</p>
-
-<p>その開発の中で pry の存在を教えてもらいその便利さに驚いたので少し説明します。
-バリバリ開発系の人は既に知っているだろうけど、インフラ系エンジニアの僕にとって
-は感激モノでした。</p>
-
-<p>pry は irb 代替な Ruby のインタラクティブシェルです。下記の URL から持ってこれ
-ます。</p>
-
-<p><a href="https://github.com/pry/pry">https://github.com/pry/pry</a></p>
-
-<p>シンタックスハイライトされたり json のレスポンスが綺麗に成形されたり irb 的に
-使うだけでも便利なのだけど &lsquo;?&rsquo; や &lsquo;$&rsquo; でコードのシンタックスを確認したりコード
-内容を確認したり出来るのがアツい！</p>
-
-<p>ちょうど今回追加した Fog の機能を使って説明していみます。</p>
-
-<p>Fog のコードを require して OpenStack に接続するための情報を設定し OpenStack
-Quantum に接続します。これで準備完了。</p>
-
-<pre><code class="language-ruby">[38] pry(main)&gt; require '/home/jedipunkz/fog/lib/fog.rb'
-[49] pry(main)&gt; @connection_hash = {
-[49] pry(main)*   :openstack_username =&gt; 'demo',
-[49] pry(main)*   :openstack_api_key =&gt; 'demo',
-[49] pry(main)*   :openstack_tenant =&gt; 'service',
-[49] pry(main)*   :openstack_auth_url =&gt;
-'http://172.16.1.11:5000/v2.0/tokens',
-[49] pry(main)*   :provider =&gt; 'OpenStack',
-[49] pry(main)* }
-[50] pry(main)&gt; @quantum = Fog::Network.new(@connection_hash)
-</code></pre>
-
-<p>試しに Router 一覧を取得します。list_routers メソッドです。</p>
-
-<pre><code class="language-ruby">[54] pry(main)&gt; @quantum.list_routers()
-=&gt; #&lt;Excon::Response:0x00000003da3560
- @body=
-  &quot;{\&quot;routers\&quot;: [{\&quot;status\&quot;: \&quot;ACTIVE\&quot;, \&quot;external_gateway_info\&quot;: {\&quot;network_id\&quot;: \&quot;b8ef37a9-9ed1-4b6d-862d-fe9e381a2f2a\&quot;}, \&quot;name\&quot;: \&quot;router-admin\&quot;, \&quot;admin_state_up\&quot;: true, \&quot;tenant_id\&quot;: \&quot;5e9544d4823a44d59f3591144049f691\&quot;, \&quot;id\&quot;: \&quot;35c65e2c-5cd8-4eb5-87a8-c370988c101a\&quot;}]}&quot;,
- @data=
-  {:body=&gt;
-    {&quot;routers&quot;=&gt;
-      [{&quot;status&quot;=&gt;&quot;ACTIVE&quot;,
-        &quot;external_gateway_info&quot;=&gt;
-         {&quot;network_id&quot;=&gt;&quot;b8ef37a9-9ed1-4b6d-862d-fe9e381a2f2a&quot;},
-        &quot;name&quot;=&gt;&quot;router-admin&quot;,
-        &quot;admin_state_up&quot;=&gt;true,
-        &quot;tenant_id&quot;=&gt;&quot;5e9544d4823a44d59f3591144049f691&quot;,
-        &quot;id&quot;=&gt;&quot;35c65e2c-5cd8-4eb5-87a8-c370988c101a&quot;}]},
-   :headers=&gt;
-    {&quot;Content-Type&quot;=&gt;&quot;application/json&quot;,
-     &quot;Content-Length&quot;=&gt;&quot;259&quot;,
-     &quot;Date&quot;=&gt;&quot;Wed, 06 Mar 2013 06:53:22 GMT&quot;},
-   :status=&gt;200,
-   :remote_ip=&gt;&quot;172.16.1.11&quot;},
- @headers=
-  {&quot;Content-Type&quot;=&gt;&quot;application/json&quot;,
-   &quot;Content-Length&quot;=&gt;&quot;259&quot;,
-   &quot;Date&quot;=&gt;&quot;Wed, 06 Mar 2013 06:53:22 GMT&quot;},
- @remote_ip=&quot;172.16.1.11&quot;,
- @status=200&gt;
-</code></pre>
-
-<p>綺麗に色付けされてレスポンスがあります。</p>
-
-<p>次に &lsquo;cd @quantum&rsquo; して cd します。そして &lsquo;? メソッド名&rsquo; するとメソッドのシン
-タックスを確認出来ます。試しに Router を生成する create_router メソッドを見て
-みます。</p>
-
-<pre><code class="language-ruby">[56] pry(main)&gt; cd @quantum
-[59] pry(#&lt;Fog::Network::OpenStack::Real&gt;):1&gt; ? create_router
-
-From: /home/jedipunkz/fog/lib/fog/openstack/requests/network/create_router.rb @ line 6:
-Owner: Fog::Network::OpenStack::Real
-Visibility: public
-Signature: create_router(name, options=?)
-Number of lines: 1
-</code></pre>
-
-<p>そして &lsquo;$ メソッド名&rsquo; するとコードが確認出来ます。</p>
-
-<pre><code class="language-ruby">[64] pry(#&lt;Fog::Network::OpenStack::Real&gt;):1&gt; $ create_router
-
-From: /home/jedipunkz/fog/lib/fog/openstack/requests/network/create_router.rb @ line 6:
-Owner: Fog::Network::OpenStack::Real
-Visibility: public
-Number of lines: 27
-
-def create_router(name, options = {})
-  data = {
-    'router' =&gt; {
-      'name' =&gt; name,
-    }
-  }
-
-  vanilla_options = [
-    :admin_state_up,
-    :tenant_id,
-    :network_id,
-    :external_gateway_info,
-    :status,
-    :subnet_id
-  ]
-
-  vanilla_options.reject{ |o| options[o].nil? }.each do |key|
-    data['router'][key] = options[key]
-  end
-
-  request(
-    :body     =&gt; Fog::JSON.encode(data),
-    :expects  =&gt; [201],
-    :method   =&gt; 'POST',
-    :path     =&gt; 'routers'
-  )
-end
-</code></pre>
-
-<p>あとは &lsquo;puts @quantum&rsquo; 等するとオブジェクトの内容が確認出来たり、&rsquo;ls @quantum&rsquo;
-すると @quantum オブジェクトのメソッド一覧が確認出来たり。</p>
-
-<p>開発の効率が上がるなぁと感激。</p>
-
-<p>春なので OpenStack もそろろろ次期リリースの時期。それぞれのコンポーネントの機
-能が拡張されているようなので Fog 等のフレームワークにコントリビュートする機会
-もますます増えそう。Fog やその他のクラウドフレームワークはなんだかんだ言って
-AWS のフューチャがメインなので OpenStack の機能追加に追いついていない感がある。
-もし興味持っている人が居たら是非一緒に OpenStack 界隈を盛り上げましょう。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/03/06/pry/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriestools'>tools</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -969,6 +947,20 @@ AWS のフューチャがメインなので OpenStack の機能追加に追い�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-02'>
+                                    July 2, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
                                 
                                     
@@ -1008,20 +1000,6 @@ AWS のフューチャがメインなので OpenStack の機能追加に追い�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-11-15'>
-                                    November 15, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1056,7 +1034,7 @@ AWS のフューチャがメインなので OpenStack の機能追加に追い�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">98</span>
+                                <span style="float:right;">99</span>
                             </header>
                         </article>
                     </li>

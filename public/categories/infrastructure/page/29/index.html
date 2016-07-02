@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2012-07-22T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2012-08-18T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/"><p>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,282 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2012/08/18/chef-solo/">chef-solo で学ぶ chef の基本動作</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-08-18'>
+            August 18, 2012</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>仕事で Opesocd Chef の情報収集をしてたのですが、僕が感じるにこれはインフラエン
+ジニアの未来だと。逆に言うとインフラエンジニアの危機。AWS のようなクラウドサー
+ビスがあればアプリケーションエンジニアが今までインフラエンジニアが行っていた作
+業を自ら出来てしまうからです。</p>
+
+<p>インフラエンジニアなら身に付けるしかない！って僕が感じる Chef について
+chef-solo を通して理解するために情報まとめました。</p>
+
+<p>chef には chef-server 構成で動作するものと chef-solo というサーバ無しで動作す
+るものがある。chef-server は構築するのが少し大変 (後に方法をブログに書きたい)
+なので今回は chef-solo を使ってみる。ちなみに Opscode が chef-server のホスティ
+ングサービスを展開している。彼らとしてはこちらがメイン。</p>
+
+<h2 id="chef-solo-の入れ方">chef-solo の入れ方</h2>
+
+<p>opscode が推奨している ruby-1.9.2 をインストールする。rvm は色々問題を招き寄せ
+るので rbenv を使って環境整えます。root ユーザ環境内に入れてください。</p>
+
+<p>必要なパッケージをインストール</p>
+
+<pre><code>% sudo apt-get update
+% sudo apt-get install build-essential zlib1g-dev libssl-dev
+</code></pre>
+
+<p>root ユーザにてrbenv をインストール</p>
+
+<pre><code>% sudo -i
+# cd ~
+# git clone git://github.com/sstephenson/rbenv.git .rbenv
+# echo 'export PATH=&quot;$HOME/.rbenv/bin:$PATH&quot;' &gt;&gt; ~/.zshrc
+# echo 'eval &quot;$(rbenv init -)&quot;' &gt;&gt; ~/.zshrc
+</code></pre>
+
+<p>ruby-build をインストール</p>
+
+<pre><code># mkdir -p ~/.rbenv/plugins
+# cd ~/.rbenv/plugins
+# git clone git://github.com/sstephenson/ruby-build.git
+</code></pre>
+
+<p>opscode が推奨している ruby バージョン 1.9.2 をインストール</p>
+
+<pre><code># rbenv install 1.9.2-p290
+# rbenv global 1.9.2-p290
+# rbenv rehash
+</code></pre>
+
+<p>capistrano, chef のインストールを gem を使い行う</p>
+
+<pre><code># gem install chef
+# rbenv rehash
+</code></pre>
+
+<p>これらは &lsquo;root&rsquo; ユーザ環境内に構築する必要がある。chef がそれを前提としている
+からだ。また、perl と違い ruby は後方互換性がないので将来のことを考え rbenv で
+バージョンを管理し続ける必要がある、と思う。</p>
+
+<h2 id="chef-solo-の設定">chef-solo の設定</h2>
+
+<p>/etc/chef/chef.json ファイルを修正することで、chef-solo で実行する recipe の追
+加を行う。これは複数指定することが可能。</p>
+
+<pre><code>{
+    &quot;run_list&quot;: [
+        &quot;recipe[ntp]&quot;,
+    ]
+}
+</code></pre>
+
+<p>上記は ntp レシピ を追加した例。次に /etc/chef/solo.rb を生成する。これは
+chef-solo 動作に必要な PATH 指定を主に行う。</p>
+
+<pre><code>file_cache_path &quot;/tmp/chef-solo&quot;
+cookbook_path [&quot;/home/jedipunkz/cookbooks&quot;]
+role_path &quot;/home/jedipunkz/role&quot;
+log_level :debug
+</code></pre>
+
+<p>上記パラメータの説明は下記の通り。</p>
+
+<ul>
+<li>file_cache_path : cache 用のディレクトリ指定</li>
+<li>cookbook_path : cookbook を配置するディレクトリ指定</li>
+<li>role_path : role ディレクトリ指定</li>
+<li>log_level : Log Level の指定</li>
+</ul>
+
+<h2 id="サンプルクックブックのダウンロードと理解">サンプルクックブックのダウンロードと理解</h2>
+
+<p>サンプルとして opscode が提供している &lsquo;ntp&rsquo; を持ってくる。中身が簡単に理解出来
+るものなので最初理解するために持ってくるものとしては最適。</p>
+
+<pre><code>% cd /home/jedipunkz/cookbooks
+% git clone https://github.com/opscode-cookbooks/ntp.git
+</code></pre>
+
+<p>持ってきたクックブックの構造は</p>
+
+<pre><code>ntp .
+    |- attributes
+    |- templates
+    |- recipes
+    |- meradata.rb
+    |-..
+    |-..
+</code></pre>
+
+<p>となっている。attribute/default.rb の一部分を抜粋を記してみた。</p>
+
+<pre><code>default['ntp']['servers']   = %w{ 0.pool.ntp.org 1.pool.ntp.org 2.pool.ntp.org 3.pool.ntp.org }
+default['ntp']['packages'] = %w{ ntp ntpdate }
+default['ntp']['service'] = &quot;ntp&quot;
+default['ntp']['varlibdir'] = &quot;/var/lib/ntp&quot;
+default['ntp']['conf_owner'] = &quot;root&quot;
+default['ntp']['conf_group'] = &quot;root&quot;
+default['ntp']['var_owner'] = &quot;ntp&quot;
+default['ntp']['var_group'] = &quot;ntp&quot;
+</code></pre>
+
+<p>chef は ruby の DSL で記述するが template や recipe 内で指定するパラメータ集と
+なるのが attribute となる。上を見てみると ntp のパッケージ名やディレクトリのオー
+ナー情報等が記されている。</p>
+
+<p>templates/default/ntp.conf.erb を見てみると&hellip;</p>
+
+<pre><code>driftfile &lt;%= node['ntp']['driftfile'] %&gt;
+statsdir &lt;%= node['ntp']['statsdir'] %&gt;
+
+statistics loopstats peerstats clockstats
+filegen loopstats file loopstats type day enable
+filegen peerstats file peerstats type day enable
+filegen clockstats file clockstats type day enable
+
+&lt;%# If ntp.peers is not empty %&gt;
+&lt;% unless node['ntp']['peers'].empty? -%&gt;
+  &lt;%# Loop through defined peers, but don't peer with ourself %&gt;
+  &lt;% node['ntp']['peers'].each do |ntppeer| -%&gt;
+    &lt;% if node['ipaddress'] != ntppeer and node['fqdn'] != ntppeer %&gt;
+peer &lt;%= ntppeer %&gt; iburst
+restrict &lt;%= ntppeer %&gt; nomodify
+    &lt;% end -%&gt;
+  &lt;% end -%&gt;
+&lt;% end -%&gt;
+</code></pre>
+
+<p>これはインストールする /etc/ntp.conf (recipde で後に指定する) の内容そのままだ。
+先程も書いたが chef は ruby の DSL 記述が基本なので attribute で指定したパラメー
+タを持ってきて、こういったコンフィグファイルを生成出来る。では最後に recipe を
+見てみる。この recipe が chef の本体と言っていいところですね。上部の抜粋です。</p>
+
+<pre><code>node['ntp']['packages'].each do |ntppkg|
+  package ntppkg
+end
+</code></pre>
+
+<p>この [&lsquo;ntp&rsquo;][&lsquo;packages&rsquo;] は attributes/default.rb に %w{ ntp ntpdate } と書い
+てある。つまり ntp, ntpdate の配列を ntppkg として回して chef resources の
+&lsquo;package&rsquo; を使ってインストールしている。resources については chef の公式ドキュ
+メントを読むと良い。recipe で使える記述全てが1ページにまとまっている。</p>
+
+<p><a href="http://wiki.opscode.com/display/chef/Resources">http://wiki.opscode.com/display/chef/Resources</a></p>
+
+<p>次に recipe の下部を抜粋してみた。chef resources の template によって ntp.conf
+をインストールしている。</p>
+
+<pre><code>template &quot;/etc/ntp.conf&quot; do
+  source &quot;ntp.conf.erb&quot;
+  owner node['ntp']['conf_owner'] 
+  group node['ntp']['conf_group']
+  mode &quot;0644&quot;
+  notifies :restart, resources(:service =&gt; node['ntp']['service'])
+end
+</code></pre>
+
+<p>source によって template/default/ntp.conf.erb を呼び出し owner, group でファイ
+ルのオーナー情報を、mode でパーミッションを指定している。また修正が入った際に
+ntp サービスの再起動を行っているのが最終行だ。</p>
+
+<p>抜粋で例を挙げながらだったが、Resources の記述方法さえ理解してしまえば全てが理
+解出来るだろうし、自分でクックブックを作ることも簡単だろう。</p>
+
+<h2 id="chef-solo-の実行">chef-solo の実行</h2>
+
+<p>ではいよいよ chef-solo の実行。</p>
+
+<p>上記で生成した chef.json と solo.rb を指定し chef-solo を実行することで上記
+run_list で指定した recipe &lsquo;ntp&rsquo; が実行される。</p>
+
+<pre><code>% sudo -i
+# chef-solo -c /etc/chef/solo.rb -j /etc/chef/chef.json
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>chef-server 構成の組み方は後日ブログで書いてみたい。先日 #DevLOVE に参加した際
+にも話題になったが、chef-solo を使うか chef-server 構成を組むか、まだ議論が必
+要そう。chef-server 構成を組むことは簡単では無いが普通にエンジニアなら組めるだ
+ろう。が、組んだところで拡張性・冗長性・を考えた構成を組むにはまだまだノウハウ
+が足りない。また couchDB, rabbitmq など比較的新しいミドルウェアが使われている
+ので、これから経験積まないと難しいだろう。それに比べて chef-solo は上記の通り
+とてもシンプル。しかも chef-solo を実行する node 自身は必然的に数が増え拡張す
+るし、それを受ける apt レポジトリは単純な HTTP なので拡張・冗長は簡単だろう。</p>
+
+<p>また、capistrano と chef-solo を組み合わせることで、role といった概念をもたせ
+たり、workstation で一括操作といった利便性も持たせることが出来る。ある意味
+chef-solo を使うなら必然的な点になりそう。capistrano との組み合わせについても
+後日ブログで書いてみたい。</p>
+
+<p>chef を理解すること自体はそんなには難しくないし、これからの時代に必要になるこ
+とは眼に見えているので、学んでおいて損はしないだろう。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2012/08/18/chef-solo/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -678,208 +954,6 @@ TTL が切れていないレコードについても問い合わせる。その�
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2012/06/14/vyatta-handson-interop2012/">Vyatta ハンズオン参加レポ #interop2012</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2012-06-14'>
-            June 14, 2012</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>interop 2012 で開催された &ldquo;仮想ルータ Vyatta を使ったネットワーク構築法&rdquo; に参
-加してきました。簡単ですがレポートを書いておきます。</p>
-
-<pre><code>開催日 : 2012/06/14(木)
-場所   : 幕張メッセ Interop 2012
-</code></pre>
-
-<p>最初に所感。反省です。サーバエンジニアの視点でしか感じられていなかった。次期バー
-ジョンの vPlane 実装などエンタープライズ向けとしても利用出来る可能性を感じる
-し、比較的小さなリソースでハンズオン参加者30人程度の vyatta ルータを動かしてサ
-クサク動いているのを見て、簡単にパフォーマンスがどうとか
-<a href="http://jedipunkz.github.com/blog/2012/06/13/vyatta-vpn/">前回の記事</a>で言うべ
-きじゃなかったぁ。ホント反省。</p>
-
-<p>ではハンズオンの内容。</p>
-
-<h2 id="最初に-基本情報の話">最初に、基本情報の話</h2>
-
-<p>有償版と無償版の違い</p>
-
-<ul>
-<li>メジャーリリースのみの無償版に対して有償版はマイナーリリースもあり</li>
-<li>有償版は保守あり</li>
-<li>仮想 image template 機能が有償版であり</li>
-<li>API, Web GUI, Config Sync, Systen Image Cloning が有償版であり</li>
-</ul>
-
-<p>image template, config sync, cloning など、有償版ではあると嬉しい機能がモリモ
-リ。</p>
-
-<h2 id="最近の利用ケース">最近の利用ケース</h2>
-
-<ul>
-<li>Vyatta + VM で VPN 接続環境構築</li>
-<li>キャンパスネットワーク</li>
-</ul>
-
-<p>キャンパスネットワークのユースケースが一番多いそうだ。また、会場内にアンケート
-をとった結果、仮想環境での構築を想定されている方が多数だった。</p>
-
-<h2 id="構成と特徴">構成と特徴</h2>
-
-<ul>
-<li>Debian Gnu/Linux ベース</li>
-<li>Quagga, StrongSwam が内部で動作</li>
-</ul>
-
-<p>apt-get など馴染み深いコマンドが使えます。
-<a href="http://www.vyatta4people.org/tag/vybuddy/">http://www.vyatta4people.org/tag/vybuddy/</a>
-ここに色々ノウハウがあるらしい。僕はまだ見ていません。まほろば工房の近藤さんに
-教えて頂きました。あとでチェックします。</p>
-
-<h2 id="バージョン">バージョン</h2>
-
-<p>stable リリースは 6.4 。次期バージョン 6.5 では
-<a href="http://www.vyatta.com/technology/vplane">vPlane</a> の実装が予定されている。これ
-は IA サーバのコア毎に役割を変えるといったモノ。ノードが忙しくなった時に例えば
-転送を司るコアには影響を与えない等。これは重要だ。サーバと違ってネットワーク機
-器は何があっても死守しなくちゃいけない機能があるもんなぁ。6.5 に期待。</p>
-
-<p>ここで、ハンズオンで課題になった IPSec の話を少しだけ説明します。</p>
-
-<pre><code>192.168.18.0/24
-+------+       +----------+
-| vm01 |-------| vyatta01 |pppoe XXX.XXX.XXX.XXX
-+------+       +----------+            |
-               |192.168.20.0/24        | IPSec
-+------+       +----------+            |
-| vm02 |-------| vyatta02 |pppoe YYY.YYY.YYY.YYY
-+------+       +----------+
-192.168.19.0/24
-</code></pre>
-
-<p>上図の環境で vm01 が vm02 に IPSec を用いて接続するための方法を記しています。
-vyatta 同士は 192.168.20.0/24 のネットワークで接続されていますが、互いにルーティ
-ングテーブルは書いていないものとします。まずは vyatta01 に対しての設定。</p>
-
-<p>あ、pppoe による NAT の設定は予めしてあるものとします。</p>
-
-<pre><code># set vpn ipsec ipsec-interfaces interface pppoe1
-# set vpn ipsec ike-group IKE-G proposal 1 encryption aes256
-# set vpn ipsec ike-group IKE-G proposal 1 hash sha1
-# set vpn ipsec ike-group IKE-G lifetime 3600
-</code></pre>
-
-<p>鍵交換の方式 IKE の設定をします。</p>
-
-<pre><code># set vpn ipsec esp-group ESP-G proposal 1 encryption aes256
-# set vpn ipsec esp-group ESP-G proposal 1 hash sha1
-# set vpn ipsec esp-group ESP-G lifetime 1800
-</code></pre>
-
-<p>ESP の設定をします。鍵の破棄・生成時間 1800 を設定しています。</p>
-
-<pre><code># edit vpn ipsec site-to-site peer YYY.YYY.YYY.YYY
-# set authentication mode pre-shared-secret
-# set authentication pre-shared-secret hogehoge
-</code></pre>
-
-<p>site-to-site peer を指定して接続先 vyatta のグローバル IP アドレスを指定します。
-また pre-shared-secret でパスフレーズを指定します。</p>
-
-<pre><code># set ike-group IKE-G
-# set local-ip YYY.YYY.YYY.YYY
-# set tunnel 1 local subnet 192.168.18.0/24
-# set tunnel 1 remote subnet 192.168.19.0/24
-# set tunnel 1 esp-group ESP-G
-</code></pre>
-
-<p>自グローバル IP, 自プライベートネットワーク、リモートネットワークの情報諸々、
-設定します。</p>
-
-<pre><code># set nat source rule 10 destination address !192.168.19.0/24
-# commit
-</code></pre>
-
-<p>また最後に IPsec で接続する先のネットワークへのパケットの場合、NAT しないよう
-にします。</p>
-
-<p>次は逆に vyatta01 に対しても設定を投入します。諸々の値は逆にする必要があります。
-これを実施すると、vm01 から vm02 に対して pppoe interface 同士の IPsec を介し
-て接続できるのが確認出来ました。</p>
-
-<p>私の職場で開発した製品にも投入してみようかなと目論んでいます。楽しかった。</p>
-
-<p>最後に、この場を提供して下さった方々に感謝します。</p>
-
-<h2 id="講演者">講演者</h2>
-
-<ul>
-<li>株式会社まほろば工房 近藤邦昭さま</li>
-<li>有限会社銀座堂 浅間正和さま</li>
-<li>さくらインターネット 大久保修一さま</li>
-<li>伊藤忠テクノソリューションズ 伊藤哲史さま</li>
-</ul>
-</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/06/14/vyatta-handson-interop2012/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -996,6 +1070,20 @@ vyatta 同士は 192.168.20.0/24 のネットワークで接続されていま�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-02'>
+                                    July 2, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
                                 
                                     
@@ -1035,20 +1123,6 @@ vyatta 同士は 192.168.20.0/24 のネットワークで接続されていま�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-11-15'>
-                                    November 15, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1083,7 +1157,7 @@ vyatta 同士は 192.168.20.0/24 のネットワークで接続されていま�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">98</span>
+                                <span style="float:right;">99</span>
                             </header>
                         </article>
                     </li>
