@@ -1,13 +1,13 @@
 #!/bin/bash
 
+if [ $# != 1 ]; then
+    echo 'input commit message'
+    exit
+fi
+
 hugo -t hugo-future-imperfect
 
 git add .
-
-if [ $# -eq 1 ]; then
-    msg="$1"
-fi
-git commit -m "$msg"
-
+git commit -m "$1"
 git push origin source
 git subtree push --prefix=public origin master
