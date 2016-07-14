@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,194 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/12/09/chef-autonoumous-cluster/">Chef で自律的クラスタを考える</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-12-09'>
+            December 9, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>Serf の登場があったり、ここ最近オーケストレーションについて考える人が増えた気
+がします。システムをデプロイしてその後各ノード間の連結だったりも同じ Chef,
+Puppet 等のコンフィギュレーションツールで行うのか？全く別のツールで？..</p>
+
+<p>最近 Serf というツールの登場がありました。</p>
+
+<p>僕も Serf を触ってつい先日ブログに書きました。有用なツールだと思います。シ
+ンプルだからこそ応用が効きますし、リアルタイム性もあり、将来的に異なるネットワー
+クセグメント上のノードとも連結出来るようになりそうですし、とても期待です。</p>
+
+<p>話が少し飛びますが..</p>
+
+<p>いつも Rebuild.fm を楽しく聞いているのですが Immutable Infrastructure の話題の
+時にオーケストレーションの話題になって、どうも &lsquo;Chef でも自律的なクラスタを組
+むことが認知されていないのでは？&rsquo; と思うようになりました。もちろん Chef でやる
+べき！とは言い切りませんし、今後どうなるかわかりません。Opscode の中の人も &lsquo;オー
+ケストレーションは自分でやってね&rsquo; というスタンスだったとずいぶん前ですが聞きま
+した。Serf を等のオーケストレーションツールを使う使わないの話は今回はしないの
+ですが Chef でも自律的クラスタを組むことは出来ますよ〜というのが今回の話題。</p>
+
+<p>まえがきが長くなりました。</p>
+
+<p>今回は Chef で自律的クラスタを構成する方法を記したいと思います。</p>
+
+<p>haproxy 等を利用すれば尚良いと思いますが、よりクラスタを組むのが簡単な nginx
+を今回は利用したいと思います。</p>
+
+<p><a href="https://github.com/opscode-cookbooks/nginx">https://github.com/opscode-cookbooks/nginx</a></p>
+
+<h2 id="構成">構成</h2>
+
+<p>&lsquo;web&rsquo; という Role 名と &lsquo;lb&rsquo; という Role 名で単純な HTTP サーバとしての nginx
+ノードを複数台と、ロードバランサとしての nginx ノードを1台でクラスタを構成しま
+す。また共に environment 名は同じものを利用します。別の environment 名の場合は
+別クラスタという区切りです。</p>
+
+<ul>
+<li>&lsquo;lb&rsquo; node x 1 + &lsquo;web&rsquo; node x n (&lsquo;foo&rsquo; environment)</li>
+<li>&lsquo;lb&rsquo; node x 1 + &lsquo;web&rsquo; node x n (&lsquo;bar&rsquo; environment)</li>
+</ul>
+
+<h2 id="lb-nginx-ロードバランサのレシピ">&lsquo;lb&rsquo; nginx ロードバランサのレシピ</h2>
+
+<p>下記が &lsquo;lb&rsquo; Role の recipes/cmomnos_conf.rb の修正した内容です。</p>
+
+<pre><code class="language-ruby">environment = node.chef_environment
+webservers = search(:node, &quot;role:web AND chef_environment:#{environment}&quot;)
+ 
+template &quot;#{node['nginx']['dir']}/sites-available/default&quot; do
+  source &quot;default-site.erb&quot;
+  owner &quot;root&quot;
+  group &quot;root&quot;
+  mode 00644
+  notifies :reload, 'service[nginx]'
+    variables ({
+      :webservers =&gt; webservers
+    })
+end
+</code></pre>
+
+<p>何をやっているかと言うと、environment という変数に自ノードの environment 名を。
+webservers という変数に role 名が &lsquo;web&rsquo; で尚且つ自ノードと同じ environment 名
+が付いたノード名を入れています。これで自分と同じ environment に所属している
+&lsquo;web&rsquo; Role なノードを Chef サーバに対して検索しています。また、template 内で
+webservers という変数をそのまま利用できるように variables で渡しています。</p>
+
+<h2 id="lb-nginx-ロードバランサのテンプレート">&lsquo;lb&rsquo; nginx ロードバランサのテンプレート</h2>
+
+<p>下記が webservers 変数を受け取った後の template 内の処理です。</p>
+
+<pre><code class="language-ruby">&lt;% if @webservers and ( @webservers != [] ) %&gt;
+upstream backend {
+&lt;% @webservers.each do |hostname| -%&gt;
+  server &lt;%= hostname['ipaddr'] -%&gt;;
+&lt;% end -%&gt;
+}
+&lt;% end %&gt;
+  
+server {
+  listen   80;
+  server_name  &lt;%= node['hostname'] %&gt;;
+    
+  access_log  &lt;%= node['nginx']['log_dir'] %&gt;/localhost.access.log;
+    
+  location / {
+    &lt;% if @webservers and ( @webservers != [] ) %&gt;
+    proxy_pass http://backend;
+    &lt;% else %&gt;
+    root   /var/www/nginx-default;
+    index  index.html index.htm;
+    &lt;% end %&gt;
+  }
+}
+</code></pre>
+
+<p>upstream backend { &hellip; は皆さん見慣れた記述だと思うのですが、バックエンドの
+HTTP サーバの IP アドレスを一覧化します。each で回しているので台数分だけ
+server <ip_addr>; の記述が入ります。</p>
+
+<p>chef-client をデーモン稼働しておけば、新規に Chef サーバに登録された &lsquo;web&rsquo;
+Role の HTTP サーバを自動で &lsquo;lb&rsquo; Role のロードバランサが組み込む、つまり自律的
+なクラスタが組めることになります。もちろんこの間の手作業は一切ありません。</p>
+
+<p>ちなみに chef-client をデーモン稼働するには</p>
+
+<pre><code>recipe[chef-client::service]
+</code></pre>
+
+<p>というレシピをノードに割り当てることで可能です。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>Chef でも自律的なクラスタが組めました。もちろん chef-client の稼働間隔があるの
+でリアルタイム性はありません。chef-client の稼働間隔は &lsquo;chef-client&rsquo; レシピの
+attributes で調整出来ます。その点は serf のほうが確実に勝っていると見るべきで
+しょう。冒頭に記したようにこの辺りの操作を Chef で行うのか別のツールを使うのか
+はまだまだ模索が必要そう。ただ、私がいつも使っている &lsquo;OpenStack を Chef で構成
+する Cookbooks&rsquo; 等は複数台構成を Chef で構成しています。なので僕にとってはこの
+辺りの話は当たり前だと思っていたのだけど、どうも勉強会に出たりすると &ldquo;Chef は
+複数台構成を作るのが苦手だ&rdquo; って話があがってくるので気になっていました。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/12/09/chef-autonoumous-cluster/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -748,261 +936,6 @@ scheduling attempts 3 for instance 733b69df-2b54-44ae-9d61-de766746f21a (500)#01
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/11/27/sensu-chef-deploy-2/">sensu-chef で監視システム Sensu を管理 #2</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-11-27'>
-            November 27, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>以前、Sensu を Chef で管理する方法について書きました。</p>
-
-<p><a href="http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/">http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/</a></p>
-
-<p>これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef
-Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも
-公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ
-た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、
-sensu-chef を再確認したのですが、だいぶ更新されていました。</p>
-
-<p>下記が sensu-chef です。</p>
-
-<p><a href="https://github.com/sensu/sensu-chef">https://github.com/sensu/sensu-chef</a></p>
-
-<p>この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は
-Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使
-い方を書いていきます。</p>
-
-<p>下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。</p>
-
-<p>{% img /pix/sensu.png %}</p>
-
-<h2 id="使い方">使い方</h2>
-
-<p>sensu-chef を取得する。chef-repo になっています。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu
-</code></pre>
-
-<p>bundle にて Gemfile に記述の在る gem パッケージをインストールします。</p>
-
-<pre><code class="language-bash">% cd ~/chef-repo-sensu
-% bundle install
-</code></pre>
-
-<p>.chef/ 配下の設定は割愛します。chef サーバの情報に合わせて設定します。</p>
-
-<p>ssl 鍵を生成して data bags に投入します。</p>
-
-<pre><code class="language-bash">% cd examples/ssl
-% ./ssl_certs.sh generate
-% cd ../../
-% knife data bag create sensu
-% knife data bag from file sensu examples/ssl/ssl.json
-% ./examples/ssl/ssl_certs.sh clean
-</code></pre>
-
-<p>Roles を作成します。chef-repo なのに何も入っていませんでした&hellip;汗
-ここで面白いのは &lsquo;sensu-client&rsquo; は sensu で言う subscribers の名前にそのまま利
-用されるところです。つまり &lsquo;sensu-client&rsquo; の名前が記された sensu サーバ上の監
-視項目 (checks) がこの sensu クライアントに割り当てられます。</p>
-
-<pre><code class="language-ruby">% mkdir roles
-% ${EDITOR} roles/sensu-server.rb
-name &quot;sensu-server&quot;
-description &quot;role applied to sensu server.&quot;
-run_list 'recipe[sensu::default]',
-         'recipe[sensu::rabbitmq]',
-         'recipe[sensu::redis]',
-         'recipe[sensu::server_service]',
-         'recipe[sensu::api_service]',
-         'recipe[sensu::dashboard_service]',
-         'recipe[chef-client::service]'
-
-% ${EDITOR} roles/sensu-client.rb
-name &quot;sensu-client&quot;
-description &quot;role applied to sensu client.&quot;
-run_list 'recipe[sensu::default]',
-         'recipe[sensu::client_service]',
-         'recipe[chef-client::service]'
-</code></pre>
-
-<p>Cheffile に &lsquo;chef-client&rsquo; の Cookbook 名を追記します。</p>
-
-<pre><code class="language-ruby">site 'http://community.opscode.com/api/v1'
-
-cookbook 'sensu', path: './'
-cookbook 'sensu-test', path: './test/cookbooks/sensu-test'
-cookbook 'chef-client' # &lt;---- 追記
-</code></pre>
-
-<p>librarian-chef を実行して Cookbooks を取得します。</p>
-
-<pre><code class="language-bash">% librarian-chef install
-</code></pre>
-
-<p>Rabbitmq, Redis, API の IP アドレスを設定します。IP アドレスは例です。</p>
-
-<pre><code class="language-bash">% ${EDITOR} cookbooks/sensu/attributes/default.rb
-default.sensu.rabbitmq.host = &quot;172.24.19.11&quot;
-default.sensu.redis.host = &quot;172.24.19.11&quot;
-default.sensu.api.host = &quot;172.24.19.11&quot;
-</code></pre>
-
-<p>sensu-server 用の Recipe に監視項目を追記します。ここでは cron デーモンの稼働
-状況を監視してみました。</p>
-
-<pre><code class="language-bash">% ${EDITOR} cookbooks/sensu/recipes/server_service.rb # 下記を追記
-</code></pre>
-
-<pre><code class="language-ruby">sensu_check &quot;cron_process&quot; do
-  command &quot;check-procs.rb -p cron -C 1&quot;
-  handlers [&quot;default&quot;]
-  subscribers [&quot;sensu-client&quot;]
-  interval 30
-  additional(:notification =&gt; &quot;Cron is not running&quot;, :occurrences =&gt; 5)
-end
-</code></pre>
-
-<p>sensu-client 用の Recipe に client.json (クライアント用設定ファイル) の記述と
-上記監視項目に合った plugins 設定の追記を行います。</p>
-
-<pre><code class="language-bash">% ${EDITOR} cookbooks/sensu/recipes/client_service.rb # 下記を追記
-</code></pre>
-
-<pre><code class="language-ruby">sensu_client node.name do
-  address node.ipaddress
-  subscriptions node.roles + [&quot;all&quot;]
-end
-
-cookbook_file 'check-procs.rb' do
-  source 'check-procs.rb'
-  mode 0755
-  path '/etc/sensu/plugins/check-procs.rb'
-end
-</code></pre>
-
-<p>上記 check-procs.rb は community サイトからダウンロードする必要があるのですが
-cookbook_file で対応したので files/ ディレクトリ配下に置いておきます。</p>
-
-<pre><code class="language-bash">% mkdir -p cookbooks/sensu/files/default
-% wget -o cookbooks/sensu/files/default/check-procs.rb \
-  https://github.com/sensu/sensu-community-plugins/raw/master/plugins/processes/check-procs.rb
-</code></pre>
-
-<p>上記の check-procs.rb は行頭に &lsquo;#!/usr/bin/env ruby&rsquo; が記されているのですが
-Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby にあるので行頭
-の1行を書き換えます。</p>
-
-<pre><code class="language-diff">% diff cookbooks/sensu/files/default/check-procs.rb.org cookbooks/sensu/files/default/check-procs.rb
-- #!/usr/bin/env ruby
-+ #!/opt/sensu/embedded/bin/ruby
-</code></pre>
-
-<p>Roles, Cookbooks を Chef サーバにアップロードします。</p>
-
-<pre><code class="language-bash">% knife cookbook upload -o ./cookbooks -a
-% knife role from file roles/*.rb
-</code></pre>
-
-<p>いよいよブートストラップします!</p>
-
-<p>まずは sensu-server を。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;server_ip_addr&gt; -N sensu-server -r 'role[sensu-server]' \
-  -x ubuntu --sudo
-</code></pre>
-
-<p>次に監視対象である sensu-client を。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;client_ip_addr&gt; -N sensu-client01 -r 'role[sensu-client]' \
-  -x ubuntu --sudo
-</code></pre>
-
-<p>http://<sensu-server の IP アドレス>:8080/ にアクセスすると Sensu の管理画面が
-表示されます。認証アカウントは cookbooks/sensu/attributes/default.rb に記述が
-ありますので確認して下さい。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>インフラリソースのフルオートメーション化について情報リサーチしていますが監視も
-重要なインフラリソースの一部です。Sensu サーバ・クライアントの自動デプロイが出
-来たのでこれで一つパーツが揃ったことに。Sensu は API を持っていますのでアプリ
-から検知することも簡単に出来ますよ。API については下記を参照してください。</p>
-
-<p><a href="http://sensuapp.org/docs/0.12/api">http://sensuapp.org/docs/0.12/api</a></p>
-
-<p>また以前抱えていた問題もスッキリクリアになって、これでまた前進できた感があります。</p>
-
-<h2 id="参考サイト">参考サイト</h2>
-
-<ul>
-<li><a href="http://sensuapp.org/docs/0.12">http://sensuapp.org/docs/0.12</a></li>
-<li><a href="http://blog.glidenote.com/blog/2013/11/26/sensu/">http://blog.glidenote.com/blog/2013/11/26/sensu/</a></li>
-<li><a href="https://github.com/sensu/sensu-chef">https://github.com/sensu/sensu-chef</a></li>
-</ul>
-</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/11/27/sensu-chef-deploy-2/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1119,6 +1052,20 @@ Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby に�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-14'>
+                                    July 14, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
                                 
                                     
@@ -1158,20 +1105,6 @@ Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby に�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-22'>
-                                    December 22, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1206,7 +1139,7 @@ Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby に�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">99</span>
+                                <span style="float:right;">100</span>
                             </header>
                         </article>
                     </li>

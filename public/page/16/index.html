@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2013-09-01T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-09-07T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,213 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/">Kibana &#43; ElasticSearch &#43; fluentd を試してみた</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-09-07'>
+            September 7, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch
+を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目
+に止まるようになってきました。</p>
+
+<p>ElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。バックエ
+ンドに Logstash を使って&hellip; と思ってたのですが最近よく聞くようになった fluentd
+をそろそろ真面目に使いたい！ということで、今回は Kibana + ElasticSearch +
+fluentd の組み合わせでログ解析システムを組む方法をメモしておきます。</p>
+
+<h2 id="参考にさせて頂いた-url">参考にさせて頂いた URL</h2>
+
+<p><a href="http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html">http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html</a></p>
+
+<h2 id="前提の環境">前提の環境</h2>
+
+<ul>
+<li>OS : Ubuntu 12.04 Precise (同じ方法で 13.04 Raring でも出来ました)</li>
+</ul>
+
+<h2 id="必要なパッケージインストール">必要なパッケージインストール</h2>
+
+<p>下記のパッケージを事前にインストールします。</p>
+
+<pre><code class="language-bash">% sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk
+</code></pre>
+
+<p>手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても
+構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。</p>
+
+<h2 id="elasticsearch-のインストール">ElasticSearch のインストール</h2>
+
+<p>下記のサイトより ElasticSearch をダウンロードします。</p>
+
+<p><a href="http://www.elasticsearch.org/download/">http://www.elasticsearch.org/download/</a></p>
+
+<p>現時点 (2013/09/07) で最新のバージョンは 0.90.3 でした。</p>
+
+<pre><code class="language-bash">% wget https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-0.90.3.deb
+% sudo dpkg -i elasticsearch-0.90.3.deb
+% sudo service elasticsearch start
+</code></pre>
+
+<h2 id="kibana-のインストール">Kibana のインストール</h2>
+
+<p>Kibana をダウンロードして Gemfile にしたがって必要なモノをインストールします。</p>
+
+<pre><code class="language-bash">% git clone --branch=kibana-ruby https://github.com/rashidkpc/Kibana.git
+% sudo gem install bundler
+% cd Kibana
+% sudo bundle install
+% sudo gem install tzinfo-data
+</code></pre>
+
+<p>KibanaConfig.rb の KibanaHost はリスンアドレスになるので 0.0.0.0 に修正sます。</p>
+
+<pre><code class="language-bash">KibanaHost = '0.0.0.0'
+</code></pre>
+
+<p>Kibana を起動します。</p>
+
+<pre><code class="language-bash">% ruby kibana.rb
+== Sinatra/1.4.3 has taken the stage on 5601 for development with backup from Thin
+&gt;&gt; Thin web server (v1.5.1 codename Straight Razor)
+&gt;&gt; Maximum connections set to 1024
+&gt;&gt; Listening on 0.0.0.0:5601, CTRL+C to stop
+</code></pre>
+
+<h2 id="fluentd-のインストール">fluentd のインストール</h2>
+
+<p>fluentd を下記の通りインストールします。</p>
+
+<pre><code class="language-bash">% sudo -i
+% curl -L http://toolbelt.treasure-data.com/sh/install-ubuntu-precise.sh | sh
+</code></pre>
+
+<p>/etc/td-agent/td-agent.conf を下記の通りに修正します。サンプルで Apache のログ
+を ElasticSearch に飛ばす設定にします。</p>
+
+<pre><code class="language-xml">&lt;source&gt;
+  type tail
+  format apache
+  path /var/log/apache2/access.log
+  tag kibana01.apache.access
+&lt;/source&gt;
+
+&lt;match *.apache.*&gt;
+  index_name adminpack
+  type_name apache
+  type elasticsearch
+  include_tag_key true
+  tag_key @log_name
+  host 10.0.1.8
+  port 9200
+  logstash_format true
+  flush_interval 3s
+&lt;/match&gt;
+</code></pre>
+
+<p>host パラメータは環境に合わせて設定します。</p>
+
+<p>fluentd を起動します。</p>
+
+<pre><code class="language-bash">% sudo service td-agent start
+</code></pre>
+
+<h2 id="apache-のインストール">Apache のインストール</h2>
+
+<p>システムに必要なわけではありませんが、サンプルで Apache のログを fluentd 経由
+で飛ばして Kibana で確認したいのでインストールします。</p>
+
+<pre><code class="language-bash">% sudo apt-get install apache2
+% sudo chown -R td-agent /var/log/apache2
+</code></pre>
+
+<p>ファイルのオーナを td-agent にする必要がありました。</p>
+
+<h2 id="ブラウザでアクセス">ブラウザでアクセス</h2>
+
+<p>Apache2 のポート 80 にブラウザでアクセスし、その後 ポート 5601 にアクセスする
+と Kibana の画面が表示されます。ポート 80 のアクセスに応じて結果が出力されます。</p>
+
+<p>{% img /pix/kibana-cap.png %}</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>LogStash でも今度試してみたい。
+あと API をどう叩くかは..</p>
+
+<p><a href="http://www.elasticsearch.org/guide/reference/api/">http://www.elasticsearch.org/guide/reference/api/</a></p>
+
+<p>にリファレンスがあるので、時間を見つけてやってみる。Apache 以外のログ転送につ
+いては fluentd を詳細に知る必要があるので、そちらも時間を見つけてやってみる。
+kibana.rb を起動するもっと良い方法がないかも調べないと。</p>
+
+<p>2013.09.08追記</p>
+
+<p>@nora96o さんに「Kibana3 使うと幸せになれますよ！」と教えて頂いて早速 Kibana3
+も試してみました。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/">http://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/</a></p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -557,162 +764,6 @@ X.X.X.X/X に接続することが出来ます。</p>
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/08/18/openstack-nova-network-ipv6/">OpenStack nova-network IPv6 対応</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-08-18'>
-            August 18, 2013</time>
-        <span class="author"></span>
-        
-            <p>1 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です</p>
-
-<p>今更なのかもしれませんが、OpenStack の nova-network を IPv6 対応する方法を調べ
-てみました。何故 nova-network なのか? 自宅の構成が nova-network だからです..。
-以前は Quantum (現 Neutron) 構成で使っていましたが、ノードをコントローラとコン
-ピュートに別けた時に NIC が足らなくなり&hellip;。</p>
-
-<p>さて本題です。下記のサイトを参考にしました。ほぼそのままの手順ですが、自分のた
-めにもメモです。</p>
-
-<h2 id="参考-url">参考 URL</h2>
-
-<p><a href="http://docs.openstack.org/grizzly/openstack-compute/admin/content/configuring-compute-to-use-ipv6-addresses.html">http://docs.openstack.org/grizzly/openstack-compute/admin/content/configuring-compute-to-use-ipv6-addresses.html</a></p>
-
-<h2 id="前提">前提</h2>
-
-<ul>
-<li>OpenStack の構成は予め構築されている</li>
-<li>nova-network を用いている</li>
-<li>構成はオールインワンでも複数台構成でも可能</li>
-</ul>
-
-<h2 id="手順">手順</h2>
-
-<p>nova がインストールされているすべてのノードで python-netaddr をインストールし
-ます。私の場合は rcbops の chef cookbooks で構築したのですが、既にインストール
-されていました。</p>
-
-<pre><code class="language-bash">% sudo apt-get install python-netaddr
-</code></pre>
-
-<p>nova-network が稼働しているノードで radvd をインストールします。これは
-IPv6 を Advertise しているルータ等が予め備わっている環境であっても、インストー
-ルする必要があります。また /etc/radvd.conf が初め無いので radvd 単体では稼働し
-ませんが、問題ありません。OpenStack の場合 /var/lib/nova 配下のコンフィギュレー
-ションファイルを読み込んでくれます。</p>
-
-<pre><code class="language-bash">% sudo apt-get install radvd
-</code></pre>
-
-<p>/etc/sysctl.conf に下記の記述を追記します。RA の受信とフォワーディングを許可し
-ています。</p>
-
-<pre><code class="language-bash">% ${EDITOR} /etc/sysctl.conf
-net.ipv6.conf.default.forwarding=1
-net.ipv6.conf.all.forwarding = 1
-net.ipv6.conf.all.accept_ra = 1
-% sudo sysctl -p
-</code></pre>
-
-<p>nova がインストールされている全てのノードで /etc/nova.conf に下記の行を追記し
-ます。</p>
-
-<pre><code class="language-bash">% sudo ${EDITOR} /etc/nova/nova.conf
-use_ipv6=true # &lt;- 追記
-</code></pre>
-
-<p>nova プロセスを再起動します。</p>
-
-<pre><code class="language-bash">% cd /etc/init.d/; for i in $( ls nova-* ); do sudo service $i restart; done
-</code></pre>
-
-<p>次に IPv6 のレンジの仮想ネットワークを nova-manage コマンドで生成します。環境にあったレンジを
-追加してください。</p>
-
-<pre><code class="language-bash"> % sudo nova-manage network create public --fixed_range_v4 x.x.x.x/24 \
-   --fixed_range_v6 xxxx:xxx:xx:xxx::/64 --bridge=br300 --bridge_interface=eth0 \
-   --dns1=8.8.8.8 --dns2=8.8.4.4 --multi_host=T
-</code></pre>
-
-<p>ここで IPv4 のレンジも追加しなくてはならないようです。IPv6 オンリーで生成したところ、
-nova-network が下記のエラーを吐いてハングアップしました。</p>
-
-<pre><code>TRACE nova Stderr: 'Error: an inet prefix is expected rather than &quot;None&quot;.\n'
-</code></pre>
-
-<p>また仮想ネットワーク生成時に指定した物理ネットワークインターフェース名は IPv6 が通信出来る
-セグメントのものを利用してください。(環境に合わせてください)</p>
-
-<p>あとは nova boot で仮想マシンを生成すると IPv4, IPv6 のデュアルスタックで起動してきます。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>OpenStack 外の構成についても IPv6 にもちろん対応している必要があります。上記の例だと
-OpenStack の eth0 側の IPv6 ネットワークを適切にルーティングしてくれるルータが必要です。
-自分の場合は自宅で Vyatta を使って行いました。(今度その方法も記そうと思います) また
-floating ip は IPv6 には対応していないそうです。はじめこの方法を取ろうと思ったのですがダメでした。
-上記のように public ネットワーク側のネットワークインターフェースをブリッジインターフェースにして
-public ネットワークを生成する方法で対応出来ますので問題ないかと。</p>
-
-<p>また、Neutron 構成でも今度 IPv6 対応してみないと。:D</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/08/18/openstack-nova-network-ipv6/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -829,6 +880,20 @@ public ネットワークを生成する方法で対応出来ますので問題�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-14'>
+                                    July 14, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
                                 
                                     
@@ -868,20 +933,6 @@ public ネットワークを生成する方法で対応出来ますので問題�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-22'>
-                                    December 22, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -916,7 +967,7 @@ public ネットワークを生成する方法で対応出来ますので問題�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">99</span>
+                                <span style="float:right;">100</span>
                             </header>
                         </article>
                     </li>

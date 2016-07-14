@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-11-10T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-11-13T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,311 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/">第2回 Elasticsearch 勉強会参加レポート</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-11-13'>
+            November 13, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>第2回 Elasticsearch 勉強会に参加してきました。箇条書きですが参加レポートを記し
+ておきます。</p>
+
+<pre><code>開催日 : 2013/11/12
+場所 : 東京駅 グラントウキョウサウスタワー リクルートテクノロジーズさま
+URL : http://elasticsearch.doorkeeper.jp/events/6532
+</code></pre>
+
+<h2 id="routing-周りの話">Routing 周りの話</h2>
+
+<pre><code>株式会社シーマーク　大谷純さん (@johtani)
+</code></pre>
+
+<h4 id="index-構成">Index 構成</h4>
+
+<ul>
+<li>cluster の中に index -&gt; type が作成される</li>
+<li>index は shard という部分的な index の集まり</li>
+<li>shard 数は生成時のみ指定可能</li>
+<li>node ごとに replica, primary を別ける</li>
+<li>replica 数は後に変えられる</li>
+<li>doc -&gt; hash 値を shard 数で割って replica, primary に登録</li>
+<li>doc の id の ハッシュ値を利用</li>
+<li>type も含める場合はかの設定を true に</li>
+<li>クライアントはどのノードに対してクエリを投げても OK</li>
+</ul>
+
+<h4 id="routing">routing</h4>
+
+<ul>
+<li>id の代わりに routing (URL パラメータ) で登録</li>
+<li>url リクエストパラメータとして登録時にルーティングパラメータを登録</li>
+<li>id の代わりにパラメータで指定された値のハッシュ値を計算して利用</li>
+<li>検索時 routing 指定で関係のある shard のみを指定出来る</li>
+</ul>
+
+<h4 id="スケールアウト">スケールアウト</h4>
+
+<ul>
+<li>sharding によるスケールアウト数 = インデックス作成時に指定</li>
+<li>shard によるインデックスの分割以外にインデックス自体を複数持つことによるスケール</li>
+<li>複数のドキュメントをエイリアス書けることが可能</li>
+</ul>
+
+<h4 id="所感">所感</h4>
+
+<p>個人的には非常に興味のあるところでした。mongodb のような sharding をイメージし
+てよいのか？そうでないのか？すら理解出来ていなかったので。sharding を理解する
+前提知識の話もあって非常に参考になりました。</p>
+
+<h2 id="elasticsearchを使ったbaas基盤の開発">ElasticSearchを使ったBaaS基盤の開発</h2>
+
+<pre><code>株式会社富士通ソフトウェアテクノロジーズ 滝田聖己さん（@pisatoshi）
+</code></pre>
+
+<p>運用の話。これは貴重&hellip;。</p>
+
+<ul>
+<li>shard 数 : 10 , replica : 1 で運用している</li>
+<li>データは業務データ , トラッキングデータ</li>
+<li>マルチテナント, 更新の即時反映, ルーティングによる性能向上 が要件</li>
+<li>登録更新 -&gt; 検索結果反映までタイムラグがある -&gt; replica 完了まで待つので高コスト</li>
+<li>replica 数を減らすことで性能向上</li>
+</ul>
+
+<h4 id="routing-id-を指定することで">routing id を指定することで&hellip;</h4>
+
+<ul>
+<li>doc id の has から shard 自動選択がデフォルト</li>
+<li>-&gt; hash key を指定して格納シャードを制御出来る</li>
+<li>-&gt; doc 登録性能向上</li>
+<li>-&gt; 検索対象の shard を絞りこみえる</li>
+<li>-&gt; 不可を軽減</li>
+</ul>
+
+<h4 id="バックアップ-リストア">バックアップ/リストア</h4>
+
+<ul>
+<li>mysql にもデータ格納 -&gt; backup</li>
+<li>elasticsearch の index はバックアップ取らず -&gt; bug を踏みたくないのが理由</li>
+</ul>
+
+<h4 id="dynamic-mapping-の問題">dynamic mapping の問題</h4>
+
+<ul>
+<li>入力データから型を推測 -&gt; 自動マッピング登録</li>
+<li>-&gt; マッピング定義が肥大化</li>
+<li>-&gt; データ型のコンフリクト</li>
+</ul>
+
+<h4 id="mapping-の肥大化">mapping の肥大化</h4>
+
+<ul>
+<li>mapping 定義は type, field の数に応じてサイズが増加</li>
+<li>-&gt; index 性能低下</li>
+<li>-&gt; mapping を伴う doc 登録 3sec (mapping size 80MB)</li>
+<li>-&gt; 各 node への mapping 定義の同期</li>
+<li>大量のデータを一気に登録するときは 1 node が速い</li>
+<li>-&gt; その後シャード再配置したことがある</li>
+</ul>
+
+<p>=&gt; dynamic mapping を使うのをやめた -&gt; app で指定</p>
+
+<h4 id="よく利用するツール">よく利用するツール</h4>
+
+<ul>
+<li>bigdesk</li>
+<li>elasticsearch-head</li>
+<li>sense (chrome extention)</li>
+</ul>
+
+<h4 id="unit-test">unit test</h4>
+
+<p>unit test はどうする？</p>
+
+<ul>
+<li>nodeClient テスト開始時に起動</li>
+<li>テストデータを配置して起動, 終了時に削除</li>
+<li>memoryIndex で高速に実行</li>
+<li>elasticsearch-test が便利</li>
+</ul>
+
+<h4 id="所感-1">所感</h4>
+
+<p>運用の話はどの技術でも重要!!! 実際に困った話、トラブル等聞けて貴重な時間でした。
+よく使うツールの話も意外と参考になるので聞けてよかった。</p>
+
+<h2 id="kibana">Kibana</h2>
+
+<pre><code>Cookpad 水戸祐介さん (@y_310)
+</code></pre>
+
+<ul>
+<li>作った dashboard は elasticsearch に保存される</li>
+<li>db 要らず , web サーバのみ, クライアントサイドの技術のみで実装されている</li>
+<li>term, trends, map, table, column&hellip; それぞれ図形式がある
+title = &ldquo;test&rdquo;, -title</li>
+<li>1つの index に異なるスキーマを持つデータを入れられる</li>
+<li>1つの index に入れることでグラフを重ねて比較出来る</li>
+<li>やはり dynamic mapping は使わないほうが良い</li>
+<li>m1.large x 1 : 1日のインデックスサイズが10GB 超えるあたりで ES が詰まる</li>
+</ul>
+
+<p>下記が当日の資料です。</p>
+
+<script async class="speakerdeck-embed"
+data-id="3d0776802ddb0131fdd042970ce72c15" data-ratio="1.33333333333333" src="//speakerdeck.com/assets/embed.js"></script>
+
+<h4 id="所感-2">所感</h4>
+
+<p>Cookpad さんで実際に利用されているとか。運用の話と同じくやはり dynamic routing
+でのトラブルの話があった。また Cookpad さんでのトラブル例の話もあってよかった。</p>
+
+<h2 id="elasticsearch-kibana-v3を利用する際の運用ノウハウ">ElasticSearch＋Kibana v3を利用する際の運用ノウハウ</h2>
+
+<pre><code>株式会社リブセンス Y.Kentaro さん (@yoshi_ken)
+</code></pre>
+
+<p>下記が発表資料。</p>
+
+<p><iframe src="http://www.slideshare.net/slideshow/embed_code/28165189"
+width="597" height="486" frameborder="0" marginwidth="0" marginheight="0"
+scrolling="no" style="border:1px solid #CCC;border-width:1px 1px
+0;margin-bottom:5px" allowfullscreen> </iframe> <div
+style="margin-bottom:5px"> <strong> <a
+href="https://www.slideshare.net/y-ken/elasticsearch-kibnana-fluentd-management-tips"
+title="ElasticSearch+Kibanaでログデータの検索と視覚化を実現するテクニックと運
+用ノウハウ" target="_blank">ElasticSearch+Kibanaでログデータの検索と視覚化を実
+現するテクニックと運用ノウハウ</a> </strong> from <strong><a
+href="http://www.slideshare.net/y-ken" target="_blank">Kentaro
+Yoshida</a></strong> </div></p>
+
+<ul>
+<li>nginx の basic 認証等でアクセス制限を掛ける例</li>
+</ul>
+
+<p>等など&hellip; ごめんなさい！メモが取れてなかった！&hellip;汗</p>
+
+<h2 id="fluentd-as-a-kibana">Fluentd as a Kibana</h2>
+
+<pre><code>@repeatedly さん
+</code></pre>
+
+<p>fluentd-plugin-kibana-server  というkibana をダウンロードしてくるのがめんどい
+ので fluentd の中で kibana を動かすプラグインを作った話。下記が発表資料。</p>
+
+<p><a href="https://gist.github.com/repeatedly/7427856">https://gist.github.com/repeatedly/7427856</a></p>
+
+<ul>
+<li>fluentd input plugin として実装</li>
+<li>logstash 版もあるらしい</li>
+</ul>
+
+<h4 id="所感-3">所感</h4>
+
+<p>さすが&hellip;。確かにサーバをいちいち作るのめんどいです。fluentd plugin の中で
+kibana を動かすって発想が&hellip;。</p>
+
+<h2 id="auth-プラグインでアクセスコントロール">auth プラグインでアクセスコントロール</h2>
+
+<pre><code>株式会社エヌツーエスエム 菅谷信介さん (@shinsuke_sugaya)
+</code></pre>
+
+<ul>
+<li>elasticsearch のアクセス制御をしたい</li>
+<li>rest api をアクセス制御する</li>
+<li>ユーザ管理, REST API のアクセス管理, ログイン・ログアウト・トーケン</li>
+<li>ユーザ管理は elasticsearch 内に格納</li>
+<li>path, http method, role の組み合わせで制御</li>
+</ul>
+
+<p>インストールは下記の通り elasticsearch plugin コマンドで。</p>
+
+<pre><code>% ./bin/plugin --install org.codelibs/elasticsearch-auth/1.0.0
+</code></pre>
+
+<ul>
+<li>ユーザ作成は POST で可能</li>
+</ul>
+
+<h2 id="所感とまとめ">所感とまとめ</h2>
+
+<p>箇条書きのざっくりしたまとめでしたが&hellip;。個人的には sharding の話はとても聞き
+たかったので貴重な時間でした。また、運用の話もとてもおもしろかったし plugin 作っ
+てみた話も「すごい..」って感じでした。僕はこれからアプリも書くけどインフラエン
+ジニアなのでアーキテクチャをまず知りたいかなぁという印象。と言うかスケールさせ
+るときにも横に並べて shard するだけの様な話に聞こえましたが、まだぼんやり感が
+あります。特に shard 周り。mongo の sharding と同じ様なものを想像していますが。
+またモチベーション上がったので週末やってみますー！</p>
+
+<p>kibana3 は一回使いました。javascript, html で実装されているのでクライアントか
+ら elasticsearch まで直接アクセス出来なければならないとなって、構成的にどうな
+のかな？と思っていたら菅谷さんの &lsquo;auth プラグイン&rsquo; の話があったりしたので、良
+かったです。使ってみます！</p>
+
+<p>主催の方々、発表者の方々、当日はありがとうございましたー。また参加させてもらい
+ます。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -1102,354 +1407,6 @@ haproxy の構成上 3 台以上でも OK でありますが、Cookbooks 的に 
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/10/20/test-kitchen-openstack-chef-cookbooks-test-2/">test-kitchen と OpenStack で Chef Cookbooks テスト (後篇)</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-10-20'>
-            October 20, 2013</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>前回、OpenStack と test-kitchen を使った環境構築方法を書きました。下記の記事で
-す。</p>
-
-<p><a href="http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/">http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/</a></p>
-
-<p>今回は実際にテストを書く方法を記していたい思います。</p>
-
-<p>今回使用するテストツールは下記の2つです。</p>
-
-<ul>
-<li>rspec と serverspec</li>
-<li>busser-bats</li>
-</ul>
-
-<h2 id="参考資料">参考資料</h2>
-
-<p>Creationline lab さんの資料を参考にさせて頂きました。</p>
-
-<p><a href="http://www.creationline.com/lab/2933">http://www.creationline.com/lab/2933</a></p>
-
-<h2 id="用意するモノ達">用意するモノ達</h2>
-
-<ul>
-<li>OpenStack にアクセスするためのユーザ・パスワード</li>
-<li>Keystone の AUTH_URL</li>
-<li>テストに用いる OS イメージの Image ID</li>
-<li>テナント ID</li>
-<li>nova 管理のキーペアの作成</li>
-</ul>
-
-<p>これらは OpenStack を普段から利用されている方なら馴染みのモノかと思います。</p>
-
-<h2 id="kitchen-yml-ファイルの作成">.kitchen.yml ファイルの作成</h2>
-
-<p>下記の通り .kitchen.yml ファイルを test-kitchen のルートディレクトリで作成しま
-す。今後の操作は全てこのディレクトリで作業行います。</p>
-
-<p>&ldquo;&lt;&gt;&rdquo; で括った箇所が環境に合わせた設定になります。</p>
-
-<p>また、ここでは前回同様に &lsquo;ntp&rsquo; の Cookbook をテストする前提で記します。</p>
-
-<pre><code class="language-yaml">+++
-driver_plugin: openstack
-
-suites:
-- name: default
-  run_list:
-  - recipe[ntp::default]
-  attributes: {}
-
-platforms:
-- name: ubuntu-12.04
-  driver_config:
-    openstack_username: &lt;openstack_username&gt;
-    openstack_api_key: &lt;openstack_password&gt;
-    openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens
-    image_ref: &lt;image_id&gt;
-    flavor_ref: 1
-    key_name: &lt;key_name&gt;
-    openstack_tenant: &lt;tenant_name&gt;
-    username: &lt;ssh_username&gt;
-    private_key_path: &lt;path_to_secretkey&gt;
-
-- name: centos-64
-  driver_config:
-    openstack_username: &lt;openstack_username&gt;
-    openstack_api_key: &lt;openstack_password&gt;
-    openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens
-    image_ref: &lt;image_id&gt;
-    flavor_ref: 1
-    key_name: &lt;key_name&gt;
-    openstack_tenant: &lt;tenant_name&gt;
-    username: &lt;ssh_username&gt;
-    private_key_path: &lt;path_to_secretkey&gt;
-</code></pre>
-
-<p>busser-bats テスト
-+++</p>
-
-<p>まずはじめに busser-bats のテストを記します。</p>
-
-<h4 id="ディレクトリ作成">ディレクトリ作成</h4>
-
-<p>kitchen init を行うことでもこの操作は可能なのですが kitchen-openstack を利用すること
-を想定しない形で成形されてしまうため、下記の通り実行する。</p>
-
-<pre><code class="language-bash">% cd $TEST-KITCHEN-ROOT/
-% mkdir -p test/integration/default/bats
-</code></pre>
-
-<h4 id="ディレクトリ構成">ディレクトリ構成</h4>
-
-<p>ディレクトリ構成は</p>
-
-<pre><code>test/integration/${SUITE_NAME}/${BUSSER_NAME}/${TEST_NAME}
-</code></pre>
-
-<p>となっています。</p>
-
-<h4 id="テスト作成">テスト作成</h4>
-
-<p>test/integration/default/bats/test.bats として下記のファイルを作成します。</p>
-
-<pre><code class="language-ruby">@test &quot;ntp must be installed&quot; {
-    which ntpd
-}
-
-@test &quot;ntp.conf must be exist&quot; {
-    cat /etc/ntp.conf | grep &quot;server 0.pool.ntp.org iburst&quot;
-}
-</code></pre>
-
-<p>一項目と二項目の説明を書いておきます。</p>
-
-<ul>
-<li>一項目の @test</li>
-</ul>
-
-<p>ntpd コマンドが存在するか否かで package &lsquo;ntp&rsquo; がインストール
-されていることを確認。</p>
-
-<ul>
-<li>二項目の @test</li>
-</ul>
-
-<p>特定の文字列が /etc/ntp.conf に記述あるか否かでファイルの存在を確認。</p>
-
-<h2 id="rspec-serverspec-によるテスト実施">rspec serverspec によるテスト実施</h2>
-
-<p>次に rspec + serverspec のテストの記述方法を記します。</p>
-
-<h4 id="ディレクトリ作成-1">ディレクトリ作成</h4>
-
-<p>ディレクトリを作成します。</p>
-
-<pre><code class="language-bash">% mkdir test/integration/default/rspec
-</code></pre>
-
-<h3 id="gemfile-追記">Gemfile 追記</h3>
-
-<p>下記の通り test/integration/default/rspec/Gemfile を作成します。</p>
-
-<pre><code class="language-ruby">source 'https://rubygems.org'
-gem 'serverspec'
-</code></pre>
-
-<h4 id="serverspec-init-の実行">serverspec-init の実行</h4>
-
-<p>serverspec-init コマンドにより初期化を行います。</p>
-
-<pre><code class="language-bash">% cd test/integration/default/rspec
-% serverspec-init
-Select OS type:
-
-  1) UN*X
-  2) Windows
-
-Select number: 1
-
-Select a backend type:
-
-  1) SSH
-  2) Exec (local)
-
-Select number: 2
-
- + spec/
- + spec/localhost/
- + spec/localhost/httpd_spec.rb
- + spec/spec_helper.rb
- + Rakefile
-</code></pre>
-
-<p>上記の通り spec ディレクトリ・ファイルが作成されることを確認します。</p>
-
-<h4 id="ntp-spec-rb-を作成">ntp_spec.rb を作成</h4>
-
-<p>下記の通り test/integration/default/rspec/spec/localhost/ntp_spec.rb を作成し
-ます。</p>
-
-<pre><code class="language-ruby">require 'spec_helper'
-
-describe package('ntp') do
-  it { should be_installed }
-end
-
-describe service('ntp') do
-  it { should be_enabled   }
-  it { should be_running   }
-end
-
-describe port(123) do
-  it { should be_listening }
-end
-   
-describe file('/etc/ntp.conf') do
-  it { should be_file }
-  it { should contain &quot;server 0.pool.ntp.org iburst&quot; }
-end
-</code></pre>
-
-<p>テスト内容の解説は&hellip;</p>
-
-<ul>
-<li>1) &lsquo;ntp&rsquo; パッケージがインストールされていることを確認</li>
-<li>2) &lsquo;ntp&rsquo; サービスが再起動時有効になっていること・起動していることを確認</li>
-<li>3) 123 番ポートで Listen していることを確認</li>
-<li>4) /etc/ntp.conf に特定の文字列が存在することを確認</li>
-</ul>
-
-<h2 id="テスト実行">テスト実行</h2>
-
-<p>下記の通りテストを実行する。</p>
-
-<pre><code class="language-bash">% cd $TEST-KITCHEN-ROOT
-% bundle exec kitchen create # &lt;---- OpenStack 上にインスタンス作成
-% bundle exec kitchen setup  # &lt;---- Chef Cookbooks の実行
-% bundle exec kitchen verify # &lt;---- テストの実施
-</code></pre>
-
-<p>またこれらの操作は下記の一つのコマンドで実施出来る。</p>
-
-<pre><code class="language-bash">% bundle exec kitchen test
-</code></pre>
-
-<h2 id="テスト結果">テスト結果</h2>
-
-<h4 id="busser-bats">busser-bats</h4>
-
-<p>下記の通り2つのテストが実施され &lsquo;ok&rsquo; ステータスが帰って来たことを確認する。</p>
-
-<pre><code>-----&gt; Running bats test suite
-       1..2
-       ok 1 ntp must be installed
-       ok 2 ntp.conf must be exist
-</code></pre>
-
-<h4 id="serverspec">serverspec</h4>
-
-<p>下記の通り 6 個のテスト全てが通り failure 0 個であることを確認する。</p>
-
-<pre><code>-----&gt; Running rspec test suite
-       [2013-10-17T02:27:19+00:00] INFO: Run List is []
-       [2013-10-17T02:27:19+00:00] INFO: Run List expands to []
-Recipe: (chef-apply cookbook)::(chef-apply recipe)
-  * execute[bundle install --local || bundle install] action run       [2013-10-17T02:27:19+00:00] INFO: Processing execute[bundle install --local || bundle install] action run ((chef-apply cookbook)::(chef-apply recipe) line 42)
-Resolving dependencies...
-Using diff-lcs (1.2.4)
-Using highline (1.6.20)
-Using net-ssh (2.7.0)
-Using rspec-core (2.14.6)
-Using rspec-expectations (2.14.3)
-Using rspec-mocks (2.14.4)
-Using rspec (2.14.1)
-Using serverspec (0.10.6)
-Using bundler (1.3.5)
-       Your bundle is complete!
-       Use `bundle show [gemname]` to see where a bundled gem is installed.
-       [2013-10-17T02:27:19+00:00] INFO: execute[bundle install --local || bundle install] ran successfully
-
-           - execute bundle install --local || bundle install
-</code></pre>
-
-<p>&hellip;&hellip;</p>
-
-<pre><code>   Finished in 0.0567 seconds
-</code></pre>
-
-<p>6 examples, 0 failures
-       Finished verifying <default-ubuntu-1204> (0m7.44s).
-```</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>busser-bats はまだ地道なテストの記述が必要らしい。それに比べて serverspec は既
-に実用的と言えるかもしれない。どちらのテストツールも Cookbook でデプロイされた
-環境の <em>状態</em> をテストするモノであって Cookbook, Recipe のテストとは違う。これ
-はある意味都合が良い。Cookbooks のテストは ChefSpec 等のテストツールでテストを
-行い、完成された Cookbooks を実際に複数の OS 上にデプロイしてテストするのが今
-回紹介したモノとなる。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/10/20/test-kitchen-openstack-chef-cookbooks-test-2/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1566,6 +1523,20 @@ Using bundler (1.3.5)
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-14'>
+                                    July 14, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
                                 
                                     
@@ -1605,20 +1576,6 @@ Using bundler (1.3.5)
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-22'>
-                                    December 22, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1653,7 +1610,7 @@ Using bundler (1.3.5)
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">99</span>
+                                <span style="float:right;">100</span>
                             </header>
                         </article>
                     </li>
