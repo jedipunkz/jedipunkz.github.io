@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2013-10-13T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-10-20T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,353 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/10/20/test-kitchen-openstack-chef-cookbooks-test-2/">test-kitchen と OpenStack で Chef Cookbooks テスト (後篇)</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-10-20'>
+            October 20, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>前回、OpenStack と test-kitchen を使った環境構築方法を書きました。下記の記事で
+す。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/">http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/</a></p>
+
+<p>今回は実際にテストを書く方法を記していたい思います。</p>
+
+<p>今回使用するテストツールは下記の2つです。</p>
+
+<ul>
+<li>rspec と serverspec</li>
+<li>busser-bats</li>
+</ul>
+
+<h2 id="参考資料">参考資料</h2>
+
+<p>Creationline lab さんの資料を参考にさせて頂きました。</p>
+
+<p><a href="http://www.creationline.com/lab/2933">http://www.creationline.com/lab/2933</a></p>
+
+<h2 id="用意するモノ達">用意するモノ達</h2>
+
+<ul>
+<li>OpenStack にアクセスするためのユーザ・パスワード</li>
+<li>Keystone の AUTH_URL</li>
+<li>テストに用いる OS イメージの Image ID</li>
+<li>テナント ID</li>
+<li>nova 管理のキーペアの作成</li>
+</ul>
+
+<p>これらは OpenStack を普段から利用されている方なら馴染みのモノかと思います。</p>
+
+<h2 id="kitchen-yml-ファイルの作成">.kitchen.yml ファイルの作成</h2>
+
+<p>下記の通り .kitchen.yml ファイルを test-kitchen のルートディレクトリで作成しま
+す。今後の操作は全てこのディレクトリで作業行います。</p>
+
+<p>&ldquo;&lt;&gt;&rdquo; で括った箇所が環境に合わせた設定になります。</p>
+
+<p>また、ここでは前回同様に &lsquo;ntp&rsquo; の Cookbook をテストする前提で記します。</p>
+
+<pre><code class="language-yaml">+++
+driver_plugin: openstack
+
+suites:
+- name: default
+  run_list:
+  - recipe[ntp::default]
+  attributes: {}
+
+platforms:
+- name: ubuntu-12.04
+  driver_config:
+    openstack_username: &lt;openstack_username&gt;
+    openstack_api_key: &lt;openstack_password&gt;
+    openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens
+    image_ref: &lt;image_id&gt;
+    flavor_ref: 1
+    key_name: &lt;key_name&gt;
+    openstack_tenant: &lt;tenant_name&gt;
+    username: &lt;ssh_username&gt;
+    private_key_path: &lt;path_to_secretkey&gt;
+
+- name: centos-64
+  driver_config:
+    openstack_username: &lt;openstack_username&gt;
+    openstack_api_key: &lt;openstack_password&gt;
+    openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens
+    image_ref: &lt;image_id&gt;
+    flavor_ref: 1
+    key_name: &lt;key_name&gt;
+    openstack_tenant: &lt;tenant_name&gt;
+    username: &lt;ssh_username&gt;
+    private_key_path: &lt;path_to_secretkey&gt;
+</code></pre>
+
+<p>busser-bats テスト
++++</p>
+
+<p>まずはじめに busser-bats のテストを記します。</p>
+
+<h4 id="ディレクトリ作成">ディレクトリ作成</h4>
+
+<p>kitchen init を行うことでもこの操作は可能なのですが kitchen-openstack を利用すること
+を想定しない形で成形されてしまうため、下記の通り実行する。</p>
+
+<pre><code class="language-bash">% cd $TEST-KITCHEN-ROOT/
+% mkdir -p test/integration/default/bats
+</code></pre>
+
+<h4 id="ディレクトリ構成">ディレクトリ構成</h4>
+
+<p>ディレクトリ構成は</p>
+
+<pre><code>test/integration/${SUITE_NAME}/${BUSSER_NAME}/${TEST_NAME}
+</code></pre>
+
+<p>となっています。</p>
+
+<h4 id="テスト作成">テスト作成</h4>
+
+<p>test/integration/default/bats/test.bats として下記のファイルを作成します。</p>
+
+<pre><code class="language-ruby">@test &quot;ntp must be installed&quot; {
+    which ntpd
+}
+
+@test &quot;ntp.conf must be exist&quot; {
+    cat /etc/ntp.conf | grep &quot;server 0.pool.ntp.org iburst&quot;
+}
+</code></pre>
+
+<p>一項目と二項目の説明を書いておきます。</p>
+
+<ul>
+<li>一項目の @test</li>
+</ul>
+
+<p>ntpd コマンドが存在するか否かで package &lsquo;ntp&rsquo; がインストール
+されていることを確認。</p>
+
+<ul>
+<li>二項目の @test</li>
+</ul>
+
+<p>特定の文字列が /etc/ntp.conf に記述あるか否かでファイルの存在を確認。</p>
+
+<h2 id="rspec-serverspec-によるテスト実施">rspec serverspec によるテスト実施</h2>
+
+<p>次に rspec + serverspec のテストの記述方法を記します。</p>
+
+<h4 id="ディレクトリ作成-1">ディレクトリ作成</h4>
+
+<p>ディレクトリを作成します。</p>
+
+<pre><code class="language-bash">% mkdir test/integration/default/rspec
+</code></pre>
+
+<h3 id="gemfile-追記">Gemfile 追記</h3>
+
+<p>下記の通り test/integration/default/rspec/Gemfile を作成します。</p>
+
+<pre><code class="language-ruby">source 'https://rubygems.org'
+gem 'serverspec'
+</code></pre>
+
+<h4 id="serverspec-init-の実行">serverspec-init の実行</h4>
+
+<p>serverspec-init コマンドにより初期化を行います。</p>
+
+<pre><code class="language-bash">% cd test/integration/default/rspec
+% serverspec-init
+Select OS type:
+
+  1) UN*X
+  2) Windows
+
+Select number: 1
+
+Select a backend type:
+
+  1) SSH
+  2) Exec (local)
+
+Select number: 2
+
+ + spec/
+ + spec/localhost/
+ + spec/localhost/httpd_spec.rb
+ + spec/spec_helper.rb
+ + Rakefile
+</code></pre>
+
+<p>上記の通り spec ディレクトリ・ファイルが作成されることを確認します。</p>
+
+<h4 id="ntp-spec-rb-を作成">ntp_spec.rb を作成</h4>
+
+<p>下記の通り test/integration/default/rspec/spec/localhost/ntp_spec.rb を作成し
+ます。</p>
+
+<pre><code class="language-ruby">require 'spec_helper'
+
+describe package('ntp') do
+  it { should be_installed }
+end
+
+describe service('ntp') do
+  it { should be_enabled   }
+  it { should be_running   }
+end
+
+describe port(123) do
+  it { should be_listening }
+end
+   
+describe file('/etc/ntp.conf') do
+  it { should be_file }
+  it { should contain &quot;server 0.pool.ntp.org iburst&quot; }
+end
+</code></pre>
+
+<p>テスト内容の解説は&hellip;</p>
+
+<ul>
+<li>1) &lsquo;ntp&rsquo; パッケージがインストールされていることを確認</li>
+<li>2) &lsquo;ntp&rsquo; サービスが再起動時有効になっていること・起動していることを確認</li>
+<li>3) 123 番ポートで Listen していることを確認</li>
+<li>4) /etc/ntp.conf に特定の文字列が存在することを確認</li>
+</ul>
+
+<h2 id="テスト実行">テスト実行</h2>
+
+<p>下記の通りテストを実行する。</p>
+
+<pre><code class="language-bash">% cd $TEST-KITCHEN-ROOT
+% bundle exec kitchen create # &lt;---- OpenStack 上にインスタンス作成
+% bundle exec kitchen setup  # &lt;---- Chef Cookbooks の実行
+% bundle exec kitchen verify # &lt;---- テストの実施
+</code></pre>
+
+<p>またこれらの操作は下記の一つのコマンドで実施出来る。</p>
+
+<pre><code class="language-bash">% bundle exec kitchen test
+</code></pre>
+
+<h2 id="テスト結果">テスト結果</h2>
+
+<h4 id="busser-bats">busser-bats</h4>
+
+<p>下記の通り2つのテストが実施され &lsquo;ok&rsquo; ステータスが帰って来たことを確認する。</p>
+
+<pre><code>-----&gt; Running bats test suite
+       1..2
+       ok 1 ntp must be installed
+       ok 2 ntp.conf must be exist
+</code></pre>
+
+<h4 id="serverspec">serverspec</h4>
+
+<p>下記の通り 6 個のテスト全てが通り failure 0 個であることを確認する。</p>
+
+<pre><code>-----&gt; Running rspec test suite
+       [2013-10-17T02:27:19+00:00] INFO: Run List is []
+       [2013-10-17T02:27:19+00:00] INFO: Run List expands to []
+Recipe: (chef-apply cookbook)::(chef-apply recipe)
+  * execute[bundle install --local || bundle install] action run       [2013-10-17T02:27:19+00:00] INFO: Processing execute[bundle install --local || bundle install] action run ((chef-apply cookbook)::(chef-apply recipe) line 42)
+Resolving dependencies...
+Using diff-lcs (1.2.4)
+Using highline (1.6.20)
+Using net-ssh (2.7.0)
+Using rspec-core (2.14.6)
+Using rspec-expectations (2.14.3)
+Using rspec-mocks (2.14.4)
+Using rspec (2.14.1)
+Using serverspec (0.10.6)
+Using bundler (1.3.5)
+       Your bundle is complete!
+       Use `bundle show [gemname]` to see where a bundled gem is installed.
+       [2013-10-17T02:27:19+00:00] INFO: execute[bundle install --local || bundle install] ran successfully
+
+           - execute bundle install --local || bundle install
+</code></pre>
+
+<p>&hellip;&hellip;</p>
+
+<pre><code>   Finished in 0.0567 seconds
+</code></pre>
+
+<p>6 examples, 0 failures
+       Finished verifying <default-ubuntu-1204> (0m7.44s).
+```</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>busser-bats はまだ地道なテストの記述が必要らしい。それに比べて serverspec は既
+に実用的と言えるかもしれない。どちらのテストツールも Cookbook でデプロイされた
+環境の <em>状態</em> をテストするモノであって Cookbook, Recipe のテストとは違う。これ
+はある意味都合が良い。Cookbooks のテストは ChefSpec 等のテストツールでテストを
+行い、完成された Cookbooks を実際に複数の OS 上にデプロイしてテストするのが今
+回紹介したモノとなる。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/10/20/test-kitchen-openstack-chef-cookbooks-test-2/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -784,203 +1131,6 @@ Infiniband と組み合わせて RDMA を扱うことが可能。下記の URL �
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/">Methos アーキテクチャ #2 (Docker on Mesos)</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-10-01'>
-            October 1, 2013</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>Mesos アーキテクチャについて2つめの記事です。</p>
-
-<p><a href="http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/">http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/</a></p>
-
-<p>上記の前回の記事で Mesos 自体のアーキテクチャについて触れましたが、今回は
-Mesos + Marathon + Docker の構成について理解したことを書いていこうと思います。</p>
-
-<p>mesos クラスタは 幾つかの mesos masters と沢山の mesos slaves から成っており、
-mesos slaves の上では docker を操作する executor が稼働している。marathon は
-mesos master の上で稼働する mesos framework である。init や upstart の様な存在
-であることが言え、REST API を持ち container の動作を制御する。marathon には
-ruby の client 等も存在する。下記がそれ。</p>
-
-<p><a href="https://github.com/mesosphere/marathon_client">https://github.com/mesosphere/marathon_client</a></p>
-
-<h2 id="構成">構成</h2>
-
-<pre><code>+-----------------+
-| docker registry | index.docker.io (もしくは local registry)
-+-----------------+
-|
-+----------------+
-|                |
-+--------------+ +--------------+
-| mesos master | | mesos master |
-+--------------+ +--------------+
-|                |
-|----------------+-----------------------------------|
-
-+--------------+ +--------------+     +--------------+
-| mesos slave  | | mesos slave  | ... | mesos slave  | 
-+--------------+ +--------------+     +--------------+
-|                |                    |
-+--------------+ +--------------+     +--------------+
-| mesos slave  | | mesos slave  | ... | mesos slave  | 
-+--------------+ +--------------+     +--------------+
-.                .                    .
-.                .                    .
-.                .                    .
-+--------------+ +--------------+     +--------------+
-| mesos slave  | | mesos slave  | ... | mesos slave  |
-+--------------+ +--------------+     +--------------+
-</code></pre>
-
-<h2 id="オファから-docker-が稼働するまでの流れ">オファから docker が稼働するまでの流れ</h2>
-
-<p>上記の構成の図を見ながら理解していきましょう。</p>
-
-<ul>
-<li>HTTP API もしくは web UI で marathon がリクエストを受ける</li>
-<li>marathon はリソースリクエストを作成しオファが受け付けられるのを待つ</li>
-<li>オファが受け付けられた後、mesos master は slave に task の仕様を送信する</li>
-<li>slave では docker コマンドラインツールを実行する mesos docker を mesos slave デーモンが呼び出す</li>
-<li>docker コマンドラインツールはローカルの docker デーモンと image cache, lxc ツールにより通信する</li>
-<li>もし image cache が存在すればそれを、無ければ docker registry から pull する。</li>
-<li>その時、index.docker.io の代わりにローカルの docker registry を稼働させることも可能</li>
-<li>docker デーモンが container を稼働させる</li>
-</ul>
-
-<h2 id="marathon-のクラスタとしての動作">marathon のクラスタとしての動作</h2>
-
-<p>marathon は init や upstart のようなモノだと上記で説明しましたが、図を交えて説明して
-いきましょう。</p>
-
-<p>marathon が &lsquo;serarch service&rsquo; と &lsquo;docker&rsquo; を稼働させている状態だとする。</p>
-
-<pre><code>+----------+ +----------+ +----------+
-|          | |          | |          | 
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
-
-+----------+ +----------+ +----------+
-|          | |          | |          | 
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
-
-+----------+ +----------+ +----------+
-|          | |          | |          | 
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
-</code></pre>
-
-<p>サービスの状況によりオファが立て込んでくると下記のように docker をスケールアウ
-トが発生する。</p>
-
-<pre><code>+----------+ +----------+ +----------+
-| |docker| | | |docker| | |          | 
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
-
-+----------+ +----------+ +----------+
-|          | | |docker  | | |docker| | 
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
-
-+----------+ +----------+ +----------+
-| |docker| | | |docker| | | |docker| |
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
-</code></pre>
-
-<p>システムに異常がありノードが落ちた場合、下記のように marathon は serach
-service と docker をノード間で移動させる処置を行う。</p>
-
-<pre><code>             +----------+ +----------+
-             | |docker| | | |search| | 
-             | |docker| | | |docker| |
-             +----------+ +----------+
-
-+----------+ +----------+ +----------+
-| |docker|   | |docker| | | |docker| | 
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
-
-+----------+ +----------+ +----------+
-| |docker| | | |docker| | | |docker| |
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>mesos と docker, marathon の関係について記していきました。今度、実際にこの構成
-を組んでみて障害系のテストしてみたいです。あとは framework について理解してい
-く必要がありそう。あとは chronos についても。chronos については下記の URL が公
-式らしい。これは cron 代替な仕組みらしいです。</p>
-
-<p><a href="https://github.com/airbnb/chronos">https://github.com/airbnb/chronos</a></p>
-
-<p>まだまだ理解できていないことだらけだ&hellip;。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1097,6 +1247,20 @@ service と docker をノード間で移動させる処置を行う。</p>
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-14'>
+                                    July 14, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
                                 
                                     
@@ -1136,20 +1300,6 @@ service と docker をノード間で移動させる処置を行う。</p>
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-22'>
-                                    December 22, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1184,7 +1334,7 @@ service と docker をノード間で移動させる処置を行う。</p>
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">99</span>
+                                <span style="float:right;">100</span>
                             </header>
                         </article>
                     </li>

@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,203 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2012/03/07/wordpress-wo-nginx-plus-fastcgi-degao-su-hua/">WordPress を nginx &#43; fastcgi で高速化</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-03-07'>
+            March 7, 2012</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>ブログを始めるにあたり、wordpress 環境を構築する必要が出てきました。いつもの apache2 + mysql5 + PHP じゃつまらないので、nginx と fastcgi を使って少しだけ高速化してみました。メモですけど、ここに手順を記していきます。</p>
+
+<p>※ wordpress から octopress に移行しました&hellip; (2012/03/07)</p>
+
+<p>ただ、今回は nginx や mysql の基本的なオペレーション手順は割愛させてもらいます。</p>
+
+<p>私の環境について&hellip;</p>
+
+<pre><code>% lsb_release -a
+No LSB modules are available.
+Distributor ID: Debian
+Description:    Debian GNU/Linux 6.0.3 (squeeze)
+Release:        6.0.3
+Codename:       squeeze
+</code></pre>
+
+<p>インストールしたもの&hellip;
+メタパッケージを指定したのでその他必要なモノはインストールされます。</p>
+
+<pre><code>% sudo apt-get update
+% sudo apt-get install spawn-fcgi php5 php5-mysql php5-cgi mysql-server nginx 
+</code></pre>
+
+<p>まずはお決まりの gzip 圧縮転送。IE の古いモノ以外は対応しているので心配なし。今回のテーマと関係無いですけど、一応入れておきます。</p>
+
+<pre><code>% diff -u /etc/nginx/nginx.conf.org /etc/nginx/nginx.conf
+--- /etc/nginx/nginx.conf.org   2012-01-14 15:27:45.000000000 +0900
++++ /etc/nginx/nginx.conf       2012-01-14 15:28:58.000000000 +0900
+@@ -22,6 +22,10 @@
+     tcp_nodelay        on;
+
+     gzip  on;
++    gzip_http_version 1.0;
++    gzip_vary         on;
++    gzip_comp_level   6;
++    gzip_types        text/html text/xml text/css application/xhtml+xml application/xml application/rss+xml application/atom_xml application/x-javascript application/x-httpd-php;
+     gzip_disable &quot;MSIE [1-6]\.(?!.*SV1)&quot;;
+
+     include /etc/nginx/conf.d/*.conf;
+</code></pre>
+
+<p>spawn-fcgi を稼働させるスクリプトを生成する。/usr/bin/php-fastcgi として下記の内容で保存する。</p>
+
+<pre><code>#! /bin/sh
+/usr/bin/spawn-fcgi -a 127.0.0.1 -p 9000 -C 6 -u www-data -f /usr/bin/php5-cgi
+
+
+% sudo chmod 755 /usr/bin/php-fastcgi
+</code></pre>
+
+<p>次にこれを実行する起動スクリプトの用意と実行。/etc/init.d/php-fastcgi</p>
+
+<pre><code>#!/bin/bash
+
+### BEGIN INIT INFO
+# Required-Start:    $local_fs $remote_fs $network $syslog
+# Required-Stop:     $local_fs $remote_fs $network $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: php-fastcgi script
+# Description:       php-fastcgi script
+### END INIT INFO
+
+# env
+SCRIPT=/usr/bin/php-fastcgi
+USER=www-data
+RETVAL=0
+PIDFILE=/var/run/php5-cgi.pid
+
+# start or stop
+case &quot;$1&quot; in
+  start)
+    su - $USER -c $SCRIPT
+    pidof php5-cgi &gt; $PIDFILE
+    RETVAL=$?
+  ;;
+  stop)
+    killall -9 php5-cgi
+    echo '' &gt; $PIDFILE
+    RETVAL=$?
+  ;;
+  restart)
+    killall -9 php5-cgi
+    su - $USER -c $SCRIPT
+    pidof php5-cgi &gt; $PIDFILE
+    RETVAL=$?
+  ;;
+  *)
+    echo &quot;Usage: php-fastcgi {start|stop|restart}&quot;
+    exit 1
+  ;;
+esac
+</code></pre>
+
+<p>起動すると php-cgi のプロセスが立ち上がり localhost:9000 で LISTEN された状態になっているはずです。nginx はここへのプロキシのような動作をすることになります。
+下記の手順で起動と起動スクリプトへの組み込みを行なってください。</p>
+
+<pre><code>% sudo chmod 755 /etc/init.d/php-fastcgi
+% sudo update-rc.d php-fastcgi defaults
+% sudo service php-fastcgi start
+</code></pre>
+
+<p>次に nginx の virtualhost を掘ります。変数 ${FQDN_HOSTNAME}, ${DOCUMENT_ROOT}は自分
+の環境情報に読み替えてください。</p>
+
+<pre><code>server {
+        listen  80;
+        server_name     ${FQDN_HOSTNAME}
+        access_log      /var/log/nginx/${FQDN_HOSTNAME}.access.log;
+        error_log       /var/log/nginx/${FQDN_HOSTNAME}.error.log;
+        location / {
+                root   ${DOCUMENT_ROOT};
+                index  index.html index.php;
+        } 
+        location ~ \.php$ {
+                include /etc/nginx/fastcgi_params;
+                fastcgi_pass 127.0.0.1:9000;
+                fastcgi_index index.php;
+                fastcgi_param SCRIPT_FILENAME ${DOCUMENT_ROOT}$fastcgi_script_name;
+        }
+}
+</code></pre>
+
+<p>nginx を stop/start してこれらの設定を有効にします。</p>
+
+<pre><code>% sudo service nginx stop
+% sudo service nginx start
+</code></pre>
+
+<p>以上です。</p>
+
+<p>その他にも proxy cache を有効にして wordpress の静的な出力をキャッシュするチューニング方法もあるそうなので、次回試してみます。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2012/03/07/wordpress-wo-nginx-plus-fastcgi-degao-su-hua/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriestools'>tools</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -404,162 +601,6 @@ homebrew は公式サイトに詳しいことが書いてありますけどイ�
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2012/03/07/gitosis-ssh-plus-git-saba/">gitosis ssh&#43;git サーバ</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2012-03-07'>
-            March 7, 2012</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>github.com は便利なのだけどプライベートなレポジトリを作るのにお金払うのはもったいないので自宅サーバに SSH 経由の Git サーバを構築した。その時の手順をメモしておきます。</p>
-
-<p>gitosis という便利なツールがあって、これを使うとあっという間に環境構築できます。私の環境は debian Gnu/Linux Squeeze なのですが apt-get で必要なモノを入れました。gitosis は git で持ってきます。</p>
-
-<pre><code>remote% sudo apt-get update
-remote% sudo apt-get install git git-core python python-setuptools
-remote% cd $HOME/usr/src
-remote% git clone git://eagain.net/gitosis.git
-remote% cd gitosis
-remote% sudo python setup.py install
-</code></pre>
-
-<p>SSH でアクセスする先のユーザを作ります。</p>
-
-<pre><code>remote% sudo adduser --shell /bin/sh -gecos --group \
-        --disable-password --home /home/git git
-</code></pre>
-
-<p>作業端末で rsa な SSH 公開鍵を生成して ${remote} サーバは転送する。</p>
-
-<pre><code>local% ssh-keygen -t rsa
-... インタラクティブに答える
-local% scp .ssh/id_dsa.pub ${remote}:/tmp/
-</code></pre>
-
-<p>転送した鍵を元に ${remote} サーバ上で git レポジトリを初期化する。</p>
-
-<pre><code>remote% sudo -H -u git gitosis-init &lt; /tmp/id_rsa.pub
-</code></pre>
-
-<p>もし実行権が付いていなかったら</p>
-
-<pre><code>remote% sudo chmod 755 /home/git/repositories/gitosis-admin.git/hooks/post-update
-</code></pre>
-
-<p>これで環境構築完了。ただ、このままだとローカルの作業端末からレポジトリの生成が出来ない。</p>
-
-<p>ローカルの作業端末でレポジトリを生成する手順は、
-gitosis-admin.git を clone してきて、gitosis.conf を修正し commit/push する。</p>
-
-<pre><code>local% git clone git@${remote}:gitosis-admin.git
-local% vi gitosis.conf
-</code></pre>
-
-<p>今回はテストで test グループに test レポジトリを作るための config を書いてみる。members は複数人書ける。</p>
-
-<pre><code>[gitosis]
-
-[group gitosis-admin]
-writable = gitosis-admin
-members = chobiwan@${local}
-
-[group test]
-writable = test
-members = chobiwan@${local}
-</code></pre>
-
-<p>修正した内容を ${remote} サーバへ git push して反映させる。</p>
-
-<pre><code>local% git add .
-local% git commit -m &quot;added test repo&quot;
-local% git push origin master
-</code></pre>
-
-<p>これで &lsquo;test&rsquo; レポジトリをローカルの作業端末から作ってコミットする準備完了。
-試しにファイルを add, commit, push してみる。</p>
-
-<pre><code>local% mkdir ~/gitwork
-local% cd ~/gitwork
-local% touch README
-local% git add README
-local% git commit -m &quot;my first commi&quot;
-local% git remote add origin git@obi.chobiwan.me:test.git
-local% git push origin master
-</code></pre>
-
-<p>(2012/05/01 追記)
-新規ユーザの追加方法は下記の通り。</p>
-
-<pre><code>local% ssh-keygen -t rsa
-local% cd ~/gitwork
-local% git clone git@${remote}:gitosis-admin.git
-local% cp ~/.ssh/id_rsa.pub ./gitosis-admin/keydir/user@hostname.pub
-local% vi ./gitosis-admin/gitosis.conf
-       &lt;参加したいリポジトリの membersに user@hostname.pub を追加(スペース区切り)
-local% git gitosis-admin &amp;&amp; git add . &amp;&amp; git commit -m &quot;added a user&quot;
-local% git push origin master
-</code></pre>
-
-<p>公開鍵のアップやレポジトリ・グループの生成の仕方を覚えれば、OK なのかなぁと。
-次はレポジトリのバックアップとレカバリについてまとめていきたい。リカバリできないと死ねるから。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/03/07/gitosis-ssh-plus-git-saba/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriestools'>tools</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -569,7 +610,8 @@ local% git push origin master
     
 
     
-        <li><a href="#" class="disabled button big next">Next Page</a></li>
+        <li><a href="/post/page/37/"
+                class="button big next">Next Page</a></li>
     
 </ul>
 
@@ -675,6 +717,20 @@ local% git push origin master
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-14'>
+                                    July 14, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
                                 
                                     
@@ -714,20 +770,6 @@ local% git push origin master
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-22'>
-                                    December 22, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -762,7 +804,7 @@ local% git push origin master
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">99</span>
+                                <span style="float:right;">100</span>
                             </header>
                         </article>
                     </li>

@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-03-17T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-03-28T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,182 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/03/28/netbsd-on-openstack/">NetBSD on OpenStack</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-03-28'>
+            March 28, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>もう数日で OpenStack の次期バージョン版 Grizzly がリリースされるタイミングだが
+現行バージョン Folsom の OpenStack の上に NetBSD を載せてみた。完全にお遊び
+だけど&hellip;。</p>
+
+<p>結局、ほとんど何も特別な対応取ることなく NetBSD が動いた。もちろんハイパーバイ
+ザは KVM です。だけど少し条件がある。</p>
+
+<p>qemu の不具合があり Ubuntu 12.04 LTS + Ubuntu Cloud Archives の組み合わせでは
+NetBSD が動作しなかった。下記のようなカーネルパニックが発生。</p>
+
+<pre><code>panic: pci_make_tag: bad request
+</code></pre>
+
+<p>この不具合に相当するんじゃないかと思ってる。</p>
+
+<p><a href="https://bugs.launchpad.net/qemu/+bug/897771">https://bugs.launchpad.net/qemu/+bug/897771</a></p>
+
+<p>よって下記の組み合わせで動作を確認した。</p>
+
+<ul>
+<li>Ubuntu 12.10 + OpenStack (Native Packages)</li>
+<li>qemu, kvm : 1.2.0+noroms-0ubuntu2.12.10.3</li>
+<li>NetBSD 6.1 RC2 amd64</li>
+</ul>
+
+<h2 id="前提条件">前提条件</h2>
+
+<p>OpenStack Folsom が動作していること。</p>
+
+<h2 id="netbsd-os-イメージ作成">NetBSD OS イメージ作成</h2>
+
+<p>nova-compute が動作しているホストの qemu-kvm を利用する。OpenStack 上に何でも
+良いので OS を動作させこの kvm プロセスのパラメータを参考に kvm コマンドを実行
+し NetBSD をインストールさせた。一番確実な方法。</p>
+
+<pre><code>% cd ~/
+% wget http://ftp.netbsd.org/pub/NetBSD/iso/6.1_RC2/NetBSD-6.1_RC2-amd64.iso
+% kvm-img create -f qcow2 netbsd.img 5G
+% /usr/bin/kvm -M pc-1.0 -cpu \
+core2duo,+lahf_lm,+rdtscp,+hypervisor,+avx,+osxsave,+save,+aes,+popcnt,+sse4.2,+sse4.1,+cx16,+vmx,+pclmuldq,+ht,+ss,+ds \
+-enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \
+-drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \
+-device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
+-net nic,model=virtio -vnc :9 -cdrom ~/NetBSD-6.1_RC2-amd64.iso
+</code></pre>
+
+<p>VNC :9 に接続して NetBSD を普通ににインストールする。</p>
+
+<p>インストールが終わったら CDROM デバイスを外して起動。</p>
+
+<pre><code>% core2duo,+lahf_lm,+rdtscp,+hypervisor,+avx,+osxsave,+save,+aes,+popcnt,+sse4.2,+sse4.1,+cx16,+vmx,+pclmuldq,+ht,+ss,+ds \
+-enable-kvm -m 512 -smp 1,sockets=1,cores=1,threads=1 -device piix3-usb-uhci,id=usb,bus=pci.0,addr=0x1.0x2 \
+-drive file=~/netbsd.img,if=none,id=drive-virtio-disk0,format=qcow2,cache=none \
+-device virtio-blk-pci,scsi=off,bus=pci.0,addr=0x4,drive=drive-virtio-disk0,id=virtio-disk0,bootindex=1 \
+-net nic,model=virtio -vnc :9
+</code></pre>
+
+<p>VNC :9 に接続し下記の操作を行う。</p>
+
+<p>vioif0 という virtio なネットワークインターフェースが起動するので下記のように
+追記する。</p>
+
+<pre><code># vi /etc/rc.conf # 下記を追記
+ifconfig_vioif0=dhcp
+sshd=YES
+</code></pre>
+
+<p>OpenStack の metadata server から nova の管理するキーペア鍵を取得し
+authorized_keys に配置する様、/etc/rc.local に追記する。curl とか便利なツール
+はもちろん！入っていないので ftp コマンドでなんとかする。</p>
+
+<pre><code class="language-bash"># vi /etc/rc.local # 下記を追記
+if [ ! -d /root/.ssh ]; then
+    mkdir -p /root/.ssh
+fi
+echo &gt;&gt; /root/.ssh/authorized_keys
+cd /tmp
+ftp http://169.254.169.254/latest/meta-data/public-keys/0/openssh-key
+cat openssh-key | grep 'ssh-rsa' &gt;&gt; /root/.ssh/authorized_keys
+echo &quot;AUTHORIZED_KEYS:&quot;
+echo &quot;*********************&quot;
+cat /root/.ssh/authorized_keys
+echo &quot;*********************&quot;
+</code></pre>
+
+<p>nova のキーペアでログインしたいので sshd は root ユーザでログイン出来るように
+修正行う。</p>
+
+<pre><code># vi /etc/ssh/sshd_config
+PermitRootLogin yes
+</code></pre>
+
+<p>OS をシャットダウンしてイメージ作成は終わり。</p>
+
+<h2 id="glance-へ登録">Glance へ登録</h2>
+
+<p>netbsd.img を Glance に接続できるホストへ移動しイメージ登録を行う。</p>
+
+<pre><code>% glance add name=&quot;NetBSD 6.1 RC2 amd64&quot; is_public=true \
+  container_format=ovf disk_format=qcow2 &lt; ~/netbsd.img
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>何も手を加えていない&hellip;。NetBSD 6.1 は最初から Virtio が有効になっているので何
+も考えることなくイメージ作成が出来た。コツは nova-compute が実際に動作している
+ホストでイメージを作ること。ハイパーバイザの OS が若干古いホストでも作業してみ
+たのだが、OpenStack に載せた途端カーネルパニックに陥った。Qemu はものすごいス
+ピードで進化しているのでバージョンの差異は致命的であると共に、日に日に快適な環
+境が整ってきているとも言える。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/03/28/netbsd-on-openstack/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -657,380 +833,6 @@ bootstrap_version_string を指定し gem でインストールしている。</
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/02/10/di-11hui-openstack-study11-openstack-chef-repo/">第11回OpenStack勉強会で話してきた</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-02-10'>
-            February 10, 2013</time>
-        <span class="author"></span>
-        
-            <p>4 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>2013年2月9日に行われた OpenStack 勉強会第11回で話してきました。</p>
-
-<p>openstack-chef-repo と言う、Opscode Chef で OpenStack を構築する内容を話して
-きました。その時に説明出来なかった詳細についてブログに書いておきます。</p>
-
-<p><iframe src="http://www.slideshare.net/slideshow/embed_code/16434817"
-width="427" height="356" frameborder="0" marginwidth="0" marginheight="0"
-scrolling="no" style="border:1px solid #CCC;border-width:1px 1px
-0;margin-bottom:5px" allowfullscreen webkitallowfullscreen mozallowfullscreen>
-</iframe> <div style="margin-bottom:5px"> <strong> <a
-href="http://www.slideshare.net/tomokazubobhirai/openstack-chefrepo"
-title="Openstack chef-repo" target="_blank">Openstack chef-repo</a> </strong>
-from <strong><a href="http://www.slideshare.net/tomokazubobhirai"
-target="_blank">Tomokazu Hirai</a></strong> </div></p>
-
-<p>説明で使ったスライドです。</p>
-
-<h2 id="まえがき">まえがき</h2>
-
-<p>Essex ベースで構築することしか今は出来ません。Folsom に関しては &lsquo;直ちに開発が
-スタートする&rsquo; と記されていました。今回は Opscode と RackSpace のエンジニアが共
-同で開発を進めているので期待しています。今まで個人で OpenStack の各コンポーネ
-ントの cookbook を開発されていた方がいらっしゃるのだけど汎用性を持たせるという
-意味で非常に難しく、またどの方の開発に追従していけばよいか判断困っていました。
-よって今回こそ期待。</p>
-
-<h2 id="前提の構成">前提の構成</h2>
-
-<pre><code>+-------------+
-| chef-server |
-+-------------+ 10.0.0.10
-|
-+---------------+ 10.0.0.0/24
-|               |
-+-------------+ +-------------+
-| workstation | |    node     |
-+-------------+ +-------------+
-10.0.0.11       10.0.0.12
-</code></pre>
-
-<ul>
-<li>chef-server : chef API を持つ chef-server 。cookbook, role..などのデータを持つ</li>
-<li>workstation : openstack-chef-repo を使うノード。knife が使える必要がある。</li>
-<li>node        : OpenStack を構築するターゲットノード</li>
-</ul>
-
-<h2 id="目次">目次</h2>
-
-<ul>
-<li>chef-server の構築 (BootStrap 使う)</li>
-<li>openstack-chef-repo を使用する準備</li>
-<li>openstack-chef-repo 実行</li>
-</ul>
-
-<h2 id="chef-server-の構築">chef-server の構築</h2>
-
-<p>Opscode の wiki に記されている通りなのですが、簡単に書いておきます。今回は
-bootstrap 方式で用意します。</p>
-
-<p>chef-server ノードに chef をインストールします。chef-solo を用いるからです。</p>
-
-<pre><code>chef-server# gem install chef
-</code></pre>
-
-<p>chef-solo を使うための設定情報を /etc/chef/solo.rb に記します。</p>
-
-<pre><code>chef-server# mkdir /etc/chef
-chef-server# ${EDITOR} /etc/chef/solo.rb
-file_cache_path &quot;/tmp/chef-solo&quot;
-cookbook_path &quot;/tmp/chef-solo/cookbooks&quot;
-</code></pre>
-
-<p>chef-solo を実行する際に使う json ファイルを用意します。attribute を上書きする
-ことが出来ます。今回は webui を有効にした状態にします。</p>
-
-<pre><code>chef-server# ${EDITOR} ~/chef.json
-{
-  &quot;chef_server&quot;: {
-    &quot;server_url&quot;: &quot;http://localhost:4000&quot;,
-    &quot;init_style&quot;: &quot;runit&quot;
-  },
-  &quot;run_list&quot;: [ &quot;recipe[chef-server::rubygems-install]&quot; ]
-}
-</code></pre>
-
-<p>bootstrap して chef-server を構築します。</p>
-
-<pre><code>chef-server# chef-solo -c /etc/chef/solo.rb -j ~/chef.json -r http://s3.amazonaws.com/chef-solo/bootstrap-latest.tar.gz
-</code></pre>
-
-<p>chef-server が完成したはずです。workstation で knife を使うために &lsquo;client&rsquo; を
-作ります。chef 10.x では user ではなく client が knife を実行します。</p>
-
-<pre><code>chef-server% mkdir ~/.chef
-chef-server% sudo cp /etc/chef/validation.pem ~/.chef/
-chef-server% sudo cp /etc/chef/webui.pem ~/.chef/
-chef-server% sudo chown &lt;my-username&gt;:&lt;my-group&gt; ~/.chef
-</code></pre>
-
-<p>knife を使うために下記の操作を行います。</p>
-
-<pre><code>chef-server% cd ~
-chef-server% knife configure -i
-Where should I put the config file? [~/.chef/knife.rb]
-Please enter the chef server URL: [http://10.0.0.1:4000]
-Please enter a clientname for the new client: [jedipunkz]
-Please enter the existing admin clientname: [chef-webui]
-Please enter the location of the existing admin client's private key:[/etc/chef/webui.pem] /home/jedipunkz/.chef/webui.pem
-Please enter the validation clientname: [chef-validator]
-Please enter the location of the validation key:[/etc/chef/validation.pem] /home/jedipunkz/.chef/validation.pem
-Please enter the path to a chef repository (or leave blank):
-Creating initial API user...
-Created client[jedipunkz]
-Configuration file written to /home/jedipunkz/.chef/knife.rb
-</code></pre>
-
-<p>workstaion ノードで knife を操作するための &lsquo;worker&rsquo; client を作成します。</p>
-
-<pre><code>chef-server% export EDITOR=vim
-chef-server% knife client create worker -a -f worker.pem
-chef-server% knife client list
-  chef-validator
-  chef-webui
-  chefserver.example.com
-  jedipunkz
-  worker
-</code></pre>
-
-<h2 id="openstack-chef-repo-を使用する準備">openstack-chef-repo を使用する準備</h2>
-
-<p>workstation で openstack-chef-repo を使うための準備をします。</p>
-
-<p>まずは knife を使えるように下記のように knife.rb や pem の手元への転送を行います。</p>
-
-<pre><code>workstation% gem install chef librarian spiceweasel
-workstation% cd ~
-workstation% git clone git://github.com/opscode/openstack-chef-repo.git
-workstation% cd openstack-chef-repo
-workstation% vim .chef/knife.rb
-log_level                :info
-log_location             STDOUT
-node_name                'worker'
-client_key               '/home/jedipunkz/openstack-chef-repo/.chef/worker.pem'
-validation_client_name   'chef-validator'
-validation_key           '/home/jedipunkz/openstack-chef-repo/.chef/validation.pem'
-chef_server_url          'http://10.0.0.10:4000'
-cache_type               'BasicFile'
-cache_options( :path =&gt; '/home/jedipunkz/openstack-chef-repo/.chef/checksums' )
-cookbook_path           '/home/jedipunkz/openstack-chef-repo/cookbooks'
-workstation% scp 10.0.0.10:~/worker.pem .chef/
-workstation% scp 10.0.0.10:~/.chef/validation.pem .chef/
-</code></pre>
-
-<p>librarian を使って OpenStack 構築に必要な cookbooks をダンロードします。Cheffile
-というファイルに何をどこから取得するのか記されいてそれにしたがってダウンロードされます。</p>
-
-<pre><code>workstation% libratrian-chef update
-</code></pre>
-
-<p>環境に合わせて production.yml を修正します。今回必要最低限の箇所のみ修正します。
-&ldquo;osops_networks&rdquo; という箇所に nova-network に渡すネットワーク情報があるので今回の
-環境 10.0.0.0/24 に修正します。全体はこのような内容になります。</p>
-
-<pre><code>workstation% ${EDITOR} production.yml
-name &quot;production&quot;
-description &quot;Defines the network and database settings you're going to use with OpenStack. The networks will be used in the libraries provided by the osops-utils cookbook. This example is for FlatDHCP with 2 physical networks.&quot;
-
-override_attributes(
-  &quot;glance&quot; =&gt; {
-    &quot;image_upload&quot; =&gt; true,
-    &quot;images&quot; =&gt; [&quot;precise&quot;,&quot;cirros&quot;],
-  },
-  &quot;mysql&quot; =&gt; {
-    &quot;allow_remote_root&quot; =&gt; true,
-    &quot;root_network_acl&quot; =&gt; &quot;%&quot;
-  },
-  &quot;osops_networks&quot; =&gt; {
-    &quot;public&quot; =&gt; &quot;10.0.0.0/24&quot;,
-    &quot;management&quot; =&gt; &quot;10.0.0.0/24&quot;,
-    &quot;nova&quot; =&gt; &quot;10.0.0.0/24&quot;
-  },
-  &quot;nova&quot; =&gt; {
-    &quot;network&quot; =&gt; {
-      &quot;fixed_range&quot; =&gt; &quot;192.168.100.0/24&quot;,
-      &quot;public_interface&quot; =&gt; &quot;eth0&quot;
-    },
-    &quot;networks&quot; =&gt; [
-      {
-        &quot;label&quot; =&gt; &quot;public&quot;,
-        &quot;ipv4_cidr&quot; =&gt; &quot;192.168.100.0/24&quot;,
-        &quot;num_networks&quot; =&gt; &quot;1&quot;,
-        &quot;network_size&quot; =&gt; &quot;255&quot;,
-        &quot;bridge&quot; =&gt; &quot;br100&quot;,
-        &quot;bridge_dev&quot; =&gt; &quot;eth0&quot;,
-        &quot;dns1&quot; =&gt; &quot;8.8.8.8&quot;,
-        &quot;dns2&quot; =&gt; &quot;8.8.4.4&quot;
-      }
-    ]
-  }
-  )  
-</code></pre>
-
-<p>infrastructure.yml という spiceweasel が参照するファイルの修正を行います。
-cookbooks, roles, environments, data bags, node とパラメータがあり node
-のみ記されていないので今回用意したターゲットノードの情報を追記します。</p>
-
-<p>node には予め SSH 公開鍵を設置する必要があります。また下記は root ユーザでログ
-インしていますが、sudo してもらっても構わないです。role で指定した &lsquo;allinone&rsquo;
-は OpenStack の全てのコンポーネントを一台のノードにインストールするためのもの
-です。これを他の role 例えば &lsquo;keystone&rsquo; 等を指定して複数のノードに OpenStack
-を展開することも可能なはずです。試していませんが。</p>
-
-<pre><code>workstation% vim infrastructure.yml
-... 省略
-nodes:
-- 10.0.0.12:
-  run_list: role[allinone]
-  options: -i ~/.ssh/id_rsa -x root -E production
-</code></pre>
-
-<h2 id="openstack-chef-repo-実行">openstack-chef-repo 実行</h2>
-
-<p>準備が整ったので spiceweasel を使って knife コマンドの出力チェックと実行をして
-みます。先ほど追記した infrastructure.yml を使います。</p>
-
-<pre><code>workstation% spiceweasel infrastructure.yml
-knife cookbook upload apache2
-knife cookbook upload apt
-knife cookbook upload aws
-knife cookbook upload build-essential
-knife cookbook upload ntp
-knife cookbook upload openssh
-knife cookbook upload openssl
-knife cookbook upload postgresql
-knife cookbook upload selinux
-knife cookbook upload xfs
-knife cookbook upload yum
-knife cookbook upload erlang
-knife cookbook upload mysql
-knife cookbook upload rabbitmq
-knife cookbook upload database
-knife cookbook upload omnibus_updater
-knife cookbook upload lxc
-knife cookbook upload sysctl
-knife cookbook upload osops-utils
-knife cookbook upload mysql-openstack
-knife cookbook upload rabbitmq-openstack
-knife cookbook upload keystone
-knife cookbook upload glance
-knife cookbook upload nova
-knife cookbook upload horizon
-knife environment from file production.rb
-knife role from file base.rb
-knife role from file lxc.rb
-knife role from file mysql-master.rb
-knife role from file rabbitmq-server.rb
-knife role from file keystone.rb
-knife role from file glance-api.rb
-knife role from file glance-registry.rb
-knife role from file glance.rb
-knife role from file nova-setup.rb
-knife role from file nova-scheduler.rb
-knife role from file nova-api-ec2.rb
-knife role from file nova-api-os-compute.rb
-knife role from file nova-volume.rb
-knife role from file nova-vncproxy.rb
-knife role from file horizon-server.rb
-knife role from file single-controller.rb
-knife role from file single-compute.rb
-knife role from file allinone.rb
-knife bootstrap 10.0.0.12 -i ~/.ssh/id_rsa -x root -E production -r 'role[allinone]'  
-</code></pre>
-
-<p>この操作で spiceweasel は role ファイルの中身と yml ファイルを読み、依存関係を
-チェックしてくれます。</p>
-
-<p>ではいよいよ実行。</p>
-
-<pre><code>workstaion% spiceweasel -e infrastructure.yml
-</code></pre>
-
-<p>数分で OpenStack 環境が構築出来ると思います。</p>
-
-<h2 id="所感">所感</h2>
-
-<p>現時点ではまだ essex ベースの OpenStack しか構築出来ない。folsom 以降について
-は直ちに行われる。また先にも記したが Opscode と RackSpace のエンジニアが共同で
-作業に入ったので今後に期待。複数の OpenStack cookboooks を見てきたが個人で開発
-するのは厳しいと感じています。fedra, centos, ubuntu, debian &hellip; いろんなプラッ
-トフォームを前提に開発するのは厳しい&hellip;。pull request する余力があればやってみ
-たい。また合わせて各コンポーネントの cookbooks についても同様に参加していきた
-い。</p>
-
-<p>chef は繰り返し実行されるので継続的にデプロイが可能であり、chef Resources が我々
-の操作を抽象化してくれる。尚且つ API で開発も容易になる。学習コストは若干高い
-し、cookbooks の開発も正直しんどい。だけどインフラを chef でコントロールする意
-味はとても大きい。その他のメリットとして属人的な操作に依存したシステムを無くす
-という事もある。</p>
-
-<p>OpenStack のドキュメントにはデプロイ方法として dodai-deploy と puppet が掲載さ
-れている。chef は載っていない。これは cookbooks の開発が遅れている状況が理由に
-あると思う。今回 Opscode の中の Matt Ray さんの下記の資料</p>
-
-<p><a href="http://www.slideshare.net/mattray/chef-11-previewchef-for-openstack">http://www.slideshare.net/mattray/chef-11-previewchef-for-openstack</a></p>
-
-<p>を見て、これからに期待したいと感じた。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/02/10/di-11hui-openstack-study11-openstack-chef-repo/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Categories
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-        <li><a href='/categoriesreport'>report</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1147,6 +949,20 @@ knife bootstrap 10.0.0.12 -i ~/.ssh/id_rsa -x root -E production -r 'role[allino
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-14'>
+                                    July 14, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
                                 
                                     
@@ -1186,20 +1002,6 @@ knife bootstrap 10.0.0.12 -i ~/.ssh/id_rsa -x root -E production -r 'role[allino
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-22'>
-                                    December 22, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1234,7 +1036,7 @@ knife bootstrap 10.0.0.12 -i ~/.ssh/id_rsa -x root -E production -r 'role[allino
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">99</span>
+                                <span style="float:right;">100</span>
                             </header>
                         </article>
                     </li>

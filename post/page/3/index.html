@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2015-07-20T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2015-09-12T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,291 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2015-09-12'>
+            September 12, 2015</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>今回は Docker ネタです。Docker 導入するにしても監視はどうする？という話になる
+と思うのですが、各 Monitoring as a Service を使うにしてもエージェント入れない
+といけないしお金掛かることもあるし..で、調べていたら cAdvisor というキーワード
+が出てきました。今回は cAdvisor を使ってコンテナの監視が出来ないか、について書
+いていきたいと想います。</p>
+
+<ul>
+<li>cAdvisor とは ?</li>
+</ul>
+
+<p>cAdvisor は Kubernates で用いられているコンポーネントで単体でも利用可能とのこ
+と。Google が開発しています。また Docker コンテナの監視においてこの cAdvisor
+は一般化しつつあるようです。</p>
+
+<p><a href="https://github.com/google/cadvisor">https://github.com/google/cadvisor</a></p>
+
+<ul>
+<li>収集したメトリクスの保存</li>
+</ul>
+
+<p>cAdvisor 自体も Docker で起動して、同ホスト上に起動している Docker コンテナの
+リソースをモニタリングしてくれます。そのメトリクスデータは幾つかの DB に保存出
+来るのですが、そのうちの一つが influxDB です。influxDB は時系列データベースで
+す。システムのメトリクスデータを収めるのにちょうどいいデータベースになります。</p>
+
+<p><a href="https://influxdb.com/">https://influxdb.com/</a></p>
+
+<ul>
+<li>DB に収めたメトリクスの可視化</li>
+</ul>
+
+<p>influxDB に収めたメトリクスデータを可視化するのが Grafana です。Grafana のデー
+タソースは influxDB の他にも幾つかあり Elasticsearch, KairosDB, Graphite 等が
+それです。</p>
+
+<p><a href="http://grafana.org/">http://grafana.org/</a></p>
+
+<p>では早速試してみましょう。</p>
+
+<h2 id="前提の環境">前提の環境</h2>
+
+<p>今回は Vagrant を使います。また Vagrant 上で上記の3つのソフトウェアを Docker
+で稼働します。またどうせなので docker-compose を使って3つのコンテナを一斉に立
+ち上げてみましょう。</p>
+
+<h2 id="vagrantfile-の準備">VagrantFile の準備</h2>
+
+<p>下記のような VagrantFile を作成します。各ソフトウェアはそれぞれ WebUI を持って
+いて、そこに手元のコンピュータから接続するため forwarded_port しています。</p>
+
+<pre><code># -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure(2) do |config|
+    config.vm.box = &quot;ubuntu/trusty64&quot;
+    config.vm.network &quot;forwarded_port&quot;, guest: 8080, host: 8080
+    config.vm.network &quot;forwarded_port&quot;, guest: 8083, host: 8083
+    config.vm.network &quot;forwarded_port&quot;, guest: 3000, host: 3000
+    config.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.10&quot;
+end
+</code></pre>
+
+<h2 id="docker-コンテナの起動と-docker-compose-yml-の準備">Docker コンテナの起動と docker-compose.yml の準備</h2>
+
+<p>Vagrant を起動し docker, docker-compose のインストールを行います。</p>
+
+<pre><code class="language-bash">$ vagrant up
+$ vagrant ssh
+vagrant$ sudo apt-get update ; sudo apt-get -y install curl
+vagrant$ curl -sSL https://get.docker.com/ | sh
+vagrant$ sudo -i
+vagrant# export VERSION_NUM=1.4.0
+vagrant# curl -L https://github.com/docker/compose/releases/download/VERSION_NUM/docker-compose-`uname -s`-`uname -m` &gt; /usr/local/bin/docker-compose
+vagrant# chmod +x /usr/local/bin/docker-compose
+</code></pre>
+
+<p>次に docker-compose.yml を作成します。上記3つのソフトウェアが稼働するコンテナ
+を起動するため下記のように記述しましょう。カレントディレクトリに作成します。</p>
+
+<pre><code>InfluxSrv:
+    image: &quot;tutum/influxdb:0.8.8&quot;
+    ports:
+        - &quot;8083:8083&quot;
+        - &quot;8086:8086&quot;
+    expose:
+        - &quot;8090&quot;
+        - &quot;8099&quot;
+    environment:
+        - PRE_CREATE_DB=cadvisor
+cadvisor:
+    image: &quot;google/cadvisor:0.16.0&quot;
+    volumes:
+        - &quot;/:/rootfs:ro&quot;
+        - &quot;/var/run:/var/run:rw&quot;
+        - &quot;/sys:/sys:ro&quot;
+        - &quot;/var/lib/docker/:/var/lib/docker:ro&quot;
+    links:
+        - &quot;InfluxSrv:influxsrv&quot;
+    ports:
+        - &quot;8080:8080&quot;
+    command: &quot;-storage_driver=influxdb -storage_driver_db=cadvisor -storage_driver_host=influxsrv:8086 -storage_driver_user=root -storage_driver_password=root -storage_driver_secure=False&quot;
+grafana:
+    image: &quot;grafana/grafana:2.1.3&quot;
+    ports:
+        - &quot;3000:3000&quot;
+    environment:
+        - INFLUXDB_HOST=localhost
+        - INFLUXDB_PORT=8086
+        - INFLUXDB_NAME=cadvisor
+        - INFLUXDB_USER=root
+        - INFLUXDB_PASS=root
+    links:
+        - &quot;InfluxSrv:influxsrv&quot;
+</code></pre>
+
+<p>コンテナの起動
++++</p>
+
+<p>docker コンテナを立ち上げます。</p>
+
+<pre><code>vagrant$ docker-compose -d
+</code></pre>
+
+<h2 id="influxdb-の-webui-に接続する">influxDB の WebUI に接続する</h2>
+
+<p>それでは起動したコンテナのうち一つ influxDB の WebUI に接続していましょう。
+上記の VagrantFile では IP アドレスを 192.168.33.10 と指定しました。</p>
+
+<p>URL : <a href="http://192.168.33.10:8083">http://192.168.33.10:8083</a></p>
+
+<p>データベースに接続します。</p>
+
+<p>ユーザ名 : root
+パスワード : root</p>
+
+<p>接続するとデータベース作成画面に飛びますので Database Datails 枠に &ldquo;cadvisor&rdquo;
+と入力、その他の項目はデフォルトのままで &ldquo;Create Database&rdquo; をクリックします。</p>
+
+<h2 id="cadvisor-の-webui-に接続する">cAdvisor の WebUI に接続する</h2>
+
+<p>続いて cAdvisor の WebUI に接続してみましょう。</p>
+
+<p>URL : <a href="http://192.168.33.10:8080">http://192.168.33.10:8080</a></p>
+
+<p>ここでは特に作業の必要はありません。コンテナの監視が行われグラフが描画されてい
+ることを確認します。</p>
+
+<h2 id="grafana-の-webui-に接続する">Grafana の WebUI に接続する</h2>
+
+<p>最後に Grafana の WebUI です。</p>
+
+<p>URL : <a href="http://192.168.33.10:3000">http://192.168.33.10:3000</a>
+ユーザ名 : admin
+パスワード : admin</p>
+
+<p>まずデータソースの設定を行います。左上のアイコンをクリックし &ldquo;Data Sources&rdquo; を
+選択します。次に &ldquo;Add New Data Source&rdquo; ボタンをクリックします。</p>
+
+<p>下記の情報を入力しましょう。</p>
+
+<ul>
+<li>Name : influxdb</li>
+<li>Type : influxDB 0.8.x</li>
+<li>Url  : <a href="http://influxsrv:8086">http://influxsrv:8086</a></li>
+<li>Access : proxy</li>
+<li>Basic Auth User admin</li>
+<li>Basic Auth Password admin</li>
+<li>Database : cadvisor</li>
+<li>User : root</li>
+<li>Password : root</li>
+</ul>
+
+<p>さて最後にグラフを作成していきます。左メニューの &ldquo;Dashboard&rdquo; を選択し上部の
+&ldquo;Home&rdquo; ボランを押し &ldquo;+New&rdquo; を押します。</p>
+
+<p>下記の画面を参考にし値に入力していきます。</p>
+
+<p>Metrics を選択しネットワークの受信転送量をグラフにしています。</p>
+
+<ul>
+<li>series : &lsquo;stats&rsquo;</li>
+<li>alias : RX Bytes</li>
+<li>select mean(rx_bytes)</li>
+</ul>
+
+<p>同じく送信転送量もグラフにします。Add Query を押すと追加できます。</p>
+
+<ul>
+<li>series : &lsquo;stats&rsquo;</li>
+<li>alias : TX Bytes</li>
+<li>select mean(tx_bytes)</li>
+</ul>
+
+<p><img src="http://jedipunkz.github.io/pix/grafana_input_data.png" width="80%"></p>
+
+<p>時間が経過すると下記のようにグラフが描画されます。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/grafana_graph.png" width="80%"></p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>3つのソフトウェア共に開発が活発であり、cAdvisor は特に Docker コンテナの監視と
+して一般化しつつあるよう。Kubernates の一部ということもありそう簡単には廃れな
+いと想います。コンテナの中にエージェント等を入れることもなく、これで Docker コ
+ンテナのリソース監視が出来そう。ただサービス監視は別途考えなくてはいけないなぁ
+という印象です。また、今回 docker-compose に記した各コンテナのバージョンは
+Docker Hub を確認すると別バージョンもあるので時期が経ってこのブログ記事をご覧
+になった方は修正すると良いと想います。ただこの記事を書いている時点では
+influxDB の 0.9.x 系では動作しませんでした。よって latest ではなくバージョン指
+定で記してあります。</p>
+
+<h2 id="参考にしたサイト">参考にしたサイト</h2>
+
+<ul>
+<li><a href="http://qiita.com/atskimura/items/4c4aaaaa554e2814e938">http://qiita.com/atskimura/items/4c4aaaaa554e2814e938</a></li>
+<li><a href="https://www.brianchristner.io/how-to-setup-docker-monitoring/">https://www.brianchristner.io/how-to-setup-docker-monitoring/</a></li>
+</ul>
+</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -1430,228 +1715,6 @@ OpenStack の複数台構成となるとそれぞれのノードのパラメー�
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2015/06/25/minio/">オブジェクトストレージ minio を使ってみる</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2015-06-25'>
-            June 25, 2015</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは、@jedipunkz です。</p>
-
-<p>久々にブログ更新になりましたが、ウォーミングアップで minio というオブジェクト
-ストレージを使ってみたメモを記事にしたいと想います。</p>
-
-<p>minio は Minimal Object Storage の名の通り、最小限の小さなオブジェクトストレー
-ジになります。公式サイトは下記のとおりです。</p>
-
-<p><a href="http://minio.io/">http://minio.io/</a></p>
-
-<p>Golang で記述されていて Apache License v2 の元に公開されています。</p>
-
-<p>最近、資金調達の話も挙がっていたので、これから一般的になってくるのかもしれません。</p>
-
-<p>早速ですが、minio を動かしてみます。</p>
-
-<h2 id="minio-を起動する">Minio を起動する</h2>
-
-<p>方法は mithub.com/minio/minio の README に書かれていますが、バイナリを持ってき
-て実行権限を与えるだけのシンプルな手順になります。</p>
-
-<p>Linux でも Mac でも動作しますが、今回私は Mac 上で動作させました。</p>
-
-<pre><code class="language-bash">% wget https://dl.minio.io:9000/updates/2015/Jun/darwin-amd64/minio
-% chmod +x minio
-% ./minio mode memory limit 512MB
-Starting minio server on: http://127.0.0.1:9000
-Starting minio server on: http://192.168.1.123:9000
-</code></pre>
-
-<p>起動すると Listening Port と共に EndPoint の URL が表示されます。</p>
-
-<p>次に mc という minio client を使って動作確認します。</p>
-
-<h2 id="mc-を使ってアクセスする">Mc を使ってアクセスする</h2>
-
-<p>mc は下記の URL にあります。</p>
-
-<p><a href="https://github.com/minio/mc">https://github.com/minio/mc</a></p>
-
-<p>こちらもダウンロードして実行権限を付与するのみです。mc は minio だけではなく、
-Amazon S3 とも互換性がありアクセス出来ますが、せっかくなので上記で起動した
-minio にアクセスします。</p>
-
-<pre><code class="language-bash">% wget https://dl.minio.io:9000/updates/2015/Jun/darwin-amd64/mc
-% chmod +x mc
-% ./mc config generate
-/mc ls  http://127.0.0.1:9000/bucket01
-[2015-06-25 16:21:37 JST]     0B testfile
-</code></pre>
-
-<p>上記では予め作っておいた bucket01 という名前のバケットの中身を表示しています。
-作り方はこれから minio の Golang ライブラリである minio-go を使って作りました。
-これから説明します。</p>
-
-<p>また ls コマンドの他にも Usage を確認すると幾つかのサブコマンドが見つかります。</p>
-
-<h2 id="minio-の-golang-ライブラリ-minio-go-を使ってアクセスする">Minio の Golang ライブラリ minio-go を使ってアクセスする</h2>
-
-<p>さて、せっかくのオブジェクトストレージも手作業でファイルやバケットのアクセスを
-行うのはもったいないです。ソフトウェアを使って操作してす。</p>
-
-<p>minio のサンプルのコードを参考にして、下記のコードを作成してみました。</p>
-
-<pre><code class="language-go">package main
-
-import (
-    &quot;log&quot;
-    &quot;os&quot;
-
-    &quot;github.com/minio/minio-go&quot;
-)
-
-func main() {
-    config := minio.Config{
-        // AccessKeyID:     &quot;YOUR-ACCESS-KEY-HERE&quot;,
-        // SecretAccessKey: &quot;YOUR-PASSWORD-HERE&quot;,
-        Endpoint:        &quot;http://127.0.0.1:9000&quot;,
-    }
-
-    s3Client, err := minio.New(config)
-    if err != nil {
-        log.Fatalln(err)
-    }
-
-    err = s3Client.MakeBucket(&quot;bucket01&quot;, minio.BucketACL(&quot;public-read-write&quot;))
-    if err != nil {
-        log.Fatalln(err)
-    }
-    log.Println(&quot;Success: I made a bucket.&quot;)
-
-    object, err := os.Open(&quot;testfile&quot;)
-    if err != nil {
-        log.Fatalln(err)
-    }
-    defer object.Close()
-    objectInfo, err := object.Stat()
-    if err != nil {
-        object.Close()
-        log.Fatalln(err)
-    }
-
-    err = s3Client.PutObject(&quot;bucket01&quot;, &quot;testfile&quot;, &quot;application/octet-stream&quot;, objectInfo.Size(), object)
-    if err != nil {
-        log.Fatalln(err)
-    }
-
-    for bucket := range s3Client.ListBuckets() {
-        if bucket.Err != nil {
-            log.Fatalln(bucket.Err)
-        }
-        log.Println(bucket.Stat)
-    }
-
-    for object := range s3Client.ListObjects(&quot;bucket01&quot;, &quot;&quot;, true) {
-        if object.Err != nil {
-            log.Fatalln(object.Err)
-        }
-        log.Println(object.Stat)
-    }
-
-}
-</code></pre>
-
-<p>簡単ですがコードの説明をします。</p>
-
-<ul>
-<li>11行目で config の上書きをします。先ほど起動した minio の EndPoint を記します。</li>
-<li>17行目で minio にセッションを張り接続を行っています。</li>
-<li>22行目で &lsquo;bucket01&rsquo; というバケットを生成しています。その際にACLも設定</li>
-<li>28行目から42行目で &lsquo;testfile&rsquo; というローカルファイルをストレージにPUTしています。</li>
-<li>44行目でバケット一覧を表示しています。</li>
-<li>51行目で上記で作成したバケットの中のオブジェクト一覧を表示しています。</li>
-</ul>
-
-<p>実行結果は下記のとおりです。</p>
-
-<pre><code class="language-bash">2015/06/25 16:56:21 Success: I made a bucket.
-2015/06/25 16:56:21 {bucket01 2015-06-25 07:56:21.155 +0000 UTC}
-2015/06/25 16:56:21 {&quot;d41d8cd98f00b204e9800998ecf8427e&quot; testfile 2015-06-25
-07:56:21.158 +0000 UTC 0 {minio minio} STANDARD}
-</code></pre>
-
-<p>バケットの作成とオブジェクトの PUT が正常に行えたことをログから確認できます。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>上記の通り、今現在出来ることは少ないですが冒頭にも記したとおり資金調達の話も挙
-がってきていますので、これからどのような方向に向かうか楽しみでもあります。また
-最初から Golang, Python 等のライブラリが用意されているところが今どきだなぁと想
-いました。オブジェクトストレージを手作業で操作するケースは現場では殆ど無いと想
-いますので、その辺は現在では当たり前になりつつあるかもしれません。ちなみに
-Python のライブラリは下記の URL にあります。</p>
-
-<p><a href="https://github.com/minio/minio-py">https://github.com/minio/minio-py</a></p>
-
-<p>以上です。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2015/06/25/minio/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1768,6 +1831,20 @@ Python のライブラリは下記の URL にあります。</p>
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-14'>
+                                    July 14, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
                                 
                                     
@@ -1807,20 +1884,6 @@ Python のライブラリは下記の URL にあります。</p>
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-22'>
-                                    December 22, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1855,7 +1918,7 @@ Python のライブラリは下記の URL にあります。</p>
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">99</span>
+                                <span style="float:right;">100</span>
                             </header>
                         </article>
                     </li>

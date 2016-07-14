@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2013-03-06T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-03-15T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/"><p>Weave を使った Docker ネットワーク</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,263 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/03/15/chef-contenuously-deploy/">chef-client の継続的デリバリ</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-03-15'>
+            March 15, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>久々に Chef の話題。</p>
+
+<p>有名な方々が最近 Chef について記事書いたりで Chef が再び盛り上がってきましたね。
+僕のブログにも chef-solo で検索してアクセスしてくる方が増えているようです。</p>
+
+<p>ちょうど今、仕事で試験的なサービスを立ち上げてそこで Chef を使っているのですが Server,
+Workstation, Target Node(s) の構成で使っていて、僕らは最初から chef-solo と
+capistrano でってことは考えていませんでした。もちろん chef-solo + capistrano
+の環境も調査しましたが、今の Server 構成が便利なのでもう戻れない。</p>
+
+<p>今日は Chef サーバ構成の良さについての記事ではないですが、それについては次回、
+時間見つけて書こうかと思ってます。</p>
+
+<p>今日は &lsquo;chef-client をどうアップデートするか&rsquo; について。せっかく Chef
+でサーバ構成を継続的にデプロイ出来ても Chef 自身をアップデート出来ないと悲しい
+ですよね。chef-client が稼働しているインスタンスなんて起動して利用してすぐに破
+棄だって時代ですが、なかなかそうもいなかい気がしています。</p>
+
+<p>「ほら、だから chef-solo 使えばいいんだよ！」って思ってるあなた！違うんですよー。
+そのデメリットを上回るメリットが Chef サーバ構成にあるんです。次回書きますｗ</p>
+
+<p>Chef10 から Chef11 と試験してみるにはちょうど良い時期でした。今回の構成は&hellip;</p>
+
+<h2 id="旧環境">旧環境</h2>
+
+<pre><code>+------------------+
+|   chef server    |
+|  version 10.18   |
++------------------+
+^
+|
++--------------------+
+|                    |
+|                    |
++------------------+ +------------------+
+| chef workstation | |   target node    |
+|  version 10.24   | |  version 10.24   |
++------------------+ +------------------+
+</code></pre>
+
+<ul>
+<li>chef server は apt.opscode.com レポジトリを利用した Chef 10.18 なもの</li>
+<li>chef workstaion は version 10.24 (2013年3月15日現在 10.x 系最新)</li>
+<li>target node は chef workstaion から knife bootstrap を行い構成</li>
+</ul>
+
+<p>knife bootstrap の際に下記のオプションを指定します。</p>
+
+<pre><code>% knife bootstrap -N vmtest01 -r 'role[base]' \ -i -x root -d chef-full
+</code></pre>
+
+<p>distro は chef-full を選択。chef-full については下記にコードがあります。</p>
+
+<p><a href="https://github.com/opscode/chef/blob/master/lib/chef/knife/bootstrap/chef-full.erb">https://github.com/opscode/chef/blob/master/lib/chef/knife/bootstrap/chef-full.erb</a></p>
+
+<p>コードを抜粋すると、omnibus インストーラをダンロードして実行しているのがわかり
+ます。つまり Chef11 環境で再度 knife bootstrap すれば新しい Chef がインストー
+ルされるはず。</p>
+
+<pre><code class="language-bash">install_sh=&quot;http://opscode.com/chef/install.sh&quot;
+version_string=&quot;-v &lt;%= chef_version %&gt;&quot;
+
+if ! exists /usr/bin/chef-client; then
+  if exists wget; then
+    bash &lt;(wget &lt;%= &quot;--proxy=on &quot; if knife_config[:bootstrap_proxy] %&gt; ${install_sh} -O -) ${version_string}
+  elif exists curl; then
+    bash &lt;(curl -L &lt;%= &quot;--proxy \&quot;#{knife_config[:bootstrap_proxy]}\&quot; &quot; if knife_config[:bootstrap_proxy] %&gt; ${install_sh}) ${version_string}
+  else
+    echo &quot;Neither wget nor curl found. Please install one and try again.&quot; &gt;&amp;2
+    exit 1
+  fi
+fi
+</code></pre>
+
+<p>このように Chef10 で運用している状態を Chef11 に移行します。新しい環境は&hellip;</p>
+
+<h2 id="新環境">新環境</h2>
+
+<pre><code>+------------------+ +------------------+
+|   chef server    | |   chef server    |
+|  version 10.18   | |  version 11.0.6  |
++------------------+ +------------------+
+                     ^
+                     |
++--------------------+
+|                    |
+|                    |
++------------------+ +------------------+
+| chef workstation | |   target node    |
+|  version 11.4    | |  version 11.4    |
++------------------+ +------------------+
+</code></pre>
+
+<ul>
+<li>chef server は omnibus インストールから構築</li>
+<li>chef workstation は version 11.4 (2013年3月15日現在最新)</li>
+</ul>
+
+<h2 id="移行手順">移行手順</h2>
+
+<h4 id="chef11-サーバを用意する">Chef11 サーバを用意する</h4>
+
+<p>Omnibus インストーラでコマンド3つ打つだけで Chef サーバは構築出来ます。Chef11
+からはこの方法が推奨されているようです。bootstrap を使った方法より簡単ですし。</p>
+
+<pre><code>% wget https://opscode-omnitruck-release.s3.amazonaws.com/ubuntu/12.04/x86_64/chef-server_11.0.6-1.ubuntu.12.04_amd64.deb
+% sudo dpkg -i chef-server_11.0.6-1.ubuntu.12.04_amd64.deb
+% sudo chef-server-ctl reconfigure
+</code></pre>
+
+<h4 id="chef11-workstation-を用意する">Chef11 Workstation を用意する</h4>
+
+<p>詳細は割愛します。chef10 と同じです。手順としては</p>
+
+<ul>
+<li>chef10 の chef-repo をコピー</li>
+<li>pem ファイル群を chef11 server からコピー</li>
+<li>knife configure -i にて knife.rb の生成</li>
+<li>cookbooks, roles, data_bags, environments 等を chef11 にアップロード。若干修正が必要な場合がある。</li>
+</ul>
+
+<p>です。</p>
+
+<h4 id="target-node-における旧-chef-client-の停止と削除">Target Node における旧 chef-client の停止と削除</h4>
+
+<p>稼働している Chef10 の chef-client を停止し削除、そして pem ファイル達を退避し
+てあげます。ここでは ssh で消す例を書きますが、これこそ Cookbook を書いて実行
+すれば良いと思います。</p>
+
+<pre><code>% ssh -i &lt;ssh_secret_key&gt; -l root &lt;ip_address&gt; \
+'service chef-client stop; apt-get -y remove chef; mv /etc/chef /etc/chef.old'
+</code></pre>
+
+<h4 id="再-knife-bootstrap-実行">再 knife bootstrap 実行</h4>
+
+<p>Chef11 の Workstation から knife bootstrap を実行します。これによって Target
+Node に Chef11 の環境がインストールされ Chef11 Server と接続出来ます。</p>
+
+<pre><code>% knife bootstrap &lt;ip_address&gt; -N vmtest01 -r 'role[base]' -i &lt;ssh_secret_key&gt; \
+-x root -d chef-full
+</code></pre>
+
+<p>role[base] 中の run_list に&rsquo;chef-client::service&rsquo; を追加すると chef-client が
+常時稼動してくれて定期的に Chef Server と接続、更新してくれます。</p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>chef-client の更新は簡単に出来た！</p>
+
+<p>今回はデフォルトの distro &lsquo;chef-full&rsquo; の例で書いたのだけど、distro には他にも
+下記がある。</p>
+
+<p><a href="https://github.com/opscode/chef/tree/master/lib/chef/knife/bootstrap">https://github.com/opscode/chef/tree/master/lib/chef/knife/bootstrap</a></p>
+
+<p>Linux のディストリビューション名がついた distro は ruby をパッケージで, Chef
+を gem でインストールしている。下記は distro &lsquo;ubuntu12.04-gems&rsquo; のコードの抜粋
+です。</p>
+
+<pre><code class="language-bash">if [ ! -f /usr/bin/chef-client ]; then
+  aptitude update
+  aptitude install -y ruby ruby1.8-dev build-essential wget libruby1.8 rubygems
+fi
+  
+gem update --no-rdoc --no-ri
+gem install ohai --no-rdoc --no-ri --verbose
+gem install chef --no-rdoc --no-ri --verbose &lt;%= bootstrap_version_string %&gt;
+</code></pre>
+
+<p>ruby はディストリビューションが用意しているパッケージを。Chef は
+bootstrap_version_string を指定し gem でインストールしている。</p>
+
+<p>つまり &lsquo;ubuntu12.04-gems&rsquo; でも chef-client の更新は出来る。ちなみに試してみま
+した。chef-client の停止・削除を下記の通り行うと、全く同じ knife bootstrap コ
+マンドで chef-client のアップデートが行えた。</p>
+
+<pre><code>% ssh -i &lt;ssh_secret_key&gt; -l root &lt;ip_address&gt; 'service chef-client stop; mv \
+/usr/local/bin/chef-client /usr/local/bin/chef-client.old; mv /etc/chef /etc/chef.old'
+</code></pre>
+
+<p>以上です。</p>
+
+<p>なんか簡単なこと書くのに長くなっちゃったけど&hellip;。運用を僕らはまだ出来ていない
+のだけど、その時のことを考えると今回の試験はしてみたかったし、いい結果が出てよ
+かった。Chef がメジャーバージョンアップされて Chef Server の構成が大きく代わっ
+ても対応した cookbook, role, .. があればスムースに移行出来る。</p>
+
+<p>Chef 無しにはインフラエンジニアやってられない時代が来たって感じｗ Chef 周りた
+のしー！</p>
+
+<p>追伸: 今回の方法より良いベストプラクティス的な方法があれば教えて下さい。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/03/15/chef-contenuously-deploy/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -796,165 +1053,6 @@ knife bootstrap 10.0.0.12 -i ~/.ssh/id_rsa -x root -E production -r 'role[allino
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/02/01/spiceweasel-knife-bootstrap/">Spiceweasel で knife バッチ処理</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-02-01'>
-            February 1, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>Spiceweasel <a href="https://github.com/mattray/spiceweasel#cookbooks">https://github.com/mattray/spiceweasel#cookbooks</a> を使ってみた。</p>
-
-<p>Spiceweasel は Chef の cookbook のダウンロード, role/cookbook の chef server
-へのアップロード, ブートストラップ等をバッチ処理的に行なってくれる(もしくはコ
-マンドラインを出力してくれる)ツールで、自分的にイケてるなと感じたのでブログに
-書いておきます。</p>
-
-<p>クラウドフェデレーション的サービスというかフロントエンドサービスというか、複数
-のクラウドを扱えるサービスは増えてきているけど、chef を扱えるエンジニアであれ
-ば、この Spiceweasel で簡単・一括デプロイ出来るので良いのではないかと。</p>
-
-<p>早速だけど chef-repo にこんな yamp ファイルを用意します。</p>
-
-<pre><code>cookbooks:
-- apt:
-- nginx:
-
-roles:
-- base:
-
-nodes:
-- 172.24.17.3:
-    run_list: role[base]
-    options: -i ~/.ssh/testkey01 -x root -N webset01
-- 172.24.17.4:
-    run_list: role[base]
-    options: -i ~/.ssh/testkey01 -x root -N webset02
-</code></pre>
-
-<p>上から説明すると&hellip;</p>
-
-<ul>
-<li>&lsquo;apt&rsquo;, &lsquo;nginx&rsquo; の cookbook を opscode レポジトリからダウンロード</li>
-<li>&lsquo;apt&rsquo;, &lsquo;nginx&rsquo; の cookbook を chef-server へアップロード</li>
-<li>roles/base.rb を chef-server へアップロード</li>
-<li>2つのノードに対して bootstrap 仕掛ける</li>
-</ul>
-
-<p>ってことをやるためのファイルです。予め chef-repo と roles は用意してあげる必要
-があります。この辺りは knife の操作のための準備と全く同じ。また Spiceweasel は、
-この yaml フィアル内の各パラメータや指定した role の内容の依存関係をチェックし
-てくれます。</p>
-
-<p>では、このファイルに対して</p>
-
-<pre><code>% spiceweasel &lt;yaml ファイル名&gt;
-</code></pre>
-
-<p>すると、結果として下記のようなバッチが取得出来る。</p>
-
-<pre><code>knife cookbook site download apt  --file cookbooks/apt.tgz
-tar -C cookbooks/ -xf cookbooks/apt.tgz
-rm -f cookbooks/apt.tgz
-knife cookbook upload apt
-knife cookbook site download test  --file cookbooks/test.tgz
-tar -C cookbooks/ -xf cookbooks/test.tgz
-rm -f cookbooks/test.tgz
-knife cookbook upload test
-knife role from file base.rb
-knife bootstrap 172.24.17.3 -i ~/.ssh/testkey01 -x root -N webset01 -r 'role[base]'
-knife bootstrap 172.24.17.4 -i ~/.ssh/testkey01 -x root -N webset02 -r 'role[base]'
-</code></pre>
-
-<p>尚且つ -e オプションを指定すると、実際にこれらのバッチを実行出来る。cookbooks
-ディレクトリに予めレシピが存在すればダウンロードのバッチは省略されるぽいし、-d
-を指定すると逆にノード削除バッチ処理、-r でリビルドのためのバッチ処理が得られ
-る。</p>
-
-<p>削除系・リビルド系は現時点では不具合が見られました。実行すると他の環境にも影響
-出るので注意が必要。</p>
-
-<p>個人的にはプライベートレポジトリの cookbooks も取ってこれるようになると嬉しい。
-まぁ、Berkshelf 使えばいいのだけど。<a href="http://berkshelf.com/">http://berkshelf.com/</a></p>
-
-<p>開発者の Matt Ray さんの資料によれば Chef for OpenStack もこの Spiceweasel を
-使う方向で修正が掛かったらしい。個人的には一番興味あるところ。ちなみに Chef
-for OpenStack は folsom ベースが現在 &lsquo;active development&rsquo; 状態らしい。</p>
-
-<p>Opscode のサイトで紹介されているサンプルは古いバージョンでの指定方法らしく、注
-意が必要です。</p>
-
-<p><a href="http://wiki.opscode.com/display/chef/Spiceweasel">http://wiki.opscode.com/display/chef/Spiceweasel</a></p>
-
-<h4 id="所感">所感</h4>
-
-<p>chef, knife 周りはいろんな関連技術があるので技術を選定する上で迷ってしまうこと
-が多いのだけど、この Spiceweasel には可能性を感じました。って言うのは、Chef が
-実装出来ていないインテグレーションやオーケストレーションっていう所まで踏み込め
-る可能性があるから。ノード間の関連付けが出来るんです。Swift-Storage と
-Swift-Proxy の関連付け、または Load-Balancer と HTTP-Server の関連付け等。継続
-的デリバリなインテグレーションって Chef を使ってどう実現するんだ？って思ってい
-た時があったのですが、こういったラッパーツールの登場で解決されそうな気がします。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/02/01/spiceweasel-knife-bootstrap/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Categories
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-        <li><a href='/categoriestools'>tools</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1071,6 +1169,20 @@ Swift-Proxy の関連付け、または Load-Balancer と HTTP-Server の関連�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-14'>
+                                    July 14, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
                                 
                                     
@@ -1110,20 +1222,6 @@ Swift-Proxy の関連付け、または Load-Balancer と HTTP-Server の関連�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-22'>
-                                    December 22, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1158,7 +1256,7 @@ Swift-Proxy の関連付け、または Load-Balancer と HTTP-Server の関連�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">99</span>
+                                <span style="float:right;">100</span>
                             </header>
                         </article>
                     </li>

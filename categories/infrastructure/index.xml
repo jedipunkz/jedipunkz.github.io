@@ -6,8 +6,179 @@
     <description>Recent content in infrastructure on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 02 Jul 2016 23:37:17 +0900</lastBuildDate>
+    <lastBuildDate>Thu, 14 Jul 2016 09:10:57 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/categories/infrastructure/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</title>
+      <link>http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/</link>
+      <pubDate>Thu, 14 Jul 2016 09:10:57 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;私もインフラのプロビジョニングツールとして Chef ではなく Ansible を使うことが増えたのですが、Chef を使っていた頃に同じく利用していた test-kitchen が便利だったので ansible と併用できないかと思い試してみました。test-kitchen は Docker コンテナや EC2 等を起動して Chef, Ansible 等で構成をデプロイし serverspec 等のテストツールで構成をテストできるソフトウェアです。AWS EC2 でデプロイしてもいいのですが、EC2 を起動してデプロイして失敗したら削除してのサイクルを回すことを考えるとだいぶ面倒なので Docker + test-kitchen を使ってこのサイクルを高速に回す方がメリットが大きそうです。今回は Docker + test-kitchen を使って Ansible Role (Playbook) を開発するサイクルを高速化する方法を記したいと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;ソフトウェアの構成&#34;&gt;ソフトウェアの構成&lt;/h2&gt;
+
+&lt;p&gt;構成は、私の場合 Mac OSX を使っているので下記のとおりです。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;test-kitchen&lt;/li&gt;
+&lt;li&gt;kitchen-ansible (test-kitchen ドライバ)&lt;/li&gt;
+&lt;li&gt;kitchen-docker (test-kitchen ドライバ)p&lt;/li&gt;
+&lt;li&gt;serverspec&lt;/li&gt;
+&lt;li&gt;ansible&lt;/li&gt;
+&lt;li&gt;docker (Docker-machine)&lt;/li&gt;
+&lt;li&gt;VirtualBox&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Linux でネイティブな Docker を使っている方は以降、読み替えて下さい。読み替えるのはそれほど難しくないと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;ソフトウェアのインストール&#34;&gt;ソフトウェアのインストール&lt;/h2&gt;
+
+&lt;p&gt;今回は上記ソフトウェアのインストール方法は省きます。test-kitchen, kitchen-ansible, kitchen-docker, serverspec は Ruby で開発されたソフトウェアなので Gemfile 等で管理、ansible は pip 等でインストールしてください。&lt;/p&gt;
+
+&lt;h2 id=&#34;環境作成&#34;&gt;環境作成&lt;/h2&gt;
+
+&lt;p&gt;test-kitchen が稼働するように環境を作っていきます。
+作業ディレクトリで kitchen コマンドを使って初期設定を行います。今回は試しに nginx のデプロイを実施したいと思います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ mkdir -p test-kitchen/nginx test-kitchen/roles
+$ cd test-kitchen/nginx
+$ kitchen init
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;また上記で作成した roles ディレクトリに ansible-galaxy で nginx の role を取得します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ ansible-galaxy install geerlingguy.nginx -p ../roles/nginx
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;下記の内容を .kitchen.local.yml として保存してください。
+Docker ホストの指定、Provisioner として ansible の指定、Platform として &amp;lsquo;ubuntu:16.04&amp;rsquo; の Docker コンテナの指定を行っています。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;---
+driver:
+  name: docker
+  binary: /usr/local/bin/docker
+  socker: tcp://192.168.99.100:2376
+
+provisioner:
+  name: ansible_playbook
+  playbook: ./site.yml
+  roles_path: ../roles
+  host_vars_path: ./host_vars
+  hosts: kitchen-deploy
+  require_ansible_omnibus: false
+  ansible_platform: ubuntu
+  require_chef_for_busser: true
+
+platforms:
+    - name: ubuntu
+      driver_config:
+        image: ubuntu:16.04
+        platform: ubuntu
+        require_chef_omnibus: false
+
+suites:
+  - name: default
+    run_list:
+    attributes:
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここからは上記 .kitchen.local.yml ファイル内で指定したファイルの準備を行っていきます。&lt;/p&gt;
+
+&lt;p&gt;site.yml ファイルの内容を下記のように書いてください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;---
+- hosts: kitchen-deploy
+  sudo: yes
+  roles:
+    - { role: geerlingguy.nginx, tags: nginx }
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;host_vars/hosts ファイルを作成します。&amp;rsquo;host_vars&amp;rsquo; ディレクトリは手動で作成してください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;localhost              ansible_connection=local
+[kitchen-deploy]
+localhost
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に serverspec で行うテストの内容を作成します。
+serverspec-init コマンドではインタラクティブに回答しますが、SSH ではなく EXEC(Local) を選択することに注意してください。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ mkdir -p test/integration/default/serverspec
+$ cd test/integration/default/serverspec
+$ serverspec-init             # &amp;lt;--- インタラクティブに回答 : 1) UNIX, 2) EXEC(Local) を選択
+$ rm localhost/sample_spec.rb # &amp;lt;--- 必要ないので削除
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;test/integration/default/serverspec/localhost/nginx_spec.rb として下記の内容を試しに書いてみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;require &#39;spec_helper&#39;
+
+describe package(&#39;nginx&#39;) do
+    it { should be_installed }
+end
+
+describe service(&#39;nginx&#39;) do
+    it { should be_enabled }
+    it { should be_running }
+end
+
+describe file(&#39;/etc/nginx/nginx.conf&#39;) do
+    it { should be_file }
+end
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;下記のようなファイルとディレクトリ構成になっていることを確認しましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;.
+├── nginx
+│   ├── chefignore
+│   ├── host_vars
+│   │   └── hosts
+│   ├── site.yml
+│   └── test
+│       └── integration
+│           └── default
+│               ├── Rakefile
+│               └── serverspec
+│                   ├── localhost
+│                   │   └── nginx_spec.rb
+│                   └── spec_helper.rb
+└── roles
+    └── geerlingguy.nginx
+        ├── README.md
+        &amp;lt;省略&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;デプロイ-テストを実行する&#34;&gt;デプロイ・テストを実行する&lt;/h2&gt;
+
+&lt;p&gt;環境作成が完了したの Docker コンテナを起動し Ansible でデプロイ、その後 Serverspec でテストしてみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ cd test-kitchen
+$ kitchen create  # &amp;lt;--- Docker コンテナ起動
+$ kitchen setup   # &amp;lt;--- Ansible デプロイ
+$ kitchen verify  # &amp;lt;--- Serverspec テスト
+$ kitchen destroy # &amp;lt;--- コンテナ削除
+$ kitchen test    # &amp;lt;--- 上の4つのコマンドを一気に実行
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;Ansible でも test-kitchen を使ってデプロイ・テストが出来ることが分かりました。インスタンスを使ってデプロイ・テストを実施するよりコンテナを使うほうが失敗した際に削除・起動するのも一瞬で終わりますし Ansible 開発が高速化できることも実際に触っていただいてわかっていただけると思います。&lt;/p&gt;
+
+&lt;p&gt;ただ上記の手順ではコンテナの中に Ruby, Chef も一緒にインストールされてしまいます。
+test-kitchen 的には下記の記述を .kitchen.local.yml の provisioner: の欄に記述すると Chef のインストールは省けるはず (Ruby は Serverspec で用いる) のですが今現在 (2016/7中旬) では NG でした。これが正常に機能するようになるともっと高速にコンテナデプロイが完了すると思うので残念です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;require_chef_for_busser: false
+require_ruby_for_busser: true
+&lt;/code&gt;&lt;/pre&gt;
+</description>
+    </item>
     
     <item>
       <title>イベントドリブンな StackStorm で運用自動化</title>
@@ -3970,80 +4141,6 @@ CONTAINER ID        IMAGE               COMMAND              CREATED            
 &lt;li&gt;CreationLine さんブログ &lt;a href=&#34;http://www.creationline.com/lab/5346&#34;&gt;http://www.creationline.com/lab/5346&lt;/a&gt;&lt;/li&gt;
 &lt;li&gt;公式サイト &lt;a href=&#34;http://docs.opscode.com/containers.html&#34;&gt;http://docs.opscode.com/containers.html&lt;/a&gt;&lt;/li&gt;
 &lt;/ul&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>JTF2014 で Ceph について話してきた！</title>
-      <link>http://jedipunkz.github.io/blog/2014/06/22/jtf2014-ceph/</link>
-      <pubDate>Sun, 22 Jun 2014 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2014/06/22/jtf2014-ceph/</guid>
-      <description>&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;今日、JTF2014 (July Tech Festa 2014) というイベントで Ceph のことを話してきま
-した。Ceph ユーザ会の会員として話してきたのですが Ceph ユーザ会は実は最近発足
-したばかりのユーザ会で、まだまだ活動が活発ではありません。もし興味がある方いらっ
-しゃいましたら是非参加よろしくお願いしますー。下記の Google Groups になります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://groups.google.com/forum/#!forum/ceph-jp&#34;&gt;https://groups.google.com/forum/#!forum/ceph-jp&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;ユーザ会としての勉強会として初になるのですが、今回このイベントで自分は
-Ceph-Deploy について話してきました。とりあえず皆さんに使ってもらいたかったので
-この話をしてきました。が、予定時間がメチャ短かったので超絶早口で頑張った分、皆
-さんに理解してもらえなかった気がしてちょっと反省&amp;hellip;。なので、このブログを利用
-して少し細くさせてもらいます。&lt;/p&gt;
-
-&lt;p&gt;今日の発表資料はこちらです！&lt;/p&gt;
-
-&lt;script async class=&#34;speakerdeck-embed&#34;
-data-id=&#34;592a0b90ceb30131a5d25ae3f95c3a1a&#34; data-ratio=&#34;1.33333333333333&#34; src=&#34;//speakerdeck.com/assets/embed.js&#34;&gt;&lt;/script&gt;
-
-&lt;p&gt;今日のテーマは 「Ceph-Deploy を使って Ceph を構築してみる」だったのですが、下
-記のテーマを持って資料を作っています。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;単にミニマム構成ではなく運用を考慮した実用性のある構成&lt;/li&gt;
-&lt;li&gt;OSD, MON, MDS の各プロセスとノード・ディスクの数の関係を知ってもらう&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;特に「実用性のある..」は意識したつもりでした。そのために前提とした構成に下記の
-特徴を持たせています。(資料 6 ページ目に構成図があります。確認してみてください。)&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;オブジェクト格納用ディスクは複数/ノードを前提&lt;/li&gt;
-&lt;li&gt;OSD レプリケーションのためのクラスタネットワークを用いる構成&lt;/li&gt;
-&lt;li&gt;OSD の扱うジャーナル格納用ディスクは高速な SSD を用いる&lt;/li&gt;
-&lt;li&gt;MDS は利用する HW リソースの特徴が異なるので別ノードへ配置&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;ストレージ全体を拡張したければ&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;図中 ceph01-03 の様なノードを増設する&lt;/li&gt;
-&lt;li&gt;ceph01-03 にディスクとそれに対する OSD を増設する&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;ですが、前者がベストでしょう。ノード増設の場合 ceph-deploy を用いて&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;ceph-deploy mon create &amp;lt;新規ホスト名&amp;gt; で MON を稼働&lt;/li&gt;
-&lt;li&gt;ceph-dploy disk zap, osd create で OSD を稼働&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;で簡単に可能です。MDS の増設も負荷状況を見ながらするといいでしょう。自分はまだ
-Ceph を運用していないので、各プロセスがどのようなリソースの消費の仕方をするの
-か知りません。MDS がどのような数で運用していくべきなのか。早く運用から得たノウ
-ハウが共有されないかなぁと期待しています。&lt;/p&gt;
-
-&lt;p&gt;また今回話すのを忘れたのですが SSD をジャーナル格納用ディスクとして用いたのは
-ハードディスクに対して高速でアクセス出来ること・またメタデータはファイルオブジェ
-クトに対して小容量で済む、といった理由からです。メタデータを扱うのに適している
-と思います。また将来的には幾つかの KVS データベースソフトウェアをメタデータ管
-理に使う実装がされるそうです。&lt;/p&gt;
-
-&lt;p&gt;以上です。皆さん、是非 Ceph を使ってみてください！ また興味のある方はユーザ会
-への加入をご検討くださいー。&lt;/p&gt;
 </description>
     </item>
     
