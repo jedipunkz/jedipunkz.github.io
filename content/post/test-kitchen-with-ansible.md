@@ -22,7 +22,7 @@ title = "Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！"
 
 * test-kitchen
 * kitchen-ansible (test-kitchen ドライバ)
-* kitchen-docker (test-kitchen ドライバ)p
+* kitchen-docker (test-kitchen ドライバ)
 * serverspec
 * ansible
 * docker (Docker-machine)
