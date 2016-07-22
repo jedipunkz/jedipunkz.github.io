@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2012-12-08T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2012-11-21T00:00:00&#43;00:00"/>
 
 
 
@@ -198,10 +198,6 @@ ga('send', 'pageview');
 
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語でInfluxDBにメトリクスデータを挿入</p></a>
-                    </li>
-                
-                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
@@ -211,6 +207,10 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
             </ul>
@@ -224,322 +224,6 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
-        
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2012/12/08/knife-fog-openstack-api/">OpenStack API を理解しインフラエンジニアの仕事の変化を感じる</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2012-12-08'>
-            December 8, 2012</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>今日は &ldquo;OpenStack Advent Calendar 2012 JP&rdquo; というイベントのために記事を書きた
-いと思います。Advent Calendar とはキリスト生誕を祝うため <sup>12</sup>&frasl;<sub>25</sub> まで毎日誰かがブログ
-等で特定の話題について述べるもの、らしいです。CloudStack さん, Eucalyptus さん
-も今年はやっているそうですね。</p>
-
-<p>イベントサイト : <a href="http://atnd.org/events/34389">http://atnd.org/events/34389</a></p>
-
-<p>では早速！(ただ..CloudStack の Advent Calendar とネタがかぶり気味です..。)</p>
-
-<p>御存知の通り OpenStack は API を提供していてユーザがコードを書くことで
-OpenStack のコマンド・Horizon で出来ることは全て可能です。API を叩くのに幾つか
-フレームワークが存在します。</p>
-
-<ul>
-<li>fog</li>
-<li>libcloud</li>
-<li>deltacloud</li>
-</ul>
-
-<p>などです。</p>
-
-<p>ここでは内部で fog を使っている knife-openstack を利用して API に触れてみよう
-かと思います。API を叩くことを想像してもらって、インフラエンジニアの仕事内容の
-変化まで述べられたらいいなぁと思っています。</p>
-
-<h2 id="openstack-環境の用意">OpenStack 環境の用意</h2>
-
-<p>予め OpenStack 環境は揃っているものとしますです。お持ちでなければ</p>
-
-<p><a href="http://jedipunkz.github.com/blog/2012/11/10/openstack-folsom-install/">http://jedipunkz.github.com/blog/2012/11/10/openstack-folsom-install/</a></p>
-
-<p>この記事を参考に環境を作ってみて下さい。あ、devstack でも大丈夫です。</p>
-
-<h2 id="chef-knife-openstack-の用意">chef, knife-openstack の用意</h2>
-
-<p>chef, knife-openstack を入れるのは OpenStack 環境でも、別のノードでも構いません。</p>
-
-<p>chef が確か 1.9.2 ベースが推奨だったので今回は 1.9.2-p320 使います。
-ruby は rbenv で入れるのがオススメです。knife-openstack, chef のインストールは&hellip;</p>
-
-<pre><code>% sudo apt-get install libreadline-dev libxslt1-dev libxml2-dev
-% gem install chef --no-rdoc --no-ri
-% gem install knife-openstack --no-rdoc --no-ri
-% rbenv rehash # rbenv を使っている際に実行..
-</code></pre>
-
-<p>次に knife.rb を用意します。情報として下記を</p>
-
-<ul>
-<li>OS_USERNAME : :openstack_username</li>
-<li>OS_PASSWORD : :openstack_password</li>
-<li>OS_AUTH_URL : :openstack_auth_url</li>
-<li>OS_TENANT_NAME : :openstack_tenant</li>
-</ul>
-
-<p>追加します。例として下記を参考にしてください。</p>
-
-<pre><code>% mkdir .chef
-% ${EDITOR} .chef/knife.rb
-
-knife[:openstack_username] = &quot;demo&quot;
-knife[:openstack_password] = &quot;demo&quot;
-knife[:openstack_auth_url] = &quot;http://172.16.1.11:5000/v2.0/tokens&quot;
-knife[:openstack_tenant] = &quot;service&quot;
-</code></pre>
-
-<p>ここで注意なのが OS_AUTH_URL がいつもコマンドラインで扱うものと違い /tokens が
-付いています。fog を直に扱う時も同じですがこれが必要です。</p>
-
-<h2 id="ssh-keypair-の用意">ssh keypair の用意</h2>
-
-<p>ssh keypair が必要になってくるので用意します。</p>
-
-<pre><code>% nova keypair-add testkey01 &gt; testkey01
-</code></pre>
-
-<h2 id="knife-openstack-の操作方法">knife-openstack の操作方法</h2>
-
-<p>いよいよ knife-openstack を使って OpenStack を操作してみましょう。</p>
-
-<p>まずは flavor のリストを取得します。</p>
-
-<pre><code>% knife openstack flavor list
-ID  Name       Virtual CPUs  RAM       Disk
-1   m1.tiny    1             512 MB    0 GB
-2   m1.small   1             2048 MB   20 GB
-3   m1.medium  2             4096 MB   40 GB
-4   m1.large   4             8192 MB   80 GB
-5   m1.xlarge  8             16384 MB  160 GB
-</code></pre>
-
-<p>image リストを取得します。id が必要になります。</p>
-
-<pre><code>% knife openstack image list
-ID                                    Name
-436deba5-8fab-4bb7-9205-41e33fe22744  Cirros 0.3.0 x86_64
-</code></pre>
-
-<p>VM を生成してみましょー。</p>
-
-<pre><code>% knife openstack server create -f 1 -I 436deba5-8fab-4bb7-9205-41e33fe22744 -S testkey01 -N knifetest01
-Instance Name: knifetest01
-Instance ID: 1e20850d-9572-46c8-a41e-fdf56f4f65a7
-SSH Keypair: testkey
-
-Waiting for server............
-Flavor: 1
-Image: 436deba5-8fab-4bb7-9205-41e33fe22744
-</code></pre>
-
-<p>出来たかどうか、チェック。</p>
-
-<pre><code>% knife openstack server list
-Instance ID                           Name         Public IP  Private IP  Flavor  Image                                 Keypair   State
-1e20850d-9572-46c8-a41e-fdf56f4f65a7  knifetest01                         1       436deba5-8fab-4bb7-9205-41e33fe22744  hogehoge  active
-</code></pre>
-
-<p>できました。逆に VM を削除するには</p>
-
-<pre><code>% knife openstack server delete 1e20850d-9572-46c8-a41e-fdf56f4f65a7
-Instance ID: 1e20850d-9572-46c8-a41e-fdf56f4f65a7
-Instance Name: knifetest01
-Flavor: 1
-Image: 436deba5-8fab-4bb7-9205-41e33fe22744
-
-Do you really want to delete this server? (Y/N) y
-WARNING: Deleted server 1e20850d-9572-46c8-a41e-fdf56f4f65a7
-WARNING: Corresponding node and client for the 1e20850d-9572-46c8-a41e-fdf56f4f65a7 server were not deleted and remain registered with the Chef Server
-</code></pre>
-
-<p>です。</p>
-
-<p>残念なところとしては knife-openstack 自体はまだまだ機能が充実していません。VM
-の基本的な操作くらいしか出来ないので、追加実装したいという方がいらっしゃいまし
-たら Pull リクエスト送ると良いのではないでしょうか。</p>
-
-<p>knife-openstack 公式サイト : <a href="https://github.com/opscode/knife-openstack">https://github.com/opscode/knife-openstack</a></p>
-
-<p>まぁ、ここまで書いてアレですが.. 気がついた方もいらっしゃると思います。
-knife-openstack で出来ることは openstack コマンド群で全て出来るのであまり意味
-はないですよね。ただ fog を使って API を叩くことを想像して欲しくて..( -_- )</p>
-
-<h2 id="fog-単体で操作してみる">Fog 単体で操作してみる</h2>
-
-<p>今日はまだまだ書ける！</p>
-
-<p>knife-openstack では基本的な操作しか出来ませんでしたが fog はより多くの機能を実装しています。(2012/12/08 現在 quantum 周りの開発は未
-完成らしいです。floating-ip 周りがぁ。誰かコミットして。)</p>
-
-<p>fog 単体で OpenStack API を操作するには、下記の通り実行します。fog をインストー
-ルし&hellip;</p>
-
-<pre><code>% gem install fog --no-rdoc --no-ri
-% rbenv rehash
-</code></pre>
-
-<p>環境変数を入力し&hellip; (情報は例です)</p>
-
-<pre><code>% cat env
-export OS_TENANT_NAME=service
-export OS_USERNAME=demo
-export OS_PASSWORD=demo
-export OS_AUTH_URL=&quot;http://172.16.1.11:5000/v2.0/&quot;
-export OS_AUTH_URL_FOG=&quot;http://172.16.1.11:5000/v2.0/tokens&quot;
-% source env
-</code></pre>
-
-<p>コードを下記のように記述すると VM の生成が行えます。
-``` ruby
-    #!/usr/bin/env ruby</p>
-
-<pre><code>require 'fog'
-require 'pp'
-
-conn = Fog::Compute.new({
-  :provider =&gt; 'OpenStack',
-  :openstack_api_key =&gt; ENV['OS_PASSWORD'],
-  :openstack_username =&gt; ENV[&quot;OS_USERNAME&quot;],
-  :openstack_auth_url =&gt; ENV[&quot;OS_AUTH_URL_FOG&quot;],
-  :openstack_tenant =&gt; ENV[&quot;OS_TENANT_NAME&quot;]
-})
-
-flavor = conn.flavors.find { |f| f.name == 'm1.tiny' }
-
-image_name = 'Cirros 0.3.0 x86_64'
-image = conn.images.find { |i| i.name == image_name }
-
-puts &quot;#{'Creating server'} from image #{image.name}...&quot;
-server = conn.servers.create :name =&gt; &quot;fogvm-#{Time.now.strftime '%Y%m%d-%H%M%S'}&quot;,
-                             :image_ref =&gt; image.id,
-                             :flavor_ref =&gt; flavor.id,
-                             :key_name =&gt; 'testkey01'
-server.wait_for { ready? }
-</code></pre>
-
-<p>````</p>
-
-<p>実行 !</p>
-
-<pre><code>% ruby &lt;CODENAME&gt;.rb
-Creating server from image Cirros 0.3.0 x86_64...
-%
-</code></pre>
-
-<p>出来ました。VM が生成されたか先ほどの knife-openstack で確認してみましょう。</p>
-
-<pre><code>% knife openstack server list
-Instance ID                           Name         Public IP  Private IP  Flavor  Image                                 Keypair   State
-1e20850d-9572-46c8-a41e-fdf56f4f65a7  knifetest01                         1       436deba5-8fab-4bb7-9205-41e33fe22744  hogehoge  active
-f5c314a3-e32f-498f-984f-b79078d76a5a  fogvm-20121207-104743                         1       aedef2a1-f820-43a6-96cd-f5361d27df3f  testkey01  active
-</code></pre>
-
-<h2 id="まとめと-考察">まとめと 考察</h2>
-
-<p>今回は API をみんな叩いてるねん！ってことに気がついて欲しくて、こんな記事を書
-いてみました。実は OpenStack のコマンドも &ndash;debug を付けて (Quantum だけは -v)
-実行すると OpenStack の API を叩いているメッセージが出力されると OpenStack ユー
-ザ会の方から聞きました。是非やっていてください。</p>
-
-<pre><code>% nova --debug list
-% quantum -v net-list
-</code></pre>
-
-<p>API を実装するのか、ツールを実装するのか？といった話題が以前の OpenStack
-Summit で常に話題になっていたらしいですが、最近は API で決まり、といったと
-ころでしょうか。コードを書いてインラフを定義する時代に突入です。ちなみに fog
-は AWS も扱えます。また Opscode Chef や Puppet, JuJu 等のデプロイフレームワー
-クを使えば VM 上のサービス構築もコードを書くことで出来ます。また、以前ブログに
-書いたのですが OpenFlow といった技術を使うとネットワークをコードを書くことで設
-計出来る、かもしれない。</p>
-
-<p><a href="http://jedipunkz.github.com/blog/2012/11/21/openflow-trema-handson-report/">http://jedipunkz.github.com/blog/2012/11/21/openflow-trema-handson-report/</a></p>
-
-<p>つまり、コードを書くことで</p>
-
-<ul>
-<li>サーバ構築</li>
-<li>ネットワーク構築</li>
-<li>サービス構築</li>
-</ul>
-
-<p>を一貫して行えることになります。</p>
-
-<p>インフラエンジニアの僕としては時代の変化に着いて行かねば！という焦りで一杯です。
-もちろんレガシなインフラエンジニアも生き残るのでしょうが、働く場所が限られてき
-そう。より高度な(低レイヤからの深い？)技術を有している人が限定された場所で成果
-を上げていく印象。僕らの様な一般的なインフラエンジニアは OpenStack, AWS, HP
-Cloud, CloudStack の様なクラウドインフラを相手にコードを書く、もしくは抽象化さ
-れた技術をより扱いやすいソフトウェアを介して構築・管理していくことになるのでしょ
-うか。これから覚えることは山積みですが、楽しい時代です。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/12/08/knife-fog-openstack-api/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
         
             <article class="post">
     <header>
@@ -1268,6 +952,417 @@ Quantum の構成になって、そう簡単にいかなくなった。</p>
 
 
         
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2012/11/04/swift-tempauth/">Swift で簡単に分散オブジェクトストレージ</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-11-04'>
+            November 4, 2012</time>
+        <span class="author"></span>
+        
+            <p>5 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>最近、OpenStack にどっぷり浸かってる <a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>Folsom がリリースされて Quantum を理解するのにめちゃ苦労して楽しい真っ最中なのだけど、
+今日は OpenStack の中でも最も枯れているコンポーネント Swift を使ったオブジェクトストレー
+ジ構築について少し書こうかなぁと思ってます。</p>
+
+<p>最近は OpenStack を構築・デプロイするのに皆、Swift 入れてないのね。仲間はずれ
+感たっぷりだけど、一番安定して動くと思ってる。</p>
+
+<p>これを読んで、自宅にオブジェクトストレージを置いちゃおぅ。</p>
+
+<h2 id="構成は">構成は ?&hellip;</h2>
+
+<pre><code>                        +--------+
+                        | client |
+                        +--------+
+                             |
+                      +-------------+
+                      | swift-proxy |
+                      +-------------+ 172.16.0.10
+                             |
+         +-------------------+-------------------+ 172.16.0.0/24
+         |                   |                   |
++-----------------+ +-----------------+ +-----------------+
+| swift-storage01 | | swift-storage02 | | swift-storage03 |
++-----------------+ +-----------------+ +-----------------+
+172.16.0.11         172.16.0.12         172.16.0.13
+</code></pre>
+
+<p>となる。IP アドレスは&hellip;</p>
+
+<ul>
+<li>client : 172.16.0.0/24 のどこか</li>
+<li>swift-proxy : 172.16.0.10</li>
+<li>swift-storage01 : 172.16.0.11</li>
+<li>swift-storage02 : 172.16.0.12</li>
+<li>swift-storage03 : 172.16.0.13</li>
+</ul>
+
+<p>これはサンプル。自宅の環境に合わせて読み替えてください。</p>
+
+<p>全て同じネットワークセグメントに。なので上の図は概念的な図です。通信の流れだけ
+把握出来ればいいなぁと。向き書いてないけど..。四角で囲まれているのがノード (サー
+バ) です。物理サーバでも仮想マシンでも大丈夫！</p>
+
+<h2 id="マシンの準備">マシンの準備</h2>
+
+<p>Ubuntu Server 12.04 もしくは 12.10 を用意。swift-storage のマシン3台だけは
+/dev/sda6 など Disk デバイスを swift 用に用意してあげてください。普通にハード
+ディスクのパーティションを切ってあげるだけでいいです。高価な Disk を使うまでも
+ないので。それが分散ストレージの良いところ！ Disk ・ノードが壊れてもデータが失
+われないんです！</p>
+
+<h2 id="swift-proxy-の構築">swift-proxy の構築</h2>
+
+<p>今回は簡易認証機能の tempauth を使います。Keystone を使った構成を説明しようか
+迷ったのだけど、Keystone の構築だけで一つ記事が書けるくらいになるので..、諦め
+ました。tempauth は Swift 本体に実装されていますよ。</p>
+
+<p>構築は簡単、まず下記をコピペしてください。</p>
+
+<pre><code>apt-get update
+apt-get install swift python-swift
+apt-get install python-keystoneclient python-keystone 
+mkdir /etc/swift
+chown -R swift:swift /etc/swift
+export PROXY_LOCAL_NET_IP=10.200.4.133
+export POUND_NET=10.200.4.138
+apt-get install swift-proxy memcached
+perl -pi -e &quot;s/-l 127.0.0.1/-l $PROXY_LOCAL_NET_IP/&quot; /etc/memcached.conf
+service memcached restart
+cat &gt;/etc/swift/proxy-server.conf &lt;&lt;EOF
+[DEFAULT]
+#cert_file = /etc/swift/cert.crt
+#key_file = /etc/swift/cert.key
+bind_port = 8080
+workers = 8
+user = swift
+
+[pipeline:main]
+pipeline = healthcheck cache tempauth proxy-server
+
+[app:proxy-server]
+use = egg:swift#proxy
+allow_account_management = true
+account_autocreate = true
+
+[filter:tempauth]
+use = egg:swift#tempauth
+user_system_root = testpass .admin
+https://$PROXY_LOCAL_NET_IP:8080/v1/AUTH_system
+
+[filter:healthcheck]
+use = egg:swift#healthcheck
+
+[filter:cache]
+use = egg:swift#memcache
+memcache_servers = $PROXY_LOCAL_NET_IP01:11211
+EOF
+</code></pre>
+
+<p>次に swift.conf とリング情報 (バランシングのための情報) を swift-proxy 上に用意します。これらは、
+あとで各すべてのノードに配置するので重要です。これもコピペしてください。</p>
+
+<pre><code>cat &gt; /etc/swift/swift.conf &lt;&lt; EOF
+[swift-hash]
+# random unique string that can never change (DO NOT LOSE)
+swift_hash_path_suffix = `od -t x8 -N 8 -A n &lt;/dev/random`
+EOF
+cd /etc/swift
+swift-ring-builder account.builder create 18 3 1
+swift-ring-builder container.builder create 18 3 1
+swift-ring-builder object.builder create 18 3 1
+export STORAGE_LOCAL_NET_IP01=172.16.0.11
+export STORAGE_LOCAL_NET_IP02=172.16.0.12
+export STORAGE_LOCAL_NET_IP03=172.16.0.13
+export ZONE01=1
+export ZONE02=2
+export ZONE03=3
+export WEIGHT=100
+export DEVICE=sda6
+swift-ring-builder account.builder add z$ZONE01-$STORAGE_LOCAL_NET_IP01:6002/$DEVICE $WEIGHT
+swift-ring-builder container.builder add z$ZONE01-$STORAGE_LOCAL_NET_IP01:6001/$DEVICE $WEIGHT
+swift-ring-builder object.builder add z$ZONE01-$STORAGE_LOCAL_NET_IP01:6000/$DEVICE $WEIGHT
+swift-ring-builder account.builder add z$ZONE02-$STORAGE_LOCAL_NET_IP02:6002/$DEVICE $WEIGHT
+swift-ring-builder container.builder add z$ZONE02-$STORAGE_LOCAL_NET_IP02:6001/$DEVICE $WEIGHT
+swift-ring-builder object.builder add z$ZONE02-$STORAGE_LOCAL_NET_IP02:6000/$DEVICE $WEIGHT
+swift-ring-builder account.builder add z$ZONE03-$STORAGE_LOCAL_NET_IP03:6002/$DEVICE $WEIGHT
+swift-ring-builder container.builder add z$ZONE03-$STORAGE_LOCAL_NET_IP03:6001/$DEVICE $WEIGHT
+swift-ring-builder object.builder add z$ZONE03-$STORAGE_LOCAL_NET_IP03:6000/$DEVICE $WEIGHT
+swift-ring-builder account.builder
+swift-ring-builder container.builder
+swift-ring-builder object.builder
+swift-ring-builder account.builder rebalance
+swift-ring-builder container.builder rebalance
+swift-ring-builder object.builder rebalance
+</code></pre>
+
+<p>で、起動。</p>
+
+<pre><code>swift-proxy# chown -R swift:swift /etc/swift
+swift-proxy# swift-init proxy start
+</code></pre>
+
+<p>おしまい。</p>
+
+<h2 id="swift-storage-構築">swift-storage 構築</h2>
+
+<p>swift-storage の構築は各ノードで下記の内容をコピペしてください。今回は3台分だ
+けど、マシンが余ってたら4台でも5台でも OK ！</p>
+
+<pre><code>apt-get update
+apt-get install swift python-swift
+mkdir /etc/swift
+chown -R swift:swift /etc/swift
+
+export STORAGE_LOCAL_NET_IP=172.16.0.11
+
+apt-get install swift-account swift-container swift-object xfsprogs
+mkfs.xfs -i size=1024 /dev/sda6
+echo &quot;/dev/sda6 /srv/node/sda6 xfs noatime,nodiratime,nobarrier,logbufs=8 0 0&quot; &gt;&gt; /etc/fstab
+mkdir -p /srv/node/sda6
+mount /srv/node/sda6
+chown -R swift:swift /srv/node
+cat &gt;/etc/rsyncd.conf &lt;&lt;EOF
+uid = swift
+gid = swift
+log file = /var/log/rsyncd.log
+pid file = /var/run/rsyncd.pid
+address = $STORAGE_LOCAL_NET_IP
+
+[account]
+max connections = 2
+path = /srv/node/
+read only = false
+lock file = /var/lock/account.lock
+
+[container]
+max connections = 2
+path = /srv/node/
+read only = false
+lock file = /var/lock/container.lock
+
+[object]
+max connections = 2
+path = /srv/node/
+read only = false
+lock file = /var/lock/object.lock
+EOF
+perl -pi -e 's/RSYNC_ENABLE=false/RSYNC_ENABLE=true/' /etc/default/rsync
+service rsync start
+cat &gt;/etc/swift/account-server.conf &lt;&lt;EOF
+[DEFAULT]
+bind_ip = $STORAGE_LOCAL_NET_IP
+workers = 2
+
+[pipeline:main]
+pipeline = account-server
+
+[app:account-server]
+use = egg:swift#account
+
+[account-replicator]
+
+[account-auditor]
+
+[account-reaper]
+EOF
+cat &gt;/etc/swift/container-server.conf &lt;&lt;EOF
+[DEFAULT]
+bind_ip = $STORAGE_LOCAL_NET_IP
+workers = 2
+
+[pipeline:main]
+pipeline = container-server
+
+[app:container-server]
+use = egg:swift#container
+
+[container-replicator]
+
+[container-updater]
+
+[container-auditor]
+
+[container-sync]
+EOF
+cat &gt;/etc/swift/object-server.conf &lt;&lt;EOF
+[DEFAULT]
+bind_ip = $STORAGE_LOCAL_NET_IP
+workers = 2
+
+[pipeline:main]
+pipeline = object-server
+
+[app:object-server]
+use = egg:swift#object
+
+[object-replicator]
+
+[object-updater]
+
+[object-auditor]
+EOF
+</code></pre>
+
+<p>環境変数 ${STORAGE_LOCAL_NET_IP} を3台毎に変えて、各台で流し込んであげたら、
+swift-proxy で生成した /etc/swift.conf とリング情報達を各 swift-storage に
+配置します。</p>
+
+<pre><code>swift-proxy     # scp /etc/swift/swift.conf /etc/swift/*ring.gz 172.16.0.11:/tmp/
+swift-proxy     # scp /etc/swift/swift.conf /etc/swift/*ring.gz 172.16.0.12:/tmp/
+swift-proxy     # scp /etc/swift/swift.conf /etc/swift/*ring.gz 172.16.0.13:/tmp/
+swift-storage01 # mv /tmp/swift.conf /tmp/*ring.gz /etc/swift/
+swift-storage01 # chown -R swift:swift /etc/swift
+swift-storage02 # mv /tmp/swift.conf /tmp/*ring.gz /etc/swift/
+swift-storage02 # chown -R swift:swift /etc/swift
+swift-storage03 # mv /tmp/swift.conf /tmp/*ring.gz /etc/swift/
+swift-storage03 # chown -R swift:swift /etc/swift
+</code></pre>
+
+<p>swift-storage を各台で起動します。</p>
+
+<pre><code>swift-storage01 # swift-init all start
+swift-storage02 # swift-init all start
+swift-storage03 # swift-init all start
+</code></pre>
+
+<h2 id="アクセスしてみる">アクセスしてみる</h2>
+
+<p>完成したので、swift クライアントでアクセスしてみる。</p>
+
+<pre><code>% swift -A http://172.16.0.10:8080/auth/v1.0 -U system:root -K testpass stat
+Account: AUTH_system
+Containers: 4
+Objects: 15
+Bytes: 23866252
+Connection: keep-alive
+Accept-Ranges: bytes
+</code></pre>
+
+<p>ファイルをアップロード・ダウンロードしてみる。</p>
+
+<pre><code>% swift -A http://172.16.0.10:8080/auth/v1.0 -U system:root -K testpass upload test /etc/hosts
+% swift -A http://172.16.0.10:8080/auth/v1.0 -U system:root -K testpass list
+% test
+% cd /tmp/
+% swift -A http://172.16.0.10:8080/auth/v1.0 -U system:root -K testpass download test
+% ls /tmp/etc/hosts
+</code></pre>
+
+<p>もちろん、HTTP な API なので curl 等の HTTP ブラウザを使ってもアクセスできる！</p>
+
+<pre><code>% curl -k -v -H 'X-Storage-User: system:root' -H 'X-Storage-Pass: testpass' http://172.16.0.10:8080/auth/v1.0
+&lt; HTTP/1.1 200 OK
+&lt; Server: nginx/1.1.19
+&lt; Date: Mon, 03 Sep 2012 04:58:30 GMT
+&lt; Content-Length: 0
+&lt; Connection: keep-alive
+&lt; X-Storage-Url: https://172.16.0.10:8080/v1/AUTH_system
+&lt; X-Storage-Token: AUTH_tk8a19f76c9bce4077aee02aef76257020
+&lt; X-Auth-Token: AUTH_tk8a19f96c9bce4077aee02aef76257020
+&lt;
+* Connection #0 to host 172.16.0.10 left intact
+* Closing connection #0
+* SSLv3, TLS alert, Client hello (1):
+</code></pre>
+
+<p>得られた X-Auth-Token, X-Storage-Url を使ってアクセスする。</p>
+
+<pre><code>% curl -k -v -H 'X-Auth-Token: &lt;token-from-x-auth-token-above&gt;' &lt;url-from-x-storage-url-above&gt;
+&lt; HTTP/1.1 200 OK
+&lt; Server: nginx/1.1.19
+&lt; Date: Mon, 03 Sep 2012 04:59:47 GMT
+&lt; Content-Type: text/plain; charset=utf-8
+&lt; Content-Length: 34
+&lt; Connection: keep-alive
+&lt; X-Account-Object-Count: 15
+&lt; X-Account-Bytes-Used: 23866252
+&lt; X-Account-Container-Count: 4
+&lt; Accept-Ranges: bytes
+&lt;
+test
+* Connection #0 to host 172.16.0.10 left intact
+* Closing connection #0
+* SSLv3, TLS alert, Client hello (1):
+</code></pre>
+
+<p>さっき放り込んだ &lsquo;test&rsquo; が swift 上にあることが確認できる。</p>
+
+<p><a href="http://cyberduck.ch/">http://cyberduck.ch/</a> ここにある CyberDuck という GUI なツールを使ってもアクセス出来るよ！
+HTTPS が必須になるので一工夫する必要があるのだけど、そのあたりは頑張ってみてください。</p>
+
+<p>オンラインでのノードの追加・削除なんてことも出来ます。次回時間があったら解説しますね。</p>
+
+<p>今回は swift-ring-builder コマンドでレプリカ数 &lsquo;3&rsquo; を指定したので、アップロー
+ドしたファイル(オブジェクトと言う) は必ず 3 個配置される。なので 1 台の
+swift-storage が故障しても大丈夫。ノードを増やせばストレージ全体の容量も増やせ
+る。また、swift-proxy は単純な HTTP なので負荷分散機・もしくはソフトウェアのロー
+ドバランサを入れれば swift-proxy 自体の冗長も組めるほか、ストレージ I/O の拡張
+にもつながる。pound, nginx などを使って冗長組んでみてください。その時に
+memcached の内容は共有させてあげる必要があるので、これまた一工夫が必要なのだけ
+ど。時間があったら今度解説します。</p>
+
+<p>自宅でも簡単に分散オブジェクトストレージが組める swift。使わない手は無いですよぉ。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2012/11/04/swift-tempauth/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
+        
 
         
 <ul class="actions pagination">
@@ -1384,20 +1479,6 @@ Quantum の構成になって、そう簡単にいかなくなった。</p>
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語でInfluxDBにメトリクスデータを挿入</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-23'>
-                                    July 23, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
                                 
                                     
@@ -1437,6 +1518,20 @@ Quantum の構成になって、そう簡単にいかなくなった。</p>
                         </article>
                     </li>
                 
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
 
                 
                     <li>
@@ -1471,7 +1566,7 @@ Quantum の構成になって、そう簡単にいかなくなった。</p>
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">101</span>
+                                <span style="float:right;">100</span>
                             </header>
                         </article>
                     </li>

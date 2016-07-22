@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-10-12T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-10-01T00:00:00&#43;00:00"/>
 
 
 
@@ -198,10 +198,6 @@ ga('send', 'pageview');
 
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語でInfluxDBにメトリクスデータを挿入</p></a>
-                    </li>
-                
-                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
@@ -211,6 +207,10 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
             </ul>
@@ -224,274 +224,6 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
-        
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/10/12/glusterfs-install/">GlusterFS の各クラスタタイプ構築</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-10-12'>
-            October 12, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>GlusterFS をちょっと前に調べてました。何故かと言うと OpenStack Havana がもうす
-ぐリリースされるのですが、Havana から GlusterFS がサポートされる予定だからです。</p>
-
-<p>この辺りに色々情報が載っています。</p>
-
-<p><a href="http://www.gluster.org/category/openstack/">http://www.gluster.org/category/openstack/</a></p>
-
-<p>その前に GlusterFS を構築出来ないといけないので、今回はその方法を書いていきま
-す。各クラスタタイプ毎に特徴や構築方法が異なるのでその辺りを重点的に。</p>
-
-<h2 id="環境">環境</h2>
-
-<ul>
-<li>Ubuntu Server 12.04.3 LTS</li>
-<li>PPA レポジトリ利用</li>
-<li>/dev/sdb を OS 領域とは別の disk としてサーバに追加する</li>
-</ul>
-
-<h2 id="用いる-ppa-レポジトリ">用いる PPA レポジトリ</h2>
-
-<p>Ubuntu 12.04.3 LTS の GlusterFS バージョンは 3.2 です。3.4 系が今回使いたかっ
-たので下記の PPA レポジトリを利用させてもらいます。ちゃんと構築するなら自分で
-パッケージを作成することをオススメします。</p>
-
-<p><a href="https://launchpad.net/~semiosis/+archive/ubuntu-glusterfs-3.4">https://launchpad.net/~semiosis/+archive/ubuntu-glusterfs-3.4</a></p>
-
-<h1 id="準備">準備</h1>
-
-<p>ここからの手順は全てのサーバで操作します。</p>
-
-<h2 id="レポジトリの利用方法">レポジトリの利用方法</h2>
-
-<pre><code class="language-bash">% sudo aptitude install python-software-properties
-% sudo add-apt-repository ppa:semiosis/ubuntu-glusterfs-3.4
-% sudo apt-get update
-</code></pre>
-
-<h2 id="glusterfs3-4-のインストール">GlusterFS3.4 のインストール</h2>
-
-<pre><code class="language-bash">% sudo apt-get install glusterfs-server gluserfs-client
-</code></pre>
-
-<h2 id="xfsprogs-のインストール">xfsprogs のインストール</h2>
-
-<p>glusterfs は xfs を扱うため xfsprogs をインストールする。</p>
-
-<pre><code class="language-bash">% sudo apt-get install xfsprogs
-</code></pre>
-
-<h2 id="ディスクの準備">ディスクの準備</h2>
-
-<pre><code class="language-bash">% sudo mkfs.xfs -i size=512 /dev/sdb
-% sudo mkdir -p /export/brick1
-% sudo vim /etc/fstab
-/dev/sdb /export/brick1 xfs defaults 1 2 # &lt;- 追記
-% sudo mount -a
-% mount
-</code></pre>
-
-<h1 id="各クラスタタイプでのマウント方法">各クラスタタイプでのマウント方法</h1>
-
-<p>ここからの手順はどこか一台のノードで行えば OK です。</p>
-
-<h2 id="distributed-タイプ">distributed タイプ</h2>
-
-<p>まずはデフォルトとなる distributed のマウント方法。</p>
-
-<pre><code class="language-bash">% sudo gluster peer probe &lt;other_node_ip_addr&gt; ...
-% sudo gluster volume create gv0 &lt;mine_ip_addr&gt;:/export/brick1/sdb &lt;another_node_ip_addr&gt;:/export/brick1/sdb
-% sudo gluster volume start gv0
-% sudo gluster volume info
-Volume Name: gv0
-Type: Distribute
-Volume ID: 803fdd46-4735-444a-99c8-83d1cee172e6
-Status: Started
-Number of Bricks: 2
-Transport-type: tcp
-Bricks:
-Brick1: &lt;mine_ip_addr&gt;:/export/brick1/sdb
-Brick2: &lt;other_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>マウント行う。どちらのノードに対して行うことが出来る。</p>
-
-<pre><code class="language-bash">% sudo mount -t glusterfs &lt;mine_ip_addr&gt;:/gv0 /mnt
-</code></pre>
-
-<h2 id="その他のクラスタタイプのマウント方法">その他のクラスタタイプのマウント方法</h2>
-
-<p>replicated の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create gv0 replica 2 &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_node_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>striped の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create gv0 stripe 2 &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_node_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>distributed replicated の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create dist-repl replica 2 \
-  &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>striped replicated の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create strip-repl stripe 2 replica 2 \
-  &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>distributed striped replicated の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create dist-strip-repl stripe 2 replica 2 \
-  &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<h2 id="各クラスタタイプの特徴">各クラスタタイプの特徴</h2>
-
-<ul>
-<li>distributed</li>
-</ul>
-
-<p>1つのオブジェクトを GlusterFS 上に保管するとオブジェクト単位でどれかのノードに
-対して保管する。よって &lsquo;ノード上の disk x ノード数&rsquo; が合計容量として扱うことが
-出来る。ノード障害の場合にはその該当ノード上の disk に保管されているオブジェク
-トの読み書きは NG 。その他のノード上 disk に保管されているオブジェクトに対して
-は読み書きが正常に行える。</p>
-
-<ul>
-<li>stripe</li>
-</ul>
-
-<p>1つのオブジェクトをブロック単位で分割し各ノードに保管する。扱える合計容量は
-distributed と同じく &lsquo;ノード上の disk x ノード数&rsquo; となる。障害がどこかのノード
-で発生した場合、全てのオブジェクトの読み書きが行えなくなる。</p>
-
-<ul>
-<li>replicated</li>
-</ul>
-
-<p>1つのオブジェクトを 2 台のノードに対してミラーリングを行い保管する。障害系の対
-応が可能になる。その分、扱える合計容量は distrubuted/stripe に比べ半分となる。</p>
-
-<ul>
-<li>distributed replicated</li>
-</ul>
-
-<p>構成イメージ図&hellip;</p>
-
-<pre><code>+--------+
-| client |
-+--------+
-|
-+---------------------+
-|                     |
-+----------+          +----------+
-|          |          |          |
-+--------+ +--------+ +--------+ +--------+
-| node1  | | node2  | | node3  | | node4  |
-+--------+ +--------+ +--------+ +--------+
-</code></pre>
-
-<p>node1, 2 と 3, 4 にて replicated しそれぞれに対して distributed を組む。扱える
-disk 容量は node の持っている disk 容量 x ノード数 / 2 となる。distributed は
-実質、障害系の対応が良くないので distributed を扱うのであれば、この volume
-type が推奨されるものと思われる。</p>
-
-<ul>
-<li>striped replicated</li>
-</ul>
-
-<p>distributed replicated と同等の構成だがブロック単位でのオブジェクトの保管とな
-る。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>GlusterFS には一貫性の問題 (disk 容量の一貫性を保つ必要がある) と思っていたが、
-昔の話しらしい。容量のことなる disk をノードに追加しても、それをうまく合計容量
-に合算されるのを確認した。また分散ファイルシステムの美味しいところと冗長性を兼
-ねた構成を組むのが良いと思うので distributed replicated もしくは striped
-replicated を選択するのがオススメ。今回は TCP で扱ったがバージョン 3.4 からは
-Infiniband と組み合わせて RDMA を扱うことが可能。下記の URL が参考になる。</p>
-
-<p><a href="http://gluster.org/community/documentation/index.php/Gluster_3.2:_Configuring_GlusterFS_to_work_over_InfiniBand">http://gluster.org/community/documentation/index.php/Gluster_3.2:_Configuring_GlusterFS_to_work_over_InfiniBand</a></p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/10/12/glusterfs-install/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
         
             <article class="post">
     <header>
@@ -1052,6 +784,211 @@ src="//speakerdeck.com/assets/embed.js"></script>
 
 
         
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/">Mesos アーキテクチャ #1</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-09-28'>
+            September 28, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>今回はクラスタマネージャである Mesos について書こうと思います。</p>
+
+<p>Mesos は Apache Software Foundation によって管理されるソフトウェアで分散アプリ
+ケーションをクラスタ化することが出来るマネージャです。Twitter が採用しているこ
+とで有名だそうで、開発にも積極的に参加しているそうです。</p>
+
+<p><a href="http://mesos.apache.org/">http://mesos.apache.org/</a></p>
+
+<p>@riywo さんが既に Mesos + Marathon + Zookeper + Docker な構成を組む手順をブロ
+グで紹介されていますので是非試してみると面白いと思います。</p>
+
+<p><a href="http://tech.riywo.com/blog/2013/09/27/mesos-introduction-1/">http://tech.riywo.com/blog/2013/09/27/mesos-introduction-1/</a></p>
+
+<p>私は理解した Mesos のアーキテクチャについて少し書いていきたいと思います。</p>
+
+<h2 id="全体の構造">全体の構造</h2>
+
+<pre><code>+-----------+
+| zookeeper |
+|  quorum   |
++-----------+
+|
++----------------+----------------+
+|                |                |
++--------------+ +--------------+ +--------------+
+| mesos-master | | mesos-master | | mesos-master |
+|    active    | |  hot standby | |  hot standby |
++--------------+ +--------------+ +--------------+ ...
+|
++----------------+----------------+
+|                |                |
++--------------+ +--------------+ +--------------+
+|  mesos-slave | |  mesos-slave | |  mesos-slave |
+|   executor   | |   executor   | |   executor   |
+| +----++----+ | | +----++----+ | | +----++----+ |
+| |task||task| | | |task||task| | | |task||task| |
+| +----++----+ | | +----++----+ | | +----++----+ |
++--------------+ +--------------+ +--------------+ ...
+</code></pre>
+
+<p>基本的に few masters + many slaves の構成です。task は slaves の上で走ります。
+master はオファーによりアプリケーション(フレームワーク)に対して CPU, メモリの
+リソースをシェア出来ます。リソースは slave ID, resource1: amount1,
+resource2, amount2, &hellip; といった配列を含みます。master はポリシに従いそれぞれ
+のフレームワークに対してリソースをどれだけ提供するか決定します。プラグイン形式
+で様々なポリシを取り込む仕組みになっています。</p>
+
+<p>mesos は zookeeper により HA を組むことが出来ます。1つの active master と複数
+(もしくは1つの) stand-by master(s) の構成です。active を投票するため zookeeper
+のアルゴリズムが用いられます。</p>
+
+<p>mesos-master を起動する際に下記のパラメータを渡すとmulti masters の構成が組め
+ます。</p>
+
+<pre><code>--zk=zk://host1:port1/path,host2:port2/path,...
+</code></pre>
+
+<p>それに対して multi slaves に対しては下記のパラータを渡します。</p>
+
+<pre><code>--master=zk://host1:port1/path,host2:port2/path,...
+</code></pre>
+
+<h2 id="ネットワークの分断">ネットワークの分断</h2>
+
+<p>ネットワークの分断により様々な事象が発生します。幾つかのパターンによる動きにつ
+いて見ていきます。</p>
+
+<ul>
+<li>slave が master と分断された場合</li>
+</ul>
+
+<p>ヘルスチェックが失敗。master は slave のことを &lsquo;deactivated&rsquo; と判断しその
+slave に分配した task を LOST とします。</p>
+
+<ul>
+<li>master に再接続出来ない場合</li>
+</ul>
+
+<p>&lsquo;deactivated&rsquo; となった slave が master に再接続出来ない場合、シャットダウンの
+指示が送られる</p>
+
+<ul>
+<li>slave が zookeeper と分断された場合</li>
+</ul>
+
+<p>master がいない状態となり、再び master の投票が行われ active master が現れるま
+で master からの指示を拒否する</p>
+
+<h2 id="リソースのオファ">リソースのオファ</h2>
+
+<pre><code>+-------------------+
+|     framework     |
+|    +----+----+    |
+|    |job1|job2|    |
+|    +----+----+    |
+|     scheduler     |
++-------------------+
+~(2)                |(3)
+|                   ~
++-------------------+
+|    mesos-master   |
+| allocation module |
++-------------------+
+~(1)                |(4)
+|                   ~
++-------------------+
+|    mesos-slave    |
+|      executor     |
+|    +----+----+    |
+|    |task|task|    |
+|    +----+----+    |
++-------------------+
+</code></pre>
+
+<p>リソースのオファの流れについて。</p>
+
+<ul>
+<li>(1) mesos-slave が空きの CPU, Mem の状況(4cpus,4g mem)を mesos-mater に伝える。</li>
+<li>(2) mesos-master はそのリソース空き状況を framework に対して伝える</li>
+<li>(3) framework の scheduler は mesos-mater に対して mesos-slave の上で動かすべ
+き2個のタスクについて伝える。1個めは 2cpus, 1g mem。2個めは 1cpus, 2g memと。</li>
+<li>(4) master は task を slave に対して伝える。結果 1cpu, 1gb mem がアロケートさ
+れない状況だが、それについては別の framework に対してアロケートすることとな
+る。</li>
+</ul>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>このクラスタ自体が1つの OS かのような動きを取ることが見て取れます。Mesos の上
+で Hadoop, Spark などを稼働させることが出来るそうですが、次回、私は docker を動
+かしてみたいと思っています。</p>
+
+<p><a href="http://mesosphere.io/2013/09/26/docker-on-mesos/">http://mesosphere.io/2013/09/26/docker-on-mesos/</a></p>
+
+<p>ここが参考になります。</p>
+
+<p>駆け足でしたが、以上です。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
+        
 
         
 <ul class="actions pagination">
@@ -1168,20 +1105,6 @@ src="//speakerdeck.com/assets/embed.js"></script>
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語でInfluxDBにメトリクスデータを挿入</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-23'>
-                                    July 23, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
                                 
                                     
@@ -1221,6 +1144,20 @@ src="//speakerdeck.com/assets/embed.js"></script>
                         </article>
                     </li>
                 
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2015-12-28'>
+                                    December 28, 2015</time>
+                            </header>
+                        </article>
+                    </li>
+                
 
                 
                     <li>
@@ -1255,7 +1192,7 @@ src="//speakerdeck.com/assets/embed.js"></script>
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">101</span>
+                                <span style="float:right;">100</span>
                             </header>
                         </article>
                     </li>
