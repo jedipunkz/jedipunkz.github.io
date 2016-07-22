@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2015-12-28T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2016-06-21T17:05:25&#43;09:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語でInfluxDBにメトリクスデータを挿入</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,381 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2016-06-21'>
+            June 21, 2016</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>今回は DC/OS (<a href="https://dcos.io/">https://dcos.io/</a>) を Vagrant を使って構築し評価してみようと思います。
+DC/OS はその名の通りデータセンタ OS として利用されることを期待され開発された OS で内部で
+Docker と Mesos が稼働しています。</p>
+
+<p>一昔前に Mesos のマルチノード構成は構築したことあったのですが、DC/OS はデプロイ方法が全く変わっていました。
+はじめに想定する構成から説明していきます。</p>
+
+<h2 id="想定する構成">想定する構成</h2>
+
+<p>本来 DC/OS は public, private ネットワーク構成ですが利用するレポジトリではこのような構成が想定されていました。</p>
+
+<pre><code class="language-shell">+----+ +----+ +----+ +------+
+| m1 | | a1 | | p1 | | boot |
++----+ +----+ +----+ +------+
+|      |      |      |
++------+------+------+--------- 192.168.65/24
+</code></pre>
+
+<p>各ノードは下記の通り動作します。</p>
+
+<ul>
+<li>m1 : Mesos マスタ, Marathon</li>
+<li>a1 : Mesos スレーブ(Private Agent)</li>
+<li>p1 : Mesos スレーブ(Public Agent)</li>
+<li>boot : DC/OS インストレーションノード</li>
+</ul>
+
+<h2 id="前提の環境">前提の環境</h2>
+
+<p>Vagrant が動作するマシンであれば問題ないと思いますが私は下記の構成で利用しました。
+比較的たくさんのマシンリソースを使うのでメモリ 8GB はほしいところです。</p>
+
+<ul>
+<li>Mac OSX</li>
+<li>Vagrant</li>
+<li>Virtualbox</li>
+</ul>
+
+<h2 id="事前の準備">事前の準備</h2>
+
+<p>事前の手順を記します。</p>
+
+<ul>
+<li>予め用意された dcos-vagrant を取得する</li>
+</ul>
+
+<pre><code class="language-shell">$ git clone https://github.com/dcos/dcos-vagrant
+</code></pre>
+
+<ul>
+<li>Mac OSX の hosts ファイルをダイナミック編集する Vagrant プラグインをインストール</li>
+</ul>
+
+<pre><code class="language-shell">$ vagrant plugin install vagrant-hostmanager
+</code></pre>
+
+<h2 id="構築手順">構築手順</h2>
+
+<p>それでは構築手順です。</p>
+
+<ul>
+<li>DC/OS が利用する config を環境変数に指定指定</li>
+</ul>
+
+<pre><code class="language-shell">$ export DCOS_CONFIG_PATH=etc/config-1.7.yaml
+</code></pre>
+
+<ul>
+<li>DC/OS をレポジトリのルートディレクトリに保存</li>
+</ul>
+
+<p>DC/OS 1.7.0 (Early Access)(2016/06/21現在) をダウンロードしてレポジトリのルートディレクトリにインストール</p>
+
+<pre><code class="language-shell">$ cd dcos-vagrant
+$ wget https://downloads.dcos.io/dcos/EarlyAccess/dcos_generate_config.sh
+</code></pre>
+
+<ul>
+<li>VagrantConfig を作成</li>
+</ul>
+
+<p>&lsquo;VagrantConfig.yaml.example&rsquo; というファイルがレポジトリ内ルートディレクトリにあるのでこれを元に下記の通りファイルを生成。元のファイルのままだと比較的大きな CPU/Mem リソースが必要になるので環境に合わせてリソース量を指定。</p>
+
+<pre><code class="language-yaml">m1:
+  ip: 192.168.65.90
+  cpus: 1
+  memory: 512
+  type: master
+a1:
+  ip: 192.168.65.111
+  cpus: 1
+  memory: 1024
+  memory-reserved: 512
+  type: agent-private
+p1:
+  ip: 192.168.65.60
+  cpus: 1
+  memory: 1024
+  memory-reserved: 512
+  type: agent-public
+  aliases:
+  - spring.acme.org
+  - oinker.acme.org
+boot:
+  ip: 192.168.65.50
+  cpus: 1
+  memory: 1024
+  type: boot
+</code></pre>
+
+<ul>
+<li>デプロイを実施</li>
+</ul>
+
+<pre><code class="language-shell">$ vagrant up m1 a1 p1 boot
+</code></pre>
+
+<h2 id="dc-os-の-ui">DC/OS の UI</h2>
+
+<p>インストールが完了すると下記のアドレスで DC/OS の UI にアクセスできます。</p>
+
+<p><a href="http://m1.dcos/">http://m1.dcos/</a></p>
+
+<p><img src="http://jedipunkz.github.io/pix/dcos-mesos.png" width="70%"></p>
+
+<h2 id="marathon-の-ui">Marathon の UI</h2>
+
+<p>下記のアドレスで Marathon の UI にアクセスできます
+Marathon は分散型の Linux Init 機構のようなものです。</p>
+
+<p><a href="http://m1.dcos:8080/">http://m1.dcos:8080/</a></p>
+
+<p><img src="http://jedipunkz.github.io/pix/dcos-marathon.png" width="70%"></p>
+
+<h2 id="chronos-の-ui">Chronos の UI</h2>
+
+<p>下記のアドレスで Chronos の UI にアクセスできる
+Chronos は分散型のジョブスケジューラーであり cron のようなものです。</p>
+
+<p><a href="http://a1.dcos:1370/">http://a1.dcos:1370/</a></p>
+
+<p><img src="http://jedipunkz.github.io/pix/dcos-chronos.png" width="70%"></p>
+
+<h2 id="marathon-で-redis-サーバを立ち上げる">Marathon で redis サーバを立ち上げる</h2>
+
+<p>テストで redis サーバを立ち上げてみる。Mesos-Slave (今回の環境だと a1 ホスト) 上に Docker コンテナとして redis サーバが立ち上がることになる。</p>
+
+<ul>
+<li>Marathon の UI にて &ldquo;Create Application&rdquo; を選択</li>
+<li>General タブの ID に任意の名前を入力</li>
+<li>General タブの Command 欄に &lsquo;redis-server&rsquo; を入力</li>
+<li>Docker Container タブの Image 欄に &lsquo;redis&rsquo; を入力</li>
+<li>&lsquo;Create Application&rsquo; を選択</li>
+</ul>
+
+<p>結果、下記の通りアプリケーションが生成される</p>
+
+<p><img src="http://jedipunkz.github.io/pix/dcos-marathon-redis.png" width="70%"></p>
+
+<p>※ 20160625 下記追記</p>
+
+<h2 id="構成">構成</h2>
+
+<p>ここからは Mesosphere DC/OS の内部構成を理解していきます。主となる mesos-master, mesos-slave の構成は下記の通り。</p>
+
+<ul>
+<li>Mesos-Master Node 構成</li>
+</ul>
+
+<pre><code class="language-shell">+--------------+
+| mesos-master |
++--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+
+|   zookeeper  | | mesos-dns | | marathon | | adminRouter | | minuteman | | exhibitor |
++--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+
+|                  mesos-master node                                                  |
++-------------------------------------------------------------------------------------+
+</code></pre>
+
+<ul>
+<li>* * * * * * * Mesos-Slave (Mesos-Agent) Node 構成</li>
+</ul>
+
+<pre><code class="language-shell">+-------------+ +---+---+---+---+
+| m-executor  | | c | c | c | c |
++-------------+ +---+---+---+---+
+| mesos-slave | | docker-daemon |
++-------------------------------+
+|        mesos-slave node       |
++-------------------------------+
+</code></pre>
+
+<h2 id="各プロセスの役割">各プロセスの役割</h2>
+
+<p>上記の図の各要素を参考資料を元にまとめました。</p>
+
+<ul>
+<li>mesos-master</li>
+</ul>
+
+<p>masos-slave node からの情報を受け取り mesos-slave へプロセスを分配する
+役割。mesos-master は zookeeper によってリーダー選出により冗長構成が保
+たれている。</p>
+
+<ul>
+<li>mesos-dns</li>
+</ul>
+
+<p>mesos フレームワーク内での DNS 解決を行うプロセス。各 mesos-master ノー
+ド上に稼働している。通常の DNS でいうコンテンツ DNS (Authoritative
+DNS)になっており mesos-master からクラスタ情報を受け取って DNS レコー
+ド登録、それを mesos-slave が DNS 参照する。mesos-slave が内部レコード
+に無い DNS 名を解決しに来た際にはインターネット上の root DNS へ問い合
+わせ実施。</p>
+
+<ul>
+<li>marathon</li>
+</ul>
+
+<p>コンテナオーケストレーションを司り mesos-slave へ支持を出しコンテナを
+稼働する役割。各 mesos-master 上で稼働し zookeeper 越しに mesos-master
+のカレントリーダを探しだしリクエストを創出。他に下記の機能を持っている。
+&lsquo;HA&rsquo;, &lsquo;ロードバランス&rsquo;, &lsquo;アプリのヘルスチェック&rsquo;, &lsquo;Web UI&rsquo;, &lsquo;REST
+API&rsquo;, &lsquo;Metrics&rsquo;。</p>
+
+<ul>
+<li>adminRouter</li>
+</ul>
+
+<p>実態は nginx。各サービスの認証と Proxy の役割を担っている。</p>
+
+<ul>
+<li>minuteman</li>
+</ul>
+
+<p>L4 レイヤのロードバランサ。各 mesos-master ノードで稼働。</p>
+
+<ul>
+<li>zookeeper</li>
+</ul>
+
+<p>mesos-master プロセスを冗長構成させるためのソフトウェア。</p>
+
+<ul>
+<li>exhibitor</li>
+</ul>
+
+<p>zookeeper のコンフィギュレーションを実施。</p>
+
+<ul>
+<li>mesos-slave</li>
+</ul>
+
+<p>Task を実行する役割。内部で meosos-executor (上記 m-executor) を実行し
+ている。</p>
+
+<ul>
+<li>m-executor (mesos-executor)</li>
+</ul>
+
+<p>mesos-slave ノード上でサービスのための TASK を稼働させる。</p>
+
+<h2 id="起動シーケンス">起動シーケンス</h2>
+
+<p>ここからは mesos-master, mesos-slave の起動シーケンスについて、まとめてきます。</p>
+
+<p>mesos-master</p>
+
+<ul>
+<li>exhibitor が起動し zookeeper のコンフィギュレーションを実施し zookeeper を起動</li>
+<li>mesos-master が起動。自分自身をレジスト後、他の mesos-master ノードを探索</li>
+<li>mesos-dns が起動</li>
+<li>mesos-dns が leader.mesos にカレントリーダの mesos-master を登録</li>
+<li>marathon が起動し zookeeper 越しに mesos-master を探索。</li>
+<li>adminRouter が起動し各 UI (mesos, marathon, exhibitor) が閲覧可能に。</li>
+</ul>
+
+<p>mesos-slave</p>
+
+<ul>
+<li>leader.mesos に ping を打って mesos-master のカレントリーダを見つけ出し mesos-slave 稼働。</li>
+<li>mesos-master に対して自分自身を &lsquo;agent&rsquo; として登録。</li>
+<li>mesos-master はその登録された IP アドレスを元に接続を試みる</li>
+<li>mesos-slave が TASK 実行可能な状態に</li>
+</ul>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>一昔前の Mesos + Marathon + Chronos とはだいぶデプロイ方法が変わっていた。だが構成には大きな変化は見られない。
+AWS のような public, private ネットワークが別れたプラットフォームでは mesos-slave (DC/OS 的には Agent とも呼ぶ)は public agent, private agent として別けて管理される模様。public agent は AWS の ELB 等で分散され各コンテナ上のアプリにクエリがインターネットからのリクエストに応える。private agent はプライベートネットワーク上に配置されて public agent からのリクエストにも応える。また、mesos-master 達は別途 admin なネットワークに配置するのが Mesosphare の推奨らしい。</p>
+
+<p>だがしかし public, private を別けずに DC/OS を構成することも可能なように思えた。下記のように p1 を削除して構成して物理・仮想ロードバランサでリクエストを private agent に送出することでも DC/OS は機能するので。</p>
+
+<pre><code class="language-shell">$ vagrant up m1 a1 boot
+</code></pre>
+
+<p>ちなみに a2, a3, &hellip; と数を増やすことで private agent ノードを増やすことが可能。</p>
+
+<p>あとマニュアルインストール手順(公式)を実施してみて解ったが、pulic, private ネットワークを各ノードにアタッチして mesos-master, mesos-slave, またその他の各機能はプライベートネットワークを、外部からのリクエストに応えるためのパブリックネットワーク、といった構成も可能でした。</p>
+
+<h2 id="参考-url">参考 URL</h2>
+
+<ul>
+<li>手順は右記のものを利用。
+<a href="https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md">https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md</a></li>
+<li><a href="https://docs.mesosphere.com/1.7/overview/architecture/">https://docs.mesosphere.com/1.7/overview/architecture/</a></li>
+<li><a href="https://docs.mesosphere.com/1.7/overview/security/">https://docs.mesosphere.com/1.7/overview/security/</a></li>
+</ul>
+</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -788,345 +1163,6 @@ PING a2.weave.local (10.2.1.128) 56(84) bytes of data.
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2015-11-15'>
-            November 15, 2015</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと
-に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。</p>
-
-<h2 id="この記事の前提">この記事の前提&hellip;</h2>
-
-<p>ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ
-ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、
-それの回避方法等&hellip;についてまとめています。</p>
-
-<h2 id="cirlceci-と併用するサービスについて">CirlceCI と併用するサービスについて</h2>
-
-<p>CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ
-スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た
-ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー
-トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ
-うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た
-らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが
-省けそう。ってことで</p>
-
-<ul>
-<li>AWS S3 (<a href="https://aws.amazon.com/jp/s3/">https://aws.amazon.com/jp/s3/</a>)</li>
-<li>AWS CodeDeploy (<a href="https://aws.amazon.com/jp/codedeploy/">https://aws.amazon.com/jp/codedeploy/</a>)</li>
-</ul>
-
-<p>を併用することを考えました。</p>
-
-<p>S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、
-ビルドした結果を格納します。私の務めている会社ではプログラミング言語として
-Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ
-ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り
-戻すことが出来そうです。</p>
-
-<p>また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ
-ロイが可能になるサービスです。東京リージョンでは <sup>2015</sup>&frasl;<sub>08</sub> から利用が可能になり
-ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内
-のインスタンスに対してもデプロイが可能なところです。</p>
-
-<p>Tips 的な情報として
-+++</p>
-
-<p>circle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで
-CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい
-と思います。</p>
-
-<h2 id="git-push-からデプロイまでを自動で行う-circle-yml">Git push からデプロイまでを自動で行う circle.yml</h2>
-
-<p>Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の
-circle.yml を紹介します。全体の流れとしては&hellip;</p>
-
-<ul>
-<li>レポジトリに git push, merge ことがトリガで処理が走る</li>
-<li>circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る</li>
-<li>S3 バケットにビルドされた結果が格納される</li>
-<li>CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする</li>
-</ul>
-
-<p>となります。</p>
-
-<pre><code class="language-yml">machine:
-  environment:
-    SBT_VERSION: 0.13.9
-    SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot;
-  services:
-    - docker
-
-dependencies:
-  pre:
-    - (事前に実行したいコマンド・スクリプトを記述)
-  cache_directories:
-    - &quot;~/.sbt&quot;
-
-test:
-  override:
-    - sbt compile
-
-deployment:
-  production:
-    branch: master
-    codedeploy:
-      codedeploy-sample:
-        application_root: /
-        region: ap-northeast-1
-        revision_location:
-          revision_type: S3
-          s3_location:
-            bucket: circleci-sample-bucket
-            key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip
-        deployment_group: codedeploy-sample-group
-</code></pre>
-
-<h4 id="それぞれのパラメータの意味">それぞれのパラメータの意味</h4>
-
-<p>上記 circle.yml の重要なパラメータのみ説明していきます。
-私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに
-SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき
-ると思いますので読み替えてください。</p>
-
-<ul>
-<li>machine -&gt; environment : 全体で適用できる環境変数を定義します</li>
-<li>dependencies -&gt; pre : 事前に実行したいコマンド等を定義できます</li>
-<li>test -&gt; overide : テストを実行するコマンドを書きます。</li>
-<li>deployment -&gt; production -&gt; branch : 適用するブランチ名と本番環境であることを記述します。</li>
-<li>&lsquo;codedeploy-sample&rsquo; : CodeDeploy 上にサンプルで作成した &lsquo;Application&rsquo; 名です</li>
-<li>s3_location -&gt; bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します</li>
-<li>s3_location -&gt; key_pattern : S3 バケットに収めるファイル名指定です</li>
-<li>deployment_group : CodeDeploy で定義する &lsquo;Deployment-Group&rsquo; 名です</li>
-</ul>
-
-<p>より詳細な説明を読みたい場合は下記の URL に描いてあります。</p>
-
-<p><a href="https://circleci.com/docs/configuration">https://circleci.com/docs/configuration</a></p>
-
-<h2 id="s3-のみににデプロイする例">S3 のみににデプロイする例</h2>
-
-<p>上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて
-実行したい場面もありそうです。流れとしては&hellip;</p>
-
-<ul>
-<li>レポジトリに git push, merge ことがトリガで処理が走る</li>
-<li>circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る</li>
-<li>S3 バケットにビルドされた結果が格納される</li>
-</ul>
-
-<p>です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の
-API を直接叩けば出来そうです。</p>
-
-<p><a href="http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html">http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html</a></p>
-
-<p>このリファレンスにある &ldquo;CreateDeployment&rdquo; については後に例をあげます。</p>
-
-<p>ただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが
-CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。</p>
-
-<p>よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば
-上記の流れが組めそうです。</p>
-
-<pre><code class="language-yml">machine:
-  environment:
-    SBT_VERSION: 0.13.9
-    SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot;
-  services:
-    - docker
-
-dependencies:
-  pre:
-    - sudo pip install awscli
-  cache_directories:
-    - &quot;~/.sbt&quot;
-
-test:
-  override:
-    - sbt compile
-
-deployment:
-  master:
-    branch: master
-    commands:
-      - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip .
-      - aws s3 cp
-        sample-code-${CIRCLE_PROJECT_REPONAME}-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip s3://&lt;バケット名&gt;/&lt;ディレクトリ&gt;/ --region ap-northeast-1
-</code></pre>
-
-<p>事前に awscli をインストールしているだけです。</p>
-
-<p>S3 バケットに格納された成果物を CodeDeploy を使って手動でデプロイするには下記
-のコマンドで実施できます。</p>
-
-<pre><code class="language-bash">$ aws deploy create-deployment \
-  --application-name codedeploy-sample \
-  --deployment-config-name CodeDeployDefault.OneAtATime \
-  --deployment-group-name codedeploy-sample-group \
-  --description &quot;deploy test&quot; \
-  --s3-location bucket=&lt;バケット名&gt;,bundleType=zip,key=&lt;ファイル名&gt;
-  {
-    &quot;deploymentId&quot;: &quot;d-2B4OAMT0B&quot;
-   }
-</code></pre>
-
-<p>deploymentId は CodeDeploy 上の Application に紐付いた ID です。CodeDeploy の
-API を叩くか AWS コンソールで確認可能です。</p>
-
-<h4 id="circleci-の問題点とそれの回避方法">CircleCI の問題点とそれの回避方法</h4>
-
-<ul>
-<li>production と staging</li>
-</ul>
-
-<p>1つのブランチで管理できる circle.yml は1つです。このファイルの中で定義できる &lsquo;本番用&rsquo;, &lsquo;開発用&rsquo; の定義は
-deployment -&gt; production, staging の2種類になります。この2つで管理しきれない環境がある場合(例えば staging 以前の
-development 環境がある) は、レポジトリのブランチを別けて circle.yml を管理する方法があると思います。</p>
-
-<ul>
-<li>複数のデプロイ先があるレポジトリの運用</li>
-</ul>
-
-<p>同一のレポジトリ内で管理しているコードのデプロイ先が複数ある場合は CodeDeploy 上で1つの Application に対して複数の
-Deployment-Group を作成することで対応できます。ただ、cirlce.yml で定義できるデプロイ先は deployment_group: の1つ(
-厳密に言うと production, staging の2つ) になるので、こちらもブランチによる circle.yml の別管理で回避できそうです。</p>
-
-<p>こちらの問題については CircleCI 的にはおそらく「1つのレポジトリで管理するデプロイ先は1つに」というコンセプトなのかもしれません。</p>
-
-<h4 id="aws-iam-ユーザにアタッチする-policy-作成">AWS IAM ユーザにアタッチする Policy 作成</h4>
-
-<p>IAM ユーザを CircleCI に事前に設定しておくことで直接 AWS のリソースを操作出来るのですが、
-そのユーザにアタッチしておくべき Policy について例をあげておきます。</p>
-
-<p>特定の S3 バケットにオブジェクト Put する Policy</p>
-
-<pre><code class="language-json">{
-    &quot;Version&quot;: &quot;2012-10-17&quot;,
-    &quot;Statement&quot;: [
-        {
-            &quot;Sid&quot;: &quot;Stmt1444196633000&quot;,
-            &quot;Effect&quot;: &quot;Allow&quot;,
-            &quot;Action&quot;: [
-                &quot;s3:PutObject&quot;
-            ],
-            &quot;Resource&quot;: [
-                &quot;arn:aws:s3:::&lt;S3 バケット名&gt;/*&quot;
-            ]
-        }
-    ]
-}
-</code></pre>
-
-<p>CodeDeploy の各 Action を実行する Policy</p>
-
-<pre><code class="language-json">{
-    &quot;Version&quot;: &quot;2012-10-17&quot;,
-    &quot;Statement&quot;: [
-        {
-            &quot;Effect&quot;: &quot;Allow&quot;,
-            &quot;Action&quot;: [
-                &quot;codedeploy:RegisterApplicationRevision&quot;,
-                &quot;codedeploy:GetApplicationRevision&quot;
-            ],
-            &quot;Resource&quot;: [
-                &quot;*&quot;
-            ]
-        },
-        {
-            &quot;Effect&quot;: &quot;Allow&quot;,
-            &quot;Action&quot;: [
-                &quot;codedeploy:CreateDeployment&quot;,
-                &quot;codedeploy:GetDeployment&quot;
-            ],
-            &quot;Resource&quot;: [
-                &quot;*&quot;
-            ]
-        },
-        {
-            &quot;Effect&quot;: &quot;Allow&quot;,
-            &quot;Action&quot;: [
-                &quot;codedeploy:GetDeploymentConfig&quot;
-            ],
-            &quot;Resource&quot;: [
-                &quot;*&quot;
-            ]
-        }
-    ]
-}
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>CodeDeploy, S3 を併用することで CircleCI を使っても VPC 内のプライベートインス
-タンスにデプロイできることが判りました。もし EC2 インスタンスを使っている場合
-は他の方法も取れることが判っています。circle.yml 内の pre: で指定出来るコマン
-ド・スクリプトで EC2 インスタンスに紐付いているセキュリティグループに穴あけ処
-理を記述すれば良さそうです。デプロイが終わったら穴を塞げばいいですね。この辺の
-例については国内でもブログ記事にされている方がいらっしゃいますので参考にしてくだ
-さい。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1243,6 +1279,20 @@ Deployment-Group を作成することで対応できます。ただ、cirlce.ym
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語でInfluxDBにメトリクスデータを挿入</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-23'>
+                                    July 23, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
                                 
                                     
@@ -1282,20 +1332,6 @@ Deployment-Group を作成することで対応できます。ただ、cirlce.ym
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-28'>
-                                    December 28, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1330,7 +1366,7 @@ Deployment-Group を作成することで対応できます。ただ、cirlce.ym
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">100</span>
+                                <span style="float:right;">101</span>
                             </header>
                         </article>
                     </li>

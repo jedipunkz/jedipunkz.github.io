@@ -6,8 +6,175 @@
     <description>Recent content on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Thu, 14 Jul 2016 09:10:57 +0900</lastBuildDate>
+    <lastBuildDate>Sat, 23 Jul 2016 02:40:11 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Go言語でInfluxDBにメトリクスデータを挿入</title>
+      <link>http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/</link>
+      <pubDate>Sat, 23 Jul 2016 02:40:11 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;Ansible, Terraform, Chef などのソフトウェアを使ってインフラを定義するのが当たり前になった現在ですが、本当の意味でのソフトウェアによるインフラの定義ってなんだろと最近考えています。aws-sdk や fog などを使ったネイティブな言語でインフラを定義することの意味もあるように感じているからです。某サービスプロバイダのエンジニアはこうした言語によるインフラの定義の一番大きなメリットとして &amp;ldquo;再利用性&amp;rdquo; をあげていました。&lt;/p&gt;
+
+&lt;p&gt;ってことで真の Infrastructure as a Code を実践するために幾つかのソフトウェアでインフラを構成したりってことを勉強していこうかなと思い始めています。&lt;/p&gt;
+
+&lt;p&gt;今回は InfluxDB を Go 言語で操作する方法を紹介したいと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;情報源&#34;&gt;情報源&lt;/h2&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/influxdata/influxdb/tree/master/client&#34;&gt;https://github.com/influxdata/influxdb/tree/master/client&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;今回使う InfluxDB Client です。InfluxDB 自体が Go 言語で書かれていますがクライアントも Go 言語で記述することができます。ここにあるサンプルコードをすこしいじって、今回の記事を書こうと思います。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/shirou/gopsutil&#34;&gt;https://github.com/shirou/gopsutil&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;@shirou さんが作られた psutil の Go 言語版です。CPU, Mem などリソースをモニタするのに便利なので利用します。&lt;/p&gt;
+
+&lt;h2 id=&#34;環境構築&#34;&gt;環境構築&lt;/h2&gt;
+
+&lt;p&gt;環境を作っていきます。InfluxDB と Chronograf を構築するのですが Docker で構築するのが簡単なのでこれを利用します。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;InfluxDB の起動&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;InfluxDB のコンテナを起動します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker run -p 8083:8083 -p 8086:8086 \
+      -v $PWD:/var/lib/influxdb \
+      influxdb
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Chronograf の起動&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Chronograf のコンテナを起動します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker run -p 10000:10000 chronograf
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;この時点で http://${DOCKER_HOST}:10000/ にアクセスすると Chronograf の UI を確認できます。&lt;/p&gt;
+
+&lt;h2 id=&#34;influxdb-にユーザ-データベースを作成する&#34;&gt;InfluxDB にユーザ・データベースを作成する&lt;/h2&gt;
+
+&lt;p&gt;InfluxDB 上にユーザとデータベースを作成します。言語の中でも作ることが出来ますが、今回は手動で。
+Mac OSX を使っている場合 homebrew で influxdb をインストールすることが簡単にできます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;brew install influxdb
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ユーザを作ります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;influx -host 192.168.99.100 -port 8086
+&amp;gt; create user foo with password &#39;foo&#39;
+&amp;gt; grant all privileges to foo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;データベースを作ります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;influx -host 192.168.99.100 -port 8086
+&amp;gt; CREATE DATABASE IF NOT EXISTS square_holes;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;go言語でメモリー使用率を取得し-influxdb-にメトリクスデータを挿入&#34;&gt;Go言語でメモリー使用率を取得し InfluxDB にメトリクスデータを挿入&lt;/h2&gt;
+
+&lt;p&gt;Go 言語でメモリー使用率を取得し得られたメトリクスデータを InfluxDB に挿入するコードを書きます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-golang&#34;&gt;package main
+
+import (
+    &amp;quot;log&amp;quot;
+    &amp;quot;time&amp;quot;
+
+    &amp;quot;github.com/influxdata/influxdb/client/v2&amp;quot;
+    &amp;quot;github.com/shirou/gopsutil/mem&amp;quot;
+)
+
+const (
+    MyDB = &amp;quot;square_holes&amp;quot;
+    username = &amp;quot;foo&amp;quot;
+    password = &amp;quot;foo&amp;quot;
+)
+
+func main() {
+    for {
+        // Make client
+        c, err := client.NewHTTPClient(client.HTTPConfig{
+            Addr: &amp;quot;http://192.168.99.100:8086&amp;quot;,
+            Username: username,
+            Password: password,
+        })
+    
+        if err != nil {
+            log.Fatalln(&amp;quot;Error: &amp;quot;, err)
+        }
+    
+        // Create a new point batch
+        bp, err := client.NewBatchPoints(client.BatchPointsConfig{
+            Database:  MyDB,
+            Precision: &amp;quot;s&amp;quot;,
+        })
+    
+        if err != nil {
+            log.Fatalln(&amp;quot;Error: &amp;quot;, err)
+        }
+    
+        // get mem
+        v, _ := mem.VirtualMemory()
+    
+        // Create a point and add to batch
+        tags := map[string]string{&amp;quot;mem&amp;quot;: &amp;quot;mem-total&amp;quot;}
+        fields := map[string]interface{}{
+            &amp;quot;total&amp;quot;:   v.Total,
+            &amp;quot;free&amp;quot;:    v.Free,
+        }
+        pt, err := client.NewPoint(&amp;quot;memory&amp;quot;, tags, fields, time.Now())
+    
+        if err != nil {
+            log.Fatalln(&amp;quot;Error: &amp;quot;, err)
+        }
+    
+        bp.AddPoint(pt)
+    
+        // Write the batch
+        c.Write(bp)
+        time.Sleep(1 * time.Second)
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ビルドして実行すると下記のように influxdb 上のデータベースにメトリクスデータが挿入されていることを確認できます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;influx -host 192.168.99.100 -port 8086 -execute &#39;SELECT * FROM memory&#39; -database=square_holes -precision=s | head -8
+name: memory
+------------
+time            mem             free            total
+1469207199      mem-total       260071424       8589934592
+1469207201      mem-total       260616192       8589934592
+1469207205      mem-total       260145152       8589934592
+1469208496      mem-total       77627392        8589934592
+1469208660      mem-total       213663744       8589934592
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Chronograf の UI で確認してみましょう。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/influx-go.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
+
+&lt;p&gt;InfluxDB の提供元が出している Telegraf というメトリクスデータの送信エージェントがありますが、同じような動きを Go 言語で簡単に開発できることが分かりました。ネイティブな言語で開発するとより柔軟にデータの送信ができることも期待できます。各言語の aws-sdk, fog, などを使ってインフラを定義することでも同じ効果が得られることが期待できると思います。また、古くからみんなが使っている activerecord 等も同じようにインフラを言語の中で定義しているとも言えるのかなぁと influxdb-client を使っていて思いました。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</title>
@@ -3785,223 +3952,6 @@ Chef サーバ構成にする必要が出てきます。&lt;/p&gt;
 &lt;p&gt;参考 URL : &lt;a href=&#34;http://superuser.openstack.org/articles/openstack-user-survey-insights-november-2014&#34;&gt;http://superuser.openstack.org/articles/openstack-user-survey-insights-november-2014&lt;/a&gt;&lt;/p&gt;
 
 &lt;p&gt;ちなみに、Puppet を使った OpenStack デプロイも個人的に色々試しています。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>MidoStack を動かしてみる</title>
-      <link>http://jedipunkz.github.io/blog/2014/11/04/midostack/</link>
-      <pubDate>Tue, 04 Nov 2014 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2014/11/04/midostack/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;昨晩 Midokura さんが Midonet を OSS 化したとニュースになりました。公式サイトは
-下記の URL になっています。Midonet は OpenStack Neutron のプラグインとして動作
-するソフトウェアです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://www.midonet.org&#34;&gt;http://www.midonet.org&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;下記のGithub 上でソースを公開しています。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/midonet&#34;&gt;https://github.com/midonet&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;本体の midonet と共に midostack というレポジトリがあってどうやら公式サイトの
-QuickStart を見ても devstack を交えての簡単な midonet の動作が確認できそう。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/midonet/midostack&#34;&gt;https://github.com/midonet/midostack&lt;/a&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;早速使ってみる&#34;&gt;早速使ってみる&lt;/h2&gt;
-
-&lt;p&gt;早速 midostack を使って midonet を体験してみましょう。QuickStart には
-Vagrant + VirtualBox を用いた使い方が改定ありますが手元の PC 端末だとリソース
-が足らなくて CirrOS VM 一個すら立ち上がりませんでした。よって普通にリソースの
-沢山あるサーバで稼働してみます。Vagrantfile 見ても&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;config.vm.synced_folder &amp;quot;./&amp;quot;, &amp;quot;/midostack&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;としているだけなので、Vagrant ではなくても大丈夫でしょう。&lt;/p&gt;
-
-&lt;p&gt;Ubuntu Server 14.04 をインストールしたマシンを用意して midostack を取得します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% git clone https://github.com/midonet/midostack.git
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;midonet_stack.sh を実行します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% cd midostack
-% ./midonet_stack.sh
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;暫く待つと Neutron Middonet Plugin が有効になった OpenStack が立ち上がります。
-Horizon にアクセスしましょう。ユーザ名 : admin, パスワード : gogomid0 (デフォ
-ルト) です。&lt;/p&gt;
-
-&lt;p&gt;VM も普通に立ち上がりますし VM 同士の通信も良好です。&lt;/p&gt;
-
-&lt;h2 id=&#34;neutron-プロセスを確認する&#34;&gt;Neutron プロセスを確認する&lt;/h2&gt;
-
-&lt;p&gt;Neutron-Server は下記のように立ち上がっています。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;16229 pts/13   S+     0:06 python /usr/local/bin/neutron-server --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/midonet/midonet.ini
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;/etc/neutron/neutron.conf の midonet の指定はこんな感じ。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;core_plugin = midonet.neutron.plugin.MidonetPluginV2
-api_extensions_path = /opt/stack/midonet/python-neutron-plugin-midonet/midonet/neutron/extensions
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に /etc/neutron/plugins/midonet/midonet.ini を確認してみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;[midonet]
-# MidoNet API server URI
-# midonet_uri = http://localhost:8080/midonet-api
-
-# MidoNet admin username
-# username = admin
-
-# MidoNet admin password
-# password = passw0rd
-
-# ID of the project that MidoNet admin user belongs to
-# project_id = 77777777-7777-7777-7777-777777777777
-
-# Virtual provider router ID
-# provider_router_id = 00112233-0011-0011-0011-001122334455
-
-# Path to midonet host uuid file
-# midonet_host_uuid_path = /etc/midolman/host_uuid.properties
-
-[MIDONET]
-project_id = admin
-password = gogomid0
-username = admin
-midonet_uri = http://localhost:8081/midonet-api
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;midonet-api-にアクセスする&#34;&gt;Midonet API にアクセスする&lt;/h2&gt;
-
-&lt;p&gt;Midonet API のリファレンスが下記の URL で公開されていました。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://docs.midonet.org/docs/v1.8/rest-api/api/rest-api-specification.html&#34;&gt;http://docs.midonet.org/docs/v1.8/rest-api/api/rest-api-specification.html&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;早速使ってみましょう。まず Token を得ます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;curl -i &#39;http://127.0.0.1:5000/v2.0/tokens&#39; -X POST -H &amp;quot;Content-Type: application/json&amp;quot; -H &amp;quot;Accept: application/json&amp;quot;  -d &#39;{&amp;quot;auth&amp;quot;: {&amp;quot;tenantName&amp;quot;: &amp;quot;admin&amp;quot;, &amp;quot;passwordCredentials&amp;quot;: {&amp;quot;username&amp;quot;: &amp;quot;admin&amp;quot;, &amp;quot;password&amp;quot;: &amp;quot;gogomid0&amp;quot;}}}&#39;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Token ID を取得したら &amp;ldquo;/&amp;rdquo; に対してアクセスしてみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -i -X GET http://localhost:8081/midonet-api/ -H &amp;quot;User-Agent: python-keystoneclient&amp;quot; -H &amp;quot;X-Auth-Token: &amp;lt;TokenID&amp;gt;&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;レスポンス&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
-&amp;quot;routerTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/routers/{id}&amp;quot;,
-&amp;quot;portTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/ports/{id}&amp;quot;,
-&amp;quot;vipTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/vips/{id}&amp;quot;,
-&amp;quot;poolTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/pools/{id}&amp;quot;,
-&amp;quot;healthMonitorTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/health_monitors/{id}&amp;quot;,
-&amp;quot;healthMonitors&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/health_monitors&amp;quot;,
-&amp;quot;loadBalancers&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/load_balancers&amp;quot;,
-&amp;quot;ipAddrGroupTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/ip_addr_groups/{id}&amp;quot;,
-&amp;quot;tenants&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/tenants&amp;quot;,
-&amp;quot;tenantTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/tenants/{id}&amp;quot;,
-&amp;quot;portGroupTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/port_groups/{id}&amp;quot;,
-&amp;quot;loadBalancerTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/load_balancers/{id}&amp;quot;,
-&amp;quot;poolMemberTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/pool_members/{id}&amp;quot;,
-&amp;quot;hostVersions&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/versions&amp;quot;,
-&amp;quot;version&amp;quot;: &amp;quot;v1.7&amp;quot;,
-&amp;quot;bridgeTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/bridges/{id}&amp;quot;,
-&amp;quot;hostTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/hosts/{id}&amp;quot;,
-&amp;quot;uri&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/&amp;quot;,
-&amp;quot;vteps&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/vteps&amp;quot;,
-&amp;quot;tunnelZoneTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/tunnel_zones/{id}&amp;quot;,
-&amp;quot;ipAddrGroups&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/ip_addr_groups&amp;quot;,
-&amp;quot;writeVersion&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/write_version&amp;quot;,
-&amp;quot;chainTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/chains/{id}&amp;quot;,
-&amp;quot;vtepTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/vteps/{ipAddr}&amp;quot;,
-&amp;quot;adRouteTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/ad_routes/{id}&amp;quot;,
-&amp;quot;bgpTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/bgps/{id}&amp;quot;,
-&amp;quot;hosts&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/hosts&amp;quot;,
-&amp;quot;routeTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/routes/{id}&amp;quot;,
-&amp;quot;ruleTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/rules/{id}&amp;quot;,
-&amp;quot;systemState&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/system_state&amp;quot;,
-&amp;quot;vips&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/vips&amp;quot;,
-&amp;quot;pools&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/pools&amp;quot;,
-&amp;quot;routers&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/routers&amp;quot;,
-&amp;quot;bridges&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/bridges&amp;quot;,
-&amp;quot;chains&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/chains&amp;quot;,
-&amp;quot;portGroups&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/port_groups&amp;quot;,
-&amp;quot;poolMembers&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/pool_members&amp;quot;,
-&amp;quot;tunnelZones&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/tunnel_zones&amp;quot;
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;なんとなく引数にこれらの文字列を渡せばいいのだなと分かります。&lt;/p&gt;
-
-&lt;p&gt;次に neutron の管理している subnets を確認してみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -i -X GET http://localhost:8081/midonet-api/neutron/subnets -H &amp;quot;User-Agent: python-keystoneclient&amp;quot; -H &amp;quot;X-Auth-Token: &amp;lt;TokenID&amp;gt;&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;レスポンス&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;[
-  {
-    &amp;quot;enable_dhcp&amp;quot;: false,
-    &amp;quot;tenant_id&amp;quot;: &amp;quot;65f7012145d84ac5afc36572eabe5b09&amp;quot;,
-    &amp;quot;host_routes&amp;quot;: [],
-    &amp;quot;dns_nameservers&amp;quot;: [],
-    &amp;quot;id&amp;quot;: &amp;quot;3dbe5cff-8a8c-4790-85b5-b789d8ede863&amp;quot;,
-    &amp;quot;name&amp;quot;: &amp;quot;public-subnet&amp;quot;,
-    &amp;quot;cidr&amp;quot;: &amp;quot;200.200.200.0/24&amp;quot;,
-    &amp;quot;shared&amp;quot;: false,
-    &amp;quot;ip_version&amp;quot;: 4,
-    &amp;quot;network_id&amp;quot;: &amp;quot;45269fba-e32f-40b0-a542-f5cfe34ce1a1&amp;quot;,
-    &amp;quot;gateway_ip&amp;quot;: &amp;quot;200.200.200.1&amp;quot;,
-    &amp;quot;allocation_pools&amp;quot;: [
-      {
-        &amp;quot;last_ip&amp;quot;: null,
-        &amp;quot;first_ip&amp;quot;: null
-      }
-    ]
-  },
-  {
-    &amp;quot;enable_dhcp&amp;quot;: true,
-    &amp;quot;tenant_id&amp;quot;: &amp;quot;f34b4398015546b8b84f50c731ed6c51&amp;quot;,
-    &amp;quot;host_routes&amp;quot;: [],
-    &amp;quot;dns_nameservers&amp;quot;: [],
-    &amp;quot;id&amp;quot;: &amp;quot;3dbcf04a-9738-4b1f-b084-76f2a4b17cbc&amp;quot;,
-    &amp;quot;name&amp;quot;: &amp;quot;private-subnet&amp;quot;,
-    &amp;quot;cidr&amp;quot;: &amp;quot;10.0.0.0/24&amp;quot;,
-    &amp;quot;shared&amp;quot;: false,
-    &amp;quot;ip_version&amp;quot;: 4,
-    &amp;quot;network_id&amp;quot;: &amp;quot;2edb78c3-0f23-4e29-a3e6-cc97f55baa6a&amp;quot;,
-    &amp;quot;gateway_ip&amp;quot;: &amp;quot;10.0.0.1&amp;quot;,
-    &amp;quot;allocation_pools&amp;quot;: [
-      {
-        &amp;quot;last_ip&amp;quot;: null,
-        &amp;quot;first_ip&amp;quot;: null
-      }
-    ]
-  }
-]
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;２つのサブネットが確認出来ました。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;勉強不足でまだ全く midonet で出来る事がわからない..汗。でもとりあえず動かせた
-し、API も引っ張れるのでこれから色々試せそうですね。OSS 化されたことで、コミュ
-ニティの間でも使われていくことも想像出来ますし、自分たち技術者としてはとても有
-り難いことでした。&lt;/p&gt;
 </description>
     </item>
     
