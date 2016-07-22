@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-10-20T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-10-27T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語でInfluxDBにメトリクスデータを挿入</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,609 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/10/27/swift-chef/">実用的な Swift 構成を Chef でデプロイ</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-10-27'>
+            October 27, 2013</time>
+        <span class="author"></span>
+        
+            <p>8 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>以前、&rdquo;Swift HA 構成を Chef でデプロイ&rdquo; というタイトルで記事を書きました。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/">http://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/</a></p>
+
+<p>こちらですが、Swift-Proxy, MySQL, Keystone をそれぞれ haproxy, keepalived で
+HA 組みました。ですが、これは実用的なのかどうか自分でずっと考えていました。</p>
+
+<p>MySQL と KeepAlived はできればシングル構成にしたいのと、Swift-Proxy は HA で組
+みたい。MySQL は Master/Master レプリケーション構成になり、どちらかのノードが
+障害を起こし万が一復旧が難しくなった時、構築し直しがしんどくなります。かと言っ
+て Swift-Proxy をシングル構成にすると今度はノード追加・削除の作業時にサービス
+断が発生します。Swift-Proxy を再起動書ける必要があるからです。なので
+Swift-Proxy は引き続き HA 構成にしたい。</p>
+
+<p>もう一点、見直したいと思っていました。</p>
+
+<p>日経コンピュータから出版されている &ldquo;仮想化大全 2014&rdquo; の記事を読んでいて
+気がついたのですが。Swift には下記の通りそれぞれのサーバがあります。</p>
+
+<ul>
+<li>swift-proxy-server</li>
+<li>swift-account-server</li>
+<li>swift-container-server</li>
+<li>swift-object-server</li>
+</ul>
+
+<p>Swift には下記のような特徴がある事がわかりました。</p>
+
+<ul>
+<li>swift-object</li>
+</ul>
+
+<p>swift-object は swift-accout, swift-container とは物理リソースの扱いに全く異な
+る特性を持っています。swift-account, swift-container はクライアントからのリクエ
+ストに対して &ldquo;アカウントの存在を確認&rdquo;, &ldquo;ACL 情報の確認&rdquo; 等を行うサーバであるの
+に対して swift-object はストレージ上のオブジェクトをクライアントに提供、または
+逆に格納するサーバです。よって、Disk I/O の利用特性として swift-account,
+container は SSD 等、高スループットの Disk を利用するケースが推奨されるのに対
+して swift-object はオブジェクトの実体を格納する必要があるため Disk 容量の大き
+なストレージを要する。</p>
+
+<p>よって今回は下記の構成変更をしてより実用的な構成を Chef でデプロイする方法を記
+そうと思います。</p>
+
+<ul>
+<li>swift-object を swift-account, swift-container とノードを分離する</li>
+<li>MySQL/Keystone の HA を行わず Swift-Proxy のみ HA 化する</li>
+</ul>
+
+<h2 id="参考資料">参考資料</h2>
+
+<ul>
+<li><a href="http://www.rackspace.com/knowledge_center/article/managing-openstack-object-storage-with-chef">http://www.rackspace.com/knowledge_center/article/managing-openstack-object-storage-with-chef</a></li>
+<li><a href=http://www.amazon.co.jp/%E3%81%99%E3%81%B9%E3%81%A6%E3%82%8F%E3%81%8B%E3%82%8B%E4%BB%AE%E6%83%B3%E5%8C%96%E5%A4%A7%E5%85%A82014-%E6%97%A5%E7%B5%8CBP%E3%83%A0%E3%83%83%E3%82%AF-%E6%97%A5%E7%B5%8C%E3%82%B3%E3%83%B3%E3%83%94%E3%83%A5%E3%83%BC%E3%82%BF/dp/4822262871>仮想化大全</a></li>
+</ul>
+
+<h2 id="構成">構成</h2>
+
+<pre><code>+-----------------+
+|  load balancer  |
++-----------------+
+|
++-------------------+-------------------+-------------------+-------------------+---------------------- proxy network
+|                   |                   |                   |                   |                   
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+
+|   chef server   | | chef workstation| |   swift-mange   | |  swift-proxy01  | |  swift-proxy02  | 
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ ...&gt; scaling
+|                   |                   |                   |                   |                   
++-------------------+-------------------+-------------------+-------------------+-------------------+-- storage network
+|                   |                   |                   |                   |                   |
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ 
+| swift-storage01 | | swift-storage02 | | swift-storage03 | | swift-account01 | | swift-account02 | | swift-account03 |
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ ..&gt; scaling
+</code></pre>
+
+<h4 id="特徴">特徴</h4>
+
+<ul>
+<li>load balancer は一般的なハードウェア、ソフトウェアで用意 (今回は割愛)</li>
+<li>swift-proxy は同等の機能のモノを並列に</li>
+<li>swift-storage と &lsquo;swift-account, container&rsquo; はそれぞれの zone 毎に並べるため同数</li>
+<li>swift-account は swift-account, swift-container が稼働</li>
+<li>swift-manage は mysql, keystone, git server を搭載</li>
+<li>chef server は外部に配置しても構わないが到達出来る箇所に</li>
+<li>chef workstation は全ての操作を行う端末。全てのノードに到達出来る箇所に</li>
+</ul>
+
+<h2 id="それぞれのノードでの-disk-の準備">それぞれのノードでの disk の準備</h2>
+
+<p>object, account, container 共に OS 領域とは別の disk を必要とするため /dev/sdb
+等のディスクを追加し下記の通り gdisk でパーティションを切る。</p>
+
+<pre><code class="language-bash">% sudo apt-get update; sudo apt-get -y install gdisk
+% sudo gdisk /dev/sdb # デバイス名は例
+</code></pre>
+
+<p>対象ノード : swift-object0[1-3], swift-account0[1-3]</p>
+
+<h2 id="デプロイ準備">デプロイ準備</h2>
+
+<p>下記は全て chef-workstation での操作</p>
+
+<p>rcpops 管理の chef-repo を取得する。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git
+% cd chef-cookbooks
+</code></pre>
+
+<p>現時点で v4.1.2 がリリースされているので tag を利用して checkout する。</p>
+
+<pre><code class="language-bash">% git tag -l
+1.0.0
+release-2011.3-d5
+release-v2.0
+v2.9.0
+v2.9.1
+v2.9.2
+v2.9.3
+v2.9.4
+v2.9.5
+v2.9.6
+v2.9.7
+v2.9.8
+v3.0.0
+v3.0.1
+v3.1.0
+v4.1.0
+v4.1.1
+v4.1.2
+% git checkout -b v4.1.2 refs/tags/v4.1.2
+</code></pre>
+
+<p>git submodule 化されている cookbooks を取得する。</p>
+
+<pre><code class="language-bash">% git submodule init
+% git submodule sync
+% git submodule upate
+</code></pre>
+
+<p>cookbooks, roles の chef-server へのアップロードを行う。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o cookbook -a
+% knife role from file role/*.rb
+</code></pre>
+
+<p>今回の構成一式を収容する chef environment を作成する。</p>
+
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;swift&quot;,
+  &quot;description&quot;: &quot;&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;package_component&quot;: &quot;grizzly&quot;,
+    &quot;osops_networks&quot;: {
+      &quot;management&quot;: &quot;10.200.9.0/24&quot;,
+      &quot;public&quot;: &quot;10.200.9.0/24&quot;,
+      &quot;nova&quot;: &quot;10.200.9.0/24&quot;,
+      &quot;swift&quot;: &quot;10.200.9.0/24&quot;
+    },
+    &quot;keystone&quot;: {
+      &quot;admin_user&quot;: &quot;admin&quot;,
+      &quot;tenants&quot;: [
+        &quot;admin&quot;,
+        &quot;service&quot;
+      ],
+      &quot;users&quot;: {
+        &quot;admin&quot;: {
+          &quot;password&quot;: &quot;secrete&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [
+              &quot;admin&quot;
+            ]
+          }
+        },
+        &quot;demo&quot;: {
+          &quot;password&quot;: &quot;demo&quot;,
+          &quot;default_tenant&quot; : &quot;service&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [ &quot;admin&quot; ]
+          }
+        }
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;keystone&quot;
+      }
+    },
+    &quot;mysql&quot;: {
+      &quot;root_network_acl&quot;: &quot;%&quot;,
+      &quot;allow_remote_root&quot;: true,
+      &quot;server_root_password&quot;: &quot;secrete&quot;,
+      &quot;server_repl_password&quot;: &quot;secrete&quot;,
+      &quot;server_debian_password&quot;: &quot;secrete&quot;
+    },
+    &quot;monitoring&quot;: {
+      &quot;procmon_provider&quot;: &quot;monit&quot;,
+      &quot;metric_provider&quot;: &quot;collectd&quot;
+    },
+    &quot;vips&quot;: {
+      &quot;keystone-admin-api&quot;: &quot;10.200.9.112&quot;,
+      &quot;keystone-service-api&quot;: &quot;10.200.9.112&quot;,
+      &quot;keystone-internal-api&quot;: &quot;10.200.9.112&quot;,
+      &quot;swift-proxy&quot;: &quot;10.200.9.112&quot;,
+      &quot;config&quot;: {
+        &quot;10.200.9.112&quot;: {
+          &quot;vrid&quot;: 12,
+          &quot;network&quot;: &quot;management&quot;
+        }
+      }
+    },
+    &quot;developer_mode&quot;: false,
+    &quot;swift&quot;: {
+      &quot;swift_hash&quot;: &quot;107c0568ea84&quot;,
+      &quot;authmode&quot;: &quot;keystone&quot;,
+      &quot;authkey&quot;: &quot;3f281b71-ce89-4b27-a2ad-ad873d3f2760&quot;
+    }
+  }
+}
+</code></pre>
+
+<p>作成した environment ファイル environments/swift.json を chef-server へアップ
+ロードする。</p>
+
+<pre><code class="language-bash">% knife environment from file environments/swift.json
+</code></pre>
+
+<h2 id="デプロイ">デプロイ</h2>
+
+<p>かきのとおり knife bootstrap する。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;manage_ip_addr&gt; -N swift-manage -r 'role[base]','role[mysql-master]','role[keystone]','role[swift-management-server]' -E swift --sudo -x thirai
+% knife bootstrap &lt;proxy01_ip_addr&gt; -N swift-proxy01 -r &quot;role[base]&quot;,&quot;role[swift-proxy-server]&quot;,'role[swift-setup]','role[openstack-ha]' -E swift --sudo -x thirai
+% knife bootstrap &lt;proxy02_ip_addr&gt; -N swift-proxy02 -r &quot;role[base]&quot;,&quot;role[swift-proxy-server]&quot;,'role[openstack-ha]' -E swift --sudo -x thirai
+% knife bootstrap &lt;storage01_ip_addr&gt; -N swift-storage01 -r 'role[base]','role[swift-object-server]' -E swift --sudo -x thirai
+% knife bootstrap &lt;storage02_ip_addr&gt; -N swift-storage02 -r 'role[base]','role[swift-object-server]' -E swift --sudo -x thirai
+% knife bootstrap &lt;storage03_ip_addr&gt; -N swift-storage03 -r 'role[base]','role[swift-object-server]' -E swift --sudo -x thirai
+% knife bootstrap &lt;account01_ip_addr&gt; -N swift-account01 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift --sudo -x thirai
+% knife bootstrap &lt;account02_ip_addr&gt; -N swift-account02 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift --sudo -x thirai
+% knife bootstrap &lt;account03_ip_addr&gt; -N swift-account03 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift --sudo -x thirai
+</code></pre>
+
+<p>zone 番号を付与する。</p>
+
+<pre><code class="language-bash">% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
+</code></pre>
+
+<p>zone 番号が付与されたことを確認する。</p>
+
+<p>account-server の確認</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-account-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-account-server] and is in swift zone #{z}&quot;; }'
+swift-account01 has the role       [swift-account-server] and is in swift zone 1
+swift-account02 has the role       [swift-account-server] and is in swift zone 2
+swift-account03 has the role       [swift-account-server] and is in swift zone 3
+</code></pre>
+
+<p>container-server の確認</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-container-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-container-server] and is in swift zone #{z}&quot;; }'
+swift-account01 has the role       [swift-container-server] and is in swift zone 1
+swift-account02 has the role       [swift-container-server] and is in swift zone 2
+swift-account03 has the role       [swift-container-server] and is in swift zone 3
+</code></pre>
+
+<p>object-server の確認</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-object-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-object-server] and is in swift zone #{z}&quot;; }'
+swift-storage01 has the role   [swift-object-server] and is in swift zone 1
+swift-storage02 has the role   [swift-object-server] and is in swift zone 2
+swift-storage03 has the role   [swift-object-server] and is in swift zone 3
+</code></pre>
+
+<p>Chef が各々のノードに搭載された Disk を検知出来るか否かを確認する。</p>
+
+<pre><code class="language-bash">% knife exec -E \
+  'search(:node,&quot;role:swift-object-server OR \
+  role:swift-account-server \
+  OR role:swift-container-server&quot;) \
+  { |n| puts &quot;#{n.name}&quot;; \
+  begin; n[:swift][:state][:devs].each do |d| \
+  puts &quot;\tdevice #{d[1][&quot;device&quot;]}&quot;; \
+  end; rescue; puts \
+  &quot;no candidate drives found&quot;; end; }'
+    swift-storage02
+            device sdb1
+    swift-storage03
+            device sdb1
+    swift-account01
+            device sdb1
+    swift-account02
+            device sdb1
+    swift-account03
+            device sdb1
+    swift-storage01
+            device sdb1
+</code></pre>
+
+<p>swift-manage ノードにて chef-client を実行し
+/etc/swift/ring-workspace/generate-rings.sh を更新する。</p>
+
+<pre><code class="language-bash">swift-manage% sudo chef-client
+</code></pre>
+
+<p>generate-rings.sh の &lsquo;exit 0&rsquo; 行をコメントアウトし実行</p>
+
+<pre><code class="language-bash">swift-manage% sudo ${EDITOR} /etc/swift/ring-workspace/generage-rings.sh
+swift-manage% sudo /etc/swift/ring-workspace/generate-rings.sh
+</code></pre>
+
+<p>この操作で /etc/swift/ring-workspace/rings 配下に account, container, object
+用の Rings ファイル群が生成されたことを確認出来るはずである。これらを
+swift-manage 上で既に稼働している git サーバに push し管理する。</p>
+
+<pre><code class="language-bash">swift-manage# cd /etc/swift/ring-workspace/rings
+swift-manage# git add account.builder container.builder object.builder
+swift-manage# git add account.ring.gz container.ring.gz object.ring.gz
+swift-manage# git commit -m &quot;initial commit&quot;
+swift-manage# git push
+</code></pre>
+
+<p>各々のノードにて chef-client を実行することで git サーバ上の Rings ファイル群
+を取得し、swift プロセスを稼働させる。</p>
+
+<pre><code class="language-bash">swift-proxy01# chef-client
+swift-proxy02# chef-client
+swift-storage01# chef-client
+swift-storage02# chef-client
+swift-storage03# chef-client
+swift-account01# chef-client
+swift-account02# chef-client
+swift-account03# chef-client
+</code></pre>
+
+<p>3台のノードが登録されたかどうかを下記の通り確認行う。</p>
+
+<pre><code class="language-bash">swift-proxy01% sudo swift-recon --md5
+[sudo] password for thirai:
+===============================================================================
+--&gt; Starting reconnaissance on 3 hosts
+===============================================================================
+[2013-10-18 11:14:43] Checking ring md5sums
+3/3 hosts matched, 0 error[s] while checking hosts.
+===============================================================================
+</code></pre>
+
+<h2 id="動作確認">動作確認</h2>
+
+<pre><code class="language-bash">swift-storage01# source swift-openrc
+swift-storage01# swift post container01
+swift-storage01# echo &quot;test&quot; &gt; test
+swift-storage01# swift upload container01 test
+swift-storage01# swift list
+swift-storage01# swift list container01
+</code></pre>
+
+<h2 id="ノードの追加方法">ノードの追加方法</h2>
+
+<p>次にノードの追加方法を記します。</p>
+
+<p>gdisk にて /dev/sdb1 等のパーティションを作成する。</p>
+
+<p>下記の通り knife bootstrap する。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;storage04_ip_addr&gt; -N swift-storage04 -r 'role[base]','role[swift-object-server]' -E swift --sudo -x thirai
+% knife bootstrap &lt;account04_ip_addr&gt; -N swift-account04 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift --sudo -x thirai
+</code></pre>
+
+<p>zone 番号を付与する。</p>
+
+<pre><code class="language-bash">% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage04') {|n| n.set['swift']['zone'] = '4'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account04') {|n| n.set['swift']['zone'] = '4'; n.save }&quot;
+</code></pre>
+
+<p>zone 番号が付与されたことを確認する。</p>
+
+<p>account-server の確認</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-account-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-account-server] and is in swift zone #{z}&quot;; }'
+swift-account01 has the role       [swift-account-server] and is in swift zone 1
+swift-account02 has the role       [swift-account-server] and is in swift zone 2
+swift-account03 has the role       [swift-account-server] and is in swift zone 3
+swift-account04 has the role       [swift-account-server] and is in swift zone 4
+</code></pre>
+
+<p>container-server の確認</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-container-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-container-server] and is in swift zone #{z}&quot;; }'
+swift-account01 has the role       [swift-container-server] and is in swift zone 1
+swift-account02 has the role       [swift-container-server] and is in swift zone 2
+swift-account03 has the role       [swift-container-server] and is in swift zone 3
+swift-account04 has the role       [swift-container-server] and is in swift zone 4
+</code></pre>
+
+<p>object-server の確認</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-object-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-object-server] and is in swift zone #{z}&quot;; }'
+swift-storage01 has the role   [swift-object-server] and is in swift zone 1
+swift-storage02 has the role   [swift-object-server] and is in swift zone 2
+swift-storage03 has the role   [swift-object-server] and is in swift zone 3
+swift-storage04 has the role   [swift-object-server] and is in swift zone 4
+</code></pre>
+
+<p>swift-manage ノードにて chef-client を実行し
+/etc/swift/ring-workspace/generate-rings.sh を更新する。</p>
+
+<pre><code class="language-bash">swift-manage% sudo chef-client
+</code></pre>
+
+<p>generate-rings.sh の &lsquo;exit 0&rsquo; 行をコメントアウトし実行</p>
+
+<pre><code class="language-bash">swift-manage% sudo ${EDITOR} /etc/swift/ring-workspace/generage-rings.sh
+swift-manage% sudo /etc/swift/ring-workspace/generate-rings.sh
+</code></pre>
+
+<p>この操作で /etc/swift/ring-workspace/rings 配下に account, container, object
+用の Rings ファイル群が生成されたことを確認出来るはずである。これらを
+swift-manage 上で既に稼働している git サーバに push し管理する。</p>
+
+<pre><code class="language-bash">swift-manage# cd /etc/swift/ring-workspace/rings
+swift-manage# git add account.builder container.builder object.builder
+swift-manage# git add account.ring.gz container.ring.gz object.ring.gz
+swift-manage# git commit -m &quot;added zone 4 nodes&quot;
+swift-manage# git push
+</code></pre>
+
+<p>各々のノードにて chef-client を実行することで git サーバ上の Rings ファイル群
+を取得し、swift プロセスを稼働させる。</p>
+
+<pre><code class="language-bash">swift-proxy01# chef-client
+swift-proxy02# chef-client
+swift-storage01# chef-client
+swift-storage02# chef-client
+swift-storage03# chef-client
+swift-storage04# chef-client
+swift-account01# chef-client
+swift-account02# chef-client
+swift-account03# chef-client
+swift-account04# chef-client
+</code></pre>
+
+<p>4台のノードが登録されたかどうかを下記の通り確認行う。</p>
+
+<pre><code class="language-bash">swift-proxy01% sudo swift-recon --md5
+[sudo] password for thirai:
+===============================================================================
+--&gt; Starting reconnaissance on 4 hosts
+===============================================================================
+[2013-10-18 11:14:43] Checking ring md5sums
+4/4 hosts matched, 0 error[s] while checking hosts.
+===============================================================================
+</code></pre>
+
+<p>proxy ノードの swift プロセスを停止・起動する</p>
+
+<pre><code class="language-bash">swift-proxy01# swift-init all stop
+swift-proxy01# swift-init all start
+swift-proxy02# swift-init all stop
+swift-proxy02# swift-init all start
+</code></pre>
+
+<h2 id="ノード削除方法">ノード削除方法</h2>
+
+<p>次にノードの削除方法を記します。</p>
+
+<p>disk 障害等のzone4 のノード swift-storage04, swift-account04 を削除する前提で記す。</p>
+
+<pre><code class="language-bash">swift-manage# swift-ring-builder /etc/swift/ring-workspace/rings/account.builder remove 10.200.9.109
+swift-manage# swift-ring-builder /etc/swift/ring-workspace/rings/container.builder remove 10.200.9.109
+swift-manage# swift-ring-builder /etc/swift/ring-workspace/rings/object.builder remove 10.200.9.110
+</code></pre>
+
+<p>swift-manage 上で既に稼働している git サーバに push し管理する。</p>
+
+<pre><code class="language-bash">swift-manage# cd /etc/swift/ring-workspace/rings
+swift-manage# git add account.builder container.builder object.builder
+swift-manage# git add account.ring.gz container.ring.gz object.ring.gz
+swift-manage# git commit -m &quot;added zone 4 nodes&quot;
+swift-manage# git push
+</code></pre>
+
+<p>全てのノードで chef-client を実行する。この操作で rings ファイルの配布が行える。</p>
+
+<pre><code class="language-bash">swift-proxy01# chef-client
+swift-proxy02# chef-client
+swift-storage01# chef-client
+swift-storage02# chef-client
+swift-storage03# chef-client
+swift-storage04# chef-client
+swift-account01# chef-client
+swift-account02# chef-client
+swift-account03# chef-client
+swift-account04# chef-client
+</code></pre>
+
+<p>proxy ノードの swift プロセスを停止・起動する</p>
+
+<pre><code class="language-bash">swift-proxy01# swift-init all stop
+swift-proxy01# swift-init all start
+swift-proxy02# swift-init all stop
+swift-proxy02# swift-init all start
+</code></pre>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>MySQL のリカバリは単純にダンプからのリストアが良かったのでシングル構成に出来て
+よかった。また、通常のシングルスター・マルチスレーブの構成に変えても OK かと思
+いますが、Cookbooks を修正する必要がありそう。まぁ Keystone のデータのみを管理
+している MySQL なので負荷は無いですしシングル構成が良いと個人的には思います。
+また Swift-Proxy は 2 台構成の HA になります。VRRP プロトコルの仕組み、また
+haproxy の構成上 3 台以上でも OK でありますが、Cookbooks 的に NG でした。これ
+は修正する価値が大いにありそう。</p>
+
+<p>またこの構成を Chef で管理し始めると大量のノードで Chef-Client を実行すること
+になるので Gnu Prallel や pssh を使った方が良さそう&hellip;。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/10/27/swift-chef/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -865,274 +1468,6 @@ Cookbooks をインスタンスにインストールするテスト、と Cookbo
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/10/12/glusterfs-install/">GlusterFS の各クラスタタイプ構築</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-10-12'>
-            October 12, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>GlusterFS をちょっと前に調べてました。何故かと言うと OpenStack Havana がもうす
-ぐリリースされるのですが、Havana から GlusterFS がサポートされる予定だからです。</p>
-
-<p>この辺りに色々情報が載っています。</p>
-
-<p><a href="http://www.gluster.org/category/openstack/">http://www.gluster.org/category/openstack/</a></p>
-
-<p>その前に GlusterFS を構築出来ないといけないので、今回はその方法を書いていきま
-す。各クラスタタイプ毎に特徴や構築方法が異なるのでその辺りを重点的に。</p>
-
-<h2 id="環境">環境</h2>
-
-<ul>
-<li>Ubuntu Server 12.04.3 LTS</li>
-<li>PPA レポジトリ利用</li>
-<li>/dev/sdb を OS 領域とは別の disk としてサーバに追加する</li>
-</ul>
-
-<h2 id="用いる-ppa-レポジトリ">用いる PPA レポジトリ</h2>
-
-<p>Ubuntu 12.04.3 LTS の GlusterFS バージョンは 3.2 です。3.4 系が今回使いたかっ
-たので下記の PPA レポジトリを利用させてもらいます。ちゃんと構築するなら自分で
-パッケージを作成することをオススメします。</p>
-
-<p><a href="https://launchpad.net/~semiosis/+archive/ubuntu-glusterfs-3.4">https://launchpad.net/~semiosis/+archive/ubuntu-glusterfs-3.4</a></p>
-
-<h1 id="準備">準備</h1>
-
-<p>ここからの手順は全てのサーバで操作します。</p>
-
-<h2 id="レポジトリの利用方法">レポジトリの利用方法</h2>
-
-<pre><code class="language-bash">% sudo aptitude install python-software-properties
-% sudo add-apt-repository ppa:semiosis/ubuntu-glusterfs-3.4
-% sudo apt-get update
-</code></pre>
-
-<h2 id="glusterfs3-4-のインストール">GlusterFS3.4 のインストール</h2>
-
-<pre><code class="language-bash">% sudo apt-get install glusterfs-server gluserfs-client
-</code></pre>
-
-<h2 id="xfsprogs-のインストール">xfsprogs のインストール</h2>
-
-<p>glusterfs は xfs を扱うため xfsprogs をインストールする。</p>
-
-<pre><code class="language-bash">% sudo apt-get install xfsprogs
-</code></pre>
-
-<h2 id="ディスクの準備">ディスクの準備</h2>
-
-<pre><code class="language-bash">% sudo mkfs.xfs -i size=512 /dev/sdb
-% sudo mkdir -p /export/brick1
-% sudo vim /etc/fstab
-/dev/sdb /export/brick1 xfs defaults 1 2 # &lt;- 追記
-% sudo mount -a
-% mount
-</code></pre>
-
-<h1 id="各クラスタタイプでのマウント方法">各クラスタタイプでのマウント方法</h1>
-
-<p>ここからの手順はどこか一台のノードで行えば OK です。</p>
-
-<h2 id="distributed-タイプ">distributed タイプ</h2>
-
-<p>まずはデフォルトとなる distributed のマウント方法。</p>
-
-<pre><code class="language-bash">% sudo gluster peer probe &lt;other_node_ip_addr&gt; ...
-% sudo gluster volume create gv0 &lt;mine_ip_addr&gt;:/export/brick1/sdb &lt;another_node_ip_addr&gt;:/export/brick1/sdb
-% sudo gluster volume start gv0
-% sudo gluster volume info
-Volume Name: gv0
-Type: Distribute
-Volume ID: 803fdd46-4735-444a-99c8-83d1cee172e6
-Status: Started
-Number of Bricks: 2
-Transport-type: tcp
-Bricks:
-Brick1: &lt;mine_ip_addr&gt;:/export/brick1/sdb
-Brick2: &lt;other_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>マウント行う。どちらのノードに対して行うことが出来る。</p>
-
-<pre><code class="language-bash">% sudo mount -t glusterfs &lt;mine_ip_addr&gt;:/gv0 /mnt
-</code></pre>
-
-<h2 id="その他のクラスタタイプのマウント方法">その他のクラスタタイプのマウント方法</h2>
-
-<p>replicated の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create gv0 replica 2 &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_node_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>striped の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create gv0 stripe 2 &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_node_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>distributed replicated の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create dist-repl replica 2 \
-  &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>striped replicated の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create strip-repl stripe 2 replica 2 \
-  &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>distributed striped replicated の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create dist-strip-repl stripe 2 replica 2 \
-  &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<h2 id="各クラスタタイプの特徴">各クラスタタイプの特徴</h2>
-
-<ul>
-<li>distributed</li>
-</ul>
-
-<p>1つのオブジェクトを GlusterFS 上に保管するとオブジェクト単位でどれかのノードに
-対して保管する。よって &lsquo;ノード上の disk x ノード数&rsquo; が合計容量として扱うことが
-出来る。ノード障害の場合にはその該当ノード上の disk に保管されているオブジェク
-トの読み書きは NG 。その他のノード上 disk に保管されているオブジェクトに対して
-は読み書きが正常に行える。</p>
-
-<ul>
-<li>stripe</li>
-</ul>
-
-<p>1つのオブジェクトをブロック単位で分割し各ノードに保管する。扱える合計容量は
-distributed と同じく &lsquo;ノード上の disk x ノード数&rsquo; となる。障害がどこかのノード
-で発生した場合、全てのオブジェクトの読み書きが行えなくなる。</p>
-
-<ul>
-<li>replicated</li>
-</ul>
-
-<p>1つのオブジェクトを 2 台のノードに対してミラーリングを行い保管する。障害系の対
-応が可能になる。その分、扱える合計容量は distrubuted/stripe に比べ半分となる。</p>
-
-<ul>
-<li>distributed replicated</li>
-</ul>
-
-<p>構成イメージ図&hellip;</p>
-
-<pre><code>+--------+
-| client |
-+--------+
-|
-+---------------------+
-|                     |
-+----------+          +----------+
-|          |          |          |
-+--------+ +--------+ +--------+ +--------+
-| node1  | | node2  | | node3  | | node4  |
-+--------+ +--------+ +--------+ +--------+
-</code></pre>
-
-<p>node1, 2 と 3, 4 にて replicated しそれぞれに対して distributed を組む。扱える
-disk 容量は node の持っている disk 容量 x ノード数 / 2 となる。distributed は
-実質、障害系の対応が良くないので distributed を扱うのであれば、この volume
-type が推奨されるものと思われる。</p>
-
-<ul>
-<li>striped replicated</li>
-</ul>
-
-<p>distributed replicated と同等の構成だがブロック単位でのオブジェクトの保管とな
-る。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>GlusterFS には一貫性の問題 (disk 容量の一貫性を保つ必要がある) と思っていたが、
-昔の話しらしい。容量のことなる disk をノードに追加しても、それをうまく合計容量
-に合算されるのを確認した。また分散ファイルシステムの美味しいところと冗長性を兼
-ねた構成を組むのが良いと思うので distributed replicated もしくは striped
-replicated を選択するのがオススメ。今回は TCP で扱ったがバージョン 3.4 からは
-Infiniband と組み合わせて RDMA を扱うことが可能。下記の URL が参考になる。</p>
-
-<p><a href="http://gluster.org/community/documentation/index.php/Gluster_3.2:_Configuring_GlusterFS_to_work_over_InfiniBand">http://gluster.org/community/documentation/index.php/Gluster_3.2:_Configuring_GlusterFS_to_work_over_InfiniBand</a></p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/10/12/glusterfs-install/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1249,6 +1584,20 @@ Infiniband と組み合わせて RDMA を扱うことが可能。下記の URL �
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語でInfluxDBにメトリクスデータを挿入</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-23'>
+                                    July 23, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
                                 
                                     
@@ -1288,20 +1637,6 @@ Infiniband と組み合わせて RDMA を扱うことが可能。下記の URL �
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-28'>
-                                    December 28, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1336,7 +1671,7 @@ Infiniband と組み合わせて RDMA を扱うことが可能。下記の URL �
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">100</span>
+                                <span style="float:right;">101</span>
                             </header>
                         </article>
                     </li>

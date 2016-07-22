@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-08-18T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-08-24T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語でInfluxDBにメトリクスデータを挿入</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,160 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/08/24/vyatta-l2tp-ipsec-vpn/">Vyatta で L2TP over IPsec による VPN 構築</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-08-24'>
+            August 24, 2013</time>
+        <span class="author"></span>
+        
+            <p>1 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>以前、こんな記事をブログに記しました。2012/06 の記事です。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2012/06/13/vyatta-vpn/">http://jedipunkz.github.io/blog/2012/06/13/vyatta-vpn/</a></p>
+
+<p>その後、PPTP で保護されたネットワークの VPN パスワードを奪取出来るツールが公開
+されました。2012/07 のことです。よって今では VPN に PPTP を用いることが推奨さ
+れていません。</p>
+
+<p>ということで L2TP over IPsec による VPN 構築を Vyatta で行う方法を記します。</p>
+
+<h2 id="fig-1-home-lan-と-vyatta-のアドレス">fig.1 : home lan と vyatta のアドレス</h2>
+
+<pre><code>                +--------+                      +-----+
+    home lan ---| vyatta | --- the internet --- | CPE |
+                +--------+                      +-----+
+    X.X.X.X/X(NAT)     pppoe0
+                       Y.Y.Y.Y
+</code></pre>
+
+<p>この様に X.X.X.X/X と Y.Y.Y.Y/Y が関係しているとします。CPE は VPN により
+X.X.X.X/X に接続することが出来ます。</p>
+
+<h2 id="手順-ipsec">手順 : IPsec</h2>
+
+<p>下記の操作で IPsec を待ち受けるインターフェースの設定します。</p>
+
+<pre><code class="language-bash">% configure
+# edit vpn ipsec
+# set ipsec-interface interface pppoe0
+</code></pre>
+
+<p>インターフェース名は環境に合わせて設定してください。私の環境では pppoe0 です。</p>
+
+<p>IPsec パケットが NAT を超えるように設定します。</p>
+
+<pre><code class="language-bash"># set nat-traversal enable
+</code></pre>
+
+<p>CPE がどの環境にいるか、IPsec 接続を許可するネットワークアドレスを入力します。
+渡しの場合はどこからでも接続できるよう 0.0.0.0/0 を入力しました。</p>
+
+<pre><code class="language-bash"># set nat-networks allowed-network 0.0.0.0/0
+# exit
+</code></pre>
+
+<h2 id="手順-l2tp">手順 : L2TP</h2>
+
+<p>入力を省くために edit します。</p>
+
+<pre><code class="language-bash"># edit vpn l2tp remote-access
+</code></pre>
+
+<p>IPsec 認証モードに pre-shared-secret を選択し pre-shared-secret (パスワード)
+を設定します。このパスワードは接続するユーザ全員が知るものです。また認証モード
+を local に設定します。</p>
+
+<pre><code class="language-bash"># set ipsec-settings authentication mode pre-shared-secret
+# set ipsec-settings authentication pre-shared-secret &lt;パスワード&gt;
+# set authentication mode local
+</code></pre>
+
+<p>接続ユーザを作成します。パスワードはユーザに合わせたパスワードを入力します。先
+ほど設定した pre-shared-secret とは別のパスワードを設定するべきです。</p>
+
+<pre><code class="language-bash"># set authentication local-users username &lt;ユーザ名&gt; password &lt;パスワード&gt;
+</code></pre>
+
+<p>接続するネットワーク情報を記します。pool のアドレス範囲は環境に合わせて設定し
+てください。渡しの場合は第4オクテット 100 - 120 を設定しました。</p>
+
+<pre><code class="language-bash"># set outside-address Y.Y.Y.Y
+# set client-ip-pool start X.X.X.100
+# set client-ip-pool stop X.X.X.120
+</code></pre>
+
+<p>最後に commit &amp; save を忘れずに。</p>
+
+<pre><code class="language-bash"># commit
+# save
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>iPhone で接続を確認しました。iOS の場合は L2TP, PPTP, IPsec と3つのタブがあり、
+どれかを選択するようになっていますが、L2TP over IPsec の場合には L2TP タブの項
+目に情報を入力すれば OK です。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/08/24/vyatta-l2tp-ipsec-vpn/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -758,162 +912,6 @@ controller02% sudo chef-client
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/08/09/debian-unstable-stumpwm/">Debian Unstable で stumpwm</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-08-09'>
-            August 9, 2013</time>
-        <span class="author"></span>
-        
-            <p>1 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>Linux のウィンドウマネージャは使い続けて長いのですが、既に1周半しました。twm -&gt; gnome -&gt;
-enlightenment -&gt; OpenBox -&gt;  .. 忘れた .. -&gt; twm -&gt; vtwm -&gt; awesome -&gt; kde -&gt;
-gnome -&gt; enligtenment &hellip;</p>
-
-<p>巷では Linux のデスクトップ環境は死んだとか言われているらしいですが、stumpwm
-というウィンドウマネージャは結構いいなと思いました。タイル型のウィンドウマネー
-ジャで Emacs 好きの人が開発したらしいです。設定は lisp で書けます。</p>
-
-<p>見た目は派手では無いのですが、</p>
-
-<ul>
-<li>グルーピング機能</li>
-<li>すべての操作がキーボードで出来る</li>
-<li>タイル型であるので煩わしいマウスでのウィンドウ操作が不要</li>
-</ul>
-
-<p>という点に惹かれました。</p>
-
-<p>Linux を使う時、私の場合 Debian Gnu/Linux Unstalble をいつも使うのですが、
-Unstable だと apt-get install stumpwm したバイナリがコケる&hellip;ということでビル
-ドしてあげました。普段慣れないビルド方法だったので、その時の手順を自分のために
-もメモしておきます。</p>
-
-<h2 id="前提環境">前提環境</h2>
-
-<ul>
-<li>Debian Gnu/Linux unstable 利用</li>
-<li>X の環境は揃っている</li>
-</ul>
-
-<h2 id="ビルド手順">ビルド手順</h2>
-
-<h4 id="clisp-をインストール">clisp をインストール</h4>
-
-<p>clisp をインストールします。</p>
-
-<pre><code class="language-bash">% sudo apt-get install clisp-dev
-</code></pre>
-
-<p>lisp.run というファイルを stumpwm が見つけられないので symlink 張ってあげます。
-ちょっと泥臭い。</p>
-
-<pre><code class="language-bash">% sudo ln -s /usr/lib/clisp-2.49/base /usr/lib/clisp-2.49/full
-</code></pre>
-
-<h4 id="sbcl-をインストール">sbcl をインストール</h4>
-
-<p>sbcl をインストールします。</p>
-
-<pre><code class="language-bash">% sudo apt-get  install sbcl
-</code></pre>
-
-<h4 id="quicklisp-をインストール">quicklisp をインストール</h4>
-
-<p>quicklisp をインストールします。また lisp init file に諸々追加します。</p>
-
-<pre><code class="language-bash">% wget http://beta.quicklisp.org/quicklisp.lisp
-% sbcl --load quicklisp.lisp
-* (quicklisp-quickstart:install)
-* (ql:system-apropos &quot;vecto&quot;)
-* (ql:quickload &quot;vecto&quot;)
-* (ql:add-to-init-file)
-* (ql:quickload &quot;clx&quot;)
-* (ql:quickload &quot;cl-ppcre&quot;)
-* quit
-</code></pre>
-
-<h4 id="stumpwm-のビルド">stumpwm のビルド</h4>
-
-<p>stumpwm をビルドします。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/sabetts/stumpwm.git
-% cd stumpwm
-% ./configure
-% make
-% sudo make install
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>$HOME/.stumpwmrc を配置して、いろいろカスタマイズ出来ます。ウェブを検索すると
-皆さんの rc ファイルが見つかるので参考にすると良いかも。prefix キーは C-t なの
-ですが、tmux と被りますよね&hellip;。tmux 側は変えたくないので stumpwm 側を C-z 等
-に変更して使っています。</p>
-
-<pre><code>(set-prefix-key (kbd &quot;C-z&quot;))
-</code></pre>
-</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/08/09/debian-unstable-stumpwm/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1030,6 +1028,20 @@ Unstable だと apt-get install stumpwm したバイナリがコケる&hellip;�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語でInfluxDBにメトリクスデータを挿入</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-23'>
+                                    July 23, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
                                 
                                     
@@ -1069,20 +1081,6 @@ Unstable だと apt-get install stumpwm したバイナリがコケる&hellip;�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-28'>
-                                    December 28, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1117,7 +1115,7 @@ Unstable だと apt-get install stumpwm したバイナリがコケる&hellip;�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">100</span>
+                                <span style="float:right;">101</span>
                             </header>
                         </article>
                     </li>

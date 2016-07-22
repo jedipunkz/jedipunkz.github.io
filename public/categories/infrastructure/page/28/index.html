@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2012-10-06T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2012-11-04T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語でInfluxDBにメトリクスデータを挿入</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,417 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2012/11/04/swift-tempauth/">Swift で簡単に分散オブジェクトストレージ</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-11-04'>
+            November 4, 2012</time>
+        <span class="author"></span>
+        
+            <p>5 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>最近、OpenStack にどっぷり浸かってる <a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>Folsom がリリースされて Quantum を理解するのにめちゃ苦労して楽しい真っ最中なのだけど、
+今日は OpenStack の中でも最も枯れているコンポーネント Swift を使ったオブジェクトストレー
+ジ構築について少し書こうかなぁと思ってます。</p>
+
+<p>最近は OpenStack を構築・デプロイするのに皆、Swift 入れてないのね。仲間はずれ
+感たっぷりだけど、一番安定して動くと思ってる。</p>
+
+<p>これを読んで、自宅にオブジェクトストレージを置いちゃおぅ。</p>
+
+<h2 id="構成は">構成は ?&hellip;</h2>
+
+<pre><code>                        +--------+
+                        | client |
+                        +--------+
+                             |
+                      +-------------+
+                      | swift-proxy |
+                      +-------------+ 172.16.0.10
+                             |
+         +-------------------+-------------------+ 172.16.0.0/24
+         |                   |                   |
++-----------------+ +-----------------+ +-----------------+
+| swift-storage01 | | swift-storage02 | | swift-storage03 |
++-----------------+ +-----------------+ +-----------------+
+172.16.0.11         172.16.0.12         172.16.0.13
+</code></pre>
+
+<p>となる。IP アドレスは&hellip;</p>
+
+<ul>
+<li>client : 172.16.0.0/24 のどこか</li>
+<li>swift-proxy : 172.16.0.10</li>
+<li>swift-storage01 : 172.16.0.11</li>
+<li>swift-storage02 : 172.16.0.12</li>
+<li>swift-storage03 : 172.16.0.13</li>
+</ul>
+
+<p>これはサンプル。自宅の環境に合わせて読み替えてください。</p>
+
+<p>全て同じネットワークセグメントに。なので上の図は概念的な図です。通信の流れだけ
+把握出来ればいいなぁと。向き書いてないけど..。四角で囲まれているのがノード (サー
+バ) です。物理サーバでも仮想マシンでも大丈夫！</p>
+
+<h2 id="マシンの準備">マシンの準備</h2>
+
+<p>Ubuntu Server 12.04 もしくは 12.10 を用意。swift-storage のマシン3台だけは
+/dev/sda6 など Disk デバイスを swift 用に用意してあげてください。普通にハード
+ディスクのパーティションを切ってあげるだけでいいです。高価な Disk を使うまでも
+ないので。それが分散ストレージの良いところ！ Disk ・ノードが壊れてもデータが失
+われないんです！</p>
+
+<h2 id="swift-proxy-の構築">swift-proxy の構築</h2>
+
+<p>今回は簡易認証機能の tempauth を使います。Keystone を使った構成を説明しようか
+迷ったのだけど、Keystone の構築だけで一つ記事が書けるくらいになるので..、諦め
+ました。tempauth は Swift 本体に実装されていますよ。</p>
+
+<p>構築は簡単、まず下記をコピペしてください。</p>
+
+<pre><code>apt-get update
+apt-get install swift python-swift
+apt-get install python-keystoneclient python-keystone 
+mkdir /etc/swift
+chown -R swift:swift /etc/swift
+export PROXY_LOCAL_NET_IP=10.200.4.133
+export POUND_NET=10.200.4.138
+apt-get install swift-proxy memcached
+perl -pi -e &quot;s/-l 127.0.0.1/-l $PROXY_LOCAL_NET_IP/&quot; /etc/memcached.conf
+service memcached restart
+cat &gt;/etc/swift/proxy-server.conf &lt;&lt;EOF
+[DEFAULT]
+#cert_file = /etc/swift/cert.crt
+#key_file = /etc/swift/cert.key
+bind_port = 8080
+workers = 8
+user = swift
+
+[pipeline:main]
+pipeline = healthcheck cache tempauth proxy-server
+
+[app:proxy-server]
+use = egg:swift#proxy
+allow_account_management = true
+account_autocreate = true
+
+[filter:tempauth]
+use = egg:swift#tempauth
+user_system_root = testpass .admin
+https://$PROXY_LOCAL_NET_IP:8080/v1/AUTH_system
+
+[filter:healthcheck]
+use = egg:swift#healthcheck
+
+[filter:cache]
+use = egg:swift#memcache
+memcache_servers = $PROXY_LOCAL_NET_IP01:11211
+EOF
+</code></pre>
+
+<p>次に swift.conf とリング情報 (バランシングのための情報) を swift-proxy 上に用意します。これらは、
+あとで各すべてのノードに配置するので重要です。これもコピペしてください。</p>
+
+<pre><code>cat &gt; /etc/swift/swift.conf &lt;&lt; EOF
+[swift-hash]
+# random unique string that can never change (DO NOT LOSE)
+swift_hash_path_suffix = `od -t x8 -N 8 -A n &lt;/dev/random`
+EOF
+cd /etc/swift
+swift-ring-builder account.builder create 18 3 1
+swift-ring-builder container.builder create 18 3 1
+swift-ring-builder object.builder create 18 3 1
+export STORAGE_LOCAL_NET_IP01=172.16.0.11
+export STORAGE_LOCAL_NET_IP02=172.16.0.12
+export STORAGE_LOCAL_NET_IP03=172.16.0.13
+export ZONE01=1
+export ZONE02=2
+export ZONE03=3
+export WEIGHT=100
+export DEVICE=sda6
+swift-ring-builder account.builder add z$ZONE01-$STORAGE_LOCAL_NET_IP01:6002/$DEVICE $WEIGHT
+swift-ring-builder container.builder add z$ZONE01-$STORAGE_LOCAL_NET_IP01:6001/$DEVICE $WEIGHT
+swift-ring-builder object.builder add z$ZONE01-$STORAGE_LOCAL_NET_IP01:6000/$DEVICE $WEIGHT
+swift-ring-builder account.builder add z$ZONE02-$STORAGE_LOCAL_NET_IP02:6002/$DEVICE $WEIGHT
+swift-ring-builder container.builder add z$ZONE02-$STORAGE_LOCAL_NET_IP02:6001/$DEVICE $WEIGHT
+swift-ring-builder object.builder add z$ZONE02-$STORAGE_LOCAL_NET_IP02:6000/$DEVICE $WEIGHT
+swift-ring-builder account.builder add z$ZONE03-$STORAGE_LOCAL_NET_IP03:6002/$DEVICE $WEIGHT
+swift-ring-builder container.builder add z$ZONE03-$STORAGE_LOCAL_NET_IP03:6001/$DEVICE $WEIGHT
+swift-ring-builder object.builder add z$ZONE03-$STORAGE_LOCAL_NET_IP03:6000/$DEVICE $WEIGHT
+swift-ring-builder account.builder
+swift-ring-builder container.builder
+swift-ring-builder object.builder
+swift-ring-builder account.builder rebalance
+swift-ring-builder container.builder rebalance
+swift-ring-builder object.builder rebalance
+</code></pre>
+
+<p>で、起動。</p>
+
+<pre><code>swift-proxy# chown -R swift:swift /etc/swift
+swift-proxy# swift-init proxy start
+</code></pre>
+
+<p>おしまい。</p>
+
+<h2 id="swift-storage-構築">swift-storage 構築</h2>
+
+<p>swift-storage の構築は各ノードで下記の内容をコピペしてください。今回は3台分だ
+けど、マシンが余ってたら4台でも5台でも OK ！</p>
+
+<pre><code>apt-get update
+apt-get install swift python-swift
+mkdir /etc/swift
+chown -R swift:swift /etc/swift
+
+export STORAGE_LOCAL_NET_IP=172.16.0.11
+
+apt-get install swift-account swift-container swift-object xfsprogs
+mkfs.xfs -i size=1024 /dev/sda6
+echo &quot;/dev/sda6 /srv/node/sda6 xfs noatime,nodiratime,nobarrier,logbufs=8 0 0&quot; &gt;&gt; /etc/fstab
+mkdir -p /srv/node/sda6
+mount /srv/node/sda6
+chown -R swift:swift /srv/node
+cat &gt;/etc/rsyncd.conf &lt;&lt;EOF
+uid = swift
+gid = swift
+log file = /var/log/rsyncd.log
+pid file = /var/run/rsyncd.pid
+address = $STORAGE_LOCAL_NET_IP
+
+[account]
+max connections = 2
+path = /srv/node/
+read only = false
+lock file = /var/lock/account.lock
+
+[container]
+max connections = 2
+path = /srv/node/
+read only = false
+lock file = /var/lock/container.lock
+
+[object]
+max connections = 2
+path = /srv/node/
+read only = false
+lock file = /var/lock/object.lock
+EOF
+perl -pi -e 's/RSYNC_ENABLE=false/RSYNC_ENABLE=true/' /etc/default/rsync
+service rsync start
+cat &gt;/etc/swift/account-server.conf &lt;&lt;EOF
+[DEFAULT]
+bind_ip = $STORAGE_LOCAL_NET_IP
+workers = 2
+
+[pipeline:main]
+pipeline = account-server
+
+[app:account-server]
+use = egg:swift#account
+
+[account-replicator]
+
+[account-auditor]
+
+[account-reaper]
+EOF
+cat &gt;/etc/swift/container-server.conf &lt;&lt;EOF
+[DEFAULT]
+bind_ip = $STORAGE_LOCAL_NET_IP
+workers = 2
+
+[pipeline:main]
+pipeline = container-server
+
+[app:container-server]
+use = egg:swift#container
+
+[container-replicator]
+
+[container-updater]
+
+[container-auditor]
+
+[container-sync]
+EOF
+cat &gt;/etc/swift/object-server.conf &lt;&lt;EOF
+[DEFAULT]
+bind_ip = $STORAGE_LOCAL_NET_IP
+workers = 2
+
+[pipeline:main]
+pipeline = object-server
+
+[app:object-server]
+use = egg:swift#object
+
+[object-replicator]
+
+[object-updater]
+
+[object-auditor]
+EOF
+</code></pre>
+
+<p>環境変数 ${STORAGE_LOCAL_NET_IP} を3台毎に変えて、各台で流し込んであげたら、
+swift-proxy で生成した /etc/swift.conf とリング情報達を各 swift-storage に
+配置します。</p>
+
+<pre><code>swift-proxy     # scp /etc/swift/swift.conf /etc/swift/*ring.gz 172.16.0.11:/tmp/
+swift-proxy     # scp /etc/swift/swift.conf /etc/swift/*ring.gz 172.16.0.12:/tmp/
+swift-proxy     # scp /etc/swift/swift.conf /etc/swift/*ring.gz 172.16.0.13:/tmp/
+swift-storage01 # mv /tmp/swift.conf /tmp/*ring.gz /etc/swift/
+swift-storage01 # chown -R swift:swift /etc/swift
+swift-storage02 # mv /tmp/swift.conf /tmp/*ring.gz /etc/swift/
+swift-storage02 # chown -R swift:swift /etc/swift
+swift-storage03 # mv /tmp/swift.conf /tmp/*ring.gz /etc/swift/
+swift-storage03 # chown -R swift:swift /etc/swift
+</code></pre>
+
+<p>swift-storage を各台で起動します。</p>
+
+<pre><code>swift-storage01 # swift-init all start
+swift-storage02 # swift-init all start
+swift-storage03 # swift-init all start
+</code></pre>
+
+<h2 id="アクセスしてみる">アクセスしてみる</h2>
+
+<p>完成したので、swift クライアントでアクセスしてみる。</p>
+
+<pre><code>% swift -A http://172.16.0.10:8080/auth/v1.0 -U system:root -K testpass stat
+Account: AUTH_system
+Containers: 4
+Objects: 15
+Bytes: 23866252
+Connection: keep-alive
+Accept-Ranges: bytes
+</code></pre>
+
+<p>ファイルをアップロード・ダウンロードしてみる。</p>
+
+<pre><code>% swift -A http://172.16.0.10:8080/auth/v1.0 -U system:root -K testpass upload test /etc/hosts
+% swift -A http://172.16.0.10:8080/auth/v1.0 -U system:root -K testpass list
+% test
+% cd /tmp/
+% swift -A http://172.16.0.10:8080/auth/v1.0 -U system:root -K testpass download test
+% ls /tmp/etc/hosts
+</code></pre>
+
+<p>もちろん、HTTP な API なので curl 等の HTTP ブラウザを使ってもアクセスできる！</p>
+
+<pre><code>% curl -k -v -H 'X-Storage-User: system:root' -H 'X-Storage-Pass: testpass' http://172.16.0.10:8080/auth/v1.0
+&lt; HTTP/1.1 200 OK
+&lt; Server: nginx/1.1.19
+&lt; Date: Mon, 03 Sep 2012 04:58:30 GMT
+&lt; Content-Length: 0
+&lt; Connection: keep-alive
+&lt; X-Storage-Url: https://172.16.0.10:8080/v1/AUTH_system
+&lt; X-Storage-Token: AUTH_tk8a19f76c9bce4077aee02aef76257020
+&lt; X-Auth-Token: AUTH_tk8a19f96c9bce4077aee02aef76257020
+&lt;
+* Connection #0 to host 172.16.0.10 left intact
+* Closing connection #0
+* SSLv3, TLS alert, Client hello (1):
+</code></pre>
+
+<p>得られた X-Auth-Token, X-Storage-Url を使ってアクセスする。</p>
+
+<pre><code>% curl -k -v -H 'X-Auth-Token: &lt;token-from-x-auth-token-above&gt;' &lt;url-from-x-storage-url-above&gt;
+&lt; HTTP/1.1 200 OK
+&lt; Server: nginx/1.1.19
+&lt; Date: Mon, 03 Sep 2012 04:59:47 GMT
+&lt; Content-Type: text/plain; charset=utf-8
+&lt; Content-Length: 34
+&lt; Connection: keep-alive
+&lt; X-Account-Object-Count: 15
+&lt; X-Account-Bytes-Used: 23866252
+&lt; X-Account-Container-Count: 4
+&lt; Accept-Ranges: bytes
+&lt;
+test
+* Connection #0 to host 172.16.0.10 left intact
+* Closing connection #0
+* SSLv3, TLS alert, Client hello (1):
+</code></pre>
+
+<p>さっき放り込んだ &lsquo;test&rsquo; が swift 上にあることが確認できる。</p>
+
+<p><a href="http://cyberduck.ch/">http://cyberduck.ch/</a> ここにある CyberDuck という GUI なツールを使ってもアクセス出来るよ！
+HTTPS が必須になるので一工夫する必要があるのだけど、そのあたりは頑張ってみてください。</p>
+
+<p>オンラインでのノードの追加・削除なんてことも出来ます。次回時間があったら解説しますね。</p>
+
+<p>今回は swift-ring-builder コマンドでレプリカ数 &lsquo;3&rsquo; を指定したので、アップロー
+ドしたファイル(オブジェクトと言う) は必ず 3 個配置される。なので 1 台の
+swift-storage が故障しても大丈夫。ノードを増やせばストレージ全体の容量も増やせ
+る。また、swift-proxy は単純な HTTP なので負荷分散機・もしくはソフトウェアのロー
+ドバランサを入れれば swift-proxy 自体の冗長も組めるほか、ストレージ I/O の拡張
+にもつながる。pound, nginx などを使って冗長組んでみてください。その時に
+memcached の内容は共有させてあげる必要があるので、これまた一工夫が必要なのだけ
+ど。時間があったら今度解説します。</p>
+
+<p>自宅でも簡単に分散オブジェクトストレージが組める swift。使わない手は無いですよぉ。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2012/11/04/swift-tempauth/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -628,244 +1039,6 @@ libvirt, kvm 周りにパッチを独自で当てているそうで、その具�
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2012/08/26/all-in-one-openstack-installation/">OpenStack ESSEX オールインワン インストール</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2012-08-26'>
-            August 26, 2012</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>OpenStack のインストールってしんどいなぁ、って感じて devstack
-<a href="http://devstack.org/">http://devstack.org/</a> とかで構築して中を覗いていたのですが、そもそも devstack
-って再起動してしまえば何も起動してこないし、swift がインストールされないしで。
-やっぱり公式のマニュアル見ながらインストールするしかないかぁって&hellip;。感じてい
-たのですが&hellip;。</p>
-
-<p><a href="http://docs.openstack.org/essex/openstack-compute/starter/os-compute-starterguide-trunk.pdf">http://docs.openstack.org/essex/openstack-compute/starter/os-compute-starterguide-trunk.pdf</a></p>
-
-<p>このマニュアルの前提は、ネットワーク2セグメント・server1, server2 の計2台が前
-提なのですが、環境作るのがしんどいので、オールインワンな構築がしたい！サーバ1台で OpenStack ESSEX を
-インストールしたい！で、シェルスクリプトを作ったのでそれを使ったインストール方法を紹介します。</p>
-
-<p><img src="http://jedipunkz.github.com/pix/openstack_thinkpad.jpg"></p>
-
-<p>ぼくの Thinkpad に OpenStack ESSEX をインストールしてブラウザで localhost に接続して
-いる画面です。ちゃんと KVM VM が起動して noVNC で接続できています。自己満足やぁ。</p>
-
-<h2 id="前提条件">前提条件</h2>
-
-<ul>
-<li>Ubuntu Server 12.04 LTS amd64 がインストールされていること</li>
-<li>Intel-VT もしくは AMD−Vなマシン</li>
-<li>NIC が一つ以上ついているマシン</li>
-<li>/dev/sda6, /dev/sda7 (デバイス名は何でもいい) の2つが未使用で空いていること</li>
-</ul>
-
-<p>です。</p>
-
-<h2 id="構成">構成</h2>
-
-<p>1 NIC を前提に eth0 と eth0:0 の2つを想定すると、こんな構成になります。eth0:0
-は完全にダミーで IP アドレスは何でもいいです。br100 ブリッジデバイス上で VM が
-NW I/F を持ちます。floating range ってのは OpenStack で言うグローバル IP レン
-ジ。グローバルである必要は無いですが eth0 と同じレンジの IP アドレスを VM に付
-与出来ます。/dev/sda6 が nova-volumes で /dev/sda7 が swift 。なので OS インス
-トール時に2つのデバイスを未使用で空けておいてください。</p>
-
-<pre><code>+--+--+--+
-|VM|VM|VM|  192.168.4.32/27
-+--+--+--+..
-+----------+ +--------+
-|          | | br100  | 192.168.4.33/27 -&gt; floating range : 10.200.8.32/27
-|          | +--------+
-|          | | eth0:0 | 192.168.3.1       disk devices
-|   Host   | +--------+   (dummy)  +------------------------+
-|          |                       | /dev/sda6 nova-volumes |
-|          | +--------+            +------------------------+
-|          | |  eth0  | ${HOST_IP} | /dev/sda7 swift        |
-+----------+ +--------+            +------------------------+
-|              nw I/Fs
-+----------+
-|   CPE    |
-+----------+
-</code></pre>
-
-<h2 id="インストール手順">インストール手順</h2>
-
-<p>インストール手順は簡単です。</p>
-
-<pre><code>% sudo -i
-# git clone git://github.com/jedipunkz/openstack_install.git
-</code></pre>
-
-<p>して取得したスクリプトを環境に合わせて環境変数設定します。スクリプト上部のこれ
-らの内容を、環境に合わせて設定。${HOST_IP} と ${NOVA_VOLUMES_DEV},
-${SWIFT_DEV} だけ気をつければ OK です。その他は内部ネットワークの設定なので何
-でもつながります。</p>
-
-<pre><code># -----------------------------------------------------------------
-# Environment Parameter
-# -----------------------------------------------------------------
-HOST_IP='10.200.8.15'
-HOST_MASK='255.255.255.0'
-HOST_NETWORK='10.200.8.0'
-HOST_BROADCAST='10.200.8.255'
-GATEWAY='10.200.8.1'
-MYSQL_PASS='secret'
-FIXED_RANGE='192.168.4.1/27'
-FLOATING_RANGE='10.200.8.32/27'
-FLAT_NETWORK_DHCP_START='192.168.4.33'
-ISCSI_IP_PREFIX='192.168.4'
-NOVA_VOLUMES_DEV='/dev/sda6'
-SWIFT_DEV='/dev/sda7'
-</code></pre>
-
-<p>で実行。</p>
-
-<pre><code># chmod +x openstack_install/openstack_install.sh
-# ./openstak_install/openstack_install.sh allinone
-( wait some minutes...)
-</code></pre>
-
-<p>マシンによりますが、10分弱すると OpenStack が構築されているはずです。</p>
-
-<h2 id="os-イメージと-ssh-キーペアのインストール">OS イメージと SSH キーペアのインストール</h2>
-
-<p>上記の手順で OpenStack は構築されるのですが、VM を起動するには OS イメージが必
-要ですよね。これは自分で用意するしかないです。ただ、これは簡単で下記の手順で出
-来ます。</p>
-
-<h4 id="os-イメージ作成">OS イメージ作成</h4>
-
-<p>サンプルで Ubuntu Server 12.04 LTS amd64 なイメージをここで作ってみます。</p>
-
-<pre><code># kvm-image create -f qcow2 server.img 5G
-# wget http://gb.releases.ubuntu.com//precise/ubuntu-12.04-server-amd64.iso
-# kvm -m 256 -cdrom ubuntu-12.04-server-amd64.iso -drive file=server.img,if=virtio,index=0 -boot d -net nic -net user -nographic -vnc :0
-</code></pre>
-
-<p>手元の端末の VNC ツールで ${HOST_IP}:0 に接続し OS のインストールを済ませます。
-その後、下記のコマンドで HDD から起動してあげて&hellip;</p>
-
-<pre><code># kvm -m 256 -drive file=server.img,if=virtio,index=0 -boot c -net nic -net user -nographic -vnc :0
-</code></pre>
-
-<p>再度、VNC で VM に接続して..</p>
-
-<pre><code># sudo rm -rf /etc/udev/rules.d/70-persistent-net.rules
-# shutdown -h now
-</code></pre>
-
-<p>上記の操作をしたら OS イメージ作成は終わり。その他のディストリビューションでの
-イメージ作成については公式マニュアルに書いてあります。</p>
-
-<h4 id="glance-に-os-イメージをインストール">Glance に OS イメージをインストール</h4>
-
-<p>作成した OS イメージを Glance に追加します。先ほどのスクリプトで生成された
-/root/.openstack が Glance に接続するために必要なので zsh の場合 source してから&hellip;</p>
-
-<pre><code># source /root/.openstack
-# glance add name=&quot;Ubuntu Server 12.04LTS&quot; is_public=true container_format=ovf disk_format=qcow2 &lt; server.img
-</code></pre>
-
-<p>で追加出来ます。.openstack は bash でも取得できるのでその際は</p>
-
-<pre><code># . /root/.openstack
-</code></pre>
-
-<p>してください。root ユーザ以外でも操作出来ます。</p>
-
-<h4 id="ssh-キーペアの生成とインストール">SSH キーペアの生成とインストール</h4>
-
-<p>VM に割り当てる SSH キーペアを作ってインストールする手順です。</p>
-
-<pre><code># ssh-keygen
-# nova keypair-add --pub_key .ssh/id_rsa.pub mykey
-# nova keypair-list
-</code></pre>
-
-<h4 id="horizon-へ接続">Horizon へ接続</h4>
-
-<p>いよいよ Horizon へ接続です。Horizon は OpenStack ESSEX から取り込まれた Web
-UI です。VM の作成・削除、ネットワークの設定等がブラウザで操作出来ます。</p>
-
-<pre><code>http://${HOST_IP
-</code></pre>
-
-<p>に接続してユーザ : &lsquo;admin&rsquo;, パスワード &lsquo;admin&rsquo; でログインしてください。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>OpenStack はしんどいｗ ですが来月 <sup>2012</sup>&frasl;<sub>09</sub> リリース予定の Folsom は &lsquo;Easy
-Setup&rsquo; がフューチャされてるそうです。期待。手動で構築していると glance のとこ
-ろで ID 地獄にハマりますｗ 今回の手順で all in one な環境ができたら、色々覗い
-てみてコンポーネント毎に Node を切り出すってことも考えないといけないと思います。
-それぞれは HTTP ベースの API で接続できれば OK なので切り出すこと自体は簡単。
-冗長を組む方法は.. これから調べます。keystone, glance を拡張・冗長させるって出
-来るのか？難しそう。CloudStack と違って rabbitmq-server でキューイングしてくれ
-るので、Node が増えた時の対処は考えれれているよう。</p>
-
-<p>あと、OS イメージではなくて AMI で VM を作る方法もあるのですが AMI の作成方法は Web
-を見ていると沢山載っていますので参考にして作ってみてください。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/08/26/all-in-one-openstack-installation/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -982,6 +1155,20 @@ Setup&rsquo; がフューチャされてるそうです。期待。手動で構�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語でInfluxDBにメトリクスデータを挿入</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-23'>
+                                    July 23, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
                                 
                                     
@@ -1021,20 +1208,6 @@ Setup&rsquo; がフューチャされてるそうです。期待。手動で構�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-28'>
-                                    December 28, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1069,7 +1242,7 @@ Setup&rsquo; がフューチャされてるそうです。期待。手動で構�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">100</span>
+                                <span style="float:right;">101</span>
                             </header>
                         </article>
                     </li>

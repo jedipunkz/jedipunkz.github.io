@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2014-04-04T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2014-04-22T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語でInfluxDBにメトリクスデータを挿入</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,210 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2014/04/22/geard-port-mapping/">Geard のポートマッピングについて調べてみた</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-04-22'>
+            April 22, 2014</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。@jedipunkz です。</p>
+
+<p>今週 Redhat が &lsquo;Redhat Enterprise Linux Atomic Host&rsquo; しましたよね。Docker を特
+徴としたミニマムな OS だとのこと。その内部で用いられている技術 Geard について
+少し調べてみました。複数コンテナの関連付けが可能なようです。ここでは調べた結果
+について簡単にまとめていきます。</p>
+
+<h2 id="参考資料">参考資料</h2>
+
+<p><a href="http://openshift.github.io/geard/deploy_with_geard.html">http://openshift.github.io/geard/deploy_with_geard.html</a></p>
+
+<h2 id="利用方法">利用方法</h2>
+
+<p>ここではホスト OS に Fedora20 を用意します。</p>
+
+<p>まず Geard をインストール</p>
+
+<pre><code class="language-bash">% sudo yum install --enablerepo=updates-testing geard
+</code></pre>
+
+<p>下記の json ファイルを作成します。ここにはコンテナをデプロイするための情報と関
+連付けのための情報を記します。</p>
+
+<pre><code class="language-json">$ ${EDITOR} rockmongo_mongodb.json
+{
+  &quot;containers&quot;:[
+    {
+      &quot;name&quot;:&quot;rockmongo&quot;,
+      &quot;count&quot;:1,
+      &quot;image&quot;:&quot;derekwaynecarr/rockmongo&quot;,
+      &quot;publicports&quot;:[{&quot;internal&quot;:80,&quot;external&quot;:6060}],
+      &quot;links&quot;:[{&quot;to&quot;:&quot;mongodb&quot;}]
+    },
+    {
+      &quot;name&quot;:&quot;mongodb&quot;,
+      &quot;count&quot;:1,
+      &quot;image&quot;:&quot;ccoleman/ubuntu-mongodb&quot;,
+      &quot;publicports&quot;:[{&quot;internal&quot;:27017}]
+    }
+  ]
+}
+</code></pre>
+
+<p>上記のファイルの解説。</p>
+
+<ul>
+<li>コンテナ &lsquo;rockmongo&rsquo; と &lsquo;mongodb&rsquo; を作成</li>
+<li>それぞれ1個ずつコンテナを作成</li>
+<li>&lsquo;image&rsquo; パラメータにて docker イメージの指定</li>
+<li>&lsquo;publicports&rsquo; パラメータにてコンテナ内部とホスト側のポートマッピングを行う</li>
+<li>&lsquo;links&rsquo; パラメータで &lsquo;rockmongo&rsquo; を &lsquo;mongodb&rsquo; に関連付け</li>
+</ul>
+
+<p>では、デプロイ開始します。</p>
+
+<pre><code class="language-bash">$ sudo gear deploy rockmongo_mongo.json
+2014/04/22 07:21:12 Deploying rockmongo_mongo.json.20140422-072112
+2014/04/22 07:21:12 appending 27017 on rockmongo-1: &amp;{PortPair:{Internal:27017 External:0} Target:127.0.0.1:27017} &amp;{Id:rockmongo-1 Image:derekwaynecarr/rockmongo From:rockmongo On:0xc2100bb980 Ports:[{PortPair:{Internal:80 External:6060} Target::0}] add:true remove:false container:0xc21000be00 links:[]}
+2014/04/22 07:21:12 ports: Releasing
+2014/04/22 07:21:12 systemd: Reloading daemon
+local PortMapping: 80 -&gt; 6060
+local Container rockmongo-1 is installed
+2014/04/22 07:21:12 ports: Releasing
+2014/04/22 07:21:12 systemd: Reloading daemon
+local PortMapping: 27017 -&gt; 4000
+local Container mongodb-1 is installed
+linking rockmongo: 127.0.0.1:27017 -&gt; localhost:4000
+local Links set on local
+local Container rockmongo-1 starting
+local Container mongodb-1 starting
+</code></pre>
+
+<p>ブラウザにてホスト OS に接続することで rockmongo の管理画面にアクセスが可能。</p>
+
+<pre><code>http://&lt;ホストOSのIP:6060&gt;/
+</code></pre>
+
+<h2 id="ポートマッピング管理">ポートマッピング管理</h2>
+
+<p>デプロイが完了して、実際に RockMongo の管理画面にアクセス出来たと思います。
+関連付けが特徴と言えそうなのでその解析をしてみました。</p>
+
+<p>Geard のコンテナ関連付けはホストとコンテナのポート管理がキモとなっていることが
+解ります。これを紐解くことで geard のコンテナ管理を理解します。</p>
+
+<pre><code>                        'rockmongo' コンテナ             'mongodb' コンテナ
++----------+        +--------------------------+        +-------------------+
+|  Client  |-&gt;6060-&gt;|-&gt;80-&gt; RockMongo -&gt;27017-&gt;|-&gt;4000-&gt;|-&gt;27017-&gt; Mongodb  |
++----------+        +--------------------------+        +-------------------+
+                    |-------------------- docker ホスト --------------------|
+</code></pre>
+
+<p>上記 &lsquo;gear deploy&rsquo; コマンド発行時のログと json ファイルにより上図のような構成
+になっていることが理解できます。一つずつ読み解いていきましょう。</p>
+
+<ul>
+<li>&lsquo;rockmongo&rsquo; コンテナの内部でリスンしている 80 番ポートはホスト OS の 6060 番へ変換</li>
+<li>&lsquo;rockmongo&rsquo; コンテナ内で稼働する RockMongo の config.php から &lsquo;127.0.0.1:27017&rsquo; でリスンしていることが解る</li>
+</ul>
+
+<p>試しに &lsquo;derekwaynecarr/rockmongo:latest&rsquo; に /bin/bash でログインし config.php を確認。</p>
+
+<pre><code class="language-bash">$ sudo docker run -i -t derekwaynecarr/rockmongo:latest /bin/bash
+bash-4.1# grep mongo_host /var/www/html/config.php
+$MONGO[&quot;servers&quot;][$i][&quot;mongo_host&quot;] = &quot;127.0.0.1&quot;;//mongo host
+$MONGO[&quot;servers&quot;][$i][&quot;mongo_host&quot;] = &quot;127.0.0.1&quot;;
+</code></pre>
+
+<ul>
+<li>デプロイ時のログと json ファイルの &lsquo;links&rsquo; パラメータより、ホストのポートに動的に(ここでは 4000番ポート) に変換されることが解ります。</li>
+</ul>
+
+<pre><code>linking rockmongo: 127.0.0.1:27017 -&gt; localhost:4000
+</code></pre>
+
+<ul>
+<li>ホストの 4000 番ポートは動的に &lsquo;mongodb&rsquo; コンテナの内部ポート 27017 にマッピングされる</li>
+</ul>
+
+<p>これらのポートマッピングによりそれぞれのコンテナの連携が取れている。</p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>Geard は下記の2つを特徴とした技術だと言えるとことがわかりました。</p>
+
+<ul>
+<li>コンテナを json で管理しデプロイする仕組みを提供する</li>
+<li>コンテナ間の関連付けをホスト OS のポートを動的に管理・マッピングすることで行う
+<br /></li>
+</ul>
+
+<p>同じような OS に CoreOS <a href="https://coreos.com/">https://coreos.com/</a> がありますが、こちらも docker,
+sytemd 等を特徴としています。さらに etcd を使ってクラスタの構成等が可能になっ
+ていますが、Geard はホストのポートを動的に管理することで関連付けが可能なことが
+わかりました。</p>
+
+<p>実際に触ってみた感覚から言えば、まだまだ実用化は厳しい状況に思えますが、今後へ
+の展開に期待したい技術です。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2014/04/22/geard-port-mapping/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -1015,168 +1219,6 @@ havana-proposed で Swift や Keystone のどのバージョンがインスト�
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2014/03/05/sensu-chef-openstack-fog-autoscaler/">Sensu,Chef,OpenStack,Fog を使ったオレオレオートスケーラを作ってみた！</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2014-03-05'>
-            March 5, 2014</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>今まで監視システムの Sensu やクラウドプラットフォームの OpenStack、コンフィギュ
-レーションマネージメントツールの Chef やクラウドライブラリの Fog 等使ってきま
-したが、これらを組み合わせるとオレオレオートスケーラ作れるんじゃないか？と思い、
-ちょろっと作ってみました。</p>
-
-<p>ちなみに自分はインフラエンジニアでしかも運用の出身なので Ruby に関しては初心者
-レベルです。Chef で扱っているのと Rails アプリを作った経験はありますが、その程
-度。Fog というクラウドライブラリにコントリビュートしたことはアリますが..。ちな
-みに Fog のコントリビュート内容は OpenStack Neutron(当時 Quantum) の仮想ルータ
-の操作を行う実装です。</p>
-
-<p>そんな自分ですが&hellip;設計1周間・実装1周間でマネージャと CLI が出来ました。
-また暫く放置していたマネージャと CLI に WebUI くっつけようかなぁ？と思って
-sinatra の学習を始めたのですが、学習を初めて 1.5 日で WebUI が動くところまで行
-きました。何故か？Ruby には有用な技術が揃っているから・・！(´；ω；｀)ﾌﾞﾜｯ</p>
-
-<h2 id="オレオレオートスケーラ-sclman-の置き場所">オレオレオートスケーラ &lsquo;sclman&rsquo; の置き場所</h2>
-
-<p><a href="https://github.com/jedipunkz/sclman">https://github.com/jedipunkz/sclman</a></p>
-
-<p>スクリーンショット
-+++</p>
-
-<p><img src="https://raw.github.com/jedipunkz/sclman/master/pix/sclman.png" width="600"></p>
-
-<h2 id="構成は">構成は？</h2>
-
-<pre><code>+-------------- public network                  +-------------+
-|                                               |sclman-api.rb|
-+----+----+---+                                 |  sclman.rb  |
-| vm | vm |.. |                                 |sclman-cli.rb|
-+-------------+ +-------------+ +-------------+ +-------------+
-|  openstack  | | chef server | | sensu server| | workstation |
-+-------------+ +-------------+ +-------------+ +-------------+
-|               |               |               |
-+---------------+---------------+---------------+--------------- management network
-</code></pre>
-
-<p>&lsquo;sclman&rsquo; っていう名前です。上図の workstation ノードで稼働します。処理の流れは</p>
-
-<h2 id="処理の流れ">処理の流れ</h2>
-
-<ul>
-<li>1) sclman-cli.rb もしくは WebUI から HTTP クラスタのセットを OpenStack 上に生成</li>
-<li>2) 生成された VM に対して Chef で nginx をインストール</li>
-<li>3) Chef の Roles である &lsquo;LB&rsquo; と &lsquo;Web&rdquo; が同一 Envrionment になるようにブートストラップ</li>
-<li>4) LB VM のバックエンドに Web VM が指し示される</li>
-<li>5) bootstrap と同時に sensu-client をインストール</li>
-<li>6) Web VM の load を sensu で監視</li>
-<li>7) sclman.rb (マネージャ) は Sensu AP を定期的に叩いて Web VM の load を監視</li>
-<li>8) load が高い environment があれが該当 environment の HTTP クラスタに VM を追加</li>
-<li>9) LB VM は追加された VM へのリクエストを追加<br /></li>
-<li>10) 引き続き監視し一定期間 load が上がらなけれ Web VM を削除</li>
-<li>11) LB VM は削除された VM へのリクエストを削除</li>
-</ul>
-
-<p>といった感じです。要約すると CLI/WebUI から HA クラスタを作成。その時に LB,
-Web ミドルウェアと同時に sensu クライアントを VM に放り込む。監視を継続して負
-荷が上昇すれば Web インスタンスの数を増加させ LB のリクエスト振り先にもその追
-加した VM のアドレスを追加。逆に負荷が下がれば VM 削除と共にリクエスト振り先も
-削除。この間、人の手を介さずに処理してくれる。です。</p>
-
-<h2 id="使い方">使い方</h2>
-
-<p>詳細な使い方は github の README.md を見て下さい。ここには簡単な説明だけ書いて
-おきます。</p>
-
-<ul>
-<li>sclman を github から取得して bundler で必要な gems をインストールします。</li>
-<li>chef-repo に移動して Berkshelf で必要な cookbooks をインストールします。</li>
-<li>cookbooks を用いて sensu をデプロイします。</li>
-<li>Omnibus インストーラーを使って chef サーバをインストールします。</li>
-<li>OpenStack をインストールします。</li>
-<li>sclman.conf を環境に合わせて修正します。</li>
-<li>sclman.rb (マネージャ) を稼働します。</li>
-<li>sclman-api.rb (WebUI/API) を稼働します。</li>
-<li>sclman-cli.rb (CLI) もしくは WebUI から最小構成の HTTP クラスタを稼働します。</li>
-<li>この状態で &lsquo;Web&rsquo; Role のインスタンスに負荷が掛かると &lsquo;Web&rsquo; Role のインスタンスの数が増加します。</li>
-<li>また逆に負荷が下がるとインスタンス数が減ります。</li>
-</ul>
-
-<p>負荷の増減のシビアさは sclman.conf のパラメータ &lsquo;man_sensitivity&rsquo; で決定します。
-値が長ければ長いほど増減のし易さは低下します。</p>
-
-<p>まとめ
-+++</p>
-
-<p>こんな僕でも Ruby の周辺技術使ってなんとなくの形が出来ましたー。ただまだまだ課
-題はあって、インフラを制御するアプリってエラーハンドリングが難しいっていうこと
-です。帰ってくるエラーの一覧などがクラウドプラットフォーム・クラウドライブラリ
-のドキュメントにあればいいのだけど、まだそこまで行ってない。Fog もまだまだ絶賛
-開発中と言うかクラウドプラットフォームの進化に必死で追いついている状態なので、
-僕らがアプリを作るときには自分でエラーを全部洗い出す等の作業が必要になるかもし
-れない。大変だけど面白い所でもありますよね！これからも楽しみです。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/03/05/sensu-chef-openstack-fog-autoscaler/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1293,6 +1335,20 @@ Web ミドルウェアと同時に sensu クライアントを VM に放り込�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語でInfluxDBにメトリクスデータを挿入</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-23'>
+                                    July 23, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
                                 
                                     
@@ -1332,20 +1388,6 @@ Web ミドルウェアと同時に sensu クライアントを VM に放り込�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-28'>
-                                    December 28, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1380,7 +1422,7 @@ Web ミドルウェアと同時に sensu クライアントを VM に放り込�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">100</span>
+                                <span style="float:right;">101</span>
                             </header>
                         </article>
                     </li>

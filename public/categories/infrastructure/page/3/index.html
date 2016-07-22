@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2015-09-12T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2015-11-15T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語でInfluxDBにメトリクスデータを挿入</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,346 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2015-11-15'>
+            November 15, 2015</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと
+に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。</p>
+
+<h2 id="この記事の前提">この記事の前提&hellip;</h2>
+
+<p>ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ
+ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、
+それの回避方法等&hellip;についてまとめています。</p>
+
+<h2 id="cirlceci-と併用するサービスについて">CirlceCI と併用するサービスについて</h2>
+
+<p>CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ
+スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た
+ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー
+トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ
+うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た
+らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが
+省けそう。ってことで</p>
+
+<ul>
+<li>AWS S3 (<a href="https://aws.amazon.com/jp/s3/">https://aws.amazon.com/jp/s3/</a>)</li>
+<li>AWS CodeDeploy (<a href="https://aws.amazon.com/jp/codedeploy/">https://aws.amazon.com/jp/codedeploy/</a>)</li>
+</ul>
+
+<p>を併用することを考えました。</p>
+
+<p>S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、
+ビルドした結果を格納します。私の務めている会社ではプログラミング言語として
+Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ
+ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り
+戻すことが出来そうです。</p>
+
+<p>また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ
+ロイが可能になるサービスです。東京リージョンでは <sup>2015</sup>&frasl;<sub>08</sub> から利用が可能になり
+ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内
+のインスタンスに対してもデプロイが可能なところです。</p>
+
+<p>Tips 的な情報として
++++</p>
+
+<p>circle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで
+CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい
+と思います。</p>
+
+<h2 id="git-push-からデプロイまでを自動で行う-circle-yml">Git push からデプロイまでを自動で行う circle.yml</h2>
+
+<p>Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の
+circle.yml を紹介します。全体の流れとしては&hellip;</p>
+
+<ul>
+<li>レポジトリに git push, merge ことがトリガで処理が走る</li>
+<li>circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る</li>
+<li>S3 バケットにビルドされた結果が格納される</li>
+<li>CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする</li>
+</ul>
+
+<p>となります。</p>
+
+<pre><code class="language-yml">machine:
+  environment:
+    SBT_VERSION: 0.13.9
+    SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot;
+  services:
+    - docker
+
+dependencies:
+  pre:
+    - (事前に実行したいコマンド・スクリプトを記述)
+  cache_directories:
+    - &quot;~/.sbt&quot;
+
+test:
+  override:
+    - sbt compile
+
+deployment:
+  production:
+    branch: master
+    codedeploy:
+      codedeploy-sample:
+        application_root: /
+        region: ap-northeast-1
+        revision_location:
+          revision_type: S3
+          s3_location:
+            bucket: circleci-sample-bucket
+            key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip
+        deployment_group: codedeploy-sample-group
+</code></pre>
+
+<h4 id="それぞれのパラメータの意味">それぞれのパラメータの意味</h4>
+
+<p>上記 circle.yml の重要なパラメータのみ説明していきます。
+私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに
+SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき
+ると思いますので読み替えてください。</p>
+
+<ul>
+<li>machine -&gt; environment : 全体で適用できる環境変数を定義します</li>
+<li>dependencies -&gt; pre : 事前に実行したいコマンド等を定義できます</li>
+<li>test -&gt; overide : テストを実行するコマンドを書きます。</li>
+<li>deployment -&gt; production -&gt; branch : 適用するブランチ名と本番環境であることを記述します。</li>
+<li>&lsquo;codedeploy-sample&rsquo; : CodeDeploy 上にサンプルで作成した &lsquo;Application&rsquo; 名です</li>
+<li>s3_location -&gt; bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します</li>
+<li>s3_location -&gt; key_pattern : S3 バケットに収めるファイル名指定です</li>
+<li>deployment_group : CodeDeploy で定義する &lsquo;Deployment-Group&rsquo; 名です</li>
+</ul>
+
+<p>より詳細な説明を読みたい場合は下記の URL に描いてあります。</p>
+
+<p><a href="https://circleci.com/docs/configuration">https://circleci.com/docs/configuration</a></p>
+
+<h2 id="s3-のみににデプロイする例">S3 のみににデプロイする例</h2>
+
+<p>上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて
+実行したい場面もありそうです。流れとしては&hellip;</p>
+
+<ul>
+<li>レポジトリに git push, merge ことがトリガで処理が走る</li>
+<li>circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る</li>
+<li>S3 バケットにビルドされた結果が格納される</li>
+</ul>
+
+<p>です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の
+API を直接叩けば出来そうです。</p>
+
+<p><a href="http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html">http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html</a></p>
+
+<p>このリファレンスにある &ldquo;CreateDeployment&rdquo; については後に例をあげます。</p>
+
+<p>ただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが
+CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。</p>
+
+<p>よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば
+上記の流れが組めそうです。</p>
+
+<pre><code class="language-yml">machine:
+  environment:
+    SBT_VERSION: 0.13.9
+    SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot;
+  services:
+    - docker
+
+dependencies:
+  pre:
+    - sudo pip install awscli
+  cache_directories:
+    - &quot;~/.sbt&quot;
+
+test:
+  override:
+    - sbt compile
+
+deployment:
+  master:
+    branch: master
+    commands:
+      - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip .
+      - aws s3 cp
+        sample-code-${CIRCLE_PROJECT_REPONAME}-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip s3://&lt;バケット名&gt;/&lt;ディレクトリ&gt;/ --region ap-northeast-1
+</code></pre>
+
+<p>事前に awscli をインストールしているだけです。</p>
+
+<p>S3 バケットに格納された成果物を CodeDeploy を使って手動でデプロイするには下記
+のコマンドで実施できます。</p>
+
+<pre><code class="language-bash">$ aws deploy create-deployment \
+  --application-name codedeploy-sample \
+  --deployment-config-name CodeDeployDefault.OneAtATime \
+  --deployment-group-name codedeploy-sample-group \
+  --description &quot;deploy test&quot; \
+  --s3-location bucket=&lt;バケット名&gt;,bundleType=zip,key=&lt;ファイル名&gt;
+  {
+    &quot;deploymentId&quot;: &quot;d-2B4OAMT0B&quot;
+   }
+</code></pre>
+
+<p>deploymentId は CodeDeploy 上の Application に紐付いた ID です。CodeDeploy の
+API を叩くか AWS コンソールで確認可能です。</p>
+
+<h4 id="circleci-の問題点とそれの回避方法">CircleCI の問題点とそれの回避方法</h4>
+
+<ul>
+<li>production と staging</li>
+</ul>
+
+<p>1つのブランチで管理できる circle.yml は1つです。このファイルの中で定義できる &lsquo;本番用&rsquo;, &lsquo;開発用&rsquo; の定義は
+deployment -&gt; production, staging の2種類になります。この2つで管理しきれない環境がある場合(例えば staging 以前の
+development 環境がある) は、レポジトリのブランチを別けて circle.yml を管理する方法があると思います。</p>
+
+<ul>
+<li>複数のデプロイ先があるレポジトリの運用</li>
+</ul>
+
+<p>同一のレポジトリ内で管理しているコードのデプロイ先が複数ある場合は CodeDeploy 上で1つの Application に対して複数の
+Deployment-Group を作成することで対応できます。ただ、cirlce.yml で定義できるデプロイ先は deployment_group: の1つ(
+厳密に言うと production, staging の2つ) になるので、こちらもブランチによる circle.yml の別管理で回避できそうです。</p>
+
+<p>こちらの問題については CircleCI 的にはおそらく「1つのレポジトリで管理するデプロイ先は1つに」というコンセプトなのかもしれません。</p>
+
+<h4 id="aws-iam-ユーザにアタッチする-policy-作成">AWS IAM ユーザにアタッチする Policy 作成</h4>
+
+<p>IAM ユーザを CircleCI に事前に設定しておくことで直接 AWS のリソースを操作出来るのですが、
+そのユーザにアタッチしておくべき Policy について例をあげておきます。</p>
+
+<p>特定の S3 バケットにオブジェクト Put する Policy</p>
+
+<pre><code class="language-json">{
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Sid&quot;: &quot;Stmt1444196633000&quot;,
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: [
+                &quot;s3:PutObject&quot;
+            ],
+            &quot;Resource&quot;: [
+                &quot;arn:aws:s3:::&lt;S3 バケット名&gt;/*&quot;
+            ]
+        }
+    ]
+}
+</code></pre>
+
+<p>CodeDeploy の各 Action を実行する Policy</p>
+
+<pre><code class="language-json">{
+    &quot;Version&quot;: &quot;2012-10-17&quot;,
+    &quot;Statement&quot;: [
+        {
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: [
+                &quot;codedeploy:RegisterApplicationRevision&quot;,
+                &quot;codedeploy:GetApplicationRevision&quot;
+            ],
+            &quot;Resource&quot;: [
+                &quot;*&quot;
+            ]
+        },
+        {
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: [
+                &quot;codedeploy:CreateDeployment&quot;,
+                &quot;codedeploy:GetDeployment&quot;
+            ],
+            &quot;Resource&quot;: [
+                &quot;*&quot;
+            ]
+        },
+        {
+            &quot;Effect&quot;: &quot;Allow&quot;,
+            &quot;Action&quot;: [
+                &quot;codedeploy:GetDeploymentConfig&quot;
+            ],
+            &quot;Resource&quot;: [
+                &quot;*&quot;
+            ]
+        }
+    ]
+}
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>CodeDeploy, S3 を併用することで CircleCI を使っても VPC 内のプライベートインス
+タンスにデプロイできることが判りました。もし EC2 インスタンスを使っている場合
+は他の方法も取れることが判っています。circle.yml 内の pre: で指定出来るコマン
+ド・スクリプトで EC2 インスタンスに紐付いているセキュリティグループに穴あけ処
+理を記述すれば良さそうです。デプロイが終わったら穴を塞げばいいですね。この辺の
+例については国内でもブログ記事にされている方がいらっしゃいますので参考にしてくだ
+さい。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -1206,517 +1546,6 @@ mv /tmp/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2015/07/16/chef-zero-openstack-allinone/">Chef-ZeroでOpenStack Kiloデプロイ(オールインワン編)</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2015-07-16'>
-            July 16, 2015</time>
-        <span class="author"></span>
-        
-            <p>4 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>久々に openstack-chef-repo を覗いてみたら &lsquo;openstack/openstack-chef-repo&rsquo; とし
-て公開されていました。今まで stackforge 側で管理されていましたが &lsquo;openstack&rsquo;
-の方に移動したようです。</p>
-
-<p><a href="https://github.com/openstack/openstack-chef-repo">https://github.com/openstack/openstack-chef-repo</a></p>
-
-<p>結構安定してきているのかな？と想い、ちらっと試したのですが案の定、簡単に動作さ
-せることが出来ました。</p>
-
-<p>今回はこのレポジトリを使ってオールインワン構成の OpenStack Kilo を作る方法をま
-とめていきます。</p>
-
-<h2 id="前提の構成">前提の構成</h2>
-
-<p>このレポジトリは Vagrant で OpenStack を作るための環境一式が最初から用意されて
-いますが、Vagrant では本番環境を作ることは出来ないため、Ubuntu ホストを前提と
-した記述に差し替えて説明していきます。前提にする構成は下記のとおりです。</p>
-
-<ul>
-<li>Uuntu Linux 14.04 x 1 台</li>
-<li>ネットワークインターフェース x 3 つ</li>
-<li>eth0 : External ネットワーク用</li>
-<li>eth1 : Internal (API, Manage) ネットワーク用</li>
-<li>eth2 : Guest ネットワーク用</li>
-</ul>
-
-<p>特徴としては上記なのですが、eth2 に関してはオールインワンなので必ずしも必要と
-いうわけではありません。複数台構成を考慮した設定になっています。</p>
-
-<h2 id="前提のip-アドレス">前提のIP アドレス</h2>
-
-<p>この記事では下記の IP アドレスを前提にします。お手持ちの環境の IP アドレスが違
-い場合はそれに合わせて後に示す json ファイルを変更してください。</p>
-
-<ul>
-<li>10.0.1.10 (eth0) : external ネットワーク</li>
-<li>10.0.2.10 (eth1) : api/management ネットワーク</li>
-<li>10.0.3.10 (eth2) : Guest ネットワーク</li>
-</ul>
-
-<h2 id="事前の準備">事前の準備</h2>
-
-<p>事前に対象ホスト (OpenStack ホスト) に chef, berkshelf をインストールします。</p>
-
-<pre><code class="language-bash">sudo -i
-curl -L https://www.opscode.com/chef/install.sh | bash
-</code></pre>
-
-<p>Berkshelf をインストールするのに必要なソフトウェアをインストールします。</p>
-
-<pre><code class="language-bash">apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev ruby-dev libxml2-dev libxslt-dev g++
-</code></pre>
-
-<p>Berkshelf をインストールします。</p>
-
-<pre><code class="language-bash">/opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc
-</code></pre>
-
-<h2 id="デプロイ作業">デプロイ作業</h2>
-
-<p>それでは openstack-chef-repo を取得してデプロイの準備を行います。
-ブランチの指定は行わず master ブランチを取得します。Kilo は master ブランチで
-管理されています。次のバージョンの開発が始まるタイミングで &lsquo;stable/kilo&rsquo; ブラ
-ンチに管理が移されます。</p>
-
-<pre><code class="language-bash">sudo -i
-cd ~/
-git clone https://github.com/openstack/openstack-chef-repo.git
-</code></pre>
-
-<p>次に Berkshelf を使って必要な Cookbooks をダウンロードします。</p>
-
-<pre><code class="language-bash">cd ~/openstack-chef-repo
-/opt/chef/embedded/bin/berks vendor ./cookbooks
-</code></pre>
-
-<p>Environment を作成します。これは各環境に合わせた設定ファイルのようなもので、各
-Cookbooks の Attributes を上書きする仕組みになっています。下記の内容を</p>
-
-<pre><code>openstack-chef-repo/environments/aio-neutron-kilo.json
-</code></pre>
-
-<p>というファイル名で保存してください。</p>
-
-<pre><code class="language-json">{
-  &quot;name&quot;: &quot;aio-neutron-kilo&quot;,
-  &quot;description&quot;: &quot;test&quot;,
-  &quot;cookbook_versions&quot;: {
-  },
-  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
-  &quot;chef_type&quot;: &quot;environment&quot;,
-  &quot;default_attributes&quot;: {
-  },
-  &quot;override_attributes&quot;: {
-    &quot;mysql&quot;: {
-      &quot;bind_address&quot;: &quot;0.0.0.0&quot;,
-      &quot;server_root_password&quot;: &quot;mysqlroot&quot;,
-      &quot;server_debian_password&quot;: &quot;mysqlroot&quot;,
-      &quot;server_repl_password&quot;: &quot;mysqlroot&quot;,
-      &quot;allow_remote_root&quot;: true,
-      &quot;root_network_acl&quot;: [&quot;10.0.0.0/8&quot;]
-    },
-    &quot;rabbitmq&quot;: {
-      &quot;address&quot;: &quot;0.0.0.0&quot;,
-      &quot;port&quot;: &quot;5672&quot;,
-      &quot;loopback_users&quot;: []
-    },
-    &quot;openstack&quot;: {
-      &quot;auth&quot;: {
-        &quot;validate_certs&quot;: false
-      },
-      &quot;dashboard&quot;: {
-        &quot;session_backend&quot;: &quot;file&quot;
-      },
-      &quot;block-storage&quot;: {
-        &quot;syslog&quot;: {
-          &quot;use&quot;: false
-        },
-        &quot;api&quot;: {
-          &quot;ratelimit&quot;: &quot;False&quot;
-        },
-        &quot;debug&quot;: true,
-        &quot;image_api_chef_role&quot;: &quot;os-image&quot;,
-        &quot;identity_service_chef_role&quot;: &quot;os-identity&quot;,
-        &quot;rabbit_server_chef_role&quot;: &quot;os-ops-messaging&quot;
-      },
-      &quot;compute&quot;: {
-        &quot;rabbit&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;novnc_proxy&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;libvirt&quot;: {
-          &quot;virt_type&quot;: &quot;qemu&quot;,
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;novnc_proxy&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;xvpvnc_proxy&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;image_api_chef_role&quot;: &quot;os-image&quot;,
-        &quot;identity_service_chef_role&quot;: &quot;os-identity&quot;,
-        &quot;nova_setup_chef_role&quot;: &quot;os-compute-api&quot;,
-        &quot;rabbit_server_chef_role&quot;: &quot;os-ops-messaging&quot;,
-        &quot;network&quot;: {
-          &quot;public_interface&quot;: &quot;eth1&quot;,
-          &quot;service_type&quot;: &quot;neutron&quot;
-        }
-      },
-      &quot;network&quot;: {
-        &quot;debug&quot;: &quot;True&quot;,
-        &quot;dhcp&quot;: {
-          &quot;enable_isolated_metadata&quot;: &quot;True&quot;
-        },
-        &quot;metadata&quot;: {
-          &quot;nova_metadata_ip&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;openvswitch&quot;: {
-          &quot;tunnel_id_ranges&quot;: &quot;1:1000&quot;,
-          &quot;enable_tunneling&quot;: &quot;True&quot;,
-          &quot;tenant_network_type&quot;: &quot;gre&quot;,
-          &quot;local_ip_interface&quot;: &quot;eth2&quot;
-        },
-        &quot;api&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;l3&quot;: {
-          &quot;external_network_bridge_interface&quot;: &quot;eth0&quot;
-        },
-        &quot;service_plugins&quot;: [&quot;neutron.services.l3_router.l3_router_plugin.L3RouterPlugin&quot;]
-      },
-      &quot;db&quot;: {
-        &quot;bind_interface&quot;: &quot;eth1&quot;,
-        &quot;compute&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;identity&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;image&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;network&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;volume&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;dashboard&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;telemetry&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;orchestration&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        }
-      },
-      &quot;developer_mode&quot;: true,
-      &quot;endpoints&quot;: {
-        &quot;compute-api-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8774&quot;
-        },
-        &quot;compute-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8774&quot;
-        },
-        &quot;compute-ec2-admin-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8773&quot;
-        },
-        &quot;compute-ec2-admin&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8773&quot;
-        },
-       &quot;compute-ec2-api-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8773&quot;
-        },
-        &quot;compute-ec2-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8773&quot;
-        },
-        &quot;compute-xvpvnc&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;6081&quot;
-        },
-        &quot;compute-novnc-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;6080&quot;
-        },
-        &quot;compute-novnc&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;6080&quot;
-        },
-        &quot;compute-vnc&quot;: {
-          &quot;host&quot;: &quot;0.0.0.0&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;6080&quot;
-        },
-        &quot;image-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;9292&quot;
-        },
-        &quot;image-api-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;9292&quot;
-        },
-        &quot;image-registry&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;9191&quot;
-        },
-        &quot;image-registry-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;9191&quot;
-        },
-        &quot;identity-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;5000&quot;
-        },
-        &quot;identity-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;5000&quot;
-        },
-        &quot;identity-admin&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;35357&quot;
-        },
-        &quot;identity-internal&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;35357&quot;
-        },
-        &quot;volume-api-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8776&quot;
-        },
-        &quot;volume-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8776&quot;
-        },
-        &quot;telemetry-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8777&quot;
-        },
-        &quot;network-api-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;9696&quot;
-        },
-        &quot;network-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;9696&quot;
-        },
-        &quot;orchestration-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8004&quot;
-        },
-        &quot;orchestration-api-cfn&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8000&quot;
-        },
-        &quot;db&quot;: {
-          &quot;host&quot;: &quot;0.0.0.0&quot;,
-          &quot;port&quot;: &quot;3306&quot;
-        },
-        &quot;bind-host&quot;: &quot;0.0.0.0&quot;
-      },
-      &quot;identity&quot;: {
-        &quot;admin_user&quot;: &quot;admin&quot;,
-        &quot;bind_interface&quot;: &quot;eth1&quot;,
-        &quot;debug&quot;: true
-      },
-      &quot;image&quot;: {
-        &quot;api&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;debug&quot;: true,
-        &quot;identity_service_chef_role&quot;: &quot;os-identity&quot;,
-        &quot;rabbit_server_chef_role&quot;: &quot;os-ops-messaging&quot;,
-        &quot;registry&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;syslog&quot;: {
-          &quot;use&quot;: false
-        }
-      },
-      &quot;mq&quot;: {
-        &quot;bind_interface&quot;: &quot;eth1&quot;,
-        &quot;host&quot;: &quot;10.0.2.10&quot;,
-        &quot;user&quot;: &quot;guest&quot;,
-        &quot;vhost&quot;: &quot;/nova&quot;,
-        &quot;network&quot;: {
-          &quot;rabbit&quot;: {
-             &quot;host&quot;: &quot;10.0.2.10&quot;,
-             &quot;port&quot;: &quot;5672&quot;
-          }
-        },
-        &quot;compute&quot;: {
-           &quot;service_type&quot;: &quot;rabbitmq&quot;,
-          &quot;rabbit&quot;: {
-            &quot;host&quot;: &quot;10.0.2.10&quot;,
-            &quot;port&quot;: &quot;5672&quot;
-          }
-        },
-        &quot;block-storage&quot;: {
-          &quot;service_type&quot;: &quot;rabbitmq&quot;,
-          &quot;rabbit&quot;: {
-            &quot;host&quot;: &quot;10.0.2.10&quot;,
-            &quot;port&quot;: &quot;5672&quot;
-          }
-        }
-      }
-    },
-    &quot;queue&quot;: {
-      &quot;host&quot;: &quot;10.0.2.10&quot;,
-      &quot;user&quot;: &quot;guest&quot;,
-      &quot;vhost&quot;: &quot;/nova&quot;
-    }
-  }
-}
-</code></pre>
-
-<p>上記ファイルは KVM が使えない環境用に virt_type : qemu にしていますが、KVM が
-利用できる環境をご利用であれば該当行を削除してください。デフォルト値の &lsquo;kvm&rsquo;
-が入るはずです。</p>
-
-<p>次にデプロイ前に databag 関連の事前操作を行います。Vagrant 用に作成されたファ
-イルを除くと&hellip;</p>
-
-<pre><code class="language-ruby">machine 'controller' do
-  add_machine_options vagrant_config: controller_config
-  role 'allinone-compute'
-  role 'os-image-upload'
-  chef_environment env
-  file('/etc/chef/openstack_data_bag_secret',
-       &quot;#{File.dirname(__FILE__)}/.chef/encrypted_data_bag_secret&quot;)
-  converge true
-end
-</code></pre>
-
-<p>となっていて /etc/chef/openstack_data_bag_secret というファイルを事前にコピー
-する必要がありそうです。下記のように操作します。</p>
-
-<pre><code class="language-bash">cp .chef/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
-</code></pre>
-
-<p>デプロイを実行します。</p>
-
-<p>この openstack-chef-repo には .chef ディレクトリが存在していてノード名が記され
-ています。&rsquo;nodienode&rsquo; というノード名です。これを利用してそのままデプロイを実行
-します。</p>
-
-<pre><code class="language-bash">chef-client -z
-knife node -z run_list add nodienode 'role[allinone-compute]'
-chef-client -z -E aio-neutron-kilo
-</code></pre>
-
-<p>上記の説明を行います。
-１行目 chef-client -z で Chef-Zero サーバをメモリ上に起動し、2行目で自ノードへ
-run_list を追加しています。最後、3行目でデプロイ実行、となります。</p>
-
-<p>数分待つと OpenStack Kilo が構成されているはずです。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>Chef-Zero を用いることで Chef サーバを利用せずに楽に構築が行えました。ですが、
-OpenStack の複数台構成となるとそれぞれのノードのパラメータを連携させる必要が出
-てくるので Chef サーバを用いたほうが良さそうです。今度、時間を見つけて Kilo の
-複数台構成についても調べておきます。</p>
-
-<p>また、master ブランチを使用していますので、まだ openstack-chef-repo 自体が流動
-的な状態とも言えます。が launchpad で管理されている Bug リストを見ると、ステー
-タス Critical, High の Bug が見つからなかったので Kilo に関しては、大きな問題
-無く安定してきている感があります。</p>
-
-<p><a href="https://bugs.launchpad.net/openstack-chef">https://bugs.launchpad.net/openstack-chef</a></p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2015/07/16/chef-zero-openstack-allinone/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1833,6 +1662,20 @@ OpenStack の複数台構成となるとそれぞれのノードのパラメー�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語でInfluxDBにメトリクスデータを挿入</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-23'>
+                                    July 23, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
                                 
                                     
@@ -1872,20 +1715,6 @@ OpenStack の複数台構成となるとそれぞれのノードのパラメー�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-28'>
-                                    December 28, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1920,7 +1749,7 @@ OpenStack の複数台構成となるとそれぞれのノードのパラメー�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">100</span>
+                                <span style="float:right;">101</span>
                             </header>
                         </article>
                     </li>

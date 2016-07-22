@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2014-11-15T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2014-12-13T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語でInfluxDBにメトリクスデータを挿入</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,213 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/">Aviator でモダンに OpenStack を操作する</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-12-13'>
+            December 13, 2014</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。@jedipunkz です。</p>
+
+<p>自分は Ruby を普段使うのでいつも Fog というライブラリを使って OpenStack, AWS
+を操作していました。Fog を使うとクラウドの操作が Ruby のネイティブコードで行え
+るのでシステムコマンド打つよりミス無く済みます。</p>
+
+<p>Fog より後発で Aviator というライブラリが登場してきたので少し使ってみたのです
+がまだ未完成なところがあるものの便利な点もあって今後に期待だったので紹介します。</p>
+
+<h2 id="認証情報を-yaml-ファイルに記す">認証情報を yaml ファイルに記す</h2>
+
+<p>接続に必要な認証情報を yaml ファイルで記述します。名前を &lsquo;aviator.yml&rsquo; として
+保存。この時に下記のように環境毎に認証情報を別けて書くことができます。こうする
+ことでコードの中で開発用・サービス用等と使い分けられます。</p>
+
+<pre><code class="language-yaml">production:
+  provider: openstack
+  auth_service:
+    name: identity
+    host_uri: &lt;Auth URL&gt;
+    request: create_token
+    validator: list_tenants
+  auth_credentials:
+    username: &lt;User Name&gt;
+    password: &lt;Password&gt;
+    tenant_name: &lt;Tenant Name&gt;
+
+development:
+  provider: openstack
+  auth_service:
+    name: identity
+    host_uri: &lt;Auth URL&gt;
+    request: create_token
+    validator: list_tenants
+  auth_credentials:
+    username: &lt;User Name&gt;
+    password: &lt;Password&gt;
+    tenant_name: &lt;Tenant Name&gt;
+</code></pre>
+
+<p>シンタックス確認
++++</p>
+
+<p>次に aviator のシンタックスを確認します。Fog に無い機能で、コマンドラインでシ
+ンタックスを確認できてしかも指定可能はパラメータと必須なパラメータと共にサンプ
+ルコードまで提供してくれます。公式サイトに&rsquo;サーバ作成&rsquo;のメソッドが掲載されてい
+るので、ここでは仮想ディスクを作るシンタックスを確認してみます。</p>
+
+<pre><code class="language-bash">% gem install aviator
+% aviator describe openstack volume # &lt;-- 利用可能な機能を確認
+Available requests for openstack volume_service:
+v1 public list_volume_types
+v1 public list_volumes
+v1 public delete_volume
+v1 public create_volume
+v1 public get_volume
+v1 public update_volume
+  v1 public root
+% aviator describe openstack volume v1 public create_volume # &lt;-- シンタックスを確認
+:Request =&gt; create_volume
+
+Parameters:
+ +---------------------+-----------+
+ | NAME                | REQUIRED? |
+ +---------------------+-----------+
+ | availability_zone   |     N     |
+ | display_description |     Y     |
+ | display_name        |     Y     |
+ | metadata            |     N     |
+ | size                |     Y     |
+ | snapshot_id         |     N     |
+ | volume_type         |     N     |
+ +---------------------+-----------+
+
+Sample Code:
+  session.volume_service.request(:create_volume) do |params|
+    params.volume_type = value
+    params.availability_zone = value
+    params.snapshot_id = value
+    params.metadata = value
+    params.display_name = value
+    params.display_description = value
+    params.size = value
+  end
+</code></pre>
+
+<p>このように create_volume というメソッドが用意されていて、指定出来るパラメータ・
+必須なパラメータが確認できます。必須なモノには &ldquo;Y&rdquo; が REQUIRED に付いています。
+またサンプルコードが出力されるので、めちゃ便利です。</p>
+
+<p>では create_volume のシンタックスがわかったので、コードを書いてみましょう。</p>
+
+<p>コードを書いてみる
++++</p>
+
+<pre><code class="language-ruby">#!/usr/bin/env ruby
+
+require 'aviator'
+require 'json'
+
+volume_session = Aviator::Session.new(
+              :config_file =&gt; '/home/thirai/aviator/aviator.yml',
+              :environment =&gt; :production,
+              :log_file    =&gt; '/home/thirai/aviator/aviator.log'
+            )
+
+volume_session.authenticate
+
+volume_session.volume_service.request(:create_volume) do |params|
+  params.display_description = 'testvol'
+  params.display_name = 'testvol01'
+  params.size = 1
+end
+puts volume_session.volume_service.request(:list_volumes).body
+</code></pre>
+
+<p>6行目で先ほど作成した認証情報ファイル aviator.yml とログ出力ファイル
+aviator.log を指定します。12行目で実際に OpenStack にログインしています。</p>
+
+<p>14-18行目はサンプルコードそのままです。必須パラメータの display_description,
+display_name, size のみを指定し仮想ディスクを作成しました。最後の puts &hellip; は
+実際に作成した仮想ディスク一覧を出力しています。</p>
+
+<p>結果は下記のとおりです。</p>
+
+<pre><code class="language-json">{ volumes: [{ status: 'available', display_name: 'testvol01', attachments: [],
+availability_zone: 'az3', bootable: 'false', created_at:
+description = 'testvol', volume_type:
+'standard', snapshot_id: nil, source_volid: nil, metadata:  }, id:
+'3a5f616e-a732-4442-a419-10369111bd4c', size: 1 }] }
+</code></pre>
+
+<p>まとめ
++++</p>
+
+<p>サンプルコードやパラメータ一覧等がひと目でわかる aviator はとても便利です。ま
+だ利用できるクラウドプラットフォームが OpenStack しかないのと、Neutron の機能
+がスッポリ抜けているので、まだ利用するには早いかもです&hellip;。逆に言えばコントリ
+ビューションするチャンスなので、もし気になった方がいたら開発に参加してみるのも
+いいかもしれません。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Categories
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+        <li><a href='/categoriestools'>tools</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -1015,214 +1222,6 @@ midonet_uri = http://localhost:8081/midonet-api
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2014/07/16/chef-container/">Chef-Container Beta を使ってみる</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2014-07-16'>
-            July 16, 2014</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>昨晩 Chef が Chef-Container を発表しました。</p>
-
-<ul>
-<li><a href="http://www.getchef.com/blog/2014/07/15/release-chef-container-0-2-0-beta/">http://www.getchef.com/blog/2014/07/15/release-chef-container-0-2-0-beta/</a></li>
-<li><a href="http://docs.opscode.com/containers.html">http://docs.opscode.com/containers.html</a></li>
-</ul>
-
-<p>まだ Beta リリースでバージョンは 0.2.0 です。(gem だと 0.1.1)</p>
-
-<p>Docker を代表とするコンテナ周りの技術が最近、盛んにリリースされていますし、今
-後クラウドプラットフォーム上でコンテナを使ってアプリを動かすケースも増えてくる
-のではないでしょうか。Dockerfile を使っても Chef-Solo を使ってソフトウェアをデ
-プロイ出来るのだけどそれだけだとしんどいので、コンテナに特化した Chef が出てき
-たってことだと思います。特徴として SSH でログインしてブートストラップするので
-はなくて Runit + Chef-init を用いてコンテナにデプロイすることが挙げられます。</p>
-
-<p>では実際に使ってみたのでその時の手順をまとめてみます。</p>
-
-<h2 id="事前に用意する環境">事前に用意する環境</h2>
-
-<p>下記のソフトウェアを予めインストールしておきましょう。</p>
-
-<ul>
-<li>docker</li>
-<li>chef</li>
-<li>berkshelf</li>
-</ul>
-
-<p>ここで注意なのですが後に knife コマンドを使って Docker イメージをビルドします。
-つまり root 権限が必要です。rbenv 等を使って ruby, chef をインストールすると、
-辛いかもしれませんので OS のパッケージを使ってインストールすると良いと思います。
-この辺りは今後改善策が出てくるかも&hellip;。</p>
-
-<p>尚、インストール方法はここでは割愛します。</p>
-
-<h2 id="chef-container-のインストール">Chef-Container のインストール</h2>
-
-<p>下記の2つの Gems をインストールします。</p>
-
-<ul>
-<li>knife-container</li>
-<li>chef-container</li>
-</ul>
-
-<pre><code class="language-bash">% sudo gem install knife-container
-% sudo gem install chef-container
-</code></pre>
-
-<h2 id="使用方法">使用方法</h2>
-
-<p>まず knife コマンドを使って操作に必要なディレクトリとファイルを生成します。</p>
-
-<pre><code class="language-bash">% knife container docker init chef/ubuntu-12.04 -r 'recipe[apache2]' -z -b
-</code></pre>
-
-<p>ここで &lsquo;chef/ubuntu-12.04&rsquo; は Docker のイメージ名です。chef-init 等の環境が予
-め入っていました。このイメージ以外では今のところ動作を確認していません..。これは後にまとめで触れます。</p>
-
-<p>上記のコマンドの結果で得られるディレクトリとファイル達です。</p>
-
-<pre><code>.
-└── dockerfiles
-    └── chef
-        └── ubuntu-12.04
-            ├── Berksfile
-            ├── chef
-            │   ├── first-boot.json
-            │   └── zero.rb
-            └── Dockerfile
-</code></pre>
-
-<p>また dockerfiles/chef/ubuntu-12.04/Dockerfile を確認すると&hellip;</p>
-
-<pre><code># BASE chef/ubuntu-12.04:latest
-FROM chef/ubuntu-12.04
-ADD chef/ /etc/chef/
-RUN chef-init --bootstrap
-RUN rm -rf /etc/chef/secure/*
-ENTRYPOINT [&quot;chef-init&quot;]
-CMD [&quot;--onboot&quot;]
-</code></pre>
-
-<p>イメージを取得 -&gt; ディレクトリ同期 -&gt; chef-init 実行 -&gt; /etc/chef/secure 配下削除、と
-実行しているようです。</p>
-
-<p>次に first-boot.json という名前のファイルを生成します。chef-init が解釈するファ
-イルです。</p>
-
-<pre><code class="language-json">{
-   &quot;run_list&quot;: [
-      &quot;recipe[apache2]&quot;
-   ],
-   &quot;container_service&quot;: {
-      &quot;apache2&quot;: {
-         &quot;command&quot;: &quot;/usr/sbin/apache2 -k start&quot;
-      }
-   }
-}
-</code></pre>
-
-<p>ではいよいよ knife コマンドで Docker イメージをビルドします。</p>
-
-<pre><code class="language-bash">% sudo knife container docker build chef/ubuntu-12.04 -z
-</code></pre>
-
-<p>すると、下記のように Docker イメージが出来上がります。</p>
-
-<pre><code class="language-bash">% sudo docker images
-REPOSITORY          TAG                 IMAGE ID            CREATED             VIRTUAL SIZE
-chef/ubuntu-12.04   11                  03fd2357596f        4 days ago          397.7 MB
-chef/ubuntu-12.04   11.12               03fd2357596f        4 days ago          397.7 MB
-chef/ubuntu-12.04   11.12.8             03fd2357596f        4 days ago          397.7 MB
-</code></pre>
-
-<p>出来上がったイメージを利用してコンテナを稼働します。</p>
-
-<pre><code class="language-bash">% sudo docker run chef/ubuntu-12.04
-% sudo docker ps
-CONTAINER ID        IMAGE               COMMAND              CREATED             STATUS              PORTS               NAMES
-191cfdaf0bdb        650a89f73ed8        chef-init --onboot   39 minutes ago      Up 39 minutes                           agitated_almeida
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>コンテナと言っても今現在は Docker のみに対応しているようです。また init の際に指定する Docker イメージ
-の中に chef-init が入っている必要がありそうです。Build する前に予めイメージを作っておく必要があるという
-のはしんどいので、今後改善されるかもしれません。</p>
-
-<p>そもそも Docker やコンテナ技術の登場で Puppet, Chef を代表とするツール類が不要になるのでは？という議論が
-幾つかの場面であったように思います。つまりコンテナのイメージに予めソフトウェアを配布しそれを用いて稼働
-することで、マシンが起動した後にデプロイすることが必要ないよね？という発想です。今回紹介したようにコンテナの
-イメージを生成するのに Chef を用いるということであれば、また別の議論になりそうです。また稼働したコンテナに
-ソフトウェアをデプロイすることも場合によっては必要なので、この辺りの技術の完成度が上がることを期待したいです。</p>
-
-<h2 id="参考-url">参考 URL</h2>
-
-<ul>
-<li>CreationLine さんブログ <a href="http://www.creationline.com/lab/5346">http://www.creationline.com/lab/5346</a></li>
-<li>公式サイト <a href="http://docs.opscode.com/containers.html">http://docs.opscode.com/containers.html</a></li>
-</ul>
-</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/07/16/chef-container/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1339,6 +1338,20 @@ CONTAINER ID        IMAGE               COMMAND              CREATED            
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語でInfluxDBにメトリクスデータを挿入</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-23'>
+                                    July 23, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
                                 
                                     
@@ -1378,20 +1391,6 @@ CONTAINER ID        IMAGE               COMMAND              CREATED            
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-28'>
-                                    December 28, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1426,7 +1425,7 @@ CONTAINER ID        IMAGE               COMMAND              CREATED            
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">100</span>
+                                <span style="float:right;">101</span>
                             </header>
                         </article>
                     </li>
