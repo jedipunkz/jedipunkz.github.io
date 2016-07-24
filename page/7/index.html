@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2014-04-25T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2014-05-29T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,282 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2014/05/29/fog-aws-ec2-elb/">クラウドライブラリ Fog で AWS を操作！..のサンプル</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-05-29'>
+            May 29, 2014</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>最近 OpenStack でサービスを開発！.. じゃなくて AWS でプロトタイプサービス作っ
+ているのですが、Ruby で開発したかったので Fog を使っています。EC2 と ELB の
+API を叩くコードになりつつあるのですが、サンプルコードって世の中に中々無いと気
+がついたので、このブログ記事にサンプルコードを載せたいと思います。</p>
+
+<h2 id="fog-とは">Fog とは ?</h2>
+
+<p>Fog <a href="http://fog.io/">http://fog.io/</a> はクラウドライブラリソフトウェアです。AWS, Rackspace,
+CloudStack, OpenStack .. と数ある世の中のクラウドプラットフォームを扱うために
+用意されたソフトウェアです。対応しているプラットフォームの種別は下記を見ると参
+考になります。</p>
+
+<p><a href="http://fog.io/about/provider_documentation.html">http://fog.io/about/provider_documentation.html</a></p>
+
+<p>ドキュメントがまだまだ揃っていなく、Fog のコードを覗きながら実装するしかない状
+況です。なので「こう使えば良い！」というお手本があまりネット上にも無い気がしま
+す。</p>
+
+<p>ドキュメントは一応下記にあります。
+が使い方がよくわからない・・！(´；ω；｀)ﾌﾞﾜｯ</p>
+
+<p><a href="http://rubydoc.info/gems/fog/frames/index">http://rubydoc.info/gems/fog/frames/index</a></p>
+
+<h2 id="ec2-インスタンスを使ってみる">EC2 インスタンスを使ってみる</h2>
+
+<p>まずは AWS EC2 の API を叩いて t1.micro インスタンスを立ち上げてみましょう。</p>
+
+<pre><code class="language-ruby">require 'fog'
+
+compute = Fog::Compute.new({
+  :provider =&gt; 'AWS',
+  :aws_access_key_id =&gt; '....',
+  :aws_secret_access_key =&gt; '....',
+  :region =&gt; 'ap-northeast-1'
+})
+
+server = compute.servers.create(
+  :image_id =&gt; 'ami-cedaa2bc',
+  :flavor_id =&gt; 't1.micro',
+  :key_name =&gt; 'test_key',
+  :tags =&gt; {'Name' =&gt; 'test'},
+  :groups =&gt; 'ssh-secgroup'
+)
+
+server.wait_for { print &quot;.&quot;; ready? }
+
+puts &quot;created instance name :&quot;, server.dns_name
+</code></pre>
+
+<h4 id="解説">解説</h4>
+
+<ul>
+<li>compute = &hellip; とあるところで接続情報を記しています。</li>
+</ul>
+
+<p>&ldquo;ACCESS_KEY_ID&rdquo; や &ldquo;SECRET_ACCESS_KEY&rdquo; はみなさん接続する時にお持ちですよね。それ
+とリージョン名やプロバイダ名 (ここでは AWS) を記して AWS の API に接続します。</p>
+
+<ul>
+<li>server = &hellip; とあるところで実際にインスタンスを作成しています。</li>
+</ul>
+
+<p>ここではインスタンス生成に必要な情報を盛り込んでいます。Flavor 名や AMI イメー
+ジ名・SSH 鍵の名前・セキュリティグループ名等です。</p>
+
+<h2 id="便利なメソッド">便利なメソッド</h2>
+
+<p>server = &hellip; でインスタンスを生成すると便利なメソッドを扱って情報を読み込むこ
+とが出来ます。</p>
+
+<pre><code class="language-ruby">server.dns_name # =&gt; public な DNS 名を取得
+server.private_dns_name # =&gt; private な DNS 名を取得
+server.id # =&gt; インスタンス ID を取得
+server.availability_zone # =&gt; Availability Zone を取得
+server.public_ip_address # =&gt; public な IP アドレスを取得
+server.private_ip_address # =&gt; private な IP アドレスを取得
+</code></pre>
+
+<p>これは便利&hellip;</p>
+
+<p>モジュール化して利用
++++</p>
+
+<p>毎回コードの中でこれらの接続情報を書くのはしんどいので、Ruby のモジュールを作
+りましょう。</p>
+
+<pre><code class="language-ruby">module AWSCompute
+  def self.connect()
+    conn = Fog::Compute.new({
+      :provider =&gt; 'AWS',
+      :aws_access_key_id =&gt; '...',
+      :aws_secret_access_key =&gt; '...',
+      :region =&gt; '...'
+    })
+    begin
+      yield conn
+    ensure
+      # conn.close
+    end
+  rescue Errno::ECONNREFUSED
+  end
+end
+</code></pre>
+
+<p>こう書いておくと例えば&hellip;</p>
+
+<h4 id="インスタンスのターミネイト">インスタンスのターミネイト</h4>
+
+<pre><code class="language-ruby">AWSCompute.connect() do |sock|
+  server = sock.servers.get(instance_id)
+  server.destroy
+  return server.id
+end
+</code></pre>
+
+<h4 id="インスタンスの起動">インスタンスの起動</h4>
+
+<pre><code class="language-ruby">AWSCompute.connect() do |sock|
+  server = sock.servers.get(instance_id)
+  server.start
+  return server.id
+end
+</code></pre>
+
+<h4 id="インスタンスの停止">インスタンスの停止</h4>
+
+<pre><code class="language-ruby">AWSCompute.connect() do |sock|
+  server = sock.servers.get(instance_id)
+  server.stop
+  return server.id
+end
+</code></pre>
+
+<p>等と出来ます。</p>
+
+<h2 id="elb-elastic-loadbalancer-を使ってみる">ELB (Elastic LoadBalancer) を使ってみる</h2>
+
+<p>同様に ELB を扱うコードのサンプルも載せておきます。同じくモジュール化して書くと</p>
+
+<pre><code class="language-ruby">module AWSELB
+  def self.connect()
+    conn = Fog::AWS::ELB.new(
+      :aws_access_key_id =&gt; '...',
+      :aws_secret_access_key =&gt; '...',
+      :region =&gt; '...',
+    )
+    begin
+      yield conn
+    ensure
+      # conn.close
+    end
+  rescue Errno::ECONNREFUSED
+  end
+end
+</code></pre>
+
+<p>としておいて&hellip;</p>
+
+<h4 id="elb-の新規作成">ELB の新規作成</h4>
+
+<p>下記のコードで ELB を新規作成出来ます。</p>
+
+<pre><code class="language-ruby">AWSELB.connect() do |sock|
+  availability_zone = '...'
+  elb_name = '...'
+  listeners = [{ &quot;Protocol&quot; =&gt; &quot;HTTP&quot;, &quot;LoadBalancerPort&quot; =&gt; 80, &quot;InstancePort&quot; =&gt; 80, &quot;InstanceProtocol&quot; =&gt; &quot;HTTP&quot; }]
+  result = sock.create_load_balancer(availability_zone, elb_name, listeners)
+  p result
+end
+</code></pre>
+
+<p>この状態では ELB に対してインスタンスが紐付けられていないので使えません。下記の操作で
+インスタンスを紐付けてみましょう。</p>
+
+<pre><code class="language-ruby">AWSELB.connect() do |sock|
+  insntance_id = '...'
+  elb_name = '...'
+  result = sock.register_instances_with_load_balancer(instance_id, elbname)
+  p result
+end
+</code></pre>
+
+<p>insntance_id には紐付けたいインスタンスの ID を、elb_name には先ほど作成した ELB の名前を
+入力します。 この操作を繰り返せば AWS 上にクラスタが構成出来ます。</p>
+
+<p>逆にクラスタからインスタンスの削除したい場合は下記の通り実行します。</p>
+
+<pre><code class="language-ruby">AWSELB.connect() do |sock|
+  result = sock.deregister_instances_from_load_balancer(instance_id, elbname)
+  p result
+end
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>今回は Fog を紹介しましたが Python 使いの方には libcloud をおすすめします。</p>
+
+<p><a href="https://libcloud.apache.org/">https://libcloud.apache.org/</a></p>
+
+<p>Apache ファウンデーションが管理しているクラウドライブラリです。こちらも複数の
+クラウドプラットフォームに対応しているようです。</p>
+
+<p>Fog で OpenStack も操作したことがあるのですが、AWS 用のコードの方が完成度が高
+いのか、戻り値などが綺麗に整形されていて扱いやすかったり、メソッドも豊富に用意
+されていたりという印象でした。これは&hellip; OpenStack 用の Fog コードにコントリビュー
+トするチャンス・・！</p>
+
+<p>皆さんもサンプルコードお持ちでしたら、ブログ等で公開していきましょうー。
+ではでは。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2014/05/29/fog-aws-ec2-elb/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -1250,209 +1526,6 @@ Networks&rsquo; を押下。ネットワーク設定が正しく行われてい�
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2014/04/22/geard-port-mapping/">Geard のポートマッピングについて調べてみた</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2014-04-22'>
-            April 22, 2014</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>今週 Redhat が &lsquo;Redhat Enterprise Linux Atomic Host&rsquo; しましたよね。Docker を特
-徴としたミニマムな OS だとのこと。その内部で用いられている技術 Geard について
-少し調べてみました。複数コンテナの関連付けが可能なようです。ここでは調べた結果
-について簡単にまとめていきます。</p>
-
-<h2 id="参考資料">参考資料</h2>
-
-<p><a href="http://openshift.github.io/geard/deploy_with_geard.html">http://openshift.github.io/geard/deploy_with_geard.html</a></p>
-
-<h2 id="利用方法">利用方法</h2>
-
-<p>ここではホスト OS に Fedora20 を用意します。</p>
-
-<p>まず Geard をインストール</p>
-
-<pre><code class="language-bash">% sudo yum install --enablerepo=updates-testing geard
-</code></pre>
-
-<p>下記の json ファイルを作成します。ここにはコンテナをデプロイするための情報と関
-連付けのための情報を記します。</p>
-
-<pre><code class="language-json">$ ${EDITOR} rockmongo_mongodb.json
-{
-  &quot;containers&quot;:[
-    {
-      &quot;name&quot;:&quot;rockmongo&quot;,
-      &quot;count&quot;:1,
-      &quot;image&quot;:&quot;derekwaynecarr/rockmongo&quot;,
-      &quot;publicports&quot;:[{&quot;internal&quot;:80,&quot;external&quot;:6060}],
-      &quot;links&quot;:[{&quot;to&quot;:&quot;mongodb&quot;}]
-    },
-    {
-      &quot;name&quot;:&quot;mongodb&quot;,
-      &quot;count&quot;:1,
-      &quot;image&quot;:&quot;ccoleman/ubuntu-mongodb&quot;,
-      &quot;publicports&quot;:[{&quot;internal&quot;:27017}]
-    }
-  ]
-}
-</code></pre>
-
-<p>上記のファイルの解説。</p>
-
-<ul>
-<li>コンテナ &lsquo;rockmongo&rsquo; と &lsquo;mongodb&rsquo; を作成</li>
-<li>それぞれ1個ずつコンテナを作成</li>
-<li>&lsquo;image&rsquo; パラメータにて docker イメージの指定</li>
-<li>&lsquo;publicports&rsquo; パラメータにてコンテナ内部とホスト側のポートマッピングを行う</li>
-<li>&lsquo;links&rsquo; パラメータで &lsquo;rockmongo&rsquo; を &lsquo;mongodb&rsquo; に関連付け</li>
-</ul>
-
-<p>では、デプロイ開始します。</p>
-
-<pre><code class="language-bash">$ sudo gear deploy rockmongo_mongo.json
-2014/04/22 07:21:12 Deploying rockmongo_mongo.json.20140422-072112
-2014/04/22 07:21:12 appending 27017 on rockmongo-1: &amp;{PortPair:{Internal:27017 External:0} Target:127.0.0.1:27017} &amp;{Id:rockmongo-1 Image:derekwaynecarr/rockmongo From:rockmongo On:0xc2100bb980 Ports:[{PortPair:{Internal:80 External:6060} Target::0}] add:true remove:false container:0xc21000be00 links:[]}
-2014/04/22 07:21:12 ports: Releasing
-2014/04/22 07:21:12 systemd: Reloading daemon
-local PortMapping: 80 -&gt; 6060
-local Container rockmongo-1 is installed
-2014/04/22 07:21:12 ports: Releasing
-2014/04/22 07:21:12 systemd: Reloading daemon
-local PortMapping: 27017 -&gt; 4000
-local Container mongodb-1 is installed
-linking rockmongo: 127.0.0.1:27017 -&gt; localhost:4000
-local Links set on local
-local Container rockmongo-1 starting
-local Container mongodb-1 starting
-</code></pre>
-
-<p>ブラウザにてホスト OS に接続することで rockmongo の管理画面にアクセスが可能。</p>
-
-<pre><code>http://&lt;ホストOSのIP:6060&gt;/
-</code></pre>
-
-<h2 id="ポートマッピング管理">ポートマッピング管理</h2>
-
-<p>デプロイが完了して、実際に RockMongo の管理画面にアクセス出来たと思います。
-関連付けが特徴と言えそうなのでその解析をしてみました。</p>
-
-<p>Geard のコンテナ関連付けはホストとコンテナのポート管理がキモとなっていることが
-解ります。これを紐解くことで geard のコンテナ管理を理解します。</p>
-
-<pre><code>                        'rockmongo' コンテナ             'mongodb' コンテナ
-+----------+        +--------------------------+        +-------------------+
-|  Client  |-&gt;6060-&gt;|-&gt;80-&gt; RockMongo -&gt;27017-&gt;|-&gt;4000-&gt;|-&gt;27017-&gt; Mongodb  |
-+----------+        +--------------------------+        +-------------------+
-                    |-------------------- docker ホスト --------------------|
-</code></pre>
-
-<p>上記 &lsquo;gear deploy&rsquo; コマンド発行時のログと json ファイルにより上図のような構成
-になっていることが理解できます。一つずつ読み解いていきましょう。</p>
-
-<ul>
-<li>&lsquo;rockmongo&rsquo; コンテナの内部でリスンしている 80 番ポートはホスト OS の 6060 番へ変換</li>
-<li>&lsquo;rockmongo&rsquo; コンテナ内で稼働する RockMongo の config.php から &lsquo;127.0.0.1:27017&rsquo; でリスンしていることが解る</li>
-</ul>
-
-<p>試しに &lsquo;derekwaynecarr/rockmongo:latest&rsquo; に /bin/bash でログインし config.php を確認。</p>
-
-<pre><code class="language-bash">$ sudo docker run -i -t derekwaynecarr/rockmongo:latest /bin/bash
-bash-4.1# grep mongo_host /var/www/html/config.php
-$MONGO[&quot;servers&quot;][$i][&quot;mongo_host&quot;] = &quot;127.0.0.1&quot;;//mongo host
-$MONGO[&quot;servers&quot;][$i][&quot;mongo_host&quot;] = &quot;127.0.0.1&quot;;
-</code></pre>
-
-<ul>
-<li>デプロイ時のログと json ファイルの &lsquo;links&rsquo; パラメータより、ホストのポートに動的に(ここでは 4000番ポート) に変換されることが解ります。</li>
-</ul>
-
-<pre><code>linking rockmongo: 127.0.0.1:27017 -&gt; localhost:4000
-</code></pre>
-
-<ul>
-<li>ホストの 4000 番ポートは動的に &lsquo;mongodb&rsquo; コンテナの内部ポート 27017 にマッピングされる</li>
-</ul>
-
-<p>これらのポートマッピングによりそれぞれのコンテナの連携が取れている。</p>
-
-<h2 id="まとめと考察">まとめと考察</h2>
-
-<p>Geard は下記の2つを特徴とした技術だと言えるとことがわかりました。</p>
-
-<ul>
-<li>コンテナを json で管理しデプロイする仕組みを提供する</li>
-<li>コンテナ間の関連付けをホスト OS のポートを動的に管理・マッピングすることで行う
-<br /></li>
-</ul>
-
-<p>同じような OS に CoreOS <a href="https://coreos.com/">https://coreos.com/</a> がありますが、こちらも docker,
-sytemd 等を特徴としています。さらに etcd を使ってクラスタの構成等が可能になっ
-ていますが、Geard はホストのポートを動的に管理することで関連付けが可能なことが
-わかりました。</p>
-
-<p>実際に触ってみた感覚から言えば、まだまだ実用化は厳しい状況に思えますが、今後へ
-の展開に期待したい技術です。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/04/22/geard-port-mapping/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1569,6 +1642,20 @@ sytemd 等を特徴としています。さらに etcd を使ってクラスタ�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-23'>
+                                    July 23, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
                                 
                                     
@@ -1608,20 +1695,6 @@ sytemd 等を特徴としています。さらに etcd を使ってクラスタ�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-28'>
-                                    December 28, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1656,7 +1729,7 @@ sytemd 等を特徴としています。さらに etcd を使ってクラスタ�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">100</span>
+                                <span style="float:right;">101</span>
                             </header>
                         </article>
                     </li>

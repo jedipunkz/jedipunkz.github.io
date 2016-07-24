@@ -6,8 +6,184 @@
     <description>Recent content in infrastructure on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Thu, 14 Jul 2016 09:10:57 +0900</lastBuildDate>
+    <lastBuildDate>Sat, 23 Jul 2016 02:40:11 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/categories/infrastructure/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Go言語とInfluxDBで監視のコード化</title>
+      <link>http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/</link>
+      <pubDate>Sat, 23 Jul 2016 02:40:11 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
+
+&lt;p&gt;今日は Go 言語でサーバのメトリクスデータを InfluxDB に入れてリソース監視を行う方法について書きます。&lt;/p&gt;
+
+&lt;p&gt;Ansible, Terraform, Chef などのソフトウェアを使ってインフラを定義するのが当たり前になった現在ですが、本当の意味でのソフトウェアによるインフラの定義ってなんだろと最近考えています。aws-sdk や fog などを使ったネイティブな言語でインフラを定義することの意味もあるように感じているからです。某サービスプロバイダのエンジニアはこうした言語によるインフラの定義の一番大きなメリットとして &amp;ldquo;再利用性&amp;rdquo; をあげていました。こうしたソフトウェアによるインフラの定義や構成を行う上で監視についてもコード化できるのでは？と考えて今回の記事に至りました。&lt;/p&gt;
+
+&lt;h2 id=&#34;使うモノ&#34;&gt;使うモノ&lt;/h2&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/influxdata/influxdb/tree/master/client&#34;&gt;https://github.com/influxdata/influxdb/tree/master/client&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;公式の InfluxDB Go Client です。InfluxDB 自体が Go 言語で書かれていますがクライアントも Go 言語で記述することができます。ここにあるサンプルコードをすこしいじって、今回の記事を書こうと思います。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/shirou/gopsutil&#34;&gt;https://github.com/shirou/gopsutil&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;@shirou さんが作られた psutil の Go 言語版です。CPU, Mem などリソースをモニタするのに便利なので利用します。&lt;/p&gt;
+
+&lt;h2 id=&#34;環境構築&#34;&gt;環境構築&lt;/h2&gt;
+
+&lt;p&gt;環境を作っていきます。InfluxDB と Chronograf を構築するのですが Docker で構築するのが簡単なのでこれを利用します。Chronograf は InfluxDB 内のデータを可視化するためのソフトウェアです。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;InfluxDB の起動&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;InfluxDB のコンテナを起動します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker run -p 8083:8083 -p 8086:8086 \
+      -v $PWD:/var/lib/influxdb \
+      influxdb
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Chronograf の起動&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Chronograf のコンテナを起動します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;docker run -p 10000:10000 chronograf
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;この時点で http://${DOCKER_HOST}:10000/ にアクセスすると Chronograf の UI を確認できます。&lt;/p&gt;
+
+&lt;h2 id=&#34;influxdb-にユーザ-データベースを作成する&#34;&gt;InfluxDB にユーザ・データベースを作成する&lt;/h2&gt;
+
+&lt;p&gt;InfluxDB 上にユーザとデータベースを作成します。言語の中でも作ることが出来ますが、今回は手動で。
+Mac OSX を使っている場合 homebrew で influxdb をインストールすることが簡単にできます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;brew install influxdb
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ユーザを作ります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;influx -host 192.168.99.100 -port 8086
+&amp;gt; create user foo with password &#39;foo&#39;
+&amp;gt; grant all privileges to foo
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;データベースを作ります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;influx -host 192.168.99.100 -port 8086
+&amp;gt; CREATE DATABASE IF NOT EXISTS square_holes;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;go言語でメモリー使用率を取得し-influxdb-にメトリクスデータを挿入&#34;&gt;Go言語でメモリー使用率を取得し InfluxDB にメトリクスデータを挿入&lt;/h2&gt;
+
+&lt;p&gt;Go 言語でメモリー使用率を取得し得られたメトリクスデータを InfluxDB に挿入するコードを書きます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-golang&#34;&gt;package main
+
+import (
+    &amp;quot;log&amp;quot;
+    &amp;quot;time&amp;quot;
+
+    &amp;quot;github.com/influxdata/influxdb/client/v2&amp;quot;
+    &amp;quot;github.com/shirou/gopsutil/cpu&amp;quot;
+)
+
+const (
+    MyDB = &amp;quot;square_holes&amp;quot;
+    username = &amp;quot;foo&amp;quot;
+    password = &amp;quot;foo&amp;quot;
+)
+
+func main() {
+    for {
+        // Make client
+        c, err := client.NewHTTPClient(client.HTTPConfig{
+            Addr: &amp;quot;http://192.168.99.100:8086&amp;quot;,
+            Username: username,
+            Password: password,
+        })
+    
+        if err != nil {
+            log.Fatalln(&amp;quot;Error: &amp;quot;, err)
+        }
+    
+        // Create a new point batch
+        bp, err := client.NewBatchPoints(client.BatchPointsConfig{
+            Database:  MyDB,
+            Precision: &amp;quot;s&amp;quot;,
+        })
+    
+        if err != nil {
+            log.Fatalln(&amp;quot;Error: &amp;quot;, err)
+        }
+    
+        // get CPU info
+        cp, _ := cpu.Times(true)
+
+        // get CPU status info for each core
+        var user, system, idle float64 = 0, 0, 0
+        for _, sub_cpu := range cp {
+            user = user + sub_cpu.User
+            system = system + sub_cpu.System
+            idle = idle + sub_cpu.Idle
+        }
+    
+        // Create a point and add to batch
+        tags := map[string]string{&amp;quot;cpu&amp;quot;: &amp;quot;cpu&amp;quot;}
+        fields := map[string]interface{}{
+            &amp;quot;User&amp;quot;:     user / float64(len(cp)),
+            &amp;quot;System&amp;quot;:   system / float64(len(cp)),
+            &amp;quot;Idle&amp;quot;:     idle / float64(len(cp)),
+        }
+        pt, err := client.NewPoint(&amp;quot;cpu&amp;quot;, tags, fields, time.Now())
+    
+        if err != nil {
+            log.Fatalln(&amp;quot;Error: &amp;quot;, err)
+        }
+    
+        bp.AddPoint(pt)
+    
+        // Write the batch
+        c.Write(bp)
+        time.Sleep(1 * time.Second)
+    }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ビルドして実行すると下記のように influxdb 上のデータベースにメトリクスデータが挿入されていることを確認できます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;influx -host 192.168.99.100 -port 8086 -execute &#39;SELECT * FROM cpu&#39; -database=square_holes -precision=s | head -8
+name: cpu
+---------
+time            Idle            System          User            cpu
+1469342272      20831.04296875  3700.185546875  3544.90234375   cpu
+1469342273      20831.666015625 3700.302734375  3544.966796875  cpu
+1469342274      20832.2109375   3700.447265625  3545.068359375  cpu
+1469342275      20832.828125    3700.546875     3545.13671875   cpu
+1469342291      20841.728515625 3702.482421875  3546.806640625  cpu
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Chronograf の UI で確認してみましょう。&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/influx-go.png&#34; width=&#34;80%&#34;&gt;&lt;/p&gt;
+
+&lt;p&gt;得られた CPU に関するデータが可視化されていることが確認できます。変化に乏しいグラフですが&amp;hellip;。&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
+
+&lt;p&gt;InfluxDB の提供元が出している Telegraf というメトリクスデータの送信エージェントがありますが、同じような動きを Go 言語で簡単に開発できることが分かりました。ネイティブな言語で開発するとより柔軟にデータの送信ができることも期待できます。また冒頭に述べた通り再利用も用意になるのではと思います。インフラの状態をメトリクスデータとして時系列 DB に挿入して可視化するということは監視のコード化とも言えると思います。果たしてこれらインフラを言語で記述していくことがどれだけ有用なのかまだわかりませんが、いつか現場で実践してみたいと思います。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</title>
@@ -3988,159 +4164,6 @@ midonet_uri = http://localhost:8081/midonet-api
 し、API も引っ張れるのでこれから色々試せそうですね。OSS 化されたことで、コミュ
 ニティの間でも使われていくことも想像出来ますし、自分たち技術者としてはとても有
 り難いことでした。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>Chef-Container Beta を使ってみる</title>
-      <link>http://jedipunkz.github.io/blog/2014/07/16/chef-container/</link>
-      <pubDate>Wed, 16 Jul 2014 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2014/07/16/chef-container/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;昨晩 Chef が Chef-Container を発表しました。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;&lt;a href=&#34;http://www.getchef.com/blog/2014/07/15/release-chef-container-0-2-0-beta/&#34;&gt;http://www.getchef.com/blog/2014/07/15/release-chef-container-0-2-0-beta/&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a href=&#34;http://docs.opscode.com/containers.html&#34;&gt;http://docs.opscode.com/containers.html&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;まだ Beta リリースでバージョンは 0.2.0 です。(gem だと 0.1.1)&lt;/p&gt;
-
-&lt;p&gt;Docker を代表とするコンテナ周りの技術が最近、盛んにリリースされていますし、今
-後クラウドプラットフォーム上でコンテナを使ってアプリを動かすケースも増えてくる
-のではないでしょうか。Dockerfile を使っても Chef-Solo を使ってソフトウェアをデ
-プロイ出来るのだけどそれだけだとしんどいので、コンテナに特化した Chef が出てき
-たってことだと思います。特徴として SSH でログインしてブートストラップするので
-はなくて Runit + Chef-init を用いてコンテナにデプロイすることが挙げられます。&lt;/p&gt;
-
-&lt;p&gt;では実際に使ってみたのでその時の手順をまとめてみます。&lt;/p&gt;
-
-&lt;h2 id=&#34;事前に用意する環境&#34;&gt;事前に用意する環境&lt;/h2&gt;
-
-&lt;p&gt;下記のソフトウェアを予めインストールしておきましょう。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;docker&lt;/li&gt;
-&lt;li&gt;chef&lt;/li&gt;
-&lt;li&gt;berkshelf&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;ここで注意なのですが後に knife コマンドを使って Docker イメージをビルドします。
-つまり root 権限が必要です。rbenv 等を使って ruby, chef をインストールすると、
-辛いかもしれませんので OS のパッケージを使ってインストールすると良いと思います。
-この辺りは今後改善策が出てくるかも&amp;hellip;。&lt;/p&gt;
-
-&lt;p&gt;尚、インストール方法はここでは割愛します。&lt;/p&gt;
-
-&lt;h2 id=&#34;chef-container-のインストール&#34;&gt;Chef-Container のインストール&lt;/h2&gt;
-
-&lt;p&gt;下記の2つの Gems をインストールします。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;knife-container&lt;/li&gt;
-&lt;li&gt;chef-container&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo gem install knife-container
-% sudo gem install chef-container
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;使用方法&#34;&gt;使用方法&lt;/h2&gt;
-
-&lt;p&gt;まず knife コマンドを使って操作に必要なディレクトリとファイルを生成します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% knife container docker init chef/ubuntu-12.04 -r &#39;recipe[apache2]&#39; -z -b
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ここで &amp;lsquo;chef/ubuntu-12.04&amp;rsquo; は Docker のイメージ名です。chef-init 等の環境が予
-め入っていました。このイメージ以外では今のところ動作を確認していません..。これは後にまとめで触れます。&lt;/p&gt;
-
-&lt;p&gt;上記のコマンドの結果で得られるディレクトリとファイル達です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;.
-└── dockerfiles
-    └── chef
-        └── ubuntu-12.04
-            ├── Berksfile
-            ├── chef
-            │   ├── first-boot.json
-            │   └── zero.rb
-            └── Dockerfile
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;また dockerfiles/chef/ubuntu-12.04/Dockerfile を確認すると&amp;hellip;&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;# BASE chef/ubuntu-12.04:latest
-FROM chef/ubuntu-12.04
-ADD chef/ /etc/chef/
-RUN chef-init --bootstrap
-RUN rm -rf /etc/chef/secure/*
-ENTRYPOINT [&amp;quot;chef-init&amp;quot;]
-CMD [&amp;quot;--onboot&amp;quot;]
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;イメージを取得 -&amp;gt; ディレクトリ同期 -&amp;gt; chef-init 実行 -&amp;gt; /etc/chef/secure 配下削除、と
-実行しているようです。&lt;/p&gt;
-
-&lt;p&gt;次に first-boot.json という名前のファイルを生成します。chef-init が解釈するファ
-イルです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
-   &amp;quot;run_list&amp;quot;: [
-      &amp;quot;recipe[apache2]&amp;quot;
-   ],
-   &amp;quot;container_service&amp;quot;: {
-      &amp;quot;apache2&amp;quot;: {
-         &amp;quot;command&amp;quot;: &amp;quot;/usr/sbin/apache2 -k start&amp;quot;
-      }
-   }
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ではいよいよ knife コマンドで Docker イメージをビルドします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo knife container docker build chef/ubuntu-12.04 -z
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;すると、下記のように Docker イメージが出来上がります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo docker images
-REPOSITORY          TAG                 IMAGE ID            CREATED             VIRTUAL SIZE
-chef/ubuntu-12.04   11                  03fd2357596f        4 days ago          397.7 MB
-chef/ubuntu-12.04   11.12               03fd2357596f        4 days ago          397.7 MB
-chef/ubuntu-12.04   11.12.8             03fd2357596f        4 days ago          397.7 MB
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;出来上がったイメージを利用してコンテナを稼働します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo docker run chef/ubuntu-12.04
-% sudo docker ps
-CONTAINER ID        IMAGE               COMMAND              CREATED             STATUS              PORTS               NAMES
-191cfdaf0bdb        650a89f73ed8        chef-init --onboot   39 minutes ago      Up 39 minutes                           agitated_almeida
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;コンテナと言っても今現在は Docker のみに対応しているようです。また init の際に指定する Docker イメージ
-の中に chef-init が入っている必要がありそうです。Build する前に予めイメージを作っておく必要があるという
-のはしんどいので、今後改善されるかもしれません。&lt;/p&gt;
-
-&lt;p&gt;そもそも Docker やコンテナ技術の登場で Puppet, Chef を代表とするツール類が不要になるのでは？という議論が
-幾つかの場面であったように思います。つまりコンテナのイメージに予めソフトウェアを配布しそれを用いて稼働
-することで、マシンが起動した後にデプロイすることが必要ないよね？という発想です。今回紹介したようにコンテナの
-イメージを生成するのに Chef を用いるということであれば、また別の議論になりそうです。また稼働したコンテナに
-ソフトウェアをデプロイすることも場合によっては必要なので、この辺りの技術の完成度が上がることを期待したいです。&lt;/p&gt;
-
-&lt;h2 id=&#34;参考-url&#34;&gt;参考 URL&lt;/h2&gt;
-
-&lt;ul&gt;
-&lt;li&gt;CreationLine さんブログ &lt;a href=&#34;http://www.creationline.com/lab/5346&#34;&gt;http://www.creationline.com/lab/5346&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;公式サイト &lt;a href=&#34;http://docs.opscode.com/containers.html&#34;&gt;http://docs.opscode.com/containers.html&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
 </description>
     </item>
     

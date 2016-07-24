@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2012-08-18T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2012-08-26T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,244 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2012/08/26/all-in-one-openstack-installation/">OpenStack ESSEX オールインワン インストール</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-08-26'>
+            August 26, 2012</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>OpenStack のインストールってしんどいなぁ、って感じて devstack
+<a href="http://devstack.org/">http://devstack.org/</a> とかで構築して中を覗いていたのですが、そもそも devstack
+って再起動してしまえば何も起動してこないし、swift がインストールされないしで。
+やっぱり公式のマニュアル見ながらインストールするしかないかぁって&hellip;。感じてい
+たのですが&hellip;。</p>
+
+<p><a href="http://docs.openstack.org/essex/openstack-compute/starter/os-compute-starterguide-trunk.pdf">http://docs.openstack.org/essex/openstack-compute/starter/os-compute-starterguide-trunk.pdf</a></p>
+
+<p>このマニュアルの前提は、ネットワーク2セグメント・server1, server2 の計2台が前
+提なのですが、環境作るのがしんどいので、オールインワンな構築がしたい！サーバ1台で OpenStack ESSEX を
+インストールしたい！で、シェルスクリプトを作ったのでそれを使ったインストール方法を紹介します。</p>
+
+<p><img src="http://jedipunkz.github.com/pix/openstack_thinkpad.jpg"></p>
+
+<p>ぼくの Thinkpad に OpenStack ESSEX をインストールしてブラウザで localhost に接続して
+いる画面です。ちゃんと KVM VM が起動して noVNC で接続できています。自己満足やぁ。</p>
+
+<h2 id="前提条件">前提条件</h2>
+
+<ul>
+<li>Ubuntu Server 12.04 LTS amd64 がインストールされていること</li>
+<li>Intel-VT もしくは AMD−Vなマシン</li>
+<li>NIC が一つ以上ついているマシン</li>
+<li>/dev/sda6, /dev/sda7 (デバイス名は何でもいい) の2つが未使用で空いていること</li>
+</ul>
+
+<p>です。</p>
+
+<h2 id="構成">構成</h2>
+
+<p>1 NIC を前提に eth0 と eth0:0 の2つを想定すると、こんな構成になります。eth0:0
+は完全にダミーで IP アドレスは何でもいいです。br100 ブリッジデバイス上で VM が
+NW I/F を持ちます。floating range ってのは OpenStack で言うグローバル IP レン
+ジ。グローバルである必要は無いですが eth0 と同じレンジの IP アドレスを VM に付
+与出来ます。/dev/sda6 が nova-volumes で /dev/sda7 が swift 。なので OS インス
+トール時に2つのデバイスを未使用で空けておいてください。</p>
+
+<pre><code>+--+--+--+
+|VM|VM|VM|  192.168.4.32/27
++--+--+--+..
++----------+ +--------+
+|          | | br100  | 192.168.4.33/27 -&gt; floating range : 10.200.8.32/27
+|          | +--------+
+|          | | eth0:0 | 192.168.3.1       disk devices
+|   Host   | +--------+   (dummy)  +------------------------+
+|          |                       | /dev/sda6 nova-volumes |
+|          | +--------+            +------------------------+
+|          | |  eth0  | ${HOST_IP} | /dev/sda7 swift        |
++----------+ +--------+            +------------------------+
+|              nw I/Fs
++----------+
+|   CPE    |
++----------+
+</code></pre>
+
+<h2 id="インストール手順">インストール手順</h2>
+
+<p>インストール手順は簡単です。</p>
+
+<pre><code>% sudo -i
+# git clone git://github.com/jedipunkz/openstack_install.git
+</code></pre>
+
+<p>して取得したスクリプトを環境に合わせて環境変数設定します。スクリプト上部のこれ
+らの内容を、環境に合わせて設定。${HOST_IP} と ${NOVA_VOLUMES_DEV},
+${SWIFT_DEV} だけ気をつければ OK です。その他は内部ネットワークの設定なので何
+でもつながります。</p>
+
+<pre><code># -----------------------------------------------------------------
+# Environment Parameter
+# -----------------------------------------------------------------
+HOST_IP='10.200.8.15'
+HOST_MASK='255.255.255.0'
+HOST_NETWORK='10.200.8.0'
+HOST_BROADCAST='10.200.8.255'
+GATEWAY='10.200.8.1'
+MYSQL_PASS='secret'
+FIXED_RANGE='192.168.4.1/27'
+FLOATING_RANGE='10.200.8.32/27'
+FLAT_NETWORK_DHCP_START='192.168.4.33'
+ISCSI_IP_PREFIX='192.168.4'
+NOVA_VOLUMES_DEV='/dev/sda6'
+SWIFT_DEV='/dev/sda7'
+</code></pre>
+
+<p>で実行。</p>
+
+<pre><code># chmod +x openstack_install/openstack_install.sh
+# ./openstak_install/openstack_install.sh allinone
+( wait some minutes...)
+</code></pre>
+
+<p>マシンによりますが、10分弱すると OpenStack が構築されているはずです。</p>
+
+<h2 id="os-イメージと-ssh-キーペアのインストール">OS イメージと SSH キーペアのインストール</h2>
+
+<p>上記の手順で OpenStack は構築されるのですが、VM を起動するには OS イメージが必
+要ですよね。これは自分で用意するしかないです。ただ、これは簡単で下記の手順で出
+来ます。</p>
+
+<h4 id="os-イメージ作成">OS イメージ作成</h4>
+
+<p>サンプルで Ubuntu Server 12.04 LTS amd64 なイメージをここで作ってみます。</p>
+
+<pre><code># kvm-image create -f qcow2 server.img 5G
+# wget http://gb.releases.ubuntu.com//precise/ubuntu-12.04-server-amd64.iso
+# kvm -m 256 -cdrom ubuntu-12.04-server-amd64.iso -drive file=server.img,if=virtio,index=0 -boot d -net nic -net user -nographic -vnc :0
+</code></pre>
+
+<p>手元の端末の VNC ツールで ${HOST_IP}:0 に接続し OS のインストールを済ませます。
+その後、下記のコマンドで HDD から起動してあげて&hellip;</p>
+
+<pre><code># kvm -m 256 -drive file=server.img,if=virtio,index=0 -boot c -net nic -net user -nographic -vnc :0
+</code></pre>
+
+<p>再度、VNC で VM に接続して..</p>
+
+<pre><code># sudo rm -rf /etc/udev/rules.d/70-persistent-net.rules
+# shutdown -h now
+</code></pre>
+
+<p>上記の操作をしたら OS イメージ作成は終わり。その他のディストリビューションでの
+イメージ作成については公式マニュアルに書いてあります。</p>
+
+<h4 id="glance-に-os-イメージをインストール">Glance に OS イメージをインストール</h4>
+
+<p>作成した OS イメージを Glance に追加します。先ほどのスクリプトで生成された
+/root/.openstack が Glance に接続するために必要なので zsh の場合 source してから&hellip;</p>
+
+<pre><code># source /root/.openstack
+# glance add name=&quot;Ubuntu Server 12.04LTS&quot; is_public=true container_format=ovf disk_format=qcow2 &lt; server.img
+</code></pre>
+
+<p>で追加出来ます。.openstack は bash でも取得できるのでその際は</p>
+
+<pre><code># . /root/.openstack
+</code></pre>
+
+<p>してください。root ユーザ以外でも操作出来ます。</p>
+
+<h4 id="ssh-キーペアの生成とインストール">SSH キーペアの生成とインストール</h4>
+
+<p>VM に割り当てる SSH キーペアを作ってインストールする手順です。</p>
+
+<pre><code># ssh-keygen
+# nova keypair-add --pub_key .ssh/id_rsa.pub mykey
+# nova keypair-list
+</code></pre>
+
+<h4 id="horizon-へ接続">Horizon へ接続</h4>
+
+<p>いよいよ Horizon へ接続です。Horizon は OpenStack ESSEX から取り込まれた Web
+UI です。VM の作成・削除、ネットワークの設定等がブラウザで操作出来ます。</p>
+
+<pre><code>http://${HOST_IP
+</code></pre>
+
+<p>に接続してユーザ : &lsquo;admin&rsquo;, パスワード &lsquo;admin&rsquo; でログインしてください。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>OpenStack はしんどいｗ ですが来月 <sup>2012</sup>&frasl;<sub>09</sub> リリース予定の Folsom は &lsquo;Easy
+Setup&rsquo; がフューチャされてるそうです。期待。手動で構築していると glance のとこ
+ろで ID 地獄にハマりますｗ 今回の手順で all in one な環境ができたら、色々覗い
+てみてコンポーネント毎に Node を切り出すってことも考えないといけないと思います。
+それぞれは HTTP ベースの API で接続できれば OK なので切り出すこと自体は簡単。
+冗長を組む方法は.. これから調べます。keystone, glance を拡張・冗長させるって出
+来るのか？難しそう。CloudStack と違って rabbitmq-server でキューイングしてくれ
+るので、Node が増えた時の対処は考えれれているよう。</p>
+
+<p>あと、OS イメージではなくて AMI で VM を作る方法もあるのですが AMI の作成方法は Web
+を見ていると沢山載っていますので参考にして作ってみてください。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2012/08/26/all-in-one-openstack-installation/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -693,180 +931,6 @@ chef-solo を使うなら必然的な点になりそう。capistrano との組�
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2012/07/22/number-devlove-nican-jia-sitekimasita.-chef-de-devops/">#DevLOVE に参加してきました。Chef De DevOps</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2012-07-22'>
-            July 22, 2012</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>2012年07月21日に大崎のフィーチャーアーキテクトさんで行われた #DevLOVE (Chef De
-DevOps) に参加してきました。</p>
-
-<pre><code>開催日 : 2012年07月21日(土曜日) 15:00 - 20:40
-場所   : 大崎 フューチャーアーキテクトさま
-URL    : http://www.zusaar.com/event/314003
-</code></pre>
-
-<p>仕事場でも Chef の利用を考え始めていて今回いい機会でした。半年前と比べるとだい
-ぶ揃って来ましたが、まだまだ資料の少ない Chef。貴重な機会でした。</p>
-
-<p>プログラムは下の通り。</p>
-
-<pre><code>*『Chefの下準備』by Ryutaro YOSHIBA [ @ryuzee ]
-*『Chef自慢のレシピ披露』 by 中島弘貴さん [ @nakashii_ ]
-* ワークショップ『みんなでCooking』
-* dialog『試食会』
-* Niftyさんのスーパー宣伝タイム!!!
-*『渾身会』
-</code></pre>
-
-<p>@ryuzee さんの &ldquo;Chef の下準備&rdquo; は SlideShare に使った資料が公開されています。</p>
-
-<p><iframe src="http://www.slideshare.net/slideshow/embed_code/13712176"
-width="427" height="356" frameborder="0" marginwidth="0" marginheight="0"
-scrolling="no" style="border:1px solid #CCC;border-width:1px 1px
-0;margin-bottom:5px" allowfullscreen> </iframe> <div
-style="margin-bottom:5px"> <strong> <a
-href="http://www.slideshare.net/Ryuzee/20120721-chef-devlove" title="20120721
-chefの下準備 #devlove" target="_blank">20120721 chefの下準備 #devlove</a>
-</strong> from <strong><a href="http://www.slideshare.net/Ryuzee"
-target="_blank">Ryuzee YOSHIBA</a></strong> </div></p>
-
-<p>印象的だったのが、VirtualBox + Vagrant という環境。実際に使っていらっしゃいま
-した。MacBook の中に仮想環境とそのインターフェースである Vegrant を使って、デ
-プロイのテスト等が実施できるそうです。また、Vegrant 設定ファイルは Chef のレシ
-ピを自動読込して、常に本番環境と同じ状態にしているそうです。CloudFormation と
-いうキーワードや Capistrano というキーワードが出てきました。最近よく耳にするワー
-ドです。また CI は Jenkins だよね、だったり。</p>
-
-<p>3番目のプログラム &ldquo;ワークショップ、みんなで Cooking&rdquo; は 4-6 人の組みになり、実
-際に Chef のレシピを書いてみようというもの。今回は wordpress の構築のためのレ
-シピを書いていきました。僕らの組みも時間ギリギリでレシピの投入を終えました。
-wordpress の設定ファイル wp-config.php と mysql への wordpress 用データベース
-の作成を実際に attribute, template, script ら Resources を使ってレシピを書きま
-した。簡単な例でしたが、みなとコミュニケーションがとれたのでいい機会でした。</p>
-
-<p>dialog &ldquo;試食会&rdquo; では、グループ毎、またグループを入れ糧のディスカッション。使っ
-てみてどうだったか？を話し合ってそこから議論を伸ばしていきました。</p>
-
-<p>やっぱり僕も参加する前からそうだったのですが、一番皆が気になっているのが、</p>
-
-<pre><code>&quot;chef-solo + capistrano ? それとも chef-server がいいの？&quot;
-</code></pre>
-
-<p>でした。実際に使っていらっしゃる CA さんの話によると、20台までは chef-solo +
-capistrano の構成が良いと。そして100台規模になると chef-server が良いそうです。
-具体的に何が chef-solo で問題になるのかが聞けなかったのですが、ちょっと僕らの
-課題にしてみようかと思います。また、CA さんでは puppet を使っていらっしゃる部
-署もあるそうで、chef-server の動作が不安定？とかで400台規模になると puppet が
-良くなると。そして chef-server はいまは rabbitmq, couchDB, erlang などの構成で
-出来ているのですが、そのうちどれかが (erlang の solr ?) が mysql に置き換わる
-と噂を聞きました。</p>
-
-<p>また、nifty さんが現在 opscode chef wiki を翻訳されているのですが、僕も非常に
-興味があります。参加させてもらおうかな。また nifty さんが nifty cloud 用
-knife-ec2 を公開しているそうで説明がありました。自社にクラウドシステムがあると、
-色々楽しめるよなぁ&hellip;。いいな。</p>
-
-<p>[2012/07/23 15:00 追記]
-nifty の @tily さんが当日使った資料を公開なさったので貼り付けておきます。</p>
-
-<p><iframe src="http://www.slideshare.net/slideshow/embed_code/13721102"
-width="427" height="356" frameborder="0" marginwidth="0" marginheight="0"
-scrolling="no" style="border:1px solid #CCC;border-width:1px 1px
-0;margin-bottom:5px" allowfullscreen> </iframe> <div
-style="margin-bottom:5px"> <strong> <a
-href="http://www.slideshare.net/tidnlyam/chef-13721102" title="ニフティ社内の
-Chef 利用について" target="_blank">ニフティ社内の Chef 利用について</a>
-</strong> from <strong><a href="http://www.slideshare.net/tidnlyam"
-target="_blank">tidnlyam</a></strong> </div></p>
-
-<p>以上が &ldquo;Chef De DevOps&rdquo; の参加レポートで、ここからは僕らの課題でありここ1週間
-くらいで取り組もうとしている点。</p>
-
-<p>chef-server の構築ですが、ubuntu + opscode の deb package を使う方法もあるので
-すが、これだと opscode が推奨している ruby のバージョン 1.9.2 ではなく 1.8.7
-になってしまいます。これは ubuntu, debian の stable release もしくは
-development release が frozen しているからです。なので、今僕が考えているのは、
-chef-solo と opscode bootstrap の組み合わせで構築する方法です。</p>
-
-<p><a href="http://wiki.opscode.com/display/chef/Installing+Chef+Server+using+Chef+Solo">http://wiki.opscode.com/display/chef/Installing+Chef+Server+using+Chef+Solo</a></p>
-
-<p>この bootstrap は opscode が chef-server 構築用レシピとして公開しているもので
-す。これを使えば chef client さえ入っていれば構築できてしまうという。この手順
-は一度手元でも確認してみました。(Ubuntu Server 12.04 LTS amd64).</p>
-
-<p>また Chef のメーリングリストで聞いてみたところ、やはり推奨の ruby バージョンは
-1.9.2 であって、この bootstrap の方法と、あとは knife::server というものです。</p>
-
-<p>まだ僕は手元で確認できていないのですが、こちらにあるようです。</p>
-
-<p><a href="http://fnichol.github.com/knife-server/">http://fnichol.github.com/knife-server/</a></p>
-
-<p>chef-server 構成だと rabbitmq に queue が溜まったり、couchDB のディスクを溢れ
-させたりとトラブル起きた時の切り分けだったり対処方法だったり、まだまだ情報少な
-いので苦労するだろうなぁと個人的には感じました。chef-solo + capistrano の構成
-も考慮しつつ、このあたり調べて行こうと思います。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/07/22/number-devlove-nican-jia-sitekimasita.-chef-de-devops/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -983,6 +1047,20 @@ chef-solo と opscode bootstrap の組み合わせで構築する方法です。
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-23'>
+                                    July 23, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
                                 
                                     
@@ -1022,20 +1100,6 @@ chef-solo と opscode bootstrap の組み合わせで構築する方法です。
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-28'>
-                                    December 28, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1070,7 +1134,7 @@ chef-solo と opscode bootstrap の組み合わせで構築する方法です。
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">100</span>
+                                <span style="float:right;">101</span>
                             </header>
                         </article>
                     </li>
