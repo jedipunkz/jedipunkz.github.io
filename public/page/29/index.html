@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2012-08-29T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2012-10-06T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/"><p>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,211 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2012/10/06/secret-training-of-opscode-chef/">Secret Training of Opscode Chef</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-10-06'>
+            October 6, 2012</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>昨日、開かれた &ldquo;Opscode Chef のシークレットトレーニング&rdquo; に参加してきました。</p>
+
+<p>場所はうちの会社で KDDI ウェブコミュニケーションズ。主催はクリエーションオンラ
+インさんでした。講師は Sean OMeara (@someara) さん。今後 Chef のトレーニングを
+日本で開くため、事前に内容についてフィードバックが欲しかったそうで、オープンな
+レッスンではありませんでしたが、次回以降、日本でも期待できそうです。</p>
+
+<p>内容は chef の基本・メリット・考え方などを網羅した資料で1時間程進められ、その
+後はハンズオンがメインでした。今日は実際にハンズオンの内容を書いていこうかと思
+います。</p>
+
+<p>chef workstation 環境は揃っている前提にします。また chef server として opscode
+の hosted chef (opscode が提供している chef のホスティングサービス,
+chef-server として動作します) を使います。またターゲットホストは当日は ec2 イ
+ンスタンスを使いましたが、chef ワークステーションから到達できるホストであれば
+何でも良いでしょう。</p>
+
+<p>まずは chef-repo のクローン。講習会で使われたものです。</p>
+
+<pre><code>git clone https://github.com/opscode/chef-repo-workshop-sysadmin.git chef-repo
+</code></pre>
+
+<p>予め cookbook が入っています。</p>
+
+<p>次に、manage.opscode.com へアクセスしアカウントを作ります。Free アカウントが誰
+でも作れるようになっています。</p>
+
+<p><a href="https://manage.opscode.com">https://manage.opscode.com</a> へアクセス -&gt; Sign Up をクリック -&gt; アカウント情報
+を入力 -&gt; submit -&gt; メールにて verify -&gt; 自分のアカウント名をクリック -&gt; Get a
+new key をクリックし &lt;アカウント名&gt;.pem をダウンロード -&gt; create a
+organization をクリックし Free を選択し、適当な名前で organization を作成。
+validation key と knife.rb をダウンロード</p>
+
+<p>これらで得た3つのファイル (2つの pem とknife.rb) を chef-repo/.chef/ 配下に置
+きます。これで準備 OK。knife.rb を見ると、opscode の chef ホスティングにアクセ
+スするよう記述があります。</p>
+
+<pre><code>% cp &lt;somewhere&gt;/knife.rb &lt;somewhere&gt;/&lt;account&gt;.pem &lt;somewhere&gt;/&lt;account&gt;-validation.pem chef-repo/.chef/
+</code></pre>
+
+<p>トレーニング用 chef-repo には予め幾つかの cookbook と role, data_bag が入って
+います。これらを knife を使ってアップロードします。</p>
+
+<pre><code>% cd chef-repo
+% knife cookbook upload -a
+% knife role from file role/*.rb
+% knife data bag create users
+% knife data bag from file users nagiosadmin.json
+</code></pre>
+
+<p>そして bootstrap を実行。.chef/bootstrap ディレクトリに chef-full.erb ファイル
+が入っていて bash スクリプトになっている。knife bootstrap でこの bash スクリプ
+トをターゲットホスト上で実行することになる。中身はと言うと chef 環境をインストー
+ルしているようだ。</p>
+
+<p>chef 環境をどうやってノードに入れているかなぁ。preseed 使うかな。手作業じゃ意
+味ないしなぁと考えていたのですが、こうやればいいのですね。参考になります。これ
+は簡単。</p>
+
+<p>ではいよいよ bootstrap を実行。</p>
+
+<pre><code>% knife bootstrap &lt;IPADDRESS&gt; -r 'role[base],role[monitoring]' --sudo -x &lt;USER&gt; -P &lt;PASSWD&gt;
+</code></pre>
+
+<p>IP アドレス、ssh ユーザ名・パスワードは適宜入れてください。これで cookbooks ディ
+レクトリ配下の各種 cookbook が実行されました。中身は nagios とそれに依存する
+apache2, openssl, mysql, php 等。</p>
+
+<p>次に cookbook を新たにダウンロードし knife upload してみます。</p>
+
+<pre><code>% knife cookbook site download chef-client
+% tar zxvf chef-client-1.2.0.tar.gz -C cookbooks/
+% knife cookbook upload chef-client
+</code></pre>
+
+<p>「アカウントの pem がない場合 validation が用いられるが、一旦サーバと通信出来た
+ら validation は必要なくなる。それどころか wi-fi パスワードのようなものなので
+validation は削除することを強くすすめる」と Sean が言っていました。chef 環境は
+すでに bootstrap で入っているものの、validation を削除するための recipe を
+base という role に追加し、実行してみます。</p>
+
+<p>Sean の言っていたこと、間違っていたら指摘してください( &gt;&lt; ) 英語だったので自信
+ないです。</p>
+
+<pre><code>% vim role/base.rb
+name &quot;base&quot;
+description &quot;Base role applied to all nodes.&quot;
+run_list(
+  &quot;recipe[apt]&quot;,
+  &quot;recipe[nagios::client]&quot;
+  &quot;recipe[chef-client::delete_validation]&quot;
+)
+
+default_attributes(
+  &quot;nagios&quot; =&gt; {
+  &quot;server_role&quot; =&gt; &quot;monitoring&quot;
+  }
+)
+</code></pre>
+
+<p>role をアップロード。</p>
+
+<pre><code>% knife role from file roles/base.rb
+</code></pre>
+
+<p>ターゲットホストで chef-client を実行。ここで バージョン 10.14 から登場した
+why-run を試してから実行。</p>
+
+<pre><code>target# chef-client -Fdoc -lfatal --color --why-run
+target# chef-client -Fdoc -lfatal --color
+</code></pre>
+
+<p>もしくはワークステーションから knife ssh を使っても良い。</p>
+
+<pre><code>% knife search node &quot;role:base&quot; -a cloud.public_ipv4
+% knife ssh &quot;role:base&quot; &quot;sudo chef-client -Fmin&quot; -x ubuntu -P opscodechef -a cloud.public_ipv4
+</code></pre>
+
+<p>-a cloud.public_ipv4 とは、AWS EC2 や OpenStack, CloudStack 環境ではインスタン
+スの eth0 インターフェースにプライベート IP アドレスが付与されているケースが
+殆どなため、グローバル IP アドレスを検索し実行している。</p>
+
+<p>大きな流れはこれでおしまい。</p>
+
+<p>トレーニングでは bento, minitest, cucumber-chef 等の紹介があったが、詳細な内容
+については見送られた。昼休み1時間をはさんで計7時間の長丁場だったが、chef 初級
+を脱するのには最適なトレーニングだった。これからトレーニング内容や種別を組んで
+いくそうなので、内容は変わってくるかもしれない。あとでフィードバックをしなく
+ちゃ。</p>
+
+<p>個人的には OpenStack に興味を持っているので chef を使って OpenStack をデプロイ
+したい。今年6月には &lsquo;Chef for OpenStack&rsquo; というアナウンスがあり、DELL,
+RackSpace, HP 等の大企業がパートナーとして参加することになったと発表があった。
+今まで openstack cookbook は長くメンテナンスされてこなかったので、これには期待
+している。</p>
+
+<p>最後にこの機会を作って下さった クリエーションオンラインさん、opscode の Sean
+さん、mr.devops さん、ありがとうございましたー。貴重な体験でした。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2012/10/06/secret-training-of-opscode-chef/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Categories
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+        <li><a href='/categoriesreport'>report</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -659,197 +864,6 @@ Setup&rsquo; がフューチャされてるそうです。期待。手動で構�
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2012/08/18/opscode-bootstrap-chef-server/">Opscode Bootstrap を使った Chef-Server 構築</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2012-08-18'>
-            August 18, 2012</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>chef-server の構築は少し面倒だと前回の記事
-<a href="http://jedipunkz.github.com/blog/2012/08/18/chef-solo/">http://jedipunkz.github.com/blog/2012/08/18/chef-solo/</a> に書いたのですが、
-opscode が提供している bootstrap を用いると、構築作業がほぼ自動化出来ます。
-今回はこの手順を書いていきます。</p>
-
-<h2 id="chef-のインストール">chef のインストール</h2>
-
-<p>前回同様に rbenv を使って ruby をインストールし chef を gem でインストールして
-いきます。</p>
-
-<pre><code>% sudo apt-get update
-% sudo apt-get install zlib1g-dev build-essential libssl-dev
-% sudo -i
-# cd ~
-# git clone git://github.com/sstephenson/rbenv.git .rbenv
-# echo 'export PATH=&quot;$HOME/.rbenv/bin:$PATH&quot;' &gt;&gt; ~/.zshrc
-# echo 'eval &quot;$(rbenv init -)&quot;' &gt;&gt; ~/.zshrc
-</code></pre>
-
-<p>ruby-build をインストールします。</p>
-
-<pre><code># mkdir -p ~/.rbenv/plugins
-# cd ~/.rbenv/plugins
-# git clone git://github.com/sstephenson/ruby-build.git
-</code></pre>
-
-<p>ruby-1.9.2 インストール</p>
-
-<pre><code># rbenv install 1.9.2-p290
-# rbenv global 1.9.2-p290
-# rbenv rehash
-</code></pre>
-
-<p>gem を使って、chef, chef-server-api をインストールします</p>
-
-<pre><code># gem install chef
-# gem install chef-server-api
-</code></pre>
-
-<h2 id="opscode-bootstrap-を使った-chef-server-の構築">opscode bootstrap を使った chef-server の構築</h2>
-
-<p>まずは chef-solo の環境整備。この bootstrap は chef-solo で実行出来るクックブッ
-ク集になっています。中を覗くと &lsquo;apache2, chef, chef-server, couchdb, erlang,
-rabgitmq&rsquo; などなど必要なミドルウェア群のクックブックが入っていることが判ります。</p>
-
-<p>まずは chef-solo の環境を整備します。</p>
-
-<pre><code># mkdir /etc/chef
-# vi /etc/chef/solo.rb
-# cat /etc/chef/solo.rb
-file_cache_path &quot;/tmp/chef-solo&quot;
-cookbook_path &quot;/tmp/chef-solo/cookbooks&quot;
-# vi /etc/chef/chef.json
-# cat /etc/chef/chef.json
-{
-  &quot;chef_server&quot;: {
-  &quot;server_url&quot;: &quot;http://localhost:4000&quot;
-  },
-  &quot;run_list&quot;: [ &quot;recipe[chef-server::rubygems-install]&quot; ]
-}
-</code></pre>
-
-<p>solo.rb で指定したパスは任意のもので構いません。</p>
-
-<p>Amazon S3 上に opscode bootstrap があります。いよいよ chef-solo で bootstrap
-を実行します。</p>
-
-<pre><code># chef-solo -c /etc/chef/solo.rb -j /etc/chef/chef.json -r http://s3.amazonaws.com/chef-solo/bootstrap-latest.tar.gz
-</code></pre>
-
-<p>これで chef-server 構築は終わりです。実行したホストに couchDB, Erlang などが構
-成されていることが分かると思います。</p>
-
-<p>次に knife の環境を整備します。knife は chef の操作を行うためのコマンドライン
-ツールです。</p>
-
-<pre><code># mkdir -p ~/.chef
-# cp /etc/chef/validation.pem /etc/chef/webui.pem ~/.chef
-# sudo chown -R root ~/.chef
-# knife configure -i
-Where should I put the config file? [~/.chef/knife.rb] 
-Please enter the chef server URL: [http://localhost:4000] 
-Please enter a clientname for the new client: [root]
-Please enter the existing admin clientname: [chef-webui] 
-Please enter the location of the existing admin client's private key:
-# [/etc/chef/webui.pem] /root/.chef/webui.pem
-Please enter the validation clientname: [chef-validator] 
-Please enter the location of the validation key:
-# [/etc/chef/validation.pem] /root/.chef/validation.pem
-Please enter the path to a chef repository (or leave blank): 
-WARN: Creating initial API user...
-INFO: Created (or updated) client[root]
-WARN: Configuration file written to /home/root/.chef/knife.rb
-</code></pre>
-
-<p>パラメータはほぼそのまま入力してください。pem ファイルのパス指定だけ先ほど
-root ユーザの HOME ディレクトリにインストールしたモノを指定してください。</p>
-
-<p>これで下記のように knife が使えるようになっています。</p>
-
-<pre><code># knife client list
-chef-validator
-chef-webui
-root
-</code></pre>
-
-<p>今回は以上です。この chef-server の構築を knife::server というツールで実現する
-方法もあります。</p>
-
-<p><a href="http://fnichol.github.com/knife-server/">http://fnichol.github.com/knife-server/</a></p>
-
-<p>同じく bootstrap を指定して構築するツールなのですが、これを使う利点として</p>
-
-<ul>
-<li>chef-server 構成のバックアップが取れる</li>
-<li>バックアップを元に復元できる</li>
-</ul>
-
-<p>があります。これは便利。ただし knife が最初から使える環境に限ります。</p>
-
-<p>これらツールを使うことを前提にしないと、作業が複雑化するため、必須だと思います。
-手作業はミスの元ですし。ただ、一度は手作業でやってみて構成を理解することはしな
-くてはならないでしょう。couchDB, Rabbitmq などの新しいミドルウェアについての理
-解も深めなくてはならないでしょうし、これらをスケールさせることを前提にしておか
-ないとノードの数が増える度に負荷が上昇していくので将来困るでしょう。前回の記事
-でも触れましたが chef-solo を用いた場合はそれらの心配が無くなります。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/08/18/opscode-bootstrap-chef-server/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -966,6 +980,20 @@ root
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-23'>
+                                    July 23, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
                                 
                                     
@@ -1005,20 +1033,6 @@ root
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2015-12-28'>
-                                    December 28, 2015</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1053,7 +1067,7 @@ root
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">100</span>
+                                <span style="float:right;">101</span>
                             </header>
                         </article>
                     </li>
