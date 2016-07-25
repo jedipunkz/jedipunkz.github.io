@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2014-03-05T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2014-03-16T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,459 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0.deploy/">rcbops/chef-cookbooks で Keystone 2013.2.2(Havana) &#43; Swift 1.10.0 を構築</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-03-16'>
+            March 16, 2014</time>
+        <span class="author"></span>
+        
+            <p>6 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<h4 id="追記">追記</h4>
+
+<p>2014/03/20 : 一旦削除していた記事なのですが、無事動作が確認出来たので再度アッ
+プします！</p>
+
+<p>第17回 OpenStack 勉強会で rcbops/chef-cookbooks の話をしてきたのですが会場から
+質問がありました。「Havana の Swift 構成を作る Cookbooks はどこにありますか？」
+と。私が試したのが Grizzly 時代のモノで、よく rcbops/chef-cookbooks を見てみる
+と Havana ブランチ又は Havana に対応したリリースタグのファイル構成に Swift が
+綺麗サッパリ消えているではありませんか・・！下記の Swift の Cookbooks は幸い
+github 上に残っていました。</p>
+
+<p><a href="https://github.com/rcbops-cookbooks/swift">https://github.com/rcbops-cookbooks/swift</a></p>
+
+<p>が rcbops/chef-cookbooks との関連付けが切れています・・。ぐあぁ。</p>
+
+<p>ということで Havana 構成の Keystone 2013.2.2 と Swift 1.10.0 の構成を Chef で
+作らねば！と思い色々試していたら結構あっさりと出来ました。今回はその方法を書い
+ていきたいと思います！</p>
+
+<h2 id="構成">構成</h2>
+
+<p>構成は&hellip;以前の記事 <a href="http://jedipunkz.github.io/blog/2013/10/27/swift-chef/">http://jedipunkz.github.io/blog/2013/10/27/swift-chef/</a> と同じです。</p>
+
+<pre><code>+-----------------+
+|  load balancer  |
++-----------------+
+|
++-------------------+-------------------+-------------------+-------------------+---------------------- proxy network
+|                   |                   |                   |                   |                   
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+
+|   chef server   | | chef workstation| |   swift-mange   | |  swift-proxy01  | |  swift-proxy02  | 
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ ...&gt; scaling
+|                   |                   |                   |                   |                   
++-------------------+-------------------+-------------------+-------------------+-------------------+-- storage network
+|                   |                   |                   |                   |                   |
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ 
+| swift-storage01 | | swift-storage02 | | swift-storage03 | | swift-account01 | | swift-account02 | | swift-account03 |
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ ..&gt; scaling
+</code></pre>
+
+<h2 id="手順">手順</h2>
+
+<p>では早速手順を記していきますね。毎回なのですが Chef ワークステーション・Chef
+サーバの環境構築については割愛します。オムニバスインストーラを使えば Chef サー
+バの構築は簡単ですし、ワークステーションの構築も Ruby インストール -&gt; gem で
+Chef をインストール -&gt; .chef 配下を整える、で出来ます。</p>
+
+<p>rcbops/chef-cookbooks の取得。現在 Stable バージョンの refs/tags/v4.2.1 を用いる。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ./chef-cookbooks-4.2.1
+% cd ./chef-cookbooks-4.2.1
+% git checkout -b v4.2.1 refs/tags/v4.2.1
+% git submodule init
+% git submodule sync
+% git submodule update
+</code></pre>
+
+<p>ここで本家 rcbops/chef-cookbooks と関連付けが消えている rcbops-cookbooks/swift
+を cookbooks ディレクトリ配下にクローンします。あと念のため &lsquo;havana&rsquo; ブランチ
+を指定します。コードを確認したところ何も変化はありませんでしたが。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops-cookbooks/swift.git cookbooks/swift
+% cd cookbooks/swift
+% git checkout -b havana remotes/origin/havana
+% cd ../..
+</code></pre>
+
+<p>cookbooks, roles の Chef サーバへのアップロードを行います。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
+% knife role from file role/*.rb
+</code></pre>
+
+<p>今回の構成 (1クラスタ) 用の environments/swift-havana.json を作成します。json
+ファイルの名前は任意です。</p>
+
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;swift-havana&quot;,
+  &quot;description&quot;: &quot;&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;package_component&quot;: &quot;havana&quot;,
+    &quot;osops_networks&quot;: {
+      &quot;management&quot;: &quot;10.200.9.0/24&quot;,
+      &quot;public&quot;: &quot;10.200.10.0/24&quot;,
+      &quot;swift&quot;: &quot;10.200.9.0/24&quot;
+    },
+    &quot;keystone&quot;: {
+      &quot;pki&quot;: {
+        &quot;enabled&quot;: false
+      },
+      &quot;admin_port&quot;: &quot;35357&quot;,
+      &quot;admin_token&quot;: &quot;admin&quot;,
+      &quot;admin_user&quot;: &quot;admin&quot;,
+      &quot;tenants&quot;: [
+        &quot;admin&quot;,
+        &quot;service&quot;
+      ],
+      &quot;users&quot;: {
+        &quot;admin&quot;: {
+          &quot;password&quot;: &quot;secrete&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [
+              &quot;admin&quot;
+            ]
+          }
+        },
+        &quot;demo&quot;: {
+          &quot;password&quot;: &quot;demo&quot;,
+          &quot;default_tenant&quot; : &quot;service&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [ &quot;admin&quot; ]
+          }
+        }
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;keystone&quot;
+      }
+    },
+    &quot;mysql&quot;: {
+      &quot;root_network_acl&quot;: &quot;%&quot;,
+      &quot;allow_remote_root&quot;: true,
+      &quot;server_root_password&quot;: &quot;secrete&quot;,
+      &quot;server_repl_password&quot;: &quot;secrete&quot;,
+      &quot;server_debian_password&quot;: &quot;secrete&quot;
+    },
+    &quot;monitoring&quot;: {
+      &quot;procmon_provider&quot;: &quot;monit&quot;,
+      &quot;metric_provider&quot;: &quot;collectd&quot;
+    },
+    &quot;vips&quot;: {
+      &quot;keystone-admin-api&quot;: &quot;10.200.9.11&quot;,
+      &quot;keystone-service-api&quot;: &quot;10.200.9.11&quot;,
+      &quot;keystone-internal-api&quot;: &quot;10.200.9.11&quot;,
+      &quot;swift-proxy&quot;: &quot;10.200.9.11&quot;,
+      &quot;config&quot;: {
+        &quot;10.200.9.112&quot;: {
+          &quot;vrid&quot;: 12,
+          &quot;network&quot;: &quot;management&quot;
+        }
+      }
+    },
+    &quot;developer_mode&quot;: false,
+    &quot;swift&quot;: {
+      &quot;swift_hash&quot;: &quot;307c0568ea84&quot;,
+      &quot;authmode&quot;: &quot;keystone&quot;,
+      &quot;authkey&quot;: &quot;20281b71-ce89-4b27-a2ad-ad873d3f2760&quot;
+    }
+  }
+}
+</code></pre>
+
+<p>作成した environment ファイル environments/swift-havana.json を chef-server へアップ
+ロードする。</p>
+
+<pre><code class="language-bash">% knife environment from file environments/swift-havana.json
+</code></pre>
+
+<h2 id="cookbooks-の修正">Cookbooks の修正</h2>
+
+<p>swift cookbooks を修正します。havana からは keystone を扱うクライアントは
+keystone.middleware.auth_token でなく keystoneclient.middleware.auth_token を
+使うように変更掛かっていますので、下記のように修正しました。</p>
+
+<pre><code class="language-bash">% cd cookbooks/swift/templates/default
+% diff -u proxy-server.conf.erb.org proxy-server.conf.erb
+--- proxy-server.conf.erb.org   2014-03-20 16:28:28.000000000 +0900
++++ proxy-server.conf.erb       2014-03-20 16:28:13.000000000 +0900
+@@ -243,7 +243,8 @@
+ use = egg:swift#keystoneauth
+ 
+ [filter:authtoken]
+-paste.filter_factory = keystone.middleware.auth_token:filter_factory
++#paste.filter_factory = keystone.middleware.auth_token:filter_factory
++paste.filter_factory = keystoneclient.middleware.auth_token:filter_factory
+ auth_host = &lt;%= @keystone_api_ipaddress %&gt;
+ auth_port = &lt;%= @keystone_admin_port %&gt;
+ auth_protocol = &lt;%= @keystone_admin_protocol %&gt;
+% cd ../../../..
+</code></pre>
+
+<h2 id="デプロイ">デプロイ</h2>
+
+<p>かきのとおり knife bootstrap する。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;manage_ip_addr&gt; -N swift-manage -r 'role[base]','role[mysql-master]','role[keystone]','role[swift-management-server]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;proxy01_ip_addr&gt; -N swift-proxy01 -r &quot;role[base]&quot;,&quot;role[swift-proxy-server]&quot;,'role[swift-setup]','role[openstack-ha]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;proxy02_ip_addr&gt; -N swift-proxy02 -r &quot;role[base]&quot;,&quot;role[swift-proxy-server]&quot;,'role[openstack-ha]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;storage01_ip_addr&gt; -N swift-storage01 -r 'role[base]','role[swift-object-server]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;storage02_ip_addr&gt; -N swift-storage02 -r 'role[base]','role[swift-object-server]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;storage03_ip_addr&gt; -N swift-storage03 -r 'role[base]','role[swift-object-server]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;account01_ip_addr&gt; -N swift-account01 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;account02_ip_addr&gt; -N swift-account02 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;account03_ip_addr&gt; -N swift-account03 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift-havana --sudo -x thirai
+</code></pre>
+
+<p>ここでバグ対策。Swift 1.10.0 にはバグがあるので下記の通り対処します。</p>
+
+<p>keystone.middleware.s3_token に既知のバグがあり、下記のように対処します。この
+状態ではバグにより swift-proxy が稼働してない状態ですが後の各ノードでの
+chef-client 実行時に稼働する予定です。</p>
+
+<pre><code class="language-python">% diff /usr/lib/python2.7/dist-packages/keystone/exception.py.org /usr/lib/python2.7/dist-packages/keystone/exception.py 
+--- exception.py.org    2014-03-12 16:45:00.181420694 +0900
++++ exception.py        2014-03-12 16:44:47.173177081 +0900
+@@ -18,6 +18,7 @@
+
+ from keystone.common import config
+ from keystone.openstack.common import log as logging
++from keystone.openstack.common.gettextutils import _
+ from keystone.openstack.common import strutils
+</code></pre>
+
+<p>上記のバグ報告は下記の URL にあります。</p>
+
+<p><a href="https://bugs.launchpad.net/ubuntu/+source/swift/+bug/1231339">https://bugs.launchpad.net/ubuntu/+source/swift/+bug/1231339</a></p>
+
+<p>zone 番号を付与します。</p>
+
+<pre><code class="language-bash">% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
+</code></pre>
+
+<p>zone 番号が付与されたこと下記の通りを確認します</p>
+
+<p>account-server の確認</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-account-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-account-server] and is in swift zone #{z}&quot;; }'
+swift-account01 has the role       [swift-account-server] and is in swift zone 1
+swift-account02 has the role       [swift-account-server] and is in swift zone 2
+swift-account03 has the role       [swift-account-server] and is in swift zone 3
+</code></pre>
+
+<p>container-server の確認</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-container-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-container-server] and is in swift zone #{z}&quot;; }'
+swift-account01 has the role       [swift-container-server] and is in swift zone 1
+swift-account02 has the role       [swift-container-server] and is in swift zone 2
+swift-account03 has the role       [swift-container-server] and is in swift zone 3
+</code></pre>
+
+<p>object-server の確認</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-object-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-object-server] and is in swift zone #{z}&quot;; }'
+swift-storage01 has the role   [swift-object-server] and is in swift zone 1
+swift-storage02 has the role   [swift-object-server] and is in swift zone 2
+swift-storage03 has the role   [swift-object-server] and is in swift zone 3
+</code></pre>
+
+<p>Chef が各々のノードに搭載された Disk を検知出来るか否かを確認する。</p>
+
+<pre><code class="language-ruby">% knife exec -E \
+  'search(:node,&quot;role:swift-object-server OR \
+  role:swift-account-server \
+  OR role:swift-container-server&quot;) \
+  { |n| puts &quot;#{n.name}&quot;; \
+  begin; n[:swift][:state][:devs].each do |d| \
+  puts &quot;\tdevice #{d[1][&quot;device&quot;]}&quot;; \
+  end; rescue; puts \
+  &quot;no candidate drives found&quot;; end; }'
+    swift-storage02
+            device sdb1
+    swift-storage03
+            device sdb1
+    swift-account01
+            device sdb1
+    swift-account02
+            device sdb1
+    swift-account03
+            device sdb1
+    swift-storage01
+            device sdb1
+</code></pre>
+
+<p>swift-manage ノードにて chef-client を実行し
+/etc/swift/ring-workspace/generate-rings.sh を更新します。</p>
+
+<pre><code class="language-bash">swift-manage% sudo chef-client
+</code></pre>
+
+<p>generate-rings.sh の &lsquo;exit 0&rsquo; 行をコメントアウトし実行します。</p>
+
+<pre><code class="language-bash">swift-manage% sudo ${EDITOR} /etc/swift/ring-workspace/generage-rings.sh
+swift-manage% sudo /etc/swift/ring-workspace/generate-rings.sh
+</code></pre>
+
+<p>この操作で /etc/swift/ring-workspace/rings 配下に account, container, object
+用の Rings ファイル群が生成されたことを確認出来るはずです。これらを
+swift-manage 上で既に稼働している git サーバに push し管理します。</p>
+
+<pre><code class="language-bash">swift-manage# cd /etc/swift/ring-workspace/rings
+swift-manage# git add account.builder container.builder object.builder
+swift-manage# git add account.ring.gz container.ring.gz object.ring.gz
+swift-manage# git commit -m &quot;initial commit&quot;
+swift-manage# git push
+</code></pre>
+
+<p>各々のノードにて chef-client を実行することで git サーバ上の Rings ファイル群
+を取得し、swift プロセスを稼働させます。</p>
+
+<pre><code class="language-bash">swift-proxy01# chef-client
+swift-proxy02# chef-client
+swift-storage01# chef-client
+swift-storage02# chef-client
+swift-storage03# chef-client
+swift-account01# chef-client
+swift-account02# chef-client
+swift-account03# chef-client
+</code></pre>
+
+<p>3台のノードが登録されたかどうかを下記の通り確認行います。</p>
+
+<pre><code class="language-bash">swift-proxy01% sudo swift-recon --md5
+[sudo] password for thirai:
+===============================================================================
+--&gt; Starting reconnaissance on 3 hosts
+===============================================================================
+[2013-10-18 11:14:43] Checking ring md5sums
+3/3 hosts matched, 0 error[s] while checking hosts.
+===============================================================================
+</code></pre>
+
+<h2 id="動作確認">動作確認</h2>
+
+<p>構築が出来ました！ということで動作の確認をしてみましょう。</p>
+
+<p>テストコンテナ &lsquo;container01&rsquo; にテストファイル &lsquo;test&rsquo; をアップロードしてみる。</p>
+
+<pre><code class="language-bash">swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete stat
+swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete post container01
+swift-storage01% echo &quot;test&quot; &gt; test
+swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete upload container01 test
+swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete list
+container01
+swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete list container01 test
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>前回「実用的な Swift 構成を Chef でデプロイ」の記事で記した内容とほぼ手順は変
+わりませんでした。rcbops-cookbooks/rcbops-utils 内にソフトウェアの取得先レポジ
+トリを記すレシピが下記の場所にあります。</p>
+
+<p><a href="https://github.com/rcbops-cookbooks/osops-utils/blob/master/recipes/packages.rb">https://github.com/rcbops-cookbooks/osops-utils/blob/master/recipes/packages.rb</a></p>
+
+<p>そして havana ブランチの attributes を確認すると Ubuntu Cloud Archive の URL
+が記されていることが確認出来ます。下記のファイルです。</p>
+
+<p><a href="https://github.com/rcbops-cookbooks/osops-utils/blob/havana/attributes/repos.rb">https://github.com/rcbops-cookbooks/osops-utils/blob/havana/attributes/repos.rb</a></p>
+
+<p>ファイルの中身の抜粋です。</p>
+
+<pre><code class="language-json">    &quot;havana&quot; =&gt; {
+      &quot;uri&quot; =&gt; &quot;http://ubuntu-cloud.archive.canonical.com/ubuntu&quot;,
+      &quot;distribution&quot; =&gt; &quot;precise-updates/havana&quot;,
+      &quot;components&quot; =&gt; [&quot;main&quot;],
+      &quot;keyserver&quot; =&gt; &quot;hkp://keyserver.ubuntu.com:80&quot;,
+      &quot;key&quot; =&gt; &quot;EC4926EA&quot;
+    },
+</code></pre>
+
+<p>これらのことより、rcbops-utils の attibutes で havana (実際には
+&lsquo;havana-proposed&rsquo;) をレポジトリ指定するように Cookbooks 構成を管理してあげれば
+Havana 構成の Keystone, Swift が構築出来ることになります。ちなみに
+havana-proposed で Swift や Keystone のどのバージョンがインストールされるかは、
+下記の Packages ファイルを確認すると判断出来ます。</p>
+
+<p><a href="http://ubuntu-cloud.archive.canonical.com/ubuntu/dists/precise-proposed/havana/main/binary-amd64/Packages">http://ubuntu-cloud.archive.canonical.com/ubuntu/dists/precise-proposed/havana/main/binary-amd64/Packages</a></p>
+
+<p>以上です。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0.deploy/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -702,219 +1155,6 @@ cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/">Ceph のプロセス配置ベストプラクティス</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2014-01-29'>
-            January 29, 2014</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>Ceph はブロック型の分散ストレージファイルシステムです。POSIX のファイルシステ
-ムとしてマウント出来ます。Linux の Kernel ドライバや FUSE ドライバを用いてマウ
-ントします。またブロックデバイスとしてマウントする方法もあります。</p>
-
-<p>だいぶ前ですが、Ceph に関する記事を以前下記の通り書きました。</p>
-
-<ul>
-<li><a href="http://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/">http://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/</a></li>
-<li><a href="http://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/">http://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/</a></li>
-</ul>
-
-<p>Ceph の構築方法について記したブログだったのですが、今まで mon, osd, mds の各プ
-ロセスをそれぞれ何台のノードに対して配置し、またそれぞれのプロセス幾つを何に対
-して配置するのか？という疑問が付きまとわっていました。node, disk, process のそ
-れぞれの数の関係について知りたいなぁと思っていました。幾つかのドキュメントを読
-んでいて、ぼんやり見えてきた事があるのでそれを今回はまとめたいと思います。</p>
-
-<p>また、皆さん気になるトコロだと思われる容量設計についても軽く触れたいと思います。</p>
-
-<h2 id="参考資料">参考資料</h2>
-
-<ul>
-<li><a href="http://ceph.com/docs/master/rados/configuration/mon-config-ref/">http://ceph.com/docs/master/rados/configuration/mon-config-ref/</a></li>
-<li><a href="http://www.sebastien-han.fr/blog/2013/12/02/ceph-performance-interesting-things-going-on/">http://www.sebastien-han.fr/blog/2013/12/02/ceph-performance-interesting-things-going-on/</a></li>
-</ul>
-
-<h2 id="各要素の数の関係">各要素の数の関係</h2>
-
-<p>ハードウェア要素である node, disk(hdd), ssd そしてソフトウェア要素である mon,
-osd, mds の数の関係はどのようにするべきか？基本となる関係は</p>
-
-<ul>
-<li>1 mds process / node</li>
-<li>1 mon process / node</li>
-<li>1 osd process / disk</li>
-<li>n jornal ssd device / disk / node</li>
-</ul>
-
-<p>だと考えられます。僕が今のところ理想かなぁと思っている構成をまとめたいと思いま
-す。</p>
-
-<p>下記の図がそれです。</p>
-
-<pre><code>+------------------------+
-|         client         |
-+------------------------+
-|
-+--------------------------+--------------------------+-------------------------------+-------------------------
-|                          |                          |                               |            public network
-+------------------------+ +------------------------+ +------------------------+      +------------------------+
-|          mon           | |          mon           | |          mon           |      |          mds           |
-+------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+      +------------------------+
-| osd  | | osd  | | osd  | | osd  | | osd  | | osd  | | osd  | | osd  | | osd  |      |                        |
-+------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+      |                        |
-| disk | | disk | | disk | | disk | | disk | | disk | | disk | | disk | | disk |....&gt; |                        |
-+------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+scale |          node          |
-|          ssd           | |          ssd           | |          ssd           |      |                        |
-+------------------------+ +------------------------+ +------------------------+      |                        |
-|          node          | |          node          | |          node          |      |                        |
-+------------------------+ +------------------------+ +------------------------+      +------------------------+
-|                          |                          |                               |
-+--------------------------+--------------------------+-------------------------------+-------------------------
-                                                                                                  cluster network
-</code></pre>
-
-<h4 id="mds-と-node-の関係">mds と node の関係</h4>
-
-<p>mds はリモートクライアントへのファイルシステムサービスの提供を行うことや特性が
-全く異なることから別ノードに切り出しました。また mds は幾つかのノードで稼働さ
-せる事も可能。が、mds はそれぞれのサービスを HA 組む仕組みは持っていないので
-どれか一方の mds をクライアントは指し示す必要があり、その mds が停止すれば直
-ちに障害に発展します。</p>
-
-<h4 id="mon-と-node-の関係">mon と node の関係</h4>
-
-<p>mon は比較的少量のリソースで稼働します。今回 osd と同じノードの搭載しましたが
-別ノードに切り出すことも勿論可能です。mon は CRUSH Maps アルゴリズムの元に連携
-が取れますので複数のプロセスを稼働することが推奨されていることからも、比較的少
-ないノード数のクラスタの場合は osd と同ノードに搭載するのが容易かなと考えまし
-た。</p>
-
-<h4 id="osd-と-node-の関係">osd と node の関係</h4>
-
-<p>1 osd プロセスに対して 1 disk が基本となります。osd は実データのレプリケーショ
-ンを行うことからコンフィギュレーションに対して上図の様にクラスタ用のネットワー
-クを紐付け、高トラヒックに対応する必要があります。また osd 用の disk device で
-すが RAID を組まないことが推奨されています。CEPH 自体に HA の仕組みがあること、
-また RAID 構成にもよりますがディスクアクセスが遅くなることは Ceph にとってボト
-ルネックを早く招くことになりますし、小さいディスク容量しか扱えなくなることは
-Ceph にとって不利になると思います。</p>
-
-<h4 id="journal-用の-ssd-device-と-disk-node-の関係">journal 用の ssd device と disk, node の関係</h4>
-
-<p>現在の Stable Release 版の Ceph は journal を用いてメタデータを管理します。各
-osd の disk 単位に journal 用の disk device を指定出来るようになっています。メ
-タデータですので実データ用の disk よりだいぶ小さな容量で構わないこと、また比較
-的高速なアクセスを要求されることからも SSD を選択することが推奨されつつあるよ
-うです。実際にストアされるデータの特性にもよりますが 1 node に対して 1 ssd
-device を配置すれば十分かと思います。また osd のプロセスの数 (disk の数) に対
-して一つのパーティションを切ることで対応出来るかと思います。</p>
-
-<p>設定方法の例を記します。ここに ceph01-03 の3台のノードがありそれぞれ 2 disk, 1
-ssd が搭載されているとします。/dev/ssd は gdisk 等を用いて2つ以上のパーティショ
-ンに切り分けます。</p>
-
-<p>下記のように /dev/sdb (hdd) に対して /dev/ssd1 (ssd), /dev/sdc (hdd) に対して /dev/ssd2 (ssd)
-を割り当てることが出来ます。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 osd create ceph01:sdb:/dev/ssd1 ceph02:sdb:/dev/ssd1 ceph03:sdb:/dev/ssd1
-% ceph-deploy --cluster cluster01 osd create ceph01:sdc:/dev/ssd2 ceph02:sdc:/dev/ssd2 ceph03:sdc:/dev/ssd2
-</code></pre>
-
-<h2 id="ceph-ストレージ全体の容量設計と-mon-の-ratio-の関係">Ceph ストレージ全体の容量設計と mon の ratio の関係</h2>
-
-<p>3TB のディスクを持ったノードが 33 台並んでいるとします。各ノードには osd プロ
-セスが1つ稼働します。合計容量は 99 TB となりますが mon が持っているコンフィギュ
-レーションである full ratio というパラメータがありデフォルト値が 0.95 となって
-います。よってこのクラスタで扱える全体のディスク容量は 95TB となります。</p>
-
-<p>また、ラックに数台のノードを積むのが通常ですが、電源故障等で一気にラック単位で
-障害が発生したとします。この場合 Ceph はすべてのデータに関してレプリカを取り復
-旧作業を行います。しかしながら停止するノード数によってはストレージ全体の扱える
-容量をオーバーすることも懸念されます。これに対応するために先ほど登場した ratio
-パラメータを調整することが出来ます。</p>
-
-<pre><code>[global]
-
-mon osd full ratio = .80
-mon osd nearfull ratio = .70
-</code></pre>
-
-<p>上記の例では full ステートの ratio が 0.80, nearfull ステートの ratio が 0.70
-となります。想定の障害ノード数を考慮し ratio パラメータにてその台数分を減算す
-れば良いわけです。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>前述した通り上図は比較的少ないノード数のクラスタを組む場合を想定しています。ノー
-ド数が増える場合は mon は mds, osd とも必要とするリソースの特性が異なりますの
-で別ノードに切り出すことも考えたほうが良さそうです。2014年の2月には Firefly と
-いう新しいリリース版が出ます。ここでのブループリント(設計書)を確認すると&hellip;</p>
-
-<p><a href="http://wiki.ceph.com/Planning/Blueprints/Firefly/osd%3A_new_key%2F%2Fvalue_backend">http://wiki.ceph.com/Planning/Blueprints/Firefly/osd%3A_new_key%2F%2Fvalue_backend</a></p>
-
-<p>journal に変わる新たなメタデータ管理方法として KVS データベースを扱うことも視
-野に入っているようです。上記の URL 見る限りでは Facebook がオープンソースにし
-た rocksdb や fusionio の nvmkv, seagate の kinetic 等が挙がっています。2月に
-期待しましょう！</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1031,6 +1271,20 @@ mon osd nearfull ratio = .70
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-25'>
+                                    July 25, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
                                 
                                     
@@ -1070,20 +1324,6 @@ mon osd nearfull ratio = .70
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-06-21'>
-                                    June 21, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1118,7 +1358,7 @@ mon osd nearfull ratio = .70
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">101</span>
+                                <span style="float:right;">102</span>
                             </header>
                         </article>
                     </li>

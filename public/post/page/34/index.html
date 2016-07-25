@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2012-04-14T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2012-04-28T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,204 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2012/04/28/vyattarouter/">vyatta で自宅ルータ構築</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-04-28'>
+            April 28, 2012</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>自宅ルータを Vyatta で構築してみたくなり、秋葉原の ark でマシンを調達しました。
+Broadcom の BCM57780 チップが搭載された NIC がマザーボード J&amp;W MINIX™
+H61M-USB3 だったのですが、Vyatta.org によると Broadcom の NIC が Certificated
+Hardware に載っていなくて心配でした。まぁ定評のある NIC メーカだから動くだろう
+と楽観視していたのですけど、案の定動きました。vyatta.org の Certificated
+Hardware にコミットしたら &ldquo;user tested&rdquo; として掲載してもらえました。</p>
+
+<p><a href="http://www.vyatta.org/hardware/interfaces">http://www.vyatta.org/hardware/interfaces</a></p>
+
+<p>こんな感じに見えています。</p>
+
+<pre><code># dmesg | grep Broadcom
+[    3.284646] tg3 0000:03:00.0: eth0: attached PHY driver [Broadcom BCM57780](mii_bus:phy_addr=300:01)
+[    3.524122] tg3 0000:05:00.0: eth1: attached PHY driver [Broadcom BCM57780](mii_bus:phy_addr=500:01)
+</code></pre>
+
+<p>今回は、基本的な設定 (PPPoE, NAT, DHCP) 周りを記していきます。</p>
+
+<p>環境は&hellip;</p>
+
+<pre><code>+--------+
+|  Modem |
++--------+
+|
+| pppoe0
++--eth0--+
+| vyatta |
++--eth1--+
+|           192.168.1.0/24
++----------+
+|          |192.168.1.10
++--------+ +--------+
+|  CPE   | |  DNS   |
++--------+ +--------+
+</code></pre>
+
+<p>として記します。</p>
+
+<p>まずインストール。<a href="http://www.vyatta.org/downloads">http://www.vyatta.org/downloads</a> から 64bit VC6.3 Live CD iso
+をダウンロードしてきます。(2012/04/28現在最新). インストール対象のマシンに挿入
+して CDROM ブートすると Vyatta が立ち上がるので、ユーザ vyatta, パスワード
+vyatta でログインし</p>
+
+<pre><code># install-system
+</code></pre>
+
+<p>します。インタラクティブに問い合わせられるので答えていってください。インストールが
+終わったらマシンを再起動します。</p>
+
+<p>eth1 にプライベート IP アドレスを振ります。IP アドレスは適当に読み替えてくださ
+い。また基本的な設定も行います。</p>
+
+<pre><code># set service ssh port 10022 # firewall 設定するまではこうしたほうが安心です
+# set system host-name ${HOSTNAME}
+# set system time-zone Asia/Tokyo
+# set system name-server 8.8.8.8
+# set interface ethernet eth1 address 192.168.1.254
+</code></pre>
+
+<p>eth0 を PPPoE デバイスとして利用して PPPoE 接続を実際にします。</p>
+
+<pre><code># set interface ethernet eth0 pppoe 0
+# set interface ethernet eth0 pppoe 0 user-id ${PPPoE_username}
+# set interface ethernet eth0 pppoe 0 password ${PPPoE_password}
+# set interface ethernet eth0 pppoe 0 name-server auto
+# set interface ethernet eth0 pppoe 0 defaultroute auto
+# set interface ethernet eth0 pppoe 0 local-address XXX.XXX.XXX.XXX # 固定IPがある場合
+# commit
+</code></pre>
+
+<p>ここまでで vyatta ノードからインターネットに接続出来るようになります。</p>
+
+<p>次に、ローカルネットワーク上の CPE だったりサーバノードからのインターネット接
+続のために NAT 設定をします。</p>
+
+<pre><code># set service nat rule 1
+# set service nat rule 1 type masquerade
+# set service nat rule 1 source address 192.168.1.0/24
+# set service nat rule 1 outbound-interface pppoe0
+# commit
+</code></pre>
+
+<p>CPE からのインターネットへの接続が出来るようになりました。</p>
+
+<p>あとは自宅ルータなので DHCP サービスがあったほうが便利だよね、とうことで。</p>
+
+<pre><code># set service dhcp-server shared-network-name HOME subnet 198.168.1.0/24 start 192.168.1.100 stop 192.168.1.150
+# set service dhcp-server shared-network-name HOME subnet 192.168.1.0/24 default-router 192.168.1.254
+# set service dhcp-server shared-network-name HOME subnet 198.168.1.0/24 dns-server 8.8.8.8
+# set service dhcp-server shared-network-name HOME subnet 198.168.1.0/24 dns-server 8.8.4.4
+# commit
+</code></pre>
+
+<p>ローカルネットワーク上の CPE から DHCP リクエストを出してみてください。IP が取得できると思います。</p>
+
+<p>ここまでで基本的な有線自宅ルータとしての構築はほぼ完了ですが、最後にローカルネットワーク上のサーバ
+を DNS サーバとして稼働させるための NAT 設定方法を記しておきます。</p>
+
+<pre><code># set service nat rule 2
+# set service nat rule 2 destination
+# set service nat rule 2 type destination
+# set service nat rule 2 type destination
+# set service nat rule 2 inbound-interface pppoe0
+# set service nat rule 2 protocol udp
+# set service nat rule 2 destination port 53
+# set service nat rule 2 inside-address address 192.168.1.10
+# commit
+</code></pre>
+
+<p>DNS は稀に TCP にフォールバックするので同様に TCP ようの NAT ルールも追記します。</p>
+
+<pre><code># set service nat rule 3
+# set service nat rule 3 destination
+# set service nat rule 3 type destination
+# set service nat rule 3 type destination
+# set service nat rule 3 inbound-interface pppoe0
+# set service nat rule 3 protocol tcp
+# set service nat rule 3 destination port 53
+# set service nat rule 3 inside-address address 192.168.1.10
+</code></pre>
+
+<p>set service nat rule 3 destinationset service nat rule 3 destination    # commit</p>
+
+<p>最後に設定を保存するために&hellip;</p>
+
+<pre><code># save
+</code></pre>
+
+<p>して終わりです。次回は UPnP な設定方法を書いて行きたいと思います。</p>
+
+<p>ちなみに、私の自宅ルータはこんなモノを使いました。</p>
+
+<p><img src="http://jedipunkz.github.com/pix/vyatta.jpg" width="200"></p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2012/04/28/vyattarouter/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -560,158 +758,6 @@ dist を使えば、こんな操作は必要無いのだけど、自分でやら
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2012/04/01/switching-screen-tmux/">switching screen-&gt;tmux</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2012-04-01'>
-            April 1, 2012</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>長年 Gnu screen 愛用者だったのだけど完全に tmux に移行しました。</p>
-
-<p>愛用している iterm2 との相性も良く、好都合な点が幾つかあり移行する価値がありました。</p>
-
-<p>ただ、サーバサイドでの利用は諦めました。問題だったコピペ問題をクリアしている tmux のバージョンが
-Debian sid から取得出来たのだけど、まだまだ完成度高くなく..。</p>
-
-<p>よって、Mac に tmux をインストールして作業するようになりました。インストール方法はこれ。</p>
-
-<p>予め <a href="https://github.com/mxcl/homebrew/wiki/installation">https://github.com/mxcl/homebrew/wiki/installation</a> に
-したがって homebrew をインストールする必要あり。</p>
-
-<pre><code>% brew update
-% brew install tmux
-</code></pre>
-
-<p>インストールしたら .tmux.conf の作成に入る。prefix キーは C-t にしたかった。screen 時代から
-これを使っていて指がそう動くから。</p>
-
-<pre><code># prefix key
-set-option -g prefix C-t
-</code></pre>
-
-<p>またステータスライン周りの設定。色なども自分で選択すると良い。</p>
-
-<pre><code># view
-set -g status-interval 5
-set -g status-left-length 16
-set -g status-right-length 50
-# status
-set -g status-fg white
-set -g status-bg black
-set -g status-left-length 30
-set -g status-left '#[fg=white,bg=black]#H#[fg=white]:#[fg=white][#S#[fg=white]][#[default]'
-set -g status-right '#[fg=white,bg=red,bold] [%Y-%m-%d(%a) %H:%M]#[default]'
-# window-status-current
-setw -g window-status-current-fg white
-setw -g window-status-current-bg red
-setw -g window-status-current-attr bold#,underscore
-# pane-active-border
-set -g pane-active-border-fg black
-set -g pane-active-border-bg blue
-</code></pre>
-
-<p>UTF-8 有効化やキーバインド設定等は&hellip;</p>
-
-<pre><code># Option
-set-window-option -g utf8 on
-#set-window-option -g mode-keys vi
-</code></pre>
-
-<p>私は emacs 使いなので vi モードは無効にした。これで emacs モードが有効になる。</p>
-
-<p>マウス選択を有効にすると、便利かもしれない。</p>
-
-<pre><code>#set-option -g mouse-select-pane on
-#set-option -g mouse-resize-pane
-</code></pre>
-
-<p>が、PANE (ペイン) を横分割した際にこれらの設定を入れているとマウスでのコピーペーストが出来ない
-ため、私は無効にした。</p>
-
-<p>その他の設定。.tmux.conf を tmux 開いたまま設定リロードだったり、ペインの移動キーバインド等。
-特に hjkl キーの vi キーバインドをペイン移動のためにアサインするため、その他のキーを下記のように
-設定している。ウィンドウの移動は C-n, C-p にも追加でアサイン (default は n, p) し、ペインの移動
-には hjkl をアサインした。</p>
-
-<pre><code>bind C-r source-file ~/.tmux.conf
-bind C-n next-window
-bind C-p previous-window
-bind c new-window
-bind | split-window -h
-
-bind C-k kill-pane
-bind K kill-window
-bind i display-panes
-bind y copy-mode
-
-bind h select-pane -L
-bind j select-pane -D
-bind k select-pane -U
-bind l select-pane -R
-</code></pre>
-
-<p>ウィンドウの中にペインの概念が入ったことで、作業効率が非常に上がったし、Mac 上のアプリなので、Mac を
-開いた瞬間に作業に入れる。(今までは debian 上の screen で生活していた) debian 上の tmux に移行する必要
-があるかどうか、これから使い込んでみたいと思う。その時にまたレビューします。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/04/01/switching-screen-tmux/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriestools'>tools</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -828,6 +874,20 @@ bind l select-pane -R
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-25'>
+                                    July 25, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
                                 
                                     
@@ -867,20 +927,6 @@ bind l select-pane -R
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-06-21'>
-                                    June 21, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -915,7 +961,7 @@ bind l select-pane -R
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">101</span>
+                                <span style="float:right;">102</span>
                             </header>
                         </article>
                     </li>

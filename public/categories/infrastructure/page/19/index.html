@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-07-26T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-07-28T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,251 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/07/28/cobbler-os-automation-install/">Cobbler で OS 自動インストール</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-07-28'>
+            July 28, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>最近、自動化は正義だと最近思うのですが、その手助けをしてくれるツール Cobbler
+を試してみました。Cobbler と複数 OS, ディストリビューションを CLI, GUI で管理出
+来るツールです。PXE, TFTP, DHCPを組分せれば OS の自動構築が出来るのは古くから
+ありますが、TFTP サーバに配置するカーネルイメージやマックアドレスの管理を一元
+して管理してくれるのがこの Cobbler です。</p>
+
+<p>今回は Cobbler の構築方法をお伝えします。本当は Chef Cookbooks で構築したかっ
+たのですが Opscode Community にある Cookbooks はイマイチだったので、今回は手動
+で。</p>
+
+<h2 id="前提環境">前提環境</h2>
+
+<ul>
+<li>OS は CentOSを。Ubuntu を利用すると DHCP のコンフィギュレーションを自動で出
+来ません</li>
+<li>利用するネットワークの DHCP はオフにします</li>
+</ul>
+
+<h2 id="構築手順">構築手順</h2>
+
+<p>SELINUX を無効にします。石◯さん、ごめんなさい。</p>
+
+<pre><code class="language-bash"># ${EDITOR} /etc/sysconfig/selinux
+SELINUX=disabled
+# setenforce 0
+</code></pre>
+
+<p>EPEL のレポジトリを追加します。</p>
+
+<pre><code class="language-bash"># rpm -Uvh http://ftp.iij.ad.jp/pub/linux/fedora/epel/6/x86_64/epel-release-6-8.noarch.rpm
+</code></pre>
+
+<p>cobbler をインストールします。またその他必要なパッケージもここでインストールし
+ます。</p>
+
+<pre><code class="language-bash"># yum install cobbler debmirror pykickstart
+</code></pre>
+
+<p>自分の設定したいパスワードを生成して /etc/cobbler/settings 内の
+default_password_crypted: に設定します。パスワードの生成は下記のように openssl
+コマンドを利用します。</p>
+
+<pre><code class="language-bash">% openssl passwd -1
+</code></pre>
+
+<p>/etc/cobbler/settings 内の下記のパラメータについて設定します。manage_dhcp: は
+1 にしておくと、Cobbler が自動で ISC DHCP の設定も書き換えてくれるので、ほぼ必
+須の設定です。</p>
+
+<pre><code>server: &lt;自ホストの IP&gt;
+next_server: &lt;自ホストの IP&gt;
+manage_dhcp: 1
+</code></pre>
+
+<p>/etc/cobbler/dhcp.template を設定します。自分のネットワーク環境に合わせて設定
+します。</p>
+
+<pre><code>subnet 192.168.1.0 netmask 255.255.255.0 {
+     option routers             192.168.1.254;
+     option domain-name-servers 8.8.8.8,8.8.4.4;
+     option subnet-mask         255.255.255.0;
+     range dynamic-bootp        192.168.1.120 192.168.1.150;
+     default-lease-time         21600;
+     max-lease-time             43200;
+     next-server                $next_server;
+     class &quot;pxeclients&quot; {
+          match if substring (option vendor-class-identifier, 0, 9) = &quot;PXEClient&quot;;
+          if option pxe-system-type = 00:02 {
+                  filename &quot;ia64/elilo.efi&quot;;
+          } else if option pxe-system-type = 00:06 {
+                  filename &quot;grub/grub-x86.efi&quot;;
+          } else if option pxe-system-type = 00:07 {
+                  filename &quot;grub/grub-x86_64.efi&quot;;
+          } else {
+                  filename &quot;pxelinux.0&quot;;
+          }
+     }
+}
+</code></pre>
+
+<p>/etc/xinetd.d/rsync の disable = yes を no に設定します。</p>
+
+<pre><code class="language-bash"># ${EDITOR} /etc/xinetd.d/rsync
+&lt;snip&gt;
+    disable = no
+&lt;snip&gt;
+</code></pre>
+
+<p>サービスを起動します。</p>
+
+<pre><code class="language-bash"># service cobbler start
+# service dhcpd start
+# service httpd start
+# service xinetd start
+</code></pre>
+
+<p>OS 起動時に各サービスが起動するよう設定します。</p>
+
+<pre><code class="language-bash"># chkconfig cobbler on
+# chkconfig dhcpd on
+# chkconfig httpd on
+# chkconfig xinetd on
+</code></pre>
+
+<p>iptables をオフにします。</p>
+
+<pre><code class="language-bash"># service iptables stop
+# chkconfig iptables off
+</code></pre>
+
+<p>構築は完了です。</p>
+
+<h2 id="ディストリビューションのインポート">ディストリビューションのインポート</h2>
+
+<p>ここではテストで Ubuntu Server 12.04 amd64 をインポートしてみます。</p>
+
+<p>ダウンロードしてきたインストール ISO をマウントします。</p>
+
+<pre><code class="language-bash"># mount -t iso9660 -o loop,ro /path/to/Image.iso /mnt
+</code></pre>
+
+<p>インポートします。</p>
+
+<pre><code class="language-bash"># cobbler import --name=ubuntu1204 --arch=x86_64 --path=/mnt
+</code></pre>
+
+<p>Debian 系の Ubuntu は x86_64 ではなく通常 amd64 と記しますが、Cobbler が
+CentOS, RHEL を前提に開発されているので x86_64 と記します。注意してください。</p>
+
+<p>インポートされたか確認します。</p>
+
+<pre><code class="language-bash"># cobbler distro list
+# cobbler profile list
+</code></pre>
+
+<p>ここでは自分の作成した preseed.cfg を使いたいのでその設定を行います。この操作
+は行わなくても構いませんが、preseed.cfg 内で自分の環境に合わせて色々したいと思
+うので、行なっておくと便利です。予め preseed.cfg は作成する必要ありますが。</p>
+
+<pre><code class="language-bash"># cp /path/to/preseed.cfg /var/lib/cobbler/kickstarts/ubuntu1204-preseed.cfg
+# cobbler profile edit --name=ubuntu1204-x86_64 \
+ --kickstart=/var/lib/cobbler/kickstarts/ubuntu1204-preseed.cfg \
+ --kopts=&quot;priority=critical locale=en_US&quot;
+</code></pre>
+
+<h2 id="インストールターゲットマシンの登録">インストールターゲットマシンの登録</h2>
+
+<p>インストールターゲットのマシンを登録します。予め NIC の Mac アドレスを用意して
+ください。</p>
+
+<pre><code class="language-bash"># cobbler system add --name=foo --profile=ubuntu1204-x86_64
+# cobbler system edit --name=foo --interface=eth0 \
+ --mac=00:1c:25:72:1f:79 --ip-address=192.168.1.120 --netmask \
+ 255.255.255.0 --static=0
+# cobbler system edit --name=foo -gateway=192.168.1.254 --hostname=foo
+</code></pre>
+
+<p>こちらもネットワーク環境に合わせて gateway や netmask の情報を記してください。</p>
+
+<h2 id="ターゲットマシンのインストール">ターゲットマシンのインストール</h2>
+
+<p>PXE ブートするだけです。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>&lsquo;cobbler-web&rsquo; の設定は今回は説明しませんでした、慣れている人なら CLI のほうがい
+いと思うので &lsquo;cobbler&rsquo; パッケージだけでも十分だと思います。</p>
+
+<p>Cobbler は CentOS, RHEL を中心に考えられたツールなので Debian 系への対応がイマ
+イチでした。あと、import する時にコケることがあります。コケる理由がエラーメッ
+セージとして表示されないものもあるので、ちょっと苦労します。</p>
+
+<p>ただ管理する・新しいターゲット・ディストリビューションの登録を容易にしてくれる
+ツールとしてはとても有用です。今、この辺りの操作であれば Chef で出来ないかな？
+と考えている最中です。と言うか既に Cookbooks を用意し始めています。Chef でシン
+プルな PXE インストール環境を作った方が多くのディストリビューションに対応出来
+そうですし、やる意味あるかな？と思っています。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/07/28/cobbler-os-automation-install/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -941,296 +1186,6 @@ controller01# service cinder-volume restart
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/07/08/chef-openstack-deploy/">Chef で OpenStack デプロイ</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-07-08'>
-            July 8, 2013</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>前回の記事で OpenCenter を使った OpenStack デプロイを行いましたが、デプロイの
-仕組みの実体は Opscode Chef です。慣れている人であれば Chef を単独で使った方が
-よさそうです。僕もこの方法を今後取ろうと思っています。</p>
-
-<p>幾つかの構成を試している最中ですが、今回 nova-network を使ったオールインワン構
-成を作ってみたいと思います。NIC の数は1つです。ノート PC や VPS サービス上にも
-構築できると思いますので試してみてください。</p>
-
-<p>今回は Chef サーバの構築や Knife の環境構築に関しては割愛します。</p>
-
-<p>また全ての操作は workstation ノードで行います。皆さんお手持ちの Macbook 等です。
-デプロイする先は OpenStack をデプロイするサーバです。</p>
-
-<h2 id="手順">手順</h2>
-
-<h4 id="chef-cookbook-を取得">Chef Cookbook を取得</h4>
-
-<p>RackSpace 社のエンジニアがメンテナンスしている Chef Cookbook を使います。各
-Cookbook が git submodule 化されているので &ndash;recursive オプションを付けます。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo
-% cd openstack-chef-repo
-</code></pre>
-
-<h4 id="v4-0-0-ブランチをチェックアウト">&lsquo;v4.0.0&rsquo; ブランチをチェックアウト</h4>
-
-<p>master ブランチは今現在 (2013/07/08) folsom ベースの構成になっているので
-&lsquo;grizzly&rsquo; のためのブランチ &lsquo;v4.0.0&rsquo; をローカルにチェックアウトします。</p>
-
-<pre><code class="language-bash">% git checkout v4.0.0
-</code></pre>
-
-<p>submodule である Cookbooks を初期化 -&gt; 更新を行います。</p>
-
-<pre><code class="language-bash">% git submodule init
-% git submodule sync
-% git submodule update
-</code></pre>
-
-<h4 id="environment-の作成">Environment の作成</h4>
-
-<p>Chef の中に Environment という情報があります。これは環境に合わせ各 Cookbooks
-内の Attributes 等を上書きすることが可能です。この Environment を作成すること
-でそれぞれ独立している Cookbooks を用いて一つの環境を作ることが可能になっています。
-Environement は clone してきた環境の environments ディレクトリ配下に格納します。
-下記の情報をコピペして environments/AllinOne.json として保存してください。</p>
-
-<pre><code class="language-json">{
-  &quot;name&quot;: &quot;AllinOne&quot;,
-  &quot;description&quot;: &quot;&quot;,
-  &quot;cookbook_versions&quot;: {
-  },
-  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
-  &quot;chef_type&quot;: &quot;environment&quot;,
-  &quot;default_attributes&quot;: {
-  },
-  &quot;override_attributes&quot;: {
-    &quot;package_component&quot;: &quot;grizzly&quot;,
-    &quot;osops_networks&quot;: {
-      &quot;management&quot;: &quot;10.0.0.0/24&quot;,
-      &quot;public&quot;: &quot;10.0.0.0/24&quot;,
-      &quot;nova&quot;: &quot;10.0.0.0/24&quot;
-    },
-    &quot;nova&quot;: {
-      &quot;networks&quot;: [
-        {
-          &quot;bridge&quot;: &quot;br100&quot;,
-          &quot;num_networks&quot;: &quot;1&quot;,
-          &quot;dns2&quot;: &quot;8.8.4.4&quot;,
-          &quot;dns1&quot;: &quot;8.8.8.8&quot;,
-          &quot;ipv4_cidr&quot;: &quot;172.16.0.0/24&quot;,
-          &quot;network_size&quot;: &quot;256&quot;,
-          &quot;label&quot;: &quot;private&quot;
-        }
-      ],
-      &quot;config&quot;: {
-        &quot;use_single_default_gateway&quot;: false,
-        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
-        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
-      },
-      &quot;network&quot;: {
-        &quot;dmz_cidr&quot;: &quot;172.18.0.0/24&quot;,
-        &quot;public_interface&quot;: &quot;eth0&quot;,
-        &quot;multi_host&quot;: true,
-        &quot;fixed_range&quot;: &quot;172.16.0.0/24&quot;
-      },
-      &quot;apply_patches&quot;: true,
-      &quot;libvirt&quot;: {
-        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
-        &quot;virt_type&quot;: &quot;qemu&quot;
-      }
-    },
-    &quot;keystone&quot;: {
-      &quot;admin_user&quot;: &quot;admin&quot;,
-      &quot;tenants&quot;: [
-        &quot;admin&quot;,
-        &quot;service&quot;
-      ],
-      &quot;users&quot;: {
-        &quot;admin&quot;: {
-          &quot;password&quot;: &quot;secrete&quot;,
-          &quot;roles&quot;: {
-            &quot;admin&quot;: [
-              &quot;admin&quot;
-            ]
-          }
-        },
-        &quot;demo&quot;: {
-          &quot;password&quot;: &quot;demo&quot;,
-          &quot;default_tenant&quot; : &quot;service&quot;,
-          &quot;roles&quot;: {
-            &quot;service&quot;: [ &quot;service&quot; ]
-          }
-        }
-      }
-    },
-    &quot;horizon&quot;: {
-      &quot;theme&quot;: &quot;Rackspace&quot;
-    },
-    &quot;mysql&quot;: {
-      &quot;root_network_acl&quot;: &quot;%&quot;,
-      &quot;allow_remote_root&quot;: true
-    },
-    &quot;monitoring&quot;: {
-      &quot;procmon_provider&quot;: &quot;monit&quot;,
-      &quot;metric_provider&quot;: &quot;collectd&quot;
-    },
-    &quot;glance&quot;: {
-      &quot;images&quot;: [
-        &quot;precise&quot;,
-        &quot;cirros&quot;
-      ],
-      &quot;image&quot;: {
-      },
-      &quot;image_upload&quot;: true
-    },
-    &quot;developer_mode&quot;: false
-  }
-}
-</code></pre>
-
-<p>環境に合わせ修正する必要があるのは&hellip;</p>
-
-<pre><code>&quot;osops_networks&quot;: {
-  &quot;management&quot;: &quot;10.0.0.0/24&quot;,
-  &quot;public&quot;: &quot;10.0.0.0/24&quot;,
-  &quot;nova&quot;: &quot;10.0.0.0/24&quot;
-},
-</code></pre>
-
-<p>だけです。私の環境は 10.0.0.0/24 にあるので上記のように記しましたが、これはみ
-なさんのネットワーク環境に合わせ修正してください。</p>
-
-<h2 id="roles-の修正">Roles の修正</h2>
-
-<p>デフォルトの &lsquo;allinone&rsquo; Role では Cinder が使えない状態です。これは別ストレー
-ジを扱うことを前提にしているためと思われます。今回はオールインワンでコミコミの
-構成を組みたいので roles/allinone.json を下記のように追記します。</p>
-
-<pre><code class="language-ruby">run_list(
-  &quot;role[single-controller]&quot;,
-  &quot;role[single-compute]&quot;,
-  &quot;role[cinder-volume]&quot; # &lt;- 追加
-)
-</code></pre>
-
-<h2 id="cookbooks-roles-environments-を-chef-サーバへアップロード">Cookbooks, Roles, Environments を Chef サーバへアップロード</h2>
-
-<p>チェックアウトした Cookbooks, Roles, あと今作成した Environements を Chef サー
-バへアップロードします。</p>
-
-<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
-% knife role from file roles/*.rb
-% knife environment from file environments/AllinOne.json
-</code></pre>
-
-<h2 id="openstack-をデプロイ">OpenStack をデプロイ</h2>
-
-<p>いよいよ、次のコマンドでデプロイを行います。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;ip_address&gt; -N &lt;hostname&gt; -r 'role[allinone]' -E AllinOne --sudo -x &lt;username&gt;
-</code></pre>
-
-<p>数分経つと OpenStack デプロイが完了します。ブラウザで https://<ip_address> へ
-アクセスして確認してみてください。ログインアカウントを上記の environments 内に
-記してあります。(user : demo, pass : demo, もしくは user : admin, pass : secrete)</p>
-
-<h2 id="cinder-の利用">Cinder の利用</h2>
-
-<p>この状態で VM を作成してアクセスすることは出来るのですが、Block Storage as a
-Service (Cinder) は利用できない状態です。下記の操作で使えるようになります。</p>
-
-<pre><code class="language-bash">% sudo dd if=/dev/zero of=/var/lib/cinder/volumes-disk bs=2 count=0 seek=7G
-% sudo modprobe loop
-% sudo losetup /dev/loop3 /var/lib/cinder/volumes-disk
-% sudo pvcreate /dev/loop3
-% sudo vgcreate cinder-volumes /dev/loop3
-% sudo service cinder-volume restart
-</code></pre>
-
-<h2 id="まとめと考察">まとめと考察</h2>
-
-<p>操作して気がついたと思いますが、Roles が数多く存在します。これは色んな構成が組
-めることを明示していると言えます。また、Environments を OpenStack 上の一つの構
-成に見立てる (例 : controller + compute x n ) あたりが、とても Chef との親和性
-が高いと言えます。今まで構築のために bash スクリプトを書いてきましたが、もうそ
-の必要が無くなりました。また Git のブランチに &lsquo;folsom&rsquo; 等がある通り、ブランチ
-をチェックアウトし直すことで folsom ベースの構成も組むことが出来ます。私は今、
-コントローラノードの HA 化をこの Cookbooks でデプロイしてみています。とても完
-成度が高いなぁと感じるのは environments である json ファイルに vips という項目
-を追記するだけで HA 構成が組める点です。これにより MySQL, Rabbitmq, API が VIP
-を持ち、コントローラノードの片系に障害が発生しても OpenStack 全体の構成 (今回
-で言う一つの Envorinments ですね) がサービス継続できる！ということです。次回、
-機会がありましたら、その構成のデプロイ方法についても紹介したいと思います。</p>
-
-<p>また、今回は VPS サービス上等に構築出来るように</p>
-
-<pre><code>&quot;virt_type&quot;: &quot;qemu&quot;
-</code></pre>
-
-<p>と environments に記しましたが、KVM リソースが扱える環境であればここを &lsquo;kvm&rsquo;
-とすることでパフォーマンスは若干上がると思います。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/07/08/chef-openstack-deploy/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1347,6 +1302,20 @@ Service (Cinder) は利用できない状態です。下記の操作で使える
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-25'>
+                                    July 25, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
                                 
                                     
@@ -1386,20 +1355,6 @@ Service (Cinder) は利用できない状態です。下記の操作で使える
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-06-21'>
-                                    June 21, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1434,7 +1389,7 @@ Service (Cinder) は利用できない状態です。下記の操作で使える
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">101</span>
+                                <span style="float:right;">102</span>
                             </header>
                         </article>
                     </li>

@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2013-12-05T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-12-09T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,248 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/12/09/coreos-etcd-cluster/">CoreOS etcd のクラスタとその応用性</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-12-09'>
+            December 9, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>皆さん CoreOS は利用されたことありますか？CoreOS は軽量な docker との相性の良
+い OS です。下記が公式サイト。</p>
+
+<p><a href="http://coreos.com/">http://coreos.com/</a></p>
+
+<p>特徴としては下記の3つがあります。</p>
+
+<ul>
+<li>etcd</li>
+<li>systemd</li>
+<li>docker</li>
+</ul>
+
+<p>ここではこの中の etcd について注目していきたいと思います。etcd はクラスタエイ
+ブルな KVS データベースです。コンフィギュレーションをクラスタ間で共有すること
+がなので、オーケストレーションの分野でも期待出来るのでは？と個人的に感じていま
+す。今回は etcd のクラスタ構成構築の手順とその基本動作の確認、またどう応用出来
+るのか？について記していきたいと思います。</p>
+
+<h2 id="参考-url">参考 URL</h2>
+
+<ul>
+<li><a href="http://coreos.com/using-coreos/etcd/">http://coreos.com/using-coreos/etcd/</a></li>
+<li><a href="https://github.com/coreos/etcd">https://github.com/coreos/etcd</a></li>
+</ul>
+
+<h2 id="ビルド">ビルド</h2>
+
+<p>go 1.1 or later をインストールして etcd のコンパイル準備を行います。Ubuntu
+Saucy のパッケージを用いると容易に行えます。</p>
+
+<pre><code class="language-bash">% apt-get -y install golang
+</code></pre>
+
+<p>coreos/etcd を取得しビルド</p>
+
+<pre><code class="language-bash">% git clone https://github.com/coreos/etcd
+% cd coreos
+% ./build
+% ./etcd --version
+v0.2.0-rc1-60-g73f04d5
+</code></pre>
+
+<h2 id="coreos-の用意">CoreOS の用意</h2>
+
+<p>ここではたまたま手元にあった OpenStack を用いて CoreOS のイメージを登録してい
+みます。ベアメタルでも可能ですのでその場合は手順を読み替えて作業してみてくださ
+い。OpenStack 等クラウドプラットフォームを利用する場合は metadata サービスが必
+須となるので注意してください。</p>
+
+<pre><code class="language-bash">% wget http://storage.core-os.net/coreos/amd64-generic/dev-channel/coreos_production_openstack_image.img.bz2
+% bunzip2 coreos_production_openstack_image.img.bz2
+% glance image-create --name coreos-image --container-format ovf \
+  --disk-format qcow2 --file coreos_production_openstack_image.img
+</code></pre>
+
+<p>nova boot にて CoreOS を起動します。(下記は例)</p>
+
+<pre><code class="language-bash">% nova keypair-add testkey01 &gt; testkey01.pem
+% nova boot --nic net-id .... --image coreos-image --flavor 1 --key_name testkey01 coreos01
+</code></pre>
+
+<h2 id="coreos-上での-etcd-クラスタ起動">CoreOS 上での etcd クラスタ起動</h2>
+
+<p>上記でコンパイルした etcd のバイナリを起動したインスタンス (CoreOS) に転送しま
+す。scp 等で転送してください。</p>
+
+<p>ここでは 1 node 上で複数のポート番号を用いて 3 つの etcd を稼働することでクラ
+スタを構築します。</p>
+
+<p>7002 番ポートを peer addr として master を起動。listen ポートは 4002</p>
+
+<pre><code class="language-bash">% ./etcd -peer-addr 127.0.0.1:7002 -addr 127.0.0.1:4002 -data-dir machines/machine1 -name machine1
+</code></pre>
+
+<p>上記の master を参照する slaves (残り2台) を起動。</p>
+
+<pre><code class="language-bash">% ./etcd -peer-addr 127.0.0.1:7003 -addr 127.0.0.1:4003 -peers 127.0.0.1:7002 -data-dir machines/machine2 -name machine2
+% ./etcd -peer-addr 127.0.0.1:7004 -addr 127.0.0.1:4004 -peers 127.0.0.1:7002 -data-dir machines/machine3 -name machine3
+</code></pre>
+
+<p>クラスタ構成内のノード情報を確認する。</p>
+
+<pre><code class="language-bash">% curl -L http://127.0.0.1:4002/v2/machines
+[etcd] Dec  4 03:46:44.153 INFO      | URLs: machine1 / machine1 (http://127.0.0.1:4002,http://127.0.0.1:4003,http://127.0.0.1:4004)
+http://127.0.0.1:4002, http://127.0.0.1:4003, http://127.0.0.1:4004
+</code></pre>
+
+<p>leader (master) 情報を確認する。</p>
+
+<pre><code class="language-bash">% curl -L http://127.0.0.1:4002/v2/leader
+http://127.0.0.1:7002
+</code></pre>
+
+<p>上記で起動した master プロセスが leader (master) になっていることを確認出来る
+と思います。</p>
+
+<h2 id="キーの投入と参照">キーの投入と参照</h2>
+
+<p>テストでキーと値を入力してみましょう。&rsquo;foo&rsquo; キーに &lsquo;bar&rsquo; という値を投入てくだ
+さい。</p>
+
+<pre><code class="language-bash">% curl -L http://127.0.0.1:4002/v2/keys/foo -XPUT -d value=bar
+</code></pre>
+
+<p>クラスタ内全てのプロセスから上記のキーの取得できることを確認します。</p>
+
+<pre><code class="language-bash">% curl -L http://127.0.0.1:4002/v2/keys/foo
+{&quot;action&quot;:&quot;get&quot;,&quot;node&quot;:{&quot;key&quot;:&quot;/foo&quot;,&quot;value&quot;:&quot;bar&quot;,&quot;modifiedIndex&quot;:4,&quot;createdIndex&quot;:4}}
+% curl -L http://127.0.0.1:4003/v2/keys/foo
+{&quot;action&quot;:&quot;get&quot;,&quot;node&quot;:{&quot;key&quot;:&quot;/foo&quot;,&quot;value&quot;:&quot;bar&quot;,&quot;modifiedIndex&quot;:4,&quot;createdIndex&quot;:4}}
+% curl -L http://127.0.0.1:4004/v2/keys/foo
+{&quot;action&quot;:&quot;get&quot;,&quot;node&quot;:{&quot;key&quot;:&quot;/foo&quot;,&quot;value&quot;:&quot;bar&quot;,&quot;modifiedIndex&quot;:4,&quot;createdIndex&quot;:4}}
+</code></pre>
+
+<h2 id="master-のシャットダウンと-master-選挙後の動作確認">master のシャットダウンと master 選挙後の動作確認</h2>
+
+<p>テストで master のプロセスをシャットダウンしてみます。</p>
+
+<p>master プロセスのシャットダウン</p>
+
+<pre><code class="language-bash">% kill &lt;master プロセスの ID&gt;
+</code></pre>
+
+<p>その他 2 つのプロセスから &lsquo;foo&rsquo; キーの確認を行う。</p>
+
+<pre><code class="language-bash">% curl -L http://127.0.0.1:4004/v2/keys/foo
+{&quot;action&quot;:&quot;get&quot;,&quot;node&quot;:{&quot;key&quot;:&quot;/foo&quot;,&quot;value&quot;:&quot;bar&quot;,&quot;modifiedIndex&quot;:4,&quot;createdIndex&quot;:4}}
+% curl -L http://127.0.0.1:4003/v2/keys/foo
+{&quot;action&quot;:&quot;get&quot;,&quot;node&quot;:{&quot;key&quot;:&quot;/foo&quot;,&quot;value&quot;:&quot;bar&quot;,&quot;modifiedIndex&quot;:4,&quot;createdIndex&quot;:4}}
+</code></pre>
+
+<p>勿論、旧 master からは確認出来ない。</p>
+
+<pre><code class="language-bash">% curl -L http://127.0.0.1:4002/v2/keys/foo
+ curl: (7) Failed connect to 127.0.0.1:4002; Connection refused
+</code></pre>
+
+<p>新 master の確認を行う。選挙の結果 3 つ目のプロセスが master に昇格しているこ
+とが確認出来る。</p>
+
+<pre><code class="language-bash">% curl -L http://127.0.0.1:4003/v2/leader
+http://127.0.0.1:7004
+</code></pre>
+
+<h2 id="考察とその応用性について">考察とその応用性について</h2>
+
+<p>とてもシンプルな KVS ではあるけど大きな可能性を秘めていると思っています。オー
+ケストレーション等への応用です。お互いのノード (今回はプロセス) 間で情報をやり
+とりできるので自律的なクラスタの構築も可能になるのでは？と思っています。</p>
+
+<p>&lsquo;etcenv&rsquo; という @mattn さんが開発したツールを見てみましょう。</p>
+
+<p><a href="https://github.com/mattn/etcdenv">https://github.com/mattn/etcdenv</a></p>
+
+<p>下記、README から引用。</p>
+
+<pre><code class="language-bash">$ curl http://127.0.0.1:4001/v1/keys/app/db -d value=&quot;newdb&quot;
+$ curl http://127.0.0.1:4001/v1/keys/app/cache -d value=&quot;new cache&quot;
+
+$ curl http://localhost:4001/v1/keys/app
+[{&quot;action&quot;:&quot;GET&quot;,&quot;key&quot;:&quot;/app/db&quot;,&quot;value&quot;:&quot;newdb&quot;,&quot;index&quot;:4},{&quot;action&quot;:&quot;GET&quot;,&quot;key&quot;:&quot;/app/cache&quot;,&quot;value&quot;:&quot;new cache&quot;,&quot;index&quot;:4}]
+
+$ etcdenv -key=/app/
+DB=newdb
+CACHE=new cache
+
+$ etcdenv -key=/app/ ruby web.rb
+</code></pre>
+
+<p>クラスタ間の情報を環境変数に落としこむツールです。自ノードの環境変数まで落ちれ
+ば、クラスタ構築も色々想像出来るのではないでしょうか？</p>
+
+<p>軽量で docker との相性も良くて etcd 等の仕組みも持っている CoreOS にはこれから
+も期待です。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/12/09/coreos-etcd-cluster/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -759,169 +1001,6 @@ Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby に�
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/11/26/vyatta-timemachine-netatalk/">Vyatta で Mac 用 TimeMachine サーバ兼ファイルサーバを構築！</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-11-26'>
-            November 26, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>自宅ルータを Vyatta で運用しているのですが、諸電力な筐体に交換した際に HDD ス
-ロットが余っていたので HDD を一本さしてみました。もったいないので Netatalk を
-インストールして Mac 用の TimeMachine サーバにするか！そんでもってファイルサー
-バ兼務にしよう！と思い立って作業したら簡単に出来たので共有します。</p>
-
-<p>Vyatta はご存知の通り Debian Gnu/Linux がベースになっているのでパッケージレポ
-ジトリを追加してちょちょいで設定出来ます。</p>
-
-<h2 id="手順">手順</h2>
-
-<p>電源を通して Disk を追加します。その後起動。私は 3TB Disk が余っていたのでそれ
-を挿しました。</p>
-
-<p>debian wheezy のパッケージレポジトリを Vyatta に追記します。</p>
-
-<pre><code class="language-bash">% configure
-# set system package repository debian url http://ftp.jp.debian.org/debian
-# set system package repository debian distribution wheezy
-# set system package repository debian components &quot;main contrib&quot;
-# commit
-# save
-# exit 
-</code></pre>
-
-<p>netatalk, avahi をインストールする。その際に libgcrypt11 のバージョン 1.5.0 が
-必要になるのでインストールすること。</p>
-
-<pre><code class="language-bash">% sudo apt-get update
-% sudo apt-get install netatalk avahi-daemon avahi-utils libgcrypt11
-</code></pre>
-
-<p>ディスクのパーティショニング・フォーマットを行うために e2fsprogs, gdisk を入れ
-る。2TB オーバーな disk が一般的になったので fdisk ではなく gdisk を使う。</p>
-
-<pre><code class="language-bash">% sudo apt-get install e2fsprogs gdisk
-</code></pre>
-
-<p>パーティショニングを行う。私は1つの大きなパーティションを作りました。その後ファ
-イルシステム ext4 にてフォーマットを行います。</p>
-
-<pre><code class="language-bash">% sudo gdisk /dev/sdb # パーティショニング方法は割愛
-% sudo mkfs.ext4 /dev/sdb1
-</code></pre>
-
-<p>/mnt ディレクトリにマウントします。/mnt/storage をファイルサーバ用,
-/mnt/timemachine を Mac の TimeMachine 用として稼働させるためにディレクトリを
-作成します。</p>
-
-<pre><code class="language-bash">% sudo mount -t ext4 /dev/sdb1 /mnt
-% sudo vi /etc/fstab # /mnt の記述追加
-% sudo mkdir /mnt/storage ; sudo chown &lt;userid&gt;:users /mnt/storage
-% sudo mkdir /mnt/timemachine ; sudo chown &lt;userid&gt;:users /mnt/timemachine
-</code></pre>
-
-<p>/etc/netatalk/apfd.conf を修正します。</p>
-
-<pre><code class="language-diff">% diff /etc/netatalk/apfd.conf.org /etc/netatalk/afpd.conf
-- # - -tcp -noddp -uamlist uams_dhx.so,uams_dhx2.so -nosavepassword
-+ - -tcp -noddp -uamlist uams_guest.so,uams_dhx.so,uams_dhx2.so -nosavepassword
-</code></pre>
-
-<p>TimeMachine 用のディレクトリパスに下記のファイルを touch します。中身は空で OK
-です。</p>
-
-<pre><code class="language-bash">% touch /mnt/timemachine/.com.apple.timemachine.supported
-</code></pre>
-
-<p>/etc/netatalk/AppleVolumes.default ファイルにファイルサーバ, TimeMachine 用の
-設定を投入します。TimeMachine 用は下記の通りオプションが必要になります。</p>
-
-<pre><code class="language-bash">% sudo vi /etc/netatalk/AppleVolumes.default # 下記を追記
-/mnt/storage &quot;Storage&quot;
-/mnt/timemachine &quot;TimeMachine&quot; cnidscheme:dbd options:usedots,upriv,tm
-</code></pre>
-
-<p>netatalk を再起動します。</p>
-
-<pre><code class="language-bash">% sudo /etc/init.d/netatalk restart
-</code></pre>
-
-<h2 id="timemachine-を設定する-mac-側の設定">TimeMachine を設定する Mac 側の設定</h2>
-
-<p>今回の様に Apple 公式の TimeCupsule 以外のマシンを TimeMachine のバックアップ
-先として利用する場合、Mac 側で下記の設定が必要になります。</p>
-
-<pre><code class="language-bash">% defaults write com.apple.systempreferences TMShowUnsupportedNetworkVolumes 1
-</code></pre>
-
-<p>あとは &lsquo;環境設定&rsquo; -&gt; &lsquo;TimeMachine&rsquo; にて Vyatta を TimeMachine のバックアップ先
-に指定すれば OK です。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>パッケージレポジトリは Wheezy の main, contrib を設定しましたが他のモノを入れ
-ることも勿論可能。最近の Netatalk は TimeMachine 用の設定が簡単にできるように
-なっていました。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/11/26/vyatta-timemachine-netatalk/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1038,6 +1117,20 @@ Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby に�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-25'>
+                                    July 25, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
                                 
                                     
@@ -1077,20 +1170,6 @@ Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby に�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-06-21'>
-                                    June 21, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1125,7 +1204,7 @@ Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby に�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">101</span>
+                                <span style="float:right;">102</span>
                             </header>
                         </article>
                     </li>

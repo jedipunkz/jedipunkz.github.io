@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-01-14T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-02-01T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,166 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/02/01/spiceweasel-knife-bootstrap/">Spiceweasel で knife バッチ処理</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-02-01'>
+            February 1, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>Spiceweasel <a href="https://github.com/mattray/spiceweasel#cookbooks">https://github.com/mattray/spiceweasel#cookbooks</a> を使ってみた。</p>
+
+<p>Spiceweasel は Chef の cookbook のダウンロード, role/cookbook の chef server
+へのアップロード, ブートストラップ等をバッチ処理的に行なってくれる(もしくはコ
+マンドラインを出力してくれる)ツールで、自分的にイケてるなと感じたのでブログに
+書いておきます。</p>
+
+<p>クラウドフェデレーション的サービスというかフロントエンドサービスというか、複数
+のクラウドを扱えるサービスは増えてきているけど、chef を扱えるエンジニアであれ
+ば、この Spiceweasel で簡単・一括デプロイ出来るので良いのではないかと。</p>
+
+<p>早速だけど chef-repo にこんな yamp ファイルを用意します。</p>
+
+<pre><code>cookbooks:
+- apt:
+- nginx:
+
+roles:
+- base:
+
+nodes:
+- 172.24.17.3:
+    run_list: role[base]
+    options: -i ~/.ssh/testkey01 -x root -N webset01
+- 172.24.17.4:
+    run_list: role[base]
+    options: -i ~/.ssh/testkey01 -x root -N webset02
+</code></pre>
+
+<p>上から説明すると&hellip;</p>
+
+<ul>
+<li>&lsquo;apt&rsquo;, &lsquo;nginx&rsquo; の cookbook を opscode レポジトリからダウンロード</li>
+<li>&lsquo;apt&rsquo;, &lsquo;nginx&rsquo; の cookbook を chef-server へアップロード</li>
+<li>roles/base.rb を chef-server へアップロード</li>
+<li>2つのノードに対して bootstrap 仕掛ける</li>
+</ul>
+
+<p>ってことをやるためのファイルです。予め chef-repo と roles は用意してあげる必要
+があります。この辺りは knife の操作のための準備と全く同じ。また Spiceweasel は、
+この yaml フィアル内の各パラメータや指定した role の内容の依存関係をチェックし
+てくれます。</p>
+
+<p>では、このファイルに対して</p>
+
+<pre><code>% spiceweasel &lt;yaml ファイル名&gt;
+</code></pre>
+
+<p>すると、結果として下記のようなバッチが取得出来る。</p>
+
+<pre><code>knife cookbook site download apt  --file cookbooks/apt.tgz
+tar -C cookbooks/ -xf cookbooks/apt.tgz
+rm -f cookbooks/apt.tgz
+knife cookbook upload apt
+knife cookbook site download test  --file cookbooks/test.tgz
+tar -C cookbooks/ -xf cookbooks/test.tgz
+rm -f cookbooks/test.tgz
+knife cookbook upload test
+knife role from file base.rb
+knife bootstrap 172.24.17.3 -i ~/.ssh/testkey01 -x root -N webset01 -r 'role[base]'
+knife bootstrap 172.24.17.4 -i ~/.ssh/testkey01 -x root -N webset02 -r 'role[base]'
+</code></pre>
+
+<p>尚且つ -e オプションを指定すると、実際にこれらのバッチを実行出来る。cookbooks
+ディレクトリに予めレシピが存在すればダウンロードのバッチは省略されるぽいし、-d
+を指定すると逆にノード削除バッチ処理、-r でリビルドのためのバッチ処理が得られ
+る。</p>
+
+<p>削除系・リビルド系は現時点では不具合が見られました。実行すると他の環境にも影響
+出るので注意が必要。</p>
+
+<p>個人的にはプライベートレポジトリの cookbooks も取ってこれるようになると嬉しい。
+まぁ、Berkshelf 使えばいいのだけど。<a href="http://berkshelf.com/">http://berkshelf.com/</a></p>
+
+<p>開発者の Matt Ray さんの資料によれば Chef for OpenStack もこの Spiceweasel を
+使う方向で修正が掛かったらしい。個人的には一番興味あるところ。ちなみに Chef
+for OpenStack は folsom ベースが現在 &lsquo;active development&rsquo; 状態らしい。</p>
+
+<p>Opscode のサイトで紹介されているサンプルは古いバージョンでの指定方法らしく、注
+意が必要です。</p>
+
+<p><a href="http://wiki.opscode.com/display/chef/Spiceweasel">http://wiki.opscode.com/display/chef/Spiceweasel</a></p>
+
+<h4 id="所感">所感</h4>
+
+<p>chef, knife 周りはいろんな関連技術があるので技術を選定する上で迷ってしまうこと
+が多いのだけど、この Spiceweasel には可能性を感じました。って言うのは、Chef が
+実装出来ていないインテグレーションやオーケストレーションっていう所まで踏み込め
+る可能性があるから。ノード間の関連付けが出来るんです。Swift-Storage と
+Swift-Proxy の関連付け、または Load-Balancer と HTTP-Server の関連付け等。継続
+的デリバリなインテグレーションって Chef を使ってどう実現するんだ？って思ってい
+た時があったのですが、こういったラッパーツールの登場で解決されそうな気がします。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/02/01/spiceweasel-knife-bootstrap/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Categories
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+        <li><a href='/categoriestools'>tools</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -689,230 +849,6 @@ ruby で書いても perl で書いても同じ。コマンドをバシバシ打
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/01/01/freebsd-on-openstack/">FreeBSD on OpenStack</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-01-01'>
-            January 1, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>FreeBSD を OpenStack で管理したいなぁと思って自宅に OpenStack 環境作ってました。</p>
-
-<p>お正月なのに&hellip;</p>
-
-<p>使ったのは folsom ベースの OpenStack (nova-network) と FreeBSD 9.1 です。8 系
-の FreeBSD でも大体同じ作業で実現出来るぽいです。あと nova-network でって書い
-たのは自宅に quantum だと少し厳しいからです。FlatDHCPManager が調度良かった。</p>
-
-<p>今回のポイントは FreeBSD の HDD, NIC のドライバに virtio を使うように修正する
-ところです。OpenStack (KVM) は virtio 前提なので、そうせざるを得なかったです。</p>
-
-<h2 id="今回使ったソフトウェア">今回使ったソフトウェア</h2>
-
-<ul>
-<li>OpenStack Folsom (nova-network)</li>
-<li>Ubuntu Server 12.10</li>
-<li>FreeBSD 9.1 amd64</li>
-</ul>
-
-<h2 id="作業方法">作業方法</h2>
-
-<p>準備としてこれらが必要になります。事前に行なってください。</p>
-
-<ul>
-<li>FreeBSD-9.1-RELEASE-amd64-disc1.iso ダウンロード</li>
-<li>作業ホスト (Ubuntu Server 12.10) に qemu-kvm をインストール</li>
-</ul>
-
-<p>freebsd9.img として qcow2 イメージを作成します。</p>
-
-<pre><code>% kvm-img create -f qcow2 freebsd9.img 8G
-</code></pre>
-
-<p>作成したイメージファイルに FreeBSD 9.1 をインストールします。</p>
-
-<pre><code>% kvm -m 256 -cdrom ./FreeBSD-9.1-RELEASE-amd64-disc1.iso \
--drive file=./freebsd9.img -boot d -net nic -net user -nographic -vnc :10
-</code></pre>
-
-<p>VNC のディスプレイ番号は空いているものを使ってください。空いていれば他でも構い
-ません。</p>
-
-<p>VNC viewer をインストールし localhost:10 に接続します。ここでは作業ホストに X
-Window System が入っていることを前提に書いていますが、Non-X な方は他のホストか
-らその他の VNC ソフトウェアを使ってアクセスしてもらっても構わないです。</p>
-
-<pre><code>% sudo apt-get update
-% sudo apt-get gvncviewer
-%gvncviewer localhost:10
-</code></pre>
-
-<p>インストーラが起動しているのでインストール行なってください。気をつける点として
-は一つ。src をインストールしてください。後に virtio をインストールするのに必要
-になってくるからです。kmod ファイルをコンパイルしてインストールすることになります。</p>
-
-<p>インストールが終わったら今度は仮想マシンを HDD から起動します。</p>
-
-<pre><code>% kvm -m 256 -drive file=./freebsd9.img -boot c -net nic -net user \
-  -nographic -vnc :10
-</code></pre>
-
-<p>VNC で再度接続し仮想マシン上で emulators/virtio-kmod をインストールします。</p>
-
-<pre><code>freebsd9% cd /usr/ports/emulators/virtio-kmod/
-freebsd9% su
-freebsd9# make install clean
-</code></pre>
-
-<p>次に virtio ドライバを扱うように HDD, NIC ドライバ周りの設定を変更します。
-virtio のインストールが終わった後に「こうしろ」とメッセージが出てきますので
-それを参考に行います。一部、僕の環境ではそのままではダメだったので修正して
-使いました。</p>
-
-<p>インストールした virtio を起動時に読み込むために下記を追記します。</p>
-
-<pre><code>freebsd9# vi /boot/loader.conf
-virtio_load=&quot;YES&quot;
-virtio_pci_load=&quot;YES&quot;
-virtio_blk_load=&quot;YES&quot;
-if_vtnet_load=&quot;YES&quot;
-virtio_balloon_load=&quot;YES&quot;
-</code></pre>
-
-<p>HDD ドライバを virtio を使うように変更します。これによってデバイス名が変わって
-くるので /etc/fstab を編集します。</p>
-
-<pre><code>freebsd9# sed -i.bak -Ee 's|/dev/ada?|/dev/vtbd|' /etc/fstab
-</code></pre>
-
-<p>NIC も virtio を使います。僕の環境では ifconfig_re0 でした。これを vtnet0 に変
-更します。</p>
-
-<pre><code>freebsd9# cat /etc/rc.conf
-ifconfig_vtnet0=&quot;DHCP&quot;
-..&lt;snip&gt;..
-</code></pre>
-
-<p>qemu の起動方法、もしくはデフォルトのハードウェア定義によって re0 は変わってく
-るかもしれません。適宜変更します。</p>
-
-<p>仮想マシンをシャットダウンします。</p>
-
-<pre><code>freebsd9# shutdown -p now
-</code></pre>
-
-<p>完成したイメージファイル freebsd9.img を openstack 環境に転送し (openstack 環
-境で作業している方は必要無いです) glance に登録します。</p>
-
-<p>環境変数諸々を揃えて&hellip;</p>
-
-<pre><code>% glance add name=&quot;FreeBSD 9&quot; is_public=true container_format=ovf disk_format=qcow2 &lt; freebsd9.img
-% glance image-list
-+--------------------------------------+------------------------+-------------+------------------+-------------+--------+
-| ID                                   | Name                   | Disk Format | Container Format | Size        | Status |
-+--------------------------------------+------------------------+-------------+------------------+-------------+--------+
-| 1af6f41b-1048-4d78-9715-87935c0bc6ae | FreeBSD 9              | qcow2       | ovf              | 4305584128  | active |
-+--------------------------------------+------------------------+-------------+------------------+-------------+--------+
-</code></pre>
-
-<p>以上です。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>FreeBSD は仕事場でもプライベートでもまだまだ現役だし OpenStack で扱えるように
-することは僕にとってとても重要でした。なので満足ｗ FreeBSD 8 系では同じ手順で
-扱えるらしいのだけど、それ以前のバージョンになるとどうか&hellip; virtio がポイント
-なのと、KVM とゲスト OS バージョンって相性がめちゃ有るのでここもポイントになり
-そう。ハイパーバイザに VMWare も使えるらしいので今度やってみるかな。VMWare で
-も相性はあるけど、KVM ほどシビアにならなくていい印象がある。FreeBSD 3系でも頑
-張れば動いたし。</p>
-
-<p>あとは cloud-init 。まだ開発途中だそうです。なので metadata サーバにアクセスし
-て、色んな事しようと思ってもまだ難しい。</p>
-
-<p>この年末に Windows も OpenStack に乗せてみたので、そちらの記事も時間があったら
-載せようっと。</p>
-
-<h4 id="2013-01-02-追記">2013/01/02 追記</h4>
-
-<p>FreeBSD 8.3 で試してみましたが、全く同じ手順で起動してくれました。ただ、
-emulators/virtio-kmod が 8.2 or 9 に対応しているとあったので Makefile を修正し
-て virtio-kmod をインストールしています。今のところ何も問題出ていません。</p>
-
-<p>``` bash diff output of Makefiles</p>
-
-<h1 id="diff-u-usr-ports-emulators-virtio-kmod-makefile-org-usr-ports-emulators-virtio-kmod-makefile">diff -u /usr/ports/emulators/virtio-kmod/Makefile.org  /usr/ports/emulators/virtio-kmod/Makefile</h1>
-
-<p>&mdash; /usr/ports/emulators/virtio-kmod/Makefile.org   2013-01-02 06:02:48.000000000 +0900
-+++ /usr/ports/emulators/virtio-kmod/Makefile   2013-01-02 06:02:59.000000000 +0900
-@@ -28,7 +28,7 @@</p>
-
-<p>.include <bsd.port.pre.mk></p>
-
-<p>-.if ${OSREL} != &ldquo;8.2&rdquo; &amp;&amp; ${OSREL} != &ldquo;9.0&rdquo;
-+.if ${OSREL} != &ldquo;8.3&rdquo; &amp;&amp; ${OSREL} != &ldquo;9.0&rdquo;
- IGNORE=not supported $${OSREL} (${OSREL})
- .endif
-```</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/01/01/freebsd-on-openstack/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1029,6 +965,20 @@ emulators/virtio-kmod が 8.2 or 9 に対応しているとあったので Makef
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-25'>
+                                    July 25, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
                                 
                                     
@@ -1068,20 +1018,6 @@ emulators/virtio-kmod が 8.2 or 9 に対応しているとあったので Makef
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-06-21'>
-                                    June 21, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1116,7 +1052,7 @@ emulators/virtio-kmod が 8.2 or 9 に対応しているとあったので Makef
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">101</span>
+                                <span style="float:right;">102</span>
                             </header>
                         </article>
                     </li>
