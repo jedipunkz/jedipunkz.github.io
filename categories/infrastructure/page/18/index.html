@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-08-09T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-08-16T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,382 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/08/16/rcbops-cookbooks-neutron-openstack/">rcbops Cookbooks で Neutron 構成 OpenStack</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-08-16'>
+            August 16, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>rcbops Cookbooks で Neutron 構成の OpenStack をデプロイする方法を書きたいと思
+います。先日紹介した openstack-chef-repo にも Neutron のレシピが含まれているの
+ですが、まだまだ未完成で手作業をおりまぜながらのデプロイになっていまうので、今
+現在のところ Neutron 構成を組みたいのであればこの rcbops の Cookbooks を用いる
+しかないと思います。</p>
+
+<p>今回は VLAN モードの構築を紹介します。GRE モードも少し手順を修正すれば構成可能
+です。最後のまとめに GRE モードの構築について少し触れています。</p>
+
+<h2 id="構成">構成</h2>
+
+<pre><code>                                                                                 public network
++----------------+----------------+----------------+----------------+----------------
+|                |                |                                  
++--------------+ +--------------+ +--------------+ +--------------+ +--------------+
+| controller01 | |  network01   | |  network02   | |  compute01   | |  compute02   |
++--------------+ +-------+------+ +-------+------+ +-------+------+ +-------+------+
+|                |       |        |       |        |       |        |       |    management network
++----------------+-------o--------+-------o--------+-------o--------+-------o--------
+                         |                |                |                |    vm network
+                         +----------------+----------------+----------------+--------
+</code></pre>
+
+<p>特徴は&hellip;</p>
+
+<ul>
+<li>network ノード 2台 (何台でも可)</li>
+<li>compute ノード 2台 (何台でも可)</li>
+<li>api ネットワークは management ネットワーク上に展開 (別けても可)</li>
+<li>controller ノードは1台 (ha な cookbooks を使うので2台構成も可)</li>
+<li>図には表現されていませんが management ネットワーク上に Chef ワークステーションと Chef サーバが必要</li>
+</ul>
+
+<h2 id="物理-nic-のマッピング情報">物理 NIC のマッピング情報</h2>
+
+<ul>
+<li>controller : management(eth0), public(eth1)</li>
+<li>network : management(eth0), vm(eth1), public(eth2)</li>
+<li>compute : management(eth0), vm(eth1)</li>
+</ul>
+
+<h2 id="前提のネットワークセグメント情報">前提のネットワークセグメント情報</h2>
+
+<p>ここでは仮に下記のネットワークセグメントを前提として手順を記します。</p>
+
+<ul>
+<li>public ネットワーク : 10.0.0.0/24</li>
+<li>vm ネットワーク : 10.0.1.0/24</li>
+<li>management(api) ネットワーク : 10.0.2.0/24</li>
+</ul>
+
+<h2 id="デプロイの準備">デプロイの準備</h2>
+
+<p>Chef 的なワークステーション端末から操作を行います。皆さんの使っているノート PC 等で OK です。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ~/chef-repo
+% cd ~/chef-repo
+</code></pre>
+
+<p>v4.0.0 (安定した最新版) を利用します。</p>
+
+<pre><code class="language-bash">% git checkout v4.0.0
+% git submodule init
+% git submodule sync
+% git submodule update
+</code></pre>
+
+<p>Chef サーバに Cookbooks をアップロードします。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
+</code></pre>
+
+<p>Chef サーバに Roles をアップロードします。</p>
+
+<pre><code class="language-bash">% knife role from file roles/*rb
+</code></pre>
+
+<p>environment を json 形式で生成します。これは各 Cookbooks の attributes を上書きし、一つの構成
+を作るために用いられます。</p>
+
+<pre><code class="language-json">% ${EDITOR} environments/env-neutron.json
+{
+  &quot;name&quot;: &quot;env-neutron&quot;,
+  &quot;description&quot;: &quot;&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;package_component&quot;: &quot;grizzly&quot;,
+    &quot;osops_networks&quot;: {
+      &quot;management&quot;: &quot;10.0.2.0/24&quot;,
+      &quot;public&quot;: &quot;10.0.0.0/24&quot;,
+      &quot;nova&quot;: &quot;10.0.2.0/24&quot;
+    },
+    &quot;nova&quot;: {
+      &quot;config&quot;: {
+        &quot;use_single_default_gateway&quot;: false,
+        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
+        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
+      },
+      &quot;network&quot;: {
+        &quot;provider&quot;: &quot;quantum&quot;,
+        &quot;network_type&quot;: &quot;vlan&quot;
+      },
+      &quot;apply_patches&quot;: true,
+      &quot;libvirt&quot;: {
+        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
+        &quot;virt_type&quot;: &quot;kvm&quot;
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;nova&quot;
+      },
+      &quot;services&quot;: {
+        &quot;novnc-proxy&quot;: {
+          &quot;network&quot;: &quot;public&quot;
+        }
+      }
+    },
+    &quot;cinder&quot;: {
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;cinder&quot;
+      }
+    },
+    &quot;keystone&quot;: {
+      &quot;admin_user&quot;: &quot;admin&quot;,
+      &quot;tenants&quot;: [
+        &quot;admin&quot;,
+        &quot;service&quot;
+      ],
+      &quot;users&quot;: {
+        &quot;admin&quot;: {
+          &quot;password&quot;: &quot;secrete&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [
+              &quot;admin&quot;
+            ]
+          }
+        },
+        &quot;demo&quot;: {
+          &quot;password&quot;: &quot;demo&quot;,
+          &quot;default_tenant&quot; : &quot;service&quot;,
+          &quot;roles&quot;: {
+            &quot;service&quot;: [ &quot;service&quot; ]
+          }
+        }
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;keystone&quot;
+      }
+    },
+    &quot;horizon&quot;: {
+      &quot;theme&quot;: &quot;Default&quot;,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;horizon&quot;
+      }
+    },
+    &quot;mysql&quot;: {
+      &quot;root_network_acl&quot;: &quot;%&quot;,
+      &quot;allow_remote_root&quot;: true,
+      &quot;server_root_password&quot;: &quot;secrete&quot;,
+      &quot;server_repl_password&quot;: &quot;secrete&quot;,
+      &quot;server_debian_password&quot;: &quot;secrete&quot;
+    },
+    &quot;monitoring&quot;: {
+      &quot;procmon_provider&quot;: &quot;monit&quot;,
+      &quot;metric_provider&quot;: &quot;collectd&quot;
+    },
+    &quot;glance&quot;: {
+      &quot;images&quot;: [
+        &quot;precise&quot;, &quot;cirros&quot;
+      ],
+      &quot;image&quot;: {
+      },
+      &quot;image_upload&quot;: false,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;glance&quot;
+      }
+    },
+    &quot;quantum&quot;: {
+      &quot;service_pass&quot;: &quot;quantum&quot;,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;quantum&quot;
+      }
+    },
+    &quot;developer_mode&quot;: false
+  }
+}
+</code></pre>
+
+<p>生成した environment ファイルを Chef サーバにアップロードします。</p>
+
+<pre><code class="language-bash">% knife environment from file environments/env-neutron.json
+</code></pre>
+
+<h2 id="デプロイ">デプロイ</h2>
+
+<p>各ノード、下記の通りデプロイします。</p>
+
+<h4 id="controller-ノード">controller ノード</h4>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_of_controller01&gt; -N controller01 -r \
+  'role[ha-controller1]','role[cinder-volume]' -E env-neutron --sudo -x &lt;your_accout&gt;
+</code></pre>
+
+<p>cinder-volumes 用のディスクがある場合は下記の手順で Cinder が利用できるように
+なります。</p>
+
+<pre><code class="language-bash">% sudo pvcreate /dev/sdb #デバイス名は仮
+% sudo vgcreate cinder-volumes /dev/sdb
+% sudo service cinder-volume restart
+</code></pre>
+
+<h4 id="network-ノード">network ノード</h4>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_of_network01&gt; -N network01 -r \
+  'role[single-network-node]','recipe[nova-network::quantum-l3-agent]' \
+  -E env-neutron --sudo -x &lt;your_account&gt;
+</code></pre>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_of_network02&gt; -N network02 -r \
+  'role[single-network-node]','recipe[nova-network::quantum-l3-agent]' \
+  -E env-neutron --sudo -x &lt;your_account&gt;
+</code></pre>
+
+<h4 id="compute-ノード">compute ノード</h4>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_of_compute01&gt; -N compute01 -r 'role[single-compute]' \
+  -E env-neutron --sudo -x &lt;your_account&gt;
+</code></pre>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_of_compute02&gt; -N compute02 -r 'role[single-compute]' \
+  -E env-neutron --sudo -x &lt;your_account&gt;
+</code></pre>
+
+<h2 id="物理-nic-のブリッジインターフェースへのマッピング操作">物理 NIC のブリッジインターフェースへのマッピング操作</h2>
+
+<p>Open vSwitch が管理しているブリッジインターフェースと物理インターフェースをマッ
+ピングしてあげます。</p>
+
+<p>network ノードの2台にて下記の操作を行います。</p>
+
+<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
+% sudo ovs-vsctl add-port br-ex eth2
+</code></pre>
+
+<p>compute ノードの2台にて下記の操作を行います。</p>
+
+<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
+</code></pre>
+
+<h2 id="仮想ネットワークと仮想マシンの生成">仮想ネットワークと仮想マシンの生成</h2>
+
+<p>環境によって仮想ネットワークの構成が異なりますので手順は割愛しますが、Horizon
+かコマンドライン・API を使って仮想ネットワークを生成し仮想マシンを接続すれば完
+了です。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>network ノードを2台構成にしましたが何が嬉しいかと言うと、l3-agent, dhcp-agent
+を冗長取ることが可能になります。障害時、手作業になりますが切り替えが可能です。
+l3-agent は仮想ルータ毎に、dhcp-agent は仮想ネットワーク毎に切り替えが可能です。
+詳しくは私の以前の記事を参考にしてください。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/">http://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/</a></p>
+
+<p>また、compute ノードを更に増やせば仮想マシンの数を増やすことが出来ます。</p>
+
+<p>今回は controller ノードを1台構成にしましたが、更に下記の手順で controller02
+ノードを増やし controller ノードの HA 化を行うことも出来ます。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_of_controller02&gt; -N controller02 -r \
+  'role[ha-controller1]' -E env-neutron --sudo -x &lt;your_accout&gt;
+</code></pre>
+
+<p>HA 構成を各々のノードに構成させるため各ノードで chef-client を1回ずつ実行しま
+す。</p>
+
+<pre><code class="language-bash">controller01% sudo chef-client
+controller02% sudo chef-client
+</code></pre>
+
+<p>HA 構成は haproxy, keepalived で形成されています。</p>
+
+<p>また、environment ファイルを下記のように修正すると VLAN の代わりに GRE トンネ
+ルが扱えます。</p>
+
+<pre><code class="language-json">&quot;nova&quot;: {
+  &quot;network&quot;: {
+    &quot;provider&quot;: &quot;quantum&quot;,
+    &quot;network_type&quot;: &quot;gre&quot;
+  }
+},
+
+&lt;snip&gt;...
+
+&quot;quantum&quot;: {
+  &quot;ovs&quot;: {
+    &quot;network_type&quot; : &quot;gre&quot;,
+    &quot;tunnnel_range&quot; : &quot;1:1000&quot;
+  }
+},
+</code></pre>
+
+<p>以上です。roles ディレクトリ配下に様々な Roles があるので、各コンポーネント毎
+にノードを別けるなどの構成も可能そうです。皆さん試してみてください。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/08/16/rcbops-cookbooks-neutron-openstack/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -757,251 +1133,6 @@ nodes:
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/07/28/cobbler-os-automation-install/">Cobbler で OS 自動インストール</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-07-28'>
-            July 28, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>最近、自動化は正義だと最近思うのですが、その手助けをしてくれるツール Cobbler
-を試してみました。Cobbler と複数 OS, ディストリビューションを CLI, GUI で管理出
-来るツールです。PXE, TFTP, DHCPを組分せれば OS の自動構築が出来るのは古くから
-ありますが、TFTP サーバに配置するカーネルイメージやマックアドレスの管理を一元
-して管理してくれるのがこの Cobbler です。</p>
-
-<p>今回は Cobbler の構築方法をお伝えします。本当は Chef Cookbooks で構築したかっ
-たのですが Opscode Community にある Cookbooks はイマイチだったので、今回は手動
-で。</p>
-
-<h2 id="前提環境">前提環境</h2>
-
-<ul>
-<li>OS は CentOSを。Ubuntu を利用すると DHCP のコンフィギュレーションを自動で出
-来ません</li>
-<li>利用するネットワークの DHCP はオフにします</li>
-</ul>
-
-<h2 id="構築手順">構築手順</h2>
-
-<p>SELINUX を無効にします。石◯さん、ごめんなさい。</p>
-
-<pre><code class="language-bash"># ${EDITOR} /etc/sysconfig/selinux
-SELINUX=disabled
-# setenforce 0
-</code></pre>
-
-<p>EPEL のレポジトリを追加します。</p>
-
-<pre><code class="language-bash"># rpm -Uvh http://ftp.iij.ad.jp/pub/linux/fedora/epel/6/x86_64/epel-release-6-8.noarch.rpm
-</code></pre>
-
-<p>cobbler をインストールします。またその他必要なパッケージもここでインストールし
-ます。</p>
-
-<pre><code class="language-bash"># yum install cobbler debmirror pykickstart
-</code></pre>
-
-<p>自分の設定したいパスワードを生成して /etc/cobbler/settings 内の
-default_password_crypted: に設定します。パスワードの生成は下記のように openssl
-コマンドを利用します。</p>
-
-<pre><code class="language-bash">% openssl passwd -1
-</code></pre>
-
-<p>/etc/cobbler/settings 内の下記のパラメータについて設定します。manage_dhcp: は
-1 にしておくと、Cobbler が自動で ISC DHCP の設定も書き換えてくれるので、ほぼ必
-須の設定です。</p>
-
-<pre><code>server: &lt;自ホストの IP&gt;
-next_server: &lt;自ホストの IP&gt;
-manage_dhcp: 1
-</code></pre>
-
-<p>/etc/cobbler/dhcp.template を設定します。自分のネットワーク環境に合わせて設定
-します。</p>
-
-<pre><code>subnet 192.168.1.0 netmask 255.255.255.0 {
-     option routers             192.168.1.254;
-     option domain-name-servers 8.8.8.8,8.8.4.4;
-     option subnet-mask         255.255.255.0;
-     range dynamic-bootp        192.168.1.120 192.168.1.150;
-     default-lease-time         21600;
-     max-lease-time             43200;
-     next-server                $next_server;
-     class &quot;pxeclients&quot; {
-          match if substring (option vendor-class-identifier, 0, 9) = &quot;PXEClient&quot;;
-          if option pxe-system-type = 00:02 {
-                  filename &quot;ia64/elilo.efi&quot;;
-          } else if option pxe-system-type = 00:06 {
-                  filename &quot;grub/grub-x86.efi&quot;;
-          } else if option pxe-system-type = 00:07 {
-                  filename &quot;grub/grub-x86_64.efi&quot;;
-          } else {
-                  filename &quot;pxelinux.0&quot;;
-          }
-     }
-}
-</code></pre>
-
-<p>/etc/xinetd.d/rsync の disable = yes を no に設定します。</p>
-
-<pre><code class="language-bash"># ${EDITOR} /etc/xinetd.d/rsync
-&lt;snip&gt;
-    disable = no
-&lt;snip&gt;
-</code></pre>
-
-<p>サービスを起動します。</p>
-
-<pre><code class="language-bash"># service cobbler start
-# service dhcpd start
-# service httpd start
-# service xinetd start
-</code></pre>
-
-<p>OS 起動時に各サービスが起動するよう設定します。</p>
-
-<pre><code class="language-bash"># chkconfig cobbler on
-# chkconfig dhcpd on
-# chkconfig httpd on
-# chkconfig xinetd on
-</code></pre>
-
-<p>iptables をオフにします。</p>
-
-<pre><code class="language-bash"># service iptables stop
-# chkconfig iptables off
-</code></pre>
-
-<p>構築は完了です。</p>
-
-<h2 id="ディストリビューションのインポート">ディストリビューションのインポート</h2>
-
-<p>ここではテストで Ubuntu Server 12.04 amd64 をインポートしてみます。</p>
-
-<p>ダウンロードしてきたインストール ISO をマウントします。</p>
-
-<pre><code class="language-bash"># mount -t iso9660 -o loop,ro /path/to/Image.iso /mnt
-</code></pre>
-
-<p>インポートします。</p>
-
-<pre><code class="language-bash"># cobbler import --name=ubuntu1204 --arch=x86_64 --path=/mnt
-</code></pre>
-
-<p>Debian 系の Ubuntu は x86_64 ではなく通常 amd64 と記しますが、Cobbler が
-CentOS, RHEL を前提に開発されているので x86_64 と記します。注意してください。</p>
-
-<p>インポートされたか確認します。</p>
-
-<pre><code class="language-bash"># cobbler distro list
-# cobbler profile list
-</code></pre>
-
-<p>ここでは自分の作成した preseed.cfg を使いたいのでその設定を行います。この操作
-は行わなくても構いませんが、preseed.cfg 内で自分の環境に合わせて色々したいと思
-うので、行なっておくと便利です。予め preseed.cfg は作成する必要ありますが。</p>
-
-<pre><code class="language-bash"># cp /path/to/preseed.cfg /var/lib/cobbler/kickstarts/ubuntu1204-preseed.cfg
-# cobbler profile edit --name=ubuntu1204-x86_64 \
- --kickstart=/var/lib/cobbler/kickstarts/ubuntu1204-preseed.cfg \
- --kopts=&quot;priority=critical locale=en_US&quot;
-</code></pre>
-
-<h2 id="インストールターゲットマシンの登録">インストールターゲットマシンの登録</h2>
-
-<p>インストールターゲットのマシンを登録します。予め NIC の Mac アドレスを用意して
-ください。</p>
-
-<pre><code class="language-bash"># cobbler system add --name=foo --profile=ubuntu1204-x86_64
-# cobbler system edit --name=foo --interface=eth0 \
- --mac=00:1c:25:72:1f:79 --ip-address=192.168.1.120 --netmask \
- 255.255.255.0 --static=0
-# cobbler system edit --name=foo -gateway=192.168.1.254 --hostname=foo
-</code></pre>
-
-<p>こちらもネットワーク環境に合わせて gateway や netmask の情報を記してください。</p>
-
-<h2 id="ターゲットマシンのインストール">ターゲットマシンのインストール</h2>
-
-<p>PXE ブートするだけです。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>&lsquo;cobbler-web&rsquo; の設定は今回は説明しませんでした、慣れている人なら CLI のほうがい
-いと思うので &lsquo;cobbler&rsquo; パッケージだけでも十分だと思います。</p>
-
-<p>Cobbler は CentOS, RHEL を中心に考えられたツールなので Debian 系への対応がイマ
-イチでした。あと、import する時にコケることがあります。コケる理由がエラーメッ
-セージとして表示されないものもあるので、ちょっと苦労します。</p>
-
-<p>ただ管理する・新しいターゲット・ディストリビューションの登録を容易にしてくれる
-ツールとしてはとても有用です。今、この辺りの操作であれば Chef で出来ないかな？
-と考えている最中です。と言うか既に Cookbooks を用意し始めています。Chef でシン
-プルな PXE インストール環境を作った方が多くのディストリビューションに対応出来
-そうですし、やる意味あるかな？と思っています。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/07/28/cobbler-os-automation-install/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1118,6 +1249,20 @@ CentOS, RHEL を前提に開発されているので x86_64 と記します。�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-25'>
+                                    July 25, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
                                 
                                     
@@ -1157,20 +1302,6 @@ CentOS, RHEL を前提に開発されているので x86_64 と記します。�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-06-21'>
-                                    June 21, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1205,7 +1336,7 @@ CentOS, RHEL を前提に開発されているので x86_64 と記します。�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">101</span>
+                                <span style="float:right;">102</span>
                             </header>
                         </article>
                     </li>

@@ -6,8 +6,109 @@
     <description>Recent content in Posts on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 23 Jul 2016 02:40:11 +0900</lastBuildDate>
+    <lastBuildDate>Mon, 25 Jul 2016 23:18:16 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/post/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Minikube で簡易 kubernetes 環境構築</title>
+      <link>http://jedipunkz.github.io/blog/2016/07/25/minikube/</link>
+      <pubDate>Mon, 25 Jul 2016 23:18:16 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/07/25/minikube/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;kubernetes の環境を簡易的に作れる Minikube (&lt;a href=&#34;https://github.com/kubernetes/minikube&#34;&gt;https://github.com/kubernetes/minikube&lt;/a&gt;) が2ヶ月前ほどにリリースになっていました。簡単ですが少し触ってみたのでその際のメモを記したいと思います。VirtualBox もしくは VMware Fusion がインストールされていればすぐにでも稼働可能です。私は Kubernetes 初心者ですが何も考えずに kubernetes を動かすことが出来ました。&lt;/p&gt;
+
+&lt;h2 id=&#34;前提&#34;&gt;前提&lt;/h2&gt;
+
+&lt;p&gt;前提として下記の環境が必要になります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Mac OSX がインストールされていること&lt;/li&gt;
+&lt;li&gt;VirtualBox もしくは VMware Fusion がインストールされていること&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;minikube-をインストール&#34;&gt;minikube をインストール&lt;/h2&gt;
+
+&lt;p&gt;minikube をインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.6.0/minikube-darwin-amd64 &amp;amp;&amp;amp; chmod +x minikube &amp;amp;&amp;amp; sudo mv minikube /usr/local/bin/
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;kubetl-をインストール&#34;&gt;kubetl をインストール&lt;/h2&gt;
+
+&lt;p&gt;次に kubectl をインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ curl -k -o kubectl https://kuar.io/darwin/kubectl &amp;amp;&amp;amp; chmod +x kubectl &amp;amp;&amp;amp; sudo mv kubectl /usr/local/bin/
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;minikube-で-kurbernates-を稼働&#34;&gt;Minikube で Kurbernates を稼働&lt;/h2&gt;
+
+&lt;p&gt;Minikube を使って Kubernetes を稼働してみます。下記のコマンドを実行すると Virtualbox 上で仮想マシンが稼働し Kubernetes 一式も立ち上がります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ minikube start
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;kurbernates-を使ってみる&#34;&gt;Kurbernates を使ってみる&lt;/h2&gt;
+
+&lt;p&gt;Pods を立ち上げてみましょう。下記の内容を redis-django.yaml ファイルに保存します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;apiVersion: v1
+kind: Pod
+metadata:
+  name: redis-django
+  labels:
+    app: web
+spec:
+  containers:
+    - name: key-value-store
+      image: redis
+      ports:
+        - containerPort: 6379
+    - name: frontend
+      image: django
+      ports:
+        - containerPort: 8000
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;kubectl コマンドで Pod を立ち上げます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f ./redis-django.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Pod の様子を確認します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get pods
+NAME           READY     STATUS             RESTARTS   AGE
+redis-django   1/2       CrashLoopBackOff   7          15m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Minikube はクラスタといってもノードが1つなので READY &lt;sup&gt;1&lt;/sup&gt;&amp;frasl;&lt;sub&gt;2&lt;/sub&gt; となるようです。Nodes の様子を見てみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get nodes
+NAME         LABELS                                                                                        STATUS
+minikubevm   beta.kubernetes.io/arch=amd64,beta.kubernetes.io/os=linux,kubernetes.io/hostname=minikubevm   Ready
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Docker ホスト上の様子を見てみましょう。Kubernetes を形成するコンテナと共に redis のコンテナが稼働していることが確認できます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ eval $(minikube docker-env)
+$ docker ps
+CONTAINER ID        IMAGE                                                  COMMAND                  CREATED             STATUS              PORTS               NAMES
+550285614e33        redis                                                  &amp;quot;docker-entrypoint.sh&amp;quot;   20 minutes ago      Up 20 minutes                           k8s_key-value-store.a3b8356e_redis-django_default_4440a1d8-5272-11e6-9f19-6e0006e7fb51_90c3fec8
+aba3a8c040d4        gcr.io/google_containers/pause-amd64:3.0               &amp;quot;/pause&amp;quot;                 20 minutes ago      Up 20 minutes                           k8s_POD.822b267d_redis-django_default_4440a1d8-5272-11e6-9f19-6e0006e7fb51_5bef1d2a
+9ea96a3f3e10        gcr.io/google-containers/kube-addon-manager-amd64:v2   &amp;quot;/opt/kube-addons.sh&amp;quot;    48 minutes ago      Up 48 minutes                           k8s_kube-addon-manager.a1c58ca2_kube-addon-manager-minikubevm_kube-system_48abed82af93bb0b941173334110923f_84f4fd38
+192e886a5795        gcr.io/google_containers/pause-amd64:3.0               &amp;quot;/pause&amp;quot;                 48 minutes ago      Up 48 minutes                           k8s_POD.d8dbe16c_kube-addon-manager-minikubevm_kube-system_48abed82af93bb0b941173334110923f_6c65b482
+7b005c68d9d4        gcr.io/google_containers/pause-amd64:3.0               &amp;quot;/pause&amp;quot;                 48 minutes ago      Up 48 minutes                           k8s_POD.2225036b_kubernetes-dashboard-pzdxy_kube-system_7005dce1-479a-11e6-a0ce-86b669e45864_c08bd009
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;Kubernetes のことを殆ど知らない私でもなんとなくですが稼働させて基本的な操作が出来ました。2016/5/31 にリリースされたツールなのでまだ安定しないところもありますが、より容易に Kubernetes が稼働できるようになったのでエンジニアの敷居が下がったのではないでしょうか。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>Go言語とInfluxDBで監視のコード化</title>
@@ -3947,223 +4048,6 @@ Chef サーバ構成にする必要が出てきます。&lt;/p&gt;
 &lt;p&gt;参考 URL : &lt;a href=&#34;http://superuser.openstack.org/articles/openstack-user-survey-insights-november-2014&#34;&gt;http://superuser.openstack.org/articles/openstack-user-survey-insights-november-2014&lt;/a&gt;&lt;/p&gt;
 
 &lt;p&gt;ちなみに、Puppet を使った OpenStack デプロイも個人的に色々試しています。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>MidoStack を動かしてみる</title>
-      <link>http://jedipunkz.github.io/blog/2014/11/04/midostack/</link>
-      <pubDate>Tue, 04 Nov 2014 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2014/11/04/midostack/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;昨晩 Midokura さんが Midonet を OSS 化したとニュースになりました。公式サイトは
-下記の URL になっています。Midonet は OpenStack Neutron のプラグインとして動作
-するソフトウェアです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://www.midonet.org&#34;&gt;http://www.midonet.org&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;下記のGithub 上でソースを公開しています。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/midonet&#34;&gt;https://github.com/midonet&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;本体の midonet と共に midostack というレポジトリがあってどうやら公式サイトの
-QuickStart を見ても devstack を交えての簡単な midonet の動作が確認できそう。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/midonet/midostack&#34;&gt;https://github.com/midonet/midostack&lt;/a&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;早速使ってみる&#34;&gt;早速使ってみる&lt;/h2&gt;
-
-&lt;p&gt;早速 midostack を使って midonet を体験してみましょう。QuickStart には
-Vagrant + VirtualBox を用いた使い方が改定ありますが手元の PC 端末だとリソース
-が足らなくて CirrOS VM 一個すら立ち上がりませんでした。よって普通にリソースの
-沢山あるサーバで稼働してみます。Vagrantfile 見ても&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;config.vm.synced_folder &amp;quot;./&amp;quot;, &amp;quot;/midostack&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;としているだけなので、Vagrant ではなくても大丈夫でしょう。&lt;/p&gt;
-
-&lt;p&gt;Ubuntu Server 14.04 をインストールしたマシンを用意して midostack を取得します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% git clone https://github.com/midonet/midostack.git
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;midonet_stack.sh を実行します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% cd midostack
-% ./midonet_stack.sh
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;暫く待つと Neutron Middonet Plugin が有効になった OpenStack が立ち上がります。
-Horizon にアクセスしましょう。ユーザ名 : admin, パスワード : gogomid0 (デフォ
-ルト) です。&lt;/p&gt;
-
-&lt;p&gt;VM も普通に立ち上がりますし VM 同士の通信も良好です。&lt;/p&gt;
-
-&lt;h2 id=&#34;neutron-プロセスを確認する&#34;&gt;Neutron プロセスを確認する&lt;/h2&gt;
-
-&lt;p&gt;Neutron-Server は下記のように立ち上がっています。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;16229 pts/13   S+     0:06 python /usr/local/bin/neutron-server --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/midonet/midonet.ini
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;/etc/neutron/neutron.conf の midonet の指定はこんな感じ。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;core_plugin = midonet.neutron.plugin.MidonetPluginV2
-api_extensions_path = /opt/stack/midonet/python-neutron-plugin-midonet/midonet/neutron/extensions
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に /etc/neutron/plugins/midonet/midonet.ini を確認してみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;[midonet]
-# MidoNet API server URI
-# midonet_uri = http://localhost:8080/midonet-api
-
-# MidoNet admin username
-# username = admin
-
-# MidoNet admin password
-# password = passw0rd
-
-# ID of the project that MidoNet admin user belongs to
-# project_id = 77777777-7777-7777-7777-777777777777
-
-# Virtual provider router ID
-# provider_router_id = 00112233-0011-0011-0011-001122334455
-
-# Path to midonet host uuid file
-# midonet_host_uuid_path = /etc/midolman/host_uuid.properties
-
-[MIDONET]
-project_id = admin
-password = gogomid0
-username = admin
-midonet_uri = http://localhost:8081/midonet-api
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;midonet-api-にアクセスする&#34;&gt;Midonet API にアクセスする&lt;/h2&gt;
-
-&lt;p&gt;Midonet API のリファレンスが下記の URL で公開されていました。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://docs.midonet.org/docs/v1.8/rest-api/api/rest-api-specification.html&#34;&gt;http://docs.midonet.org/docs/v1.8/rest-api/api/rest-api-specification.html&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;早速使ってみましょう。まず Token を得ます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;curl -i &#39;http://127.0.0.1:5000/v2.0/tokens&#39; -X POST -H &amp;quot;Content-Type: application/json&amp;quot; -H &amp;quot;Accept: application/json&amp;quot;  -d &#39;{&amp;quot;auth&amp;quot;: {&amp;quot;tenantName&amp;quot;: &amp;quot;admin&amp;quot;, &amp;quot;passwordCredentials&amp;quot;: {&amp;quot;username&amp;quot;: &amp;quot;admin&amp;quot;, &amp;quot;password&amp;quot;: &amp;quot;gogomid0&amp;quot;}}}&#39;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Token ID を取得したら &amp;ldquo;/&amp;rdquo; に対してアクセスしてみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -i -X GET http://localhost:8081/midonet-api/ -H &amp;quot;User-Agent: python-keystoneclient&amp;quot; -H &amp;quot;X-Auth-Token: &amp;lt;TokenID&amp;gt;&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;レスポンス&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
-&amp;quot;routerTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/routers/{id}&amp;quot;,
-&amp;quot;portTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/ports/{id}&amp;quot;,
-&amp;quot;vipTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/vips/{id}&amp;quot;,
-&amp;quot;poolTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/pools/{id}&amp;quot;,
-&amp;quot;healthMonitorTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/health_monitors/{id}&amp;quot;,
-&amp;quot;healthMonitors&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/health_monitors&amp;quot;,
-&amp;quot;loadBalancers&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/load_balancers&amp;quot;,
-&amp;quot;ipAddrGroupTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/ip_addr_groups/{id}&amp;quot;,
-&amp;quot;tenants&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/tenants&amp;quot;,
-&amp;quot;tenantTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/tenants/{id}&amp;quot;,
-&amp;quot;portGroupTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/port_groups/{id}&amp;quot;,
-&amp;quot;loadBalancerTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/load_balancers/{id}&amp;quot;,
-&amp;quot;poolMemberTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/pool_members/{id}&amp;quot;,
-&amp;quot;hostVersions&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/versions&amp;quot;,
-&amp;quot;version&amp;quot;: &amp;quot;v1.7&amp;quot;,
-&amp;quot;bridgeTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/bridges/{id}&amp;quot;,
-&amp;quot;hostTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/hosts/{id}&amp;quot;,
-&amp;quot;uri&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/&amp;quot;,
-&amp;quot;vteps&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/vteps&amp;quot;,
-&amp;quot;tunnelZoneTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/tunnel_zones/{id}&amp;quot;,
-&amp;quot;ipAddrGroups&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/ip_addr_groups&amp;quot;,
-&amp;quot;writeVersion&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/write_version&amp;quot;,
-&amp;quot;chainTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/chains/{id}&amp;quot;,
-&amp;quot;vtepTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/vteps/{ipAddr}&amp;quot;,
-&amp;quot;adRouteTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/ad_routes/{id}&amp;quot;,
-&amp;quot;bgpTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/bgps/{id}&amp;quot;,
-&amp;quot;hosts&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/hosts&amp;quot;,
-&amp;quot;routeTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/routes/{id}&amp;quot;,
-&amp;quot;ruleTemplate&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/rules/{id}&amp;quot;,
-&amp;quot;systemState&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/system_state&amp;quot;,
-&amp;quot;vips&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/vips&amp;quot;,
-&amp;quot;pools&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/pools&amp;quot;,
-&amp;quot;routers&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/routers&amp;quot;,
-&amp;quot;bridges&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/bridges&amp;quot;,
-&amp;quot;chains&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/chains&amp;quot;,
-&amp;quot;portGroups&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/port_groups&amp;quot;,
-&amp;quot;poolMembers&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/pool_members&amp;quot;,
-&amp;quot;tunnelZones&amp;quot;: &amp;quot;http://localhost:8081/midonet-api/tunnel_zones&amp;quot;
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;なんとなく引数にこれらの文字列を渡せばいいのだなと分かります。&lt;/p&gt;
-
-&lt;p&gt;次に neutron の管理している subnets を確認してみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% curl -i -X GET http://localhost:8081/midonet-api/neutron/subnets -H &amp;quot;User-Agent: python-keystoneclient&amp;quot; -H &amp;quot;X-Auth-Token: &amp;lt;TokenID&amp;gt;&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;レスポンス&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;[
-  {
-    &amp;quot;enable_dhcp&amp;quot;: false,
-    &amp;quot;tenant_id&amp;quot;: &amp;quot;65f7012145d84ac5afc36572eabe5b09&amp;quot;,
-    &amp;quot;host_routes&amp;quot;: [],
-    &amp;quot;dns_nameservers&amp;quot;: [],
-    &amp;quot;id&amp;quot;: &amp;quot;3dbe5cff-8a8c-4790-85b5-b789d8ede863&amp;quot;,
-    &amp;quot;name&amp;quot;: &amp;quot;public-subnet&amp;quot;,
-    &amp;quot;cidr&amp;quot;: &amp;quot;200.200.200.0/24&amp;quot;,
-    &amp;quot;shared&amp;quot;: false,
-    &amp;quot;ip_version&amp;quot;: 4,
-    &amp;quot;network_id&amp;quot;: &amp;quot;45269fba-e32f-40b0-a542-f5cfe34ce1a1&amp;quot;,
-    &amp;quot;gateway_ip&amp;quot;: &amp;quot;200.200.200.1&amp;quot;,
-    &amp;quot;allocation_pools&amp;quot;: [
-      {
-        &amp;quot;last_ip&amp;quot;: null,
-        &amp;quot;first_ip&amp;quot;: null
-      }
-    ]
-  },
-  {
-    &amp;quot;enable_dhcp&amp;quot;: true,
-    &amp;quot;tenant_id&amp;quot;: &amp;quot;f34b4398015546b8b84f50c731ed6c51&amp;quot;,
-    &amp;quot;host_routes&amp;quot;: [],
-    &amp;quot;dns_nameservers&amp;quot;: [],
-    &amp;quot;id&amp;quot;: &amp;quot;3dbcf04a-9738-4b1f-b084-76f2a4b17cbc&amp;quot;,
-    &amp;quot;name&amp;quot;: &amp;quot;private-subnet&amp;quot;,
-    &amp;quot;cidr&amp;quot;: &amp;quot;10.0.0.0/24&amp;quot;,
-    &amp;quot;shared&amp;quot;: false,
-    &amp;quot;ip_version&amp;quot;: 4,
-    &amp;quot;network_id&amp;quot;: &amp;quot;2edb78c3-0f23-4e29-a3e6-cc97f55baa6a&amp;quot;,
-    &amp;quot;gateway_ip&amp;quot;: &amp;quot;10.0.0.1&amp;quot;,
-    &amp;quot;allocation_pools&amp;quot;: [
-      {
-        &amp;quot;last_ip&amp;quot;: null,
-        &amp;quot;first_ip&amp;quot;: null
-      }
-    ]
-  }
-]
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;２つのサブネットが確認出来ました。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;勉強不足でまだ全く midonet で出来る事がわからない..汗。でもとりあえず動かせた
-し、API も引っ張れるのでこれから色々試せそうですね。OSS 化されたことで、コミュ
-ニティの間でも使われていくことも想像出来ますし、自分たち技術者としてはとても有
-り難いことでした。&lt;/p&gt;
 </description>
     </item>
     

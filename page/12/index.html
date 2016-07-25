@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2013-11-17T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-11-26T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/"><p>Vagrant で Mesosphere DC/OS を構築</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,169 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/11/26/vyatta-timemachine-netatalk/">Vyatta で Mac 用 TimeMachine サーバ兼ファイルサーバを構築！</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-11-26'>
+            November 26, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>自宅ルータを Vyatta で運用しているのですが、諸電力な筐体に交換した際に HDD ス
+ロットが余っていたので HDD を一本さしてみました。もったいないので Netatalk を
+インストールして Mac 用の TimeMachine サーバにするか！そんでもってファイルサー
+バ兼務にしよう！と思い立って作業したら簡単に出来たので共有します。</p>
+
+<p>Vyatta はご存知の通り Debian Gnu/Linux がベースになっているのでパッケージレポ
+ジトリを追加してちょちょいで設定出来ます。</p>
+
+<h2 id="手順">手順</h2>
+
+<p>電源を通して Disk を追加します。その後起動。私は 3TB Disk が余っていたのでそれ
+を挿しました。</p>
+
+<p>debian wheezy のパッケージレポジトリを Vyatta に追記します。</p>
+
+<pre><code class="language-bash">% configure
+# set system package repository debian url http://ftp.jp.debian.org/debian
+# set system package repository debian distribution wheezy
+# set system package repository debian components &quot;main contrib&quot;
+# commit
+# save
+# exit 
+</code></pre>
+
+<p>netatalk, avahi をインストールする。その際に libgcrypt11 のバージョン 1.5.0 が
+必要になるのでインストールすること。</p>
+
+<pre><code class="language-bash">% sudo apt-get update
+% sudo apt-get install netatalk avahi-daemon avahi-utils libgcrypt11
+</code></pre>
+
+<p>ディスクのパーティショニング・フォーマットを行うために e2fsprogs, gdisk を入れ
+る。2TB オーバーな disk が一般的になったので fdisk ではなく gdisk を使う。</p>
+
+<pre><code class="language-bash">% sudo apt-get install e2fsprogs gdisk
+</code></pre>
+
+<p>パーティショニングを行う。私は1つの大きなパーティションを作りました。その後ファ
+イルシステム ext4 にてフォーマットを行います。</p>
+
+<pre><code class="language-bash">% sudo gdisk /dev/sdb # パーティショニング方法は割愛
+% sudo mkfs.ext4 /dev/sdb1
+</code></pre>
+
+<p>/mnt ディレクトリにマウントします。/mnt/storage をファイルサーバ用,
+/mnt/timemachine を Mac の TimeMachine 用として稼働させるためにディレクトリを
+作成します。</p>
+
+<pre><code class="language-bash">% sudo mount -t ext4 /dev/sdb1 /mnt
+% sudo vi /etc/fstab # /mnt の記述追加
+% sudo mkdir /mnt/storage ; sudo chown &lt;userid&gt;:users /mnt/storage
+% sudo mkdir /mnt/timemachine ; sudo chown &lt;userid&gt;:users /mnt/timemachine
+</code></pre>
+
+<p>/etc/netatalk/apfd.conf を修正します。</p>
+
+<pre><code class="language-diff">% diff /etc/netatalk/apfd.conf.org /etc/netatalk/afpd.conf
+- # - -tcp -noddp -uamlist uams_dhx.so,uams_dhx2.so -nosavepassword
++ - -tcp -noddp -uamlist uams_guest.so,uams_dhx.so,uams_dhx2.so -nosavepassword
+</code></pre>
+
+<p>TimeMachine 用のディレクトリパスに下記のファイルを touch します。中身は空で OK
+です。</p>
+
+<pre><code class="language-bash">% touch /mnt/timemachine/.com.apple.timemachine.supported
+</code></pre>
+
+<p>/etc/netatalk/AppleVolumes.default ファイルにファイルサーバ, TimeMachine 用の
+設定を投入します。TimeMachine 用は下記の通りオプションが必要になります。</p>
+
+<pre><code class="language-bash">% sudo vi /etc/netatalk/AppleVolumes.default # 下記を追記
+/mnt/storage &quot;Storage&quot;
+/mnt/timemachine &quot;TimeMachine&quot; cnidscheme:dbd options:usedots,upriv,tm
+</code></pre>
+
+<p>netatalk を再起動します。</p>
+
+<pre><code class="language-bash">% sudo /etc/init.d/netatalk restart
+</code></pre>
+
+<h2 id="timemachine-を設定する-mac-側の設定">TimeMachine を設定する Mac 側の設定</h2>
+
+<p>今回の様に Apple 公式の TimeCupsule 以外のマシンを TimeMachine のバックアップ
+先として利用する場合、Mac 側で下記の設定が必要になります。</p>
+
+<pre><code class="language-bash">% defaults write com.apple.systempreferences TMShowUnsupportedNetworkVolumes 1
+</code></pre>
+
+<p>あとは &lsquo;環境設定&rsquo; -&gt; &lsquo;TimeMachine&rsquo; にて Vyatta を TimeMachine のバックアップ先
+に指定すれば OK です。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>パッケージレポジトリは Wheezy の main, contrib を設定しましたが他のモノを入れ
+ることも勿論可能。最近の Netatalk は TimeMachine 用の設定が簡単にできるように
+なっていました。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/11/26/vyatta-timemachine-netatalk/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -929,279 +1092,6 @@ kibana を動かすって発想が&hellip;。</p>
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/11/10/serf/">Serf を使ってみた</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-11-10'>
-            November 10, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>僕は Chef 使いなのですが、Chef はオーケストレーションまで踏み込んだツールでは
-ないように思います。せいぜいインテグレーションが出来る程度なのかなぁと。
-しかもインテグレーションするにも Cookbooks の工夫が必要です。以前聞いたことの
-ある話ですが Opscode 社のエンジニア曰く「オーケストレーション等へのアプローチ
-はそれぞれ好きにやってね」だそうです。</p>
-
-<p>個人的にオーケストレーションをテーマに色々調べようかと考えているのですが、
-Serf という面白いツールが出てきました。&rsquo;Serf&rsquo; はオーケストレーションを手助けし
-てくれるシンプルなツールになっています。</p>
-
-<p>もう既にいろんな方が Serf について調べていますが、どのような動きをするのかを自
-分なりに理解した点を記しておこうと思います。</p>
-
-<h2 id="参考にしたサイト">参考にしたサイト</h2>
-
-<ul>
-<li>公式サイト <a href="http://www.serfdom.io/">http://www.serfdom.io/</a></li>
-<li>クラスメソッド開発者ブログ <a href="http://dev.classmethod.jp/cloud/aws/serf_on_ec2/">http://dev.classmethod.jp/cloud/aws/serf_on_ec2/</a></li>
-<li>Glidenote さん <a href="http://blog.glidenote.com/blog/2013/10/30/serf-haproxy/">http://blog.glidenote.com/blog/2013/10/30/serf-haproxy/</a></li>
-</ul>
-
-<h2 id="serf-とは">Serf とは</h2>
-
-<p>Serf は gossip protocol をクラスタにブロードキャストする。gossip protocol は
-SWIM : Scalable Weakly-consistent Infecton-style process Group Membership
-Protocol” をベースとして形成されている。</p>
-
-<h2 id="swim-protocol-概略">SWIM Protocol 概略</h2>
-
-<p>serf は新しいクラスタとして稼働するか、既存のクラスタに ‘join’ する形で稼働
-するかのどちらかで起動する。</p>
-
-<p>新しいメンバは TCP で状態を &lsquo;full state sync&rsquo; され既存のクラスタ内にて
-‘gossipin (噂)される。この ’gosiping’ は UDP で通信されこれはネットワーク使
-用量はノード数に比例することになる。</p>
-
-<p>ランダムなノードとの &lsquo;full state sync&rsquo; は TCP で行われるけどこれは
-‘gossiping’ に比べて少い</p>
-
-<p>ある一定期間、あるノードが fails 状態の場合、迂回経路を使ってそのノードに対し
-てチェックを行う。両方の経路にて fails な場合ノードが ‘suspiciou&rsquo; (容疑者)
-状態になる。もし迂回経路のチェックが fails しなかった場合ネットワーク障害として
-判断される。</p>
-
-<h2 id="serf-の-swim-protocol-からの改修点">Serf の SWIM Protocol からの改修点</h2>
-
-<p>Serf は SWIM Protocol をベースにしていると記しましたが、どのような点を改修した
-のかまとめました。</p>
-
-<ul>
-<li>&lsquo;full state sync&rsquo; の TCP 化</li>
-</ul>
-
-<p>serf は ‘full state sync’ を TCP にて行う。これにより serf はネットワーセグ
-メントが分離されている状態でも通信出来る。</p>
-
-<ul>
-<li>gossip レイヤの分離</li>
-</ul>
-
-<p>serf は failure detection protocol から完全に gossip レイヤを分離。これでより
-高速にデータ増殖が行える。</p>
-
-<ul>
-<li>dead node の扱い
-<br /></li>
-</ul>
-
-<p>serf は デッドノードに対して回数を記憶している。これにより full state sync が
-実施された場合、逆に死んだノードの情報を受取る。SWIM では full state sync を行
-わないので死んだノードにを削除してしまう。これはクラスタに対する情報一点集中化
-に役立つ。</p>
-
-<h2 id="使ってみる">使ってみる</h2>
-
-<p>早速使ってみます。下記の URL にある demo 用スクリプトを少し改修して使ってみま
-した。</p>
-
-<p><a href="https://github.com/hashicorp/serf/tree/master/demo/web-load-balancer">https://github.com/hashicorp/serf/tree/master/demo/web-load-balancer</a></p>
-
-<ul>
-<li>2つノードを立ち上げる</li>
-</ul>
-
-<p>AWS でも OpenStack でもベアメタルでも何でも良いのでノードを2台用意する。</p>
-
-<ul>
-<li>下記のスクリプトを置いて両ノードで実行する。</li>
-</ul>
-
-<pre><code class="language-bash">#!/bin/sh
-set -e
-
-export SERF_ROLE=role01
-
-sudo apt-get install -y unzip
-
-# Download and install Serf
-cd /tmp
-until wget -O serf.zip https://dl.bintray.com/mitchellh/serf/0.2.1_linux_amd64.zip; do
-sleep 1
-done
-unzip serf.zip
-sudo mv serf /usr/local/bin/serf
-
-# The member join script is invoked when a member joins the Serf cluster.
-# Our join script simply adds the node to the load balancer.
-cat &lt;&lt;EOF &gt;/tmp/join.sh
-#!/bin/sh
-echo 'member joined' &gt;&gt; /tmp/serf_join.log
-EOF
-sudo mv /tmp/join.sh /usr/local/bin/serf_member_join.sh
-chmod +x /usr/local/bin/serf_member_join.sh
-
-# Configure the agent
-cat &lt;&lt;EOF &gt;/tmp/agent.conf
-description &quot;Serf agent&quot;
-
-start on runlevel [2345]
-stop on runlevel [!2345]
-
-exec /usr/local/bin/serf agent \\
--event-handler &quot;member-join=/usr/local/bin/serf_member_join.sh&quot; \\
--role=${SERF_ROLE} &gt;&gt;/var/log/serf.log 2&gt;&amp;1
-EOF
-sudo mv /tmp/agent.conf /etc/init/serf.conf
-
-# Start the agent!
-sudo start serf
-</code></pre>
-
-<p>実行すると &lsquo;role01&rsquo; という Role 名で serf agent が稼働しているはず。またスクリ
-プトを見てわかると思うが &ndash;event-handler &ldquo;member-join=&lt;スクリプト&gt;&rdquo; としている。
-これでクラスタに新しいメンバが join すると /tmp/serf_join.log に &lsquo;member
-joined&rsquo; というメッセージが出力されるはずだ。実際に実行してみる。</p>
-
-<pre><code class="language-bash">% sudo serf join &lt;もう片系ノードの IP&gt;
-% sudo serf members
-  vm01    10.0.2.1    alive    role01
-  vm02    10.0.2.3    alive    role01
-% tail /tmp/serf_join.log
-  ‘member joined
-  ‘member joined
-</code></pre>
-
-<p>イベントハンドラにはユーザ指定のものも扱える。</p>
-
-<pre><code>user:deploy=foo.sh
-</code></pre>
-
-<p>この場合のハンドラは下記のコマンドで発生出来る。</p>
-
-<pre><code class="language-bash">% serf event deploy
-</code></pre>
-
-<h2 id="コンフィギュレーションファイル">コンフィギュレーションファイル</h2>
-
-<p>今回は init 起動スクリプト内でイベントハンドラ発生時のスクリプト指定等を行った
-が、json 形式のコンフィギュレーションファイルにて記述することも可能。</p>
-
-<pre><code class="language-json">{
-  &quot;role&quot;: &quot;load-balancer&quot;,
-
-  &quot;event_handlers&quot;: [
-    &quot;member_join.sh&quot;,
-    &quot;user:deploy=foo.sh&quot;
-  ]
-}
-</code></pre>
-
-<p>上記ファイルを serf.conf とした場合、このコンフィグの指定は
-&ndash;config-file=serf.conf で行える。</p>
-
-<h2 id="ロードマップ">ロードマップ</h2>
-
-<p>最後に Serf の今後のロードマップについて記してあったので、まとめてみた。</p>
-
-<ul>
-<li>コンフィギュレーションファイル</li>
-</ul>
-
-<p>よりカスタマイズ可能なコンフィギュレーションファイルを扱えるようにする。</p>
-
-<ul>
-<li>SIGHUP</li>
-</ul>
-
-<p>SIGHUP 信号でリロード出来ないので、これに対応する。</p>
-
-<ul>
-<li>イベントハンドラライブラリ</li>
-</ul>
-
-<p>イベントハンドラを自作・シェアを容易に行えるようプラグイン化を進める。</p>
-
-<h2 id="まとめと考察">まとめと考察</h2>
-
-<p>冒頭にオーケストレーションについて触れましたが、このツールを使うだけでは自分の
-考えているオーケストレーションにはならないと思いました。当たり前ですね。。複数
-ノードを束ねて構成を形成する、またそれをトリガするのが人間であればそれはインテ
-グレーションの範囲かなぁと。その先にオーケストレーションがあるとすればトリガ自
-身もソフトウェアにさせる必要があるのでそのアルゴリズムを人間が書く必要があるの
-かなぁと。もちろんそのためにこのSerf は貴重なパーツとなってくれそう。</p>
-
-<p>あと、ロードマップにも記しましたが開発が盛んにされているようなので今後が楽しみ
-です。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/11/10/serf/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1318,6 +1208,20 @@ joined&rsquo; というメッセージが出力されるはずだ。実際に実
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-25'>
+                                    July 25, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
                                 
                                     
@@ -1357,20 +1261,6 @@ joined&rsquo; というメッセージが出力されるはずだ。実際に実
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/">Vagrant で Mesosphere DC/OS を構築</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-06-21'>
-                                    June 21, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1405,7 +1295,7 @@ joined&rsquo; というメッセージが出力されるはずだ。実際に実
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">101</span>
+                                <span style="float:right;">102</span>
                             </header>
                         </article>
                     </li>
