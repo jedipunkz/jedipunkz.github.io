@@ -77,7 +77,7 @@ influx -host 192.168.99.100 -port 8086
 > CREATE DATABASE IF NOT EXISTS square_holes;
 ```
 
-Go言語でメモリー使用率を取得し InfluxDB にメトリクスデータを挿入
+Go言語で CPU 時間を取得し InfluxDB にメトリクスデータを挿入
 ----
 
 Go 言語でメモリー使用率を取得し得られたメトリクスデータを InfluxDB に挿入するコードを書きます。
@@ -174,6 +174,7 @@ Chronograf の UI で確認してみましょう。
 <img src="http://jedipunkz.github.io/pix/influx-go.png" width="80%">
 
 得られた CPU に関するデータが可視化されていることが確認できます。変化に乏しいグラフですが...。
+この辺りは CPU 時間から CPU 使用率を得るコードに書き換えるといいかもしれません。
 
 まとめと考察
 ----
