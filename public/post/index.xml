@@ -1,13 +1,275 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes" ?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>Posts on ジェダイさんのブログ</title>
-    <link>http://jedipunkz.github.io/post/</link>
-    <description>Recent content in Posts on ジェダイさんのブログ</description>
+    <title>Post-rsses on ジェダイさんのブログ</title>
+    <link>http://jedipunkz.github.io/post/index.xml</link>
+    <description>Recent content in Post-rsses on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Mon, 25 Jul 2016 23:18:16 +0900</lastBuildDate>
+    <lastBuildDate>Thu, 03 Nov 2016 09:08:48 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/post/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>kubernetes1.4 で実装された ScheduledJob を試してみた！</title>
+      <link>http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/</link>
+      <pubDate>Thu, 03 Nov 2016 09:08:48 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/</guid>
+      <description>
+
+&lt;p&gt;こんにちは、@jedipunkz です。今回は Kubernetes1.4 から実装された ScheduledJob を試してみたのでその内容を記したいと思います。&lt;/p&gt;
+
+&lt;p&gt;ScheduledJob はバッチ的な処理を Kubernetes の pod を使って実行するための仕組みです。現在は alpha バージョンとして実装されています。
+kubernetes の pod, service は通常、永続的に立ち上げておくサーバなどを稼働させるものですが、それに対してこの scheduledJob は cron 感覚でバッチ処理を pod に任せることができます。&lt;/p&gt;
+
+&lt;p&gt;Alpha バージョンということで今回の環境構築は minikube を使って簡易的に Mac 上に構築しました。Docker がインストールされていれば Linux でも環境を作れます。&lt;/p&gt;
+
+&lt;h2 id=&#34;参考-url&#34;&gt;参考 URL&lt;/h2&gt;
+
+&lt;p&gt;今回利用する yaml ファイルなどは下記のサイトを参考にしています。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://kubernetes.io/docs/user-guide/scheduled-jobs/&#34;&gt;http://kubernetes.io/docs/user-guide/scheduled-jobs/&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/kubernetes/minikube&#34;&gt;https://github.com/kubernetes/minikube&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;前提の環境&#34;&gt;前提の環境&lt;/h2&gt;
+
+&lt;p&gt;私の環境では下記の環境を利用しました。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Mac OSX&lt;/li&gt;
+&lt;li&gt;Docker-machine or Docker for Mac&lt;/li&gt;
+&lt;li&gt;minikube&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;kubernetes-1-4-以降の構成を-minikube-で構築する&#34;&gt;kubernetes 1.4 以降の構成を minikube で構築する&lt;/h2&gt;
+
+&lt;p&gt;まず minikube のインストールを行います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.12.0/minikube-darwin-amd64 &amp;amp;&amp;amp; chmod +x minikube &amp;amp;&amp;amp; sudo mv minikube /usr/local/bin/
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;早速 minikube を起動します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ docker-machine start default
+$ minikube start
+$ eval $(minikube docker-env)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;google-cloud-の-gke-を利用する場合&#34;&gt;Google Cloud の GKE を利用する場合&lt;/h2&gt;
+
+&lt;p&gt;今回は minikube を使ってローカルマシンに kubernetes 1.4 環境を作りましたが Google Cloud の GKE を用いている場合下記のように gcloud SDK を用いて GKE クラスターノードを構築することで対応できます。ですが Google に確認したところこの構築方法を取った場合には Google からのサポートを得られないのと SLA も対象外になるとのことでした。リスクは大きいと思います。(2016/11現在)&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;gcloud alpha container clusters create alpha-test-cluster --zone asia-northeast1-b --enable-kubernetes-alpha
+gcloud container clusters get-credentials alpha-test-cluster
+gcloud container node-pools create alpha-test-pool --zone asia-northeast1-b --cluster alpha-test-cluster
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;scheduledjob-を試す&#34;&gt;scheduledjob を試す&lt;/h2&gt;
+
+&lt;h4 id=&#34;yaml-ファイルの生成&#34;&gt;yaml ファイルの生成&lt;/h4&gt;
+
+&lt;p&gt;scheduledjob を実行するための yaml ファイルを生成します。公式サイト (&lt;a href=&#34;http://kubernetes.io/docs/user-guide/scheduled-jobs/&#34;&gt;http://kubernetes.io/docs/user-guide/scheduled-jobs/&lt;/a&gt;) にあるものを一部修正して記述しています。ファイル名は sj.yaml とします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;apiVersion: batch/v2alpha1
+kind: ScheduledJob
+metadata:
+  name: hello
+spec:
+  schedule: 0/1 * * * ?
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: busybox
+            args:
+            - /bin/sh
+            - -c
+            - date; echo Hello from the Kubernetes cluster
+          restartPolicy: OnFailure
+  concurrencyPolicy: Allow
+  #suspend: true
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;scheduledjob-の実行&#34;&gt;scheduledJob の実行&lt;/h4&gt;
+
+&lt;p&gt;生成した yaml ファイルを元に kubectl コマンドで scheduledjob を実行します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f ./sj.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;実行したジョブがどのような状況か確認します。下記のコマンドで生成した scheduledjob 一覧が確認できます。
+yaml ファイルの通り、1分間隔で &amp;lsquo;hello&amp;rsquo; という scheduledJob が実行されることが確認できると思います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get scheduledjob
+NAME      SCHEDULE      SUSPEND   ACTIVE    LAST-SCHEDULE
+hello     0/1 * * * ?   False     0         &amp;lt;none&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;scheduledjob を元に実行された(実行される) ジョブ(job) 一覧を確認します。
+1分間隔で実行されている様子が確認できます。また、DESIRED:1 で SUCCESSFUL:0 の行は、1分間隔で実行される直前のジョブとして認識されていることがわかります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get jobs --watch
+NAME               DESIRED   SUCCESSFUL   AGE
+hello-1856276298   1         1            59s
+NAME               DESIRED   SUCCESSFUL   AGE
+hello-1780451143   1         0            0s
+hello-1780451143   1         0         0s
+hello-1780451143   1         1         5s
+hello-1476429627   1         0         0s
+hello-1476429627   1         0         0s
+hello-1476429627   1         1         5s
+hello-1628211009   1         0         0s
+hello-1628211009   1         0         0s
+hello-1628211009   1         1         5s
+hello-1552385854   1         0         0s
+hello-1552385854   1         0         0s
+hello-1552385854   1         1         5s
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;下記のコマンドで実行されたジョブ一覧を取得できます。こちらは結果のみですので SUCCESSFULL=1 のみが表示されています。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get job
+NAME               DESIRED   SUCCESSFUL   AGE
+hello-1476429627   1         1            6m
+hello-1552385854   1         1            4m
+hello-1552516926   1         1            1m
+hello-1628211009   1         1            5m
+hello-1628342081   1         1            2m
+hello-1704167236   1         1            3m
+hello-1704298308   1         1            49s
+hello-1780451143   1         1            7m
+hello-1856276298   1         1            8m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;この際に pod の様子も確認してみます。&amp;ndash;show-all オプションで過去の pod を一覧表示します。今回のジョブは一瞬で実行可能な内容なのでこのオプションを付けないと pod 一覧が取得できない可能性が高いです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get pod --show-all
+NAME                     READY     STATUS      RESTARTS   AGE
+hello-1476429627-pxr06   0/1       Completed   0          8m
+hello-1552385854-y68ci   0/1       Completed   0          6m
+hello-1552516926-ggjpk   0/1       Completed   0          3m
+hello-1628211009-iih0i   0/1       Completed   0          7m
+hello-1628342081-ig5lg   0/1       Completed   0          4m
+hello-1628473153-9wvn4   0/1       Completed   0          1m
+hello-1704167236-zqg94   0/1       Completed   0          5m
+hello-1704298308-eaq8m   0/1       Completed   0          2m
+hello-1780254535-64mah   0/1       Completed   0          28s
+hello-1780451143-tjg8r   0/1       Completed   0          9m
+hello-1856276298-y2o65   0/1       Completed   0          10m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;最終行のジョブ &amp;lsquo;hello-1856276298-y2o65&amp;rsquo; の内容を確認します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl logs hello-1856276298-y2o65
+Thu Oct 27 01:18:11 UTC 2016
+Hello from the Kubernetes cluster
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;sj.yaml 内に記述したジョブ内容 &amp;lsquo;echo &amp;hellip;&amp;rsquo; の実行結果が表示されていることが確認できます。&lt;/p&gt;
+
+&lt;p&gt;docker のイメージも確認します。ジョブ内で指定した image: busybox が確認できます。
+その他のイメージは minikube を構成するものです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ docker images
+REPOSITORY                                            TAG                 IMAGE ID            CREATED             SIZE
+busybox                                               latest              e02e811dd08f        2 weeks ago         1.093 MB
+gcr.io/google_containers/kubernetes-dashboard-amd64   v1.4.0              436faaeba2e2        5 weeks ago         86.27 MB
+gcr.io/google-containers/kube-addon-manager           v5.1                735ce4344f7f        3 months ago        255.8 MB
+gcr.io/google_containers/pause-amd64                  3.0                 99e59f495ffa        5 months ago        746.9 kB
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;ジョブの削除&#34;&gt;ジョブの削除&lt;/h2&gt;
+
+&lt;p&gt;ジョブを削除します。削除する対象は scheduledjob とそれを元に生成・実行された jobs です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl delete scheduledjob hello
+$ kubectl delete jobs $(kubectl get jobs | awk &#39;{print $1}&#39; | grep -v NAME)
+job &amp;quot;hello-1476429627&amp;quot; deleted
+job &amp;quot;hello-1552385854&amp;quot; deleted
+job &amp;quot;hello-1552516926&amp;quot; deleted
+job &amp;quot;hello-1628211009&amp;quot; deleted
+job &amp;quot;hello-1628342081&amp;quot; deleted
+job &amp;quot;hello-1628473153&amp;quot; deleted
+job &amp;quot;hello-1628604225&amp;quot; deleted
+job &amp;quot;hello-1704167236&amp;quot; deleted
+job &amp;quot;hello-1704298308&amp;quot; deleted
+job &amp;quot;hello-1704429380&amp;quot; deleted
+job &amp;quot;hello-1780254535&amp;quot; deleted
+job &amp;quot;hello-1780385607&amp;quot; deleted
+job &amp;quot;hello-1780451143&amp;quot; deleted
+job &amp;quot;hello-1856276298&amp;quot; deleted
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで確認できたのは scheduledjob を削除するとそれ以降の jobs は新規実行されませんでした。が、実行された後の jobs は情報として残ったままでした。&lt;/p&gt;
+
+&lt;h2 id=&#34;その他のオプション&#34;&gt;その他のオプション&lt;/h2&gt;
+
+&lt;h4 id=&#34;concurrencypolicy&#34;&gt;concurrencyPolicy&lt;/h4&gt;
+
+&lt;p&gt;下記のように spec.concurrencyPolicy オプションが指定できます。下記のような value を渡すと実行されるジョブの動作を変えることが可能です。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Allow (Default) : 重複するジョブ実行を許可&lt;/li&gt;
+&lt;li&gt;Forbid : 直前のジョブが終了していない場合ジョブ実行をスキップする&lt;/li&gt;
+&lt;li&gt;Replace : 直前のジョブが終了していない場合新しいジョブを上書きする&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h4 id=&#34;suspend&#34;&gt;suspend&lt;/h4&gt;
+
+&lt;p&gt;&amp;lsquo;spec.suspend: true&amp;rsquo; に設定すると ScheduledJob は生成されますが次回実行時のジョブがサスペンドされ実行されません。デフォルトは false です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get scheduledjob
+NAME      SCHEDULE      SUSPEND   ACTIVE    LAST-SCHEDULE
+hello     0/1 * * * ?   True      0         &amp;lt;none&amp;gt;
+$ kubectl get job
+$
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;オプションの適用例ファイル&#34;&gt;オプションの適用例ファイル&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code&gt;apiVersion: batch/v2alpha1
+kind: ScheduledJob
+metadata:
+  name: hello
+spec:
+  schedule: 0/1 * * * ?
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: busybox
+            args:
+            - /bin/sh
+            - -c
+            - date; echo Hello from the Kubernetes cluster
+          restartPolicy: OnFailure
+  concurrencyPolicy: Forbid
+  suspend: true
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
+
+&lt;p&gt;今回試してみて、バッチ的な処理を kubernetes で行うならこの scheduledJob しかないな、と思いました。
+ですが、2016/11 現在ではまだ Alpha バージョンということで下記のようなリスクを含んでいます。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;このバージョンはバギーです&lt;/li&gt;
+&lt;li&gt;アナウンス無しに機能が削られることがあります&lt;/li&gt;
+&lt;li&gt;アナウンス無しにそれまでの互換性を変更することがあります&lt;/li&gt;
+&lt;li&gt;テスト用としての利用を勧めます。&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;参考サイト : &lt;a href=&#34;http://kubernetes.io/docs/api/&#34;&gt;http://kubernetes.io/docs/api/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;また上記にも記しましたが、ジョブの結果が残っていくため、通常使う cron のように数分間隔で実行しているとあっという間に job の量が大量に肥大化することが予想されます。この job には実行結果も含まれているため、消されるものではないのは理解できるのですが kubernetes api が持っている DB 上に大量のデータが生成され続けてしまうため、kubernetes api/サーバを管理している場合には問題になると思います。この辺り、仕様の修正が入ることを期待しています。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>Minikube で簡易 kubernetes 環境構築</title>
@@ -3585,470 +3847,6 @@ description = &#39;testvol&#39;, volume_type:
 がスッポリ抜けているので、まだ利用するには早いかもです&amp;hellip;。逆に言えばコントリ
 ビューションするチャンスなので、もし気になった方がいたら開発に参加してみるのも
 いいかもしれません。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>Chef-Zero でお手軽に OpenStack Icehouse を作る</title>
-      <link>http://jedipunkz.github.io/blog/2014/11/15/chef-zero-openstack-icehouse/</link>
-      <pubDate>Sat, 15 Nov 2014 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2014/11/15/chef-zero-openstack-icehouse/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;OpenStack Juno がリリースされましたが、今日は Icehouse ネタです。&lt;/p&gt;
-
-&lt;p&gt;icehouse 以降、自分の中で OpenStack を自動で作る仕組みが無くなりつつあり、気軽
-に OpenStack を作って色々試したい！ッていう時に手段が無く困っていました。例え
-ば仕事でちょっと OpenStack 弄りたい！って時に DevStack, RDO しかなく。DevStack
-は御存知の通り動かない可能性が結構あるし RDO は Ubuntu/Debian Gnu Linux ベース
-じゃないし。&lt;/p&gt;
-
-&lt;p&gt;ってことで、以前にも紹介した stackforge 管理の openstack-chef-repo と
-Chef-Zero を使って OpenStack Icehouse (Neutron) のオールインワン構成を作る方法
-を書きます。ちなみに最近 Chef-Solo が Chef-Zero に置き換わりつつあるらしいです。
-Chef-Zero はオンメモリで Chef サーバを起動する仕組みです。Chef-Solo と違って Chef
-サーバを扱う時と何も変更無く操作が出来るのでとても楽です。また、Chef サーバを
-別途構、構築・管理しなくて良いので、気軽に OpenStack が作れます。&lt;/p&gt;
-
-&lt;p&gt;ちなみに stackforge/openstack-chef-repo の README.md に Chef-Zero での構築方法
-が書いてありますが、沢山の問題があります。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;nova-network 構成&lt;/li&gt;
-&lt;li&gt;API の Endpoint が全て localhost に向いてしまうため外部から操作不可能&lt;/li&gt;
-&lt;li&gt;各コンポーネントの bind_address が localhost を向いてしまう&lt;/li&gt;
-&lt;li&gt;berkshelf がそのままでは入らない&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;よって、今回はこれらの問題を解決しつつ &amp;ldquo;オールインワンな Neutron 構成の
-Icehouse OpenStack を作る方法&amp;rdquo; を書いていきます。&lt;/p&gt;
-
-&lt;h2 id=&#34;構成&#34;&gt;構成&lt;/h2&gt;
-
-&lt;pre&gt;&lt;code&gt;+----------------- 10.0.0.0/24 (api/management network)
-|
-+----------------+
-| OpenStack Node |
-|   Controller   |
-|    Compute     |
-+----------------+
-|  |
-+--(-------------- 10.0.1.0/24 (external network)
-   |
-   +-------------- 10.0.2.0/24 (guest vm network)
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;IP address 達&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;10.0.0.10 (api/manageent network) : eth0&lt;/li&gt;
-&lt;li&gt;10.0.1.10 (external network) : eth1&lt;/li&gt;
-&lt;li&gt;10.0.2.10 (guest vm network) : eth2&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;注意 : 操作は全て eth0 経由で行う&lt;/p&gt;
-
-&lt;h2 id=&#34;前提の環境&#34;&gt;前提の環境&lt;/h2&gt;
-
-&lt;p&gt;stackforge/openstack-chef-repo の依存している Cookbooks の関係上、upstart 周り
-がうまく制御できていないので Ubuntu Server 12.04.x を使います。&lt;/p&gt;
-
-&lt;h2 id=&#34;インストール方法&#34;&gt;インストール方法&lt;/h2&gt;
-
-&lt;p&gt;上記のように3つのネットワークインターフェースが付いたサーバを1台用意します。
-KVM が利用出来たほうがいいですが使えないくても構いません。KVM リソースが使えな
-い場合の修正方法を後に記します。&lt;/p&gt;
-
-&lt;p&gt;サーバにログインし root ユーザになります。その後 Chef をオムニバスインストーラ
-でインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% sudo -i
-# curl -L https://www.opscode.com/chef/install.sh | bash
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に stable/icehose ブランチを指定して openstack-chef-repo をクローンします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;# cd ~
-# git clone -b stable/icehouse https://github.com/stackforge/openstack-chef-repo
-# 
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;berkshelf をインストールするのですが依存パッケージが足らないのでここでインストー
-ルします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;# apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev \
-  ruby-dev libxml2-dev libxslt-dev g++
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;berkshelf をインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;# /opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に openstack-chef-repo に依存する Cookbooks を取得します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;# cd ~/openstack-chef-repo
-# /opt/chef/embedded/bin/berks vendor ./cookbooks
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;~/openstack-chef-repo/environments ディレクトリ配下に neutron-allinone.json と
-いうファイル名で作成します。内容は下記の通りです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{                                                                                                                                                      [0/215]
-  &amp;quot;name&amp;quot;: &amp;quot;neutron-allinone&amp;quot;,
-  &amp;quot;description&amp;quot;: &amp;quot;test&amp;quot;,
-  &amp;quot;cookbook_versions&amp;quot;: {
-  },
-  &amp;quot;json_class&amp;quot;: &amp;quot;Chef::Environment&amp;quot;,
-  &amp;quot;chef_type&amp;quot;: &amp;quot;environment&amp;quot;,
-  &amp;quot;default_attributes&amp;quot;: {
-  },
-  &amp;quot;override_attributes&amp;quot;: {
-    &amp;quot;mysql&amp;quot;: {
-      &amp;quot;bind_address&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-      &amp;quot;server_root_password&amp;quot;: &amp;quot;root&amp;quot;,
-      &amp;quot;server_debian_password&amp;quot;: &amp;quot;root&amp;quot;,
-      &amp;quot;server_repl_password&amp;quot;: &amp;quot;root&amp;quot;,
-      &amp;quot;allow_remote_root&amp;quot;: true,
-      &amp;quot;root_network_acl&amp;quot;: [&amp;quot;10.0.0.0/8&amp;quot;]
-    },
-    &amp;quot;rabbitmq&amp;quot;: {
-      &amp;quot;address&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-      &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-    },
-    &amp;quot;openstack&amp;quot;: {
-      &amp;quot;auth&amp;quot;: {
-        &amp;quot;validate_certs&amp;quot;: false
-      },
-      &amp;quot;dashboard&amp;quot;: {
-        &amp;quot;session_backend&amp;quot;: &amp;quot;file&amp;quot;
-      },
-      &amp;quot;block-storage&amp;quot;: {
-        &amp;quot;syslog&amp;quot;: {
-          &amp;quot;use&amp;quot;: false
-        },
-        &amp;quot;api&amp;quot;: {
-          &amp;quot;ratelimit&amp;quot;: &amp;quot;False&amp;quot;
-        },
-        &amp;quot;debug&amp;quot;: true,
-        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
-        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
-        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;
-      },
-      &amp;quot;compute&amp;quot;: {
-        &amp;quot;rabbit&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
-        },
-        &amp;quot;novnc_proxy&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;
-        },
-        &amp;quot;libvirt&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;,
-        },
-        &amp;quot;novnc_proxy&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;
-        },
-        &amp;quot;xvpvnc_proxy&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;
-        },
-        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
-        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
-        &amp;quot;nova_setup_chef_role&amp;quot;: &amp;quot;os-compute-api&amp;quot;,
-        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
-        &amp;quot;network&amp;quot;: {
-          &amp;quot;public_interface&amp;quot;: &amp;quot;eth0&amp;quot;,
-          &amp;quot;service_type&amp;quot;: &amp;quot;neutron&amp;quot;
-        }
-      },
-      &amp;quot;network&amp;quot;: {
-        &amp;quot;debug&amp;quot;: &amp;quot;True&amp;quot;,
-        &amp;quot;dhcp&amp;quot;: {
-          &amp;quot;enable_isolated_metadata&amp;quot;: &amp;quot;True&amp;quot;
-        },
-        &amp;quot;metadata&amp;quot;: {
-          &amp;quot;nova_metadata_ip&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
-        },
-        &amp;quot;openvswitch&amp;quot;: {
-          &amp;quot;tunnel_id_ranges&amp;quot;: &amp;quot;1:1000&amp;quot;,
-          &amp;quot;enable_tunneling&amp;quot;: &amp;quot;True&amp;quot;,
-          &amp;quot;tenant_network_type&amp;quot;: &amp;quot;gre&amp;quot;,
-          &amp;quot;local_ip_interface&amp;quot;: &amp;quot;eth2&amp;quot;
-        },
-        &amp;quot;api&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;
-        },
-        &amp;quot;l3&amp;quot;: {
-          &amp;quot;external_network_bridge_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;service_plugins&amp;quot;: [&amp;quot;neutron.services.l3_router.l3_router_plugin.L3RouterPlugin&amp;quot;]
-      },
-      &amp;quot;db&amp;quot;: {
-        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;,
-        &amp;quot;compute&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
-        },
-        &amp;quot;identity&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
-        },
-        &amp;quot;image&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
-        },
-        &amp;quot;network&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
-        },
-        &amp;quot;volume&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
-        },
-        &amp;quot;dashboard&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
-        },
-        &amp;quot;telemetry&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
-        },
-        &amp;quot;orchestration&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;
-        }
-      },
-      &amp;quot;developer_mode&amp;quot;: true,
-      &amp;quot;endpoints&amp;quot;: {
-        &amp;quot;compute-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
-        },
-        &amp;quot;compute-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
-        },
-        &amp;quot;compute-ec2-admin-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-        &amp;quot;compute-ec2-admin&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-       &amp;quot;compute-ec2-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-        &amp;quot;compute-ec2-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-        &amp;quot;compute-xvpvnc&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6081&amp;quot;
-        },
-        &amp;quot;compute-novnc-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
-        },
-        &amp;quot;compute-novnc&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
-        },
-        &amp;quot;compute-vnc&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
-        },
-        &amp;quot;image-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
-        },
-        &amp;quot;image-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
-        },
-        &amp;quot;image-registry&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
-        },
-        &amp;quot;image-registry-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
-        },
-        &amp;quot;identity-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
-        },
-        &amp;quot;identity-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
-        },
-        &amp;quot;identity-admin&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;35357&amp;quot;
-        },
-        &amp;quot;volume-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
-        },
-        &amp;quot;volume-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
-        },
-        &amp;quot;telemetry-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8777&amp;quot;
-        },
-        &amp;quot;network-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
-        },
-        &amp;quot;network-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
-        },
-        &amp;quot;orchestration-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8004&amp;quot;
-        },
-        &amp;quot;orchestration-api-cfn&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8000&amp;quot;
-        }
-      },
-      &amp;quot;identity&amp;quot;: {
-        &amp;quot;admin_user&amp;quot;: &amp;quot;admin&amp;quot;,
-        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;,
-        &amp;quot;debug&amp;quot;: true
-      },
-      &amp;quot;image&amp;quot;: {
-        &amp;quot;api&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;
-        },
-        &amp;quot;debug&amp;quot;: true,
-        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
-        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
-        &amp;quot;registry&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;
-        },
-        &amp;quot;syslog&amp;quot;: {
-          &amp;quot;use&amp;quot;: false
-        },
-        &amp;quot;upload_images&amp;quot;: [
-          &amp;quot;precise&amp;quot;
-        ]
-      },
-      &amp;quot;mq&amp;quot;: {
-        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;,
-        &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-        &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
-        &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;,
-        &amp;quot;network&amp;quot;: {
-          &amp;quot;rabbit&amp;quot;: {
-             &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-             &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-          }
-        },
-        &amp;quot;compute&amp;quot;: {
-           &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
-          &amp;quot;rabbit&amp;quot;: {
-            &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-          }
-        },
-        &amp;quot;block-storage&amp;quot;: {
-          &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
-          &amp;quot;rabbit&amp;quot;: {
-            &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-          }
-        }
-      }
-    },
-    &amp;quot;queue&amp;quot;: {
-      &amp;quot;host&amp;quot;: &amp;quot;10.0.1.10&amp;quot;,
-      &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
-      &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;
-    }
-  }
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;内容について全て説明するのは難しいですが、このファイルを作成するのが今回一番苦
-労した点です。と言うのは、構成を作りつつそれぞれのコンポーネントのコンフィギュ
-レーション、エンドポイントのアドレス、バインドアドレス、リスンポート等など、全
-てが正常な値になるように Cookbooks を読みつつ作業するからです。この json ファ
-イルが完成してしまえば、あとは簡単なのですが。&lt;/p&gt;
-
-&lt;p&gt;前述しましたが KVM リソースが使えない環境の場合 Qemu で仮想マシンを稼働するこ
-とができます。その場合、下記のように &amp;ldquo;libvirt&amp;rdquo; の項目に &amp;ldquo;virt_type&amp;rdquo; を追記して
-ください。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;        &amp;quot;libvirt&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth0&amp;quot;,
-          &amp;quot;virt_type&amp;quot;: &amp;quot;qemu&amp;quot; # &amp;lt;------ 追記
-        },
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;それではデプロイしていきます。&lt;/p&gt;
-
-&lt;p&gt;ここで &amp;lsquo;allinone&amp;rsquo; はホスト名、&amp;rsquo;allinone-compute&amp;rsquo; は Role 名、neutron-allinone
-は先ほど作成した json で指定している environment 名です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;# chef-client -z
-# knife node -z run_list add allinone &#39;role[allinone-compute]&#39;
-# chef-client -z -E neutron-allinone
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;環境にもよりますが、数分でオールインワンな OpenStack Icehouse が完成します。&lt;/p&gt;
-
-&lt;p&gt;まとめ
-+++&lt;/p&gt;
-
-&lt;p&gt;Chef サーバを使わなくて良いのでお手軽に OpenStack が構築出来ました。この json
-ファイルは実は他にも応用出来ると思っています。複数台構成の OpenStack も指定
-Role を工夫すれば構築出来るでしょう。が、その場合は chef-zero は使えません。
-Chef サーバ構成にする必要が出てきます。&lt;/p&gt;
-
-&lt;p&gt;ちなみに OpenStack Paris Summit 2014 で「OpenStack のデプロイに何を使っている
-か？」という調査結果が下記になります。Chef が2位ですが Pueppet に大きく離され
-ている感があります。Juno 版の openstack-chef-repo も開発が進んでいますので、頑
-張って広めていきたいです。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;1位 Puppet&lt;/li&gt;
-&lt;li&gt;2位 Chef&lt;/li&gt;
-&lt;li&gt;3位 Ansible&lt;/li&gt;
-&lt;li&gt;4位 DevStack&lt;/li&gt;
-&lt;li&gt;5位 PackStack&lt;/li&gt;
-&lt;li&gt;6位 Salt&lt;/li&gt;
-&lt;li&gt;7位 Juju&lt;/li&gt;
-&lt;li&gt;8位 Crowbar&lt;/li&gt;
-&lt;li&gt;9位 CFEngine&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;参考 URL : &lt;a href=&#34;http://superuser.openstack.org/articles/openstack-user-survey-insights-november-2014&#34;&gt;http://superuser.openstack.org/articles/openstack-user-survey-insights-november-2014&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;ちなみに、Puppet を使った OpenStack デプロイも個人的に色々試しています。&lt;/p&gt;
 </description>
     </item>
     

@@ -1,0 +1,994 @@
+<!DOCTYPE HTML>
+
+<html>
+    <head>
+        
+            
+                <title>kubernetes1.4 で実装された ScheduledJob を試してみた！</title>
+            
+        
+
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="generator" content="Hugo 0.17" />
+        
+
+
+        
+        
+            
+                <meta name="description" content="技術ネタを書いていきます">
+            
+        
+
+        
+
+  <meta name="twitter:card" content="summary"/>
+
+
+
+<meta name="twitter:title" content="kubernetes1.4 で実装された ScheduledJob を試してみた！"/>
+<meta name="twitter:description" content="こんにちは、@jedipunkz です。今回は Kubernetes1.4 から実装された ScheduledJob を試してみたのでその内容を記したいと思います。
+ScheduledJob はバッチ的な処理を Kubernetes の pod を使って実行するための仕組みです。現在は alpha バージョンとして実装されています。 kubernetes の pod, service は通常、永続的に立ち上げておくサーバなどを稼働させるものですが、それに対してこの scheduledJob は cron 感覚でバッチ処理を pod に任せることができます。
+Alpha バージョンということで今回の環境構築は minikube を使って簡易的に Mac 上に構築しました。Docker がインストールされていれば Linux でも環境を作れます。
+参考 URL 今回利用する yaml ファイルなどは下記のサイトを参考にしています。
+ http://kubernetes.io/docs/user-guide/scheduled-jobs/ https://github.com/kubernetes/minikube  前提の環境 私の環境では下記の環境を利用しました。
+ Mac OSX Docker-machine or Docker for Mac minikube  kubernetes 1.4 以降の構成を minikube で構築する まず minikube のインストールを行います。
+$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.12.0/minikube-darwin-amd64 &amp;&amp; chmod &#43;x minikube &amp;&amp; sudo mv minikube /usr/local/bin/  早速 minikube を起動します。"/>
+<meta name="twitter:site" content="@jedipunkz"/>
+
+
+        <meta property="og:title" content="kubernetes1.4 で実装された ScheduledJob を試してみた！" />
+<meta property="og:description" content="こんにちは、@jedipunkz です。今回は Kubernetes1.4 から実装された ScheduledJob を試してみたのでその内容を記したいと思います。
+ScheduledJob はバッチ的な処理を Kubernetes の pod を使って実行するための仕組みです。現在は alpha バージョンとして実装されています。 kubernetes の pod, service は通常、永続的に立ち上げておくサーバなどを稼働させるものですが、それに対してこの scheduledJob は cron 感覚でバッチ処理を pod に任せることができます。
+Alpha バージョンということで今回の環境構築は minikube を使って簡易的に Mac 上に構築しました。Docker がインストールされていれば Linux でも環境を作れます。
+参考 URL 今回利用する yaml ファイルなどは下記のサイトを参考にしています。
+ http://kubernetes.io/docs/user-guide/scheduled-jobs/ https://github.com/kubernetes/minikube  前提の環境 私の環境では下記の環境を利用しました。
+ Mac OSX Docker-machine or Docker for Mac minikube  kubernetes 1.4 以降の構成を minikube で構築する まず minikube のインストールを行います。
+$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.12.0/minikube-darwin-amd64 &amp;&amp; chmod &#43;x minikube &amp;&amp; sudo mv minikube /usr/local/bin/  早速 minikube を起動します。" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/" />
+
+
+<meta property="og:updated_time" content="2016-11-03T09:08:48&#43;09:00"/>
+
+
+
+
+
+
+
+
+
+
+        
+<meta itemprop="name" content="kubernetes1.4 で実装された ScheduledJob を試してみた！">
+<meta itemprop="description" content="こんにちは、@jedipunkz です。今回は Kubernetes1.4 から実装された ScheduledJob を試してみたのでその内容を記したいと思います。
+ScheduledJob はバッチ的な処理を Kubernetes の pod を使って実行するための仕組みです。現在は alpha バージョンとして実装されています。 kubernetes の pod, service は通常、永続的に立ち上げておくサーバなどを稼働させるものですが、それに対してこの scheduledJob は cron 感覚でバッチ処理を pod に任せることができます。
+Alpha バージョンということで今回の環境構築は minikube を使って簡易的に Mac 上に構築しました。Docker がインストールされていれば Linux でも環境を作れます。
+参考 URL 今回利用する yaml ファイルなどは下記のサイトを参考にしています。
+ http://kubernetes.io/docs/user-guide/scheduled-jobs/ https://github.com/kubernetes/minikube  前提の環境 私の環境では下記の環境を利用しました。
+ Mac OSX Docker-machine or Docker for Mac minikube  kubernetes 1.4 以降の構成を minikube で構築する まず minikube のインストールを行います。
+$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.12.0/minikube-darwin-amd64 &amp;&amp; chmod &#43;x minikube &amp;&amp; sudo mv minikube /usr/local/bin/  早速 minikube を起動します。">
+
+
+<meta itemprop="dateModified" content="2016-11-03T09:08:48&#43;09:00" />
+<meta itemprop="wordCount" content="694">
+
+
+
+<meta itemprop="keywords" content="infrastructure,report,tools," />
+
+        
+
+        
+
+        
+        
+            
+        
+
+        
+        
+            <link rel="stylesheet" href="/css/google-font.css" />
+            <link rel="stylesheet" href="/css/font-awesome.min.css" />
+            <link rel="stylesheet" href="/css/main.css" />
+            <link rel="stylesheet" href="/css/add-on.css" />
+            <link rel="stylesheet" href="/css/monokai-sublime.css">
+        
+
+        
+
+        
+        
+        
+            
+<script>
+(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+ga('create', 'UA-30563095-1', 'auto');
+ga('send', 'pageview');
+</script>
+
+        
+    </head>
+    <body>
+
+        
+        <div id="wrapper">
+
+    
+    
+<header id="header">
+    
+        <h2><a href="/">ジェダイさんのブログ</i></a></h2>
+    
+
+    <nav class="links">
+        <ul>
+            
+                <li>
+                    <a href="/post">
+                        
+                            <i class="fa fa-newspaper-o">&nbsp;</i>Blog
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/categories">
+                        Categories
+                    </a>
+                </li>
+            
+                <li>
+                    <a href="/about">
+                        About
+                    </a>
+                </li>
+            
+        </ul>
+    </nav>
+    <nav class="main">
+        <ul>
+            
+            <li id="share-nav" class="share-menu" style="display:none;">
+                <a class="fa-share-alt" href="#share-menu">Share</a>
+            </li>
+            
+            <li class="search">
+                <a class="fa-search" href="#search">Search</a>
+                <form id="search" method="get" action="//google.com/search">
+                    <input type="text" name="q" placeholder="Search" />
+                    <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+                </form>
+            </li>
+            <li class="menu">
+                <a class="fa-bars" href="#menu">Menu</a>
+            </li>
+        </ul>
+    </nav>
+</header>
+
+
+<section id="menu">
+
+    
+        <section>
+            <form class="search" method="get" action="//google.com/search">
+                <input type="text" name="q" placeholder="Search" />
+                <input type="hidden" name="q" value="site:http://jedipunkz.github.io/">
+            </form>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                
+                    <li>
+                        <a href="/post">
+                            <h3>
+                                
+                                    <i class="fa fa-newspaper-o">&nbsp;</i>
+                                
+                                Blog
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/categories">
+                            <h3>
+                                
+                                Categories
+                            </h3>
+                        </a>
+                    </li>
+                
+                    <li>
+                        <a href="/about">
+                            <h3>
+                                
+                                About
+                            </h3>
+                        </a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        <section>
+            <ul class="links">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+        
+</section>
+
+    <section id="share-menu">
+    <section id="social-share-nav">
+        <ul class="links">
+            <header>
+                <h3>Share this post <i class="fa fa-smile-o"></i></h3>
+            </header>
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f11%2f03%2fkubernetes-scheduledjob%2f&text=kubernetes1.4%20%e3%81%a7%e5%ae%9f%e8%a3%85%e3%81%95%e3%82%8c%e3%81%9f%20ScheduledJob%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f%ef%bc%81&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f11%2f03%2fkubernetes-scheduledjob%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f11%2f03%2fkubernetes-scheduledjob%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f11%2f03%2fkubernetes-scheduledjob%2f&title=kubernetes1.4%20%e3%81%a7%e5%ae%9f%e8%a3%85%e3%81%95%e3%82%8c%e3%81%9f%20ScheduledJob%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f%ef%bc%81" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </ul>
+    </section>
+</section>
+
+    
+    <div id="main">
+        
+        
+        <article class="post">
+    <header>
+    <div class="title">
+        
+            <h1><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h1>
+            
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2016-11-03'>
+            November 3, 2016</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+
+    <section id="social-share">
+        <ul class="icons">
+            
+
+
+<li><a href="//twitter.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f11%2f03%2fkubernetes-scheduledjob%2f&text=kubernetes1.4%20%e3%81%a7%e5%ae%9f%e8%a3%85%e3%81%95%e3%82%8c%e3%81%9f%20ScheduledJob%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f%ef%bc%81&via=jedipunkz" target="_blank" class="share-btn twitter">
+    <i class="fa fa-twitter"></i>
+    <p>Twitter</p>
+</a></li>
+
+
+<li><a href="//plus.google.com/share?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f11%2f03%2fkubernetes-scheduledjob%2f" target="_blank" class="share-btn google-plus">
+    <i class="fa fa-google-plus"></i>
+    <p>Google+</p>
+</a></li>
+
+
+<li><a href="//www.facebook.com/sharer/sharer.php?u=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f11%2f03%2fkubernetes-scheduledjob%2f" target="_blank" class="share-btn facebook">
+    <i class="fa fa-facebook"></i>
+    <p>Facebook</p>
+</a></li>
+
+
+<li><a href="//reddit.com/submit?url=http%3a%2f%2fjedipunkz.github.io%2fblog%2f2016%2f11%2f03%2fkubernetes-scheduledjob%2f&title=kubernetes1.4%20%e3%81%a7%e5%ae%9f%e8%a3%85%e3%81%95%e3%82%8c%e3%81%9f%20ScheduledJob%20%e3%82%92%e8%a9%a6%e3%81%97%e3%81%a6%e3%81%bf%e3%81%9f%ef%bc%81" target="_blank" class="share-btn reddit">
+    <i class="fa fa-reddit-alien"></i>
+    <p>Reddit</p>
+</a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        </ul>
+    </section>
+    
+
+    <div id="content">
+        
+
+<p>こんにちは、@jedipunkz です。今回は Kubernetes1.4 から実装された ScheduledJob を試してみたのでその内容を記したいと思います。</p>
+
+<p>ScheduledJob はバッチ的な処理を Kubernetes の pod を使って実行するための仕組みです。現在は alpha バージョンとして実装されています。
+kubernetes の pod, service は通常、永続的に立ち上げておくサーバなどを稼働させるものですが、それに対してこの scheduledJob は cron 感覚でバッチ処理を pod に任せることができます。</p>
+
+<p>Alpha バージョンということで今回の環境構築は minikube を使って簡易的に Mac 上に構築しました。Docker がインストールされていれば Linux でも環境を作れます。</p>
+
+<h2 id="参考-url">参考 URL</h2>
+
+<p>今回利用する yaml ファイルなどは下記のサイトを参考にしています。</p>
+
+<ul>
+<li><a href="http://kubernetes.io/docs/user-guide/scheduled-jobs/">http://kubernetes.io/docs/user-guide/scheduled-jobs/</a></li>
+<li><a href="https://github.com/kubernetes/minikube">https://github.com/kubernetes/minikube</a></li>
+</ul>
+
+<h2 id="前提の環境">前提の環境</h2>
+
+<p>私の環境では下記の環境を利用しました。</p>
+
+<ul>
+<li>Mac OSX</li>
+<li>Docker-machine or Docker for Mac</li>
+<li>minikube</li>
+</ul>
+
+<h2 id="kubernetes-1-4-以降の構成を-minikube-で構築する">kubernetes 1.4 以降の構成を minikube で構築する</h2>
+
+<p>まず minikube のインストールを行います。</p>
+
+<pre><code>$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.12.0/minikube-darwin-amd64 &amp;&amp; chmod +x minikube &amp;&amp; sudo mv minikube /usr/local/bin/
+</code></pre>
+
+<p>早速 minikube を起動します。</p>
+
+<pre><code>$ docker-machine start default
+$ minikube start
+$ eval $(minikube docker-env)
+</code></pre>
+
+<h2 id="google-cloud-の-gke-を利用する場合">Google Cloud の GKE を利用する場合</h2>
+
+<p>今回は minikube を使ってローカルマシンに kubernetes 1.4 環境を作りましたが Google Cloud の GKE を用いている場合下記のように gcloud SDK を用いて GKE クラスターノードを構築することで対応できます。ですが Google に確認したところこの構築方法を取った場合には Google からのサポートを得られないのと SLA も対象外になるとのことでした。リスクは大きいと思います。(2016/11現在)</p>
+
+<pre><code>gcloud alpha container clusters create alpha-test-cluster --zone asia-northeast1-b --enable-kubernetes-alpha
+gcloud container clusters get-credentials alpha-test-cluster
+gcloud container node-pools create alpha-test-pool --zone asia-northeast1-b --cluster alpha-test-cluster
+</code></pre>
+
+<h2 id="scheduledjob-を試す">scheduledjob を試す</h2>
+
+<h4 id="yaml-ファイルの生成">yaml ファイルの生成</h4>
+
+<p>scheduledjob を実行するための yaml ファイルを生成します。公式サイト (<a href="http://kubernetes.io/docs/user-guide/scheduled-jobs/">http://kubernetes.io/docs/user-guide/scheduled-jobs/</a>) にあるものを一部修正して記述しています。ファイル名は sj.yaml とします。</p>
+
+<pre><code>apiVersion: batch/v2alpha1
+kind: ScheduledJob
+metadata:
+  name: hello
+spec:
+  schedule: 0/1 * * * ?
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: busybox
+            args:
+            - /bin/sh
+            - -c
+            - date; echo Hello from the Kubernetes cluster
+          restartPolicy: OnFailure
+  concurrencyPolicy: Allow
+  #suspend: true
+</code></pre>
+
+<h4 id="scheduledjob-の実行">scheduledJob の実行</h4>
+
+<p>生成した yaml ファイルを元に kubectl コマンドで scheduledjob を実行します。</p>
+
+<pre><code>$ kubectl create -f ./sj.yaml
+</code></pre>
+
+<p>実行したジョブがどのような状況か確認します。下記のコマンドで生成した scheduledjob 一覧が確認できます。
+yaml ファイルの通り、1分間隔で &lsquo;hello&rsquo; という scheduledJob が実行されることが確認できると思います。</p>
+
+<pre><code>$ kubectl get scheduledjob
+NAME      SCHEDULE      SUSPEND   ACTIVE    LAST-SCHEDULE
+hello     0/1 * * * ?   False     0         &lt;none&gt;
+</code></pre>
+
+<p>scheduledjob を元に実行された(実行される) ジョブ(job) 一覧を確認します。
+1分間隔で実行されている様子が確認できます。また、DESIRED:1 で SUCCESSFUL:0 の行は、1分間隔で実行される直前のジョブとして認識されていることがわかります。</p>
+
+<pre><code>$ kubectl get jobs --watch
+NAME               DESIRED   SUCCESSFUL   AGE
+hello-1856276298   1         1            59s
+NAME               DESIRED   SUCCESSFUL   AGE
+hello-1780451143   1         0            0s
+hello-1780451143   1         0         0s
+hello-1780451143   1         1         5s
+hello-1476429627   1         0         0s
+hello-1476429627   1         0         0s
+hello-1476429627   1         1         5s
+hello-1628211009   1         0         0s
+hello-1628211009   1         0         0s
+hello-1628211009   1         1         5s
+hello-1552385854   1         0         0s
+hello-1552385854   1         0         0s
+hello-1552385854   1         1         5s
+</code></pre>
+
+<p>下記のコマンドで実行されたジョブ一覧を取得できます。こちらは結果のみですので SUCCESSFULL=1 のみが表示されています。</p>
+
+<pre><code>$ kubectl get job
+NAME               DESIRED   SUCCESSFUL   AGE
+hello-1476429627   1         1            6m
+hello-1552385854   1         1            4m
+hello-1552516926   1         1            1m
+hello-1628211009   1         1            5m
+hello-1628342081   1         1            2m
+hello-1704167236   1         1            3m
+hello-1704298308   1         1            49s
+hello-1780451143   1         1            7m
+hello-1856276298   1         1            8m
+</code></pre>
+
+<p>この際に pod の様子も確認してみます。&ndash;show-all オプションで過去の pod を一覧表示します。今回のジョブは一瞬で実行可能な内容なのでこのオプションを付けないと pod 一覧が取得できない可能性が高いです。</p>
+
+<pre><code>kubectl get pod --show-all
+NAME                     READY     STATUS      RESTARTS   AGE
+hello-1476429627-pxr06   0/1       Completed   0          8m
+hello-1552385854-y68ci   0/1       Completed   0          6m
+hello-1552516926-ggjpk   0/1       Completed   0          3m
+hello-1628211009-iih0i   0/1       Completed   0          7m
+hello-1628342081-ig5lg   0/1       Completed   0          4m
+hello-1628473153-9wvn4   0/1       Completed   0          1m
+hello-1704167236-zqg94   0/1       Completed   0          5m
+hello-1704298308-eaq8m   0/1       Completed   0          2m
+hello-1780254535-64mah   0/1       Completed   0          28s
+hello-1780451143-tjg8r   0/1       Completed   0          9m
+hello-1856276298-y2o65   0/1       Completed   0          10m
+</code></pre>
+
+<p>最終行のジョブ &lsquo;hello-1856276298-y2o65&rsquo; の内容を確認します。</p>
+
+<pre><code>$ kubectl logs hello-1856276298-y2o65
+Thu Oct 27 01:18:11 UTC 2016
+Hello from the Kubernetes cluster
+</code></pre>
+
+<p>sj.yaml 内に記述したジョブ内容 &lsquo;echo &hellip;&rsquo; の実行結果が表示されていることが確認できます。</p>
+
+<p>docker のイメージも確認します。ジョブ内で指定した image: busybox が確認できます。
+その他のイメージは minikube を構成するものです。</p>
+
+<pre><code>$ docker images
+REPOSITORY                                            TAG                 IMAGE ID            CREATED             SIZE
+busybox                                               latest              e02e811dd08f        2 weeks ago         1.093 MB
+gcr.io/google_containers/kubernetes-dashboard-amd64   v1.4.0              436faaeba2e2        5 weeks ago         86.27 MB
+gcr.io/google-containers/kube-addon-manager           v5.1                735ce4344f7f        3 months ago        255.8 MB
+gcr.io/google_containers/pause-amd64                  3.0                 99e59f495ffa        5 months ago        746.9 kB
+</code></pre>
+
+<h2 id="ジョブの削除">ジョブの削除</h2>
+
+<p>ジョブを削除します。削除する対象は scheduledjob とそれを元に生成・実行された jobs です。</p>
+
+<pre><code>$ kubectl delete scheduledjob hello
+$ kubectl delete jobs $(kubectl get jobs | awk '{print $1}' | grep -v NAME)
+job &quot;hello-1476429627&quot; deleted
+job &quot;hello-1552385854&quot; deleted
+job &quot;hello-1552516926&quot; deleted
+job &quot;hello-1628211009&quot; deleted
+job &quot;hello-1628342081&quot; deleted
+job &quot;hello-1628473153&quot; deleted
+job &quot;hello-1628604225&quot; deleted
+job &quot;hello-1704167236&quot; deleted
+job &quot;hello-1704298308&quot; deleted
+job &quot;hello-1704429380&quot; deleted
+job &quot;hello-1780254535&quot; deleted
+job &quot;hello-1780385607&quot; deleted
+job &quot;hello-1780451143&quot; deleted
+job &quot;hello-1856276298&quot; deleted
+</code></pre>
+
+<p>ここで確認できたのは scheduledjob を削除するとそれ以降の jobs は新規実行されませんでした。が、実行された後の jobs は情報として残ったままでした。</p>
+
+<h2 id="その他のオプション">その他のオプション</h2>
+
+<h4 id="concurrencypolicy">concurrencyPolicy</h4>
+
+<p>下記のように spec.concurrencyPolicy オプションが指定できます。下記のような value を渡すと実行されるジョブの動作を変えることが可能です。</p>
+
+<ul>
+<li>Allow (Default) : 重複するジョブ実行を許可</li>
+<li>Forbid : 直前のジョブが終了していない場合ジョブ実行をスキップする</li>
+<li>Replace : 直前のジョブが終了していない場合新しいジョブを上書きする</li>
+</ul>
+
+<h4 id="suspend">suspend</h4>
+
+<p>&lsquo;spec.suspend: true&rsquo; に設定すると ScheduledJob は生成されますが次回実行時のジョブがサスペンドされ実行されません。デフォルトは false です。</p>
+
+<pre><code>$ kubectl get scheduledjob
+NAME      SCHEDULE      SUSPEND   ACTIVE    LAST-SCHEDULE
+hello     0/1 * * * ?   True      0         &lt;none&gt;
+$ kubectl get job
+$
+</code></pre>
+
+<h4 id="オプションの適用例ファイル">オプションの適用例ファイル</h4>
+
+<pre><code>apiVersion: batch/v2alpha1
+kind: ScheduledJob
+metadata:
+  name: hello
+spec:
+  schedule: 0/1 * * * ?
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: busybox
+            args:
+            - /bin/sh
+            - -c
+            - date; echo Hello from the Kubernetes cluster
+          restartPolicy: OnFailure
+  concurrencyPolicy: Forbid
+  suspend: true
+</code></pre>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>今回試してみて、バッチ的な処理を kubernetes で行うならこの scheduledJob しかないな、と思いました。
+ですが、2016/11 現在ではまだ Alpha バージョンということで下記のようなリスクを含んでいます。</p>
+
+<ul>
+<li>このバージョンはバギーです</li>
+<li>アナウンス無しに機能が削られることがあります</li>
+<li>アナウンス無しにそれまでの互換性を変更することがあります</li>
+<li>テスト用としての利用を勧めます。</li>
+</ul>
+
+<p>参考サイト : <a href="http://kubernetes.io/docs/api/">http://kubernetes.io/docs/api/</a></p>
+
+<p>また上記にも記しましたが、ジョブの結果が残っていくため、通常使う cron のように数分間隔で実行しているとあっという間に job の量が大量に肥大化することが予想されます。この job には実行結果も含まれているため、消されるものではないのは理解できるのですが kubernetes api が持っている DB 上に大量のデータが生成され続けてしまうため、kubernetes api/サーバを管理している場合には問題になると思います。この辺り、仕様の修正が入ることを期待しています。</p>
+
+    </div>
+
+    <footer>
+        <ul class="stats">
+    
+        
+
+        
+        
+    
+
+    
+    
+</ul>
+
+    </footer>
+</article>
+<ul class="actions pagination">
+    
+        <li><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"
+                class="button big previous">Minikube で簡易 kubernetes 環境構築</a></li>
+    
+
+    
+</ul>
+
+
+
+
+    </div>
+    
+<section id="sidebar">
+
+    
+        <section id="intro">
+            
+            
+                
+                    <img src="/pix/jedipunkz.jpg" class="intro-circle" width="250" alt="jedipunkz icon" />
+                
+            
+            
+                <header>
+                    <h2></h2>
+                    <p>ジェダイさんです。インフラエンジニアからインフラ寄りのソフトウェアエンジニアになるために勉強していきます。</p>
+                </header>
+            
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+        </section>
+
+    
+        <section id="recent-posts">
+            <ul class="posts">
+                <header>
+                    <h3>Recent Posts</h3>
+                </header>
+                
+                    
+                
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-03'>
+                                    November 3, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-25'>
+                                    July 25, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-23'>
+                                    July 23, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-07-14'>
+                                    July 14, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+
+                
+                    <li>
+                        <ul class="actions">
+                            <li><a href=
+                            
+                                /post/
+                            
+                            class="button">View more posts</a></li>
+                        </ul>
+                    </li>
+                
+            </ul>
+        </section>
+
+    
+    
+    
+    
+        <section id="categories">
+            <ul class="posts">
+                <header>
+                    <h3><a href="/categories/">Categories</a></h3>
+                </header>
+
+                
+                    
+                
+
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/infrastructure/">infrastructure</a>
+                                <span style="float:right;">102</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/tools/">tools</a>
+                                <span style="float:right;">11</span>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <a href="/categories/report/">report</a>
+                                <span style="float:right;">9</span>
+                            </header>
+                        </article>
+                    </li>
+                
+            </ul>
+        </section>
+    
+
+    
+        
+        <section class="blurb">
+            <h2>About</h2>
+            <p>ソフトウェア寄りのエンジニアになるため勉強をしています。勉強したことをメモしていければと思います。</p>
+
+            <ul class="actions">
+                <li><a href="/about/" class="button">Learn More</a></li>
+            </ul>
+        </section>
+        
+
+    
+        <section id="footer">
+            <ul class="icons">
+                
+                
+                    
+<li><a href="//github.com/jedipunkz" target="_blank" title="GitHub" class="fa fa-github"></a></li>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<li><a href="//twitter.com/jedipunkz" target="_blank" title="Twitter" class="fa fa-twitter"></a></li>
+
+
+
+
+                
+            </ul>
+
+            <p class="copyright">&copy; ジェダイさんのブログ. テーマデザインは <a href="//github.com/jpescador" target="_blank">Julio Pescador</a>さんによるものです。 </p>
+        </section>
+
+</section>
+
+            </div>
+        <a id="back-to-top" href="#" class="fa fa-arrow-up fa-border fa-2x"></a>
+        
+
+        
+        
+            
+        
+
+        
+        
+            <script src="/js/jquery.min.js"></script>
+            <script src="/js/skel.min.js"></script>
+            <script src="/js/util.js"></script>
+            <script src="/js/main.js"></script>
+            <script src="/js/backToTop.js"></script>
+            <script src="/js/highlight.pack.js"></script>
+        
+
+        
+
+            
+            <script>hljs.initHighlightingOnLoad();</script>
+            
+    </body>
+</html>
+

@@ -10,7 +10,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.16" />
+        <meta name="generator" content="Hugo 0.17" />
         
 
 
@@ -28,12 +28,24 @@
 
 
 <meta name="twitter:title" content="CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ"/>
-<meta name="twitter:description" content="こんにちは。@jedipunkz です。 最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。 この記事の前提&hellip; ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、 それの回避方法等&hellip;についてまとめています。 CirlceCI と併用するサービスについて CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが 省けそう。ってことで AWS S3 (https://aws.amazon.com/jp/s3/) AWS CodeDeploy (https://aws.amazon.com/jp/codedeploy/) を併用することを考えました。 S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、 ビルドした結果を格納します。私の務めている会社ではプログラミング言語として Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り 戻すことが出来そうです。 また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ ロイが可能になるサービスです。東京リージョンでは 2015&frasl;08 から利用が可能になり ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内 のインスタンスに対してもデプロイが可能なところです。 Tips 的な情報として &#43;&#43;&#43; circle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい と思います。 Git push からデプロイまでを自動で行う circle.yml Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の circle.yml を紹介します。全体の流れとしては&hellip; レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする となります。 machine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:&#43;CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot; services: - docker dependencies: pre: - (事前に実行したいコマンド・スクリプトを記述) cache_directories: - &quot;~/.sbt&quot; test: override: - sbt compile deployment: production: branch: master codedeploy: codedeploy-sample: application_root: / region: ap-northeast-1 revision_location: revision_type: S3 s3_location: bucket: circleci-sample-bucket key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip deployment_group: codedeploy-sample-group それぞれのパラメータの意味 上記 circle.yml の重要なパラメータのみ説明していきます。 私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき ると思いますので読み替えてください。 machine -&gt; environment : 全体で適用できる環境変数を定義します dependencies -&gt; pre : 事前に実行したいコマンド等を定義できます test -&gt; overide : テストを実行するコマンドを書きます。 deployment -&gt; production -&gt; branch : 適用するブランチ名と本番環境であることを記述します。 &lsquo;codedeploy-sample&rsquo; : CodeDeploy 上にサンプルで作成した &lsquo;Application&rsquo; 名です s3_location -&gt; bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します s3_location -&gt; key_pattern : S3 バケットに収めるファイル名指定です deployment_group : CodeDeploy で定義する &lsquo;Deployment-Group&rsquo; 名です より詳細な説明を読みたい場合は下記の URL に描いてあります。 https://circleci.com/docs/configuration S3 のみににデプロイする例 上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて 実行したい場面もありそうです。流れとしては&hellip; レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の API を直接叩けば出来そうです。 http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html このリファレンスにある &ldquo;CreateDeployment&rdquo; については後に例をあげます。 ただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。 よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば 上記の流れが組めそうです。 machine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:&#43;CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot; services: - docker dependencies: pre: - sudo pip install awscli cache_directories: - &quot;~/.sbt&quot; test: override: - sbt compile deployment: master: branch: master commands: - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip ."/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。
+最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。
+この記事の前提&hellip; ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、 それの回避方法等&hellip;についてまとめています。
+CirlceCI と併用するサービスについて CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが 省けそう。ってことで
+ AWS S3 (https://aws.amazon.com/jp/s3/) AWS CodeDeploy (https://aws.amazon.com/jp/codedeploy/)  を併用することを考えました。
+S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、 ビルドした結果を格納します。私の務めている会社ではプログラミング言語として Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り 戻すことが出来そうです。
+また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ ロイが可能になるサービスです。東京リージョンでは 2015&frasl;08 から利用が可能になり ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内 のインスタンスに対してもデプロイが可能なところです。"/>
 <meta name="twitter:site" content="@jedipunkz"/>
 
 
         <meta property="og:title" content="CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ" />
-<meta property="og:description" content="こんにちは。@jedipunkz です。 最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。 この記事の前提&hellip; ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、 それの回避方法等&hellip;についてまとめています。 CirlceCI と併用するサービスについて CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが 省けそう。ってことで AWS S3 (https://aws.amazon.com/jp/s3/) AWS CodeDeploy (https://aws.amazon.com/jp/codedeploy/) を併用することを考えました。 S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、 ビルドした結果を格納します。私の務めている会社ではプログラミング言語として Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り 戻すことが出来そうです。 また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ ロイが可能になるサービスです。東京リージョンでは 2015&frasl;08 から利用が可能になり ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内 のインスタンスに対してもデプロイが可能なところです。 Tips 的な情報として &#43;&#43;&#43; circle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい と思います。 Git push からデプロイまでを自動で行う circle.yml Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の circle.yml を紹介します。全体の流れとしては&hellip; レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする となります。 machine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:&#43;CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot; services: - docker dependencies: pre: - (事前に実行したいコマンド・スクリプトを記述) cache_directories: - &quot;~/.sbt&quot; test: override: - sbt compile deployment: production: branch: master codedeploy: codedeploy-sample: application_root: / region: ap-northeast-1 revision_location: revision_type: S3 s3_location: bucket: circleci-sample-bucket key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip deployment_group: codedeploy-sample-group それぞれのパラメータの意味 上記 circle.yml の重要なパラメータのみ説明していきます。 私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき ると思いますので読み替えてください。 machine -&gt; environment : 全体で適用できる環境変数を定義します dependencies -&gt; pre : 事前に実行したいコマンド等を定義できます test -&gt; overide : テストを実行するコマンドを書きます。 deployment -&gt; production -&gt; branch : 適用するブランチ名と本番環境であることを記述します。 &lsquo;codedeploy-sample&rsquo; : CodeDeploy 上にサンプルで作成した &lsquo;Application&rsquo; 名です s3_location -&gt; bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します s3_location -&gt; key_pattern : S3 バケットに収めるファイル名指定です deployment_group : CodeDeploy で定義する &lsquo;Deployment-Group&rsquo; 名です より詳細な説明を読みたい場合は下記の URL に描いてあります。 https://circleci.com/docs/configuration S3 のみににデプロイする例 上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて 実行したい場面もありそうです。流れとしては&hellip; レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の API を直接叩けば出来そうです。 http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html このリファレンスにある &ldquo;CreateDeployment&rdquo; については後に例をあげます。 ただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。 よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば 上記の流れが組めそうです。 machine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:&#43;CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot; services: - docker dependencies: pre: - sudo pip install awscli cache_directories: - &quot;~/.sbt&quot; test: override: - sbt compile deployment: master: branch: master commands: - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip ." />
+<meta property="og:description" content="こんにちは。@jedipunkz です。
+最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。
+この記事の前提&hellip; ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、 それの回避方法等&hellip;についてまとめています。
+CirlceCI と併用するサービスについて CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが 省けそう。ってことで
+ AWS S3 (https://aws.amazon.com/jp/s3/) AWS CodeDeploy (https://aws.amazon.com/jp/codedeploy/)  を併用することを考えました。
+S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、 ビルドした結果を格納します。私の務めている会社ではプログラミング言語として Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り 戻すことが出来そうです。
+また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ ロイが可能になるサービスです。東京リージョンでは 2015&frasl;08 から利用が可能になり ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内 のインスタンスに対してもデプロイが可能なところです。" />
 <meta property="og:type" content="article" />
 <meta property="og:url" content="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/" />
 
@@ -51,7 +63,13 @@
 
         
 <meta itemprop="name" content="CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ">
-<meta itemprop="description" content="こんにちは。@jedipunkz です。 最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。 この記事の前提&hellip; ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、 それの回避方法等&hellip;についてまとめています。 CirlceCI と併用するサービスについて CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが 省けそう。ってことで AWS S3 (https://aws.amazon.com/jp/s3/) AWS CodeDeploy (https://aws.amazon.com/jp/codedeploy/) を併用することを考えました。 S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、 ビルドした結果を格納します。私の務めている会社ではプログラミング言語として Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り 戻すことが出来そうです。 また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ ロイが可能になるサービスです。東京リージョンでは 2015&frasl;08 から利用が可能になり ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内 のインスタンスに対してもデプロイが可能なところです。 Tips 的な情報として &#43;&#43;&#43; circle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい と思います。 Git push からデプロイまでを自動で行う circle.yml Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の circle.yml を紹介します。全体の流れとしては&hellip; レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする となります。 machine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:&#43;CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot; services: - docker dependencies: pre: - (事前に実行したいコマンド・スクリプトを記述) cache_directories: - &quot;~/.sbt&quot; test: override: - sbt compile deployment: production: branch: master codedeploy: codedeploy-sample: application_root: / region: ap-northeast-1 revision_location: revision_type: S3 s3_location: bucket: circleci-sample-bucket key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip deployment_group: codedeploy-sample-group それぞれのパラメータの意味 上記 circle.yml の重要なパラメータのみ説明していきます。 私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき ると思いますので読み替えてください。 machine -&gt; environment : 全体で適用できる環境変数を定義します dependencies -&gt; pre : 事前に実行したいコマンド等を定義できます test -&gt; overide : テストを実行するコマンドを書きます。 deployment -&gt; production -&gt; branch : 適用するブランチ名と本番環境であることを記述します。 &lsquo;codedeploy-sample&rsquo; : CodeDeploy 上にサンプルで作成した &lsquo;Application&rsquo; 名です s3_location -&gt; bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します s3_location -&gt; key_pattern : S3 バケットに収めるファイル名指定です deployment_group : CodeDeploy で定義する &lsquo;Deployment-Group&rsquo; 名です より詳細な説明を読みたい場合は下記の URL に描いてあります。 https://circleci.com/docs/configuration S3 のみににデプロイする例 上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて 実行したい場面もありそうです。流れとしては&hellip; レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の API を直接叩けば出来そうです。 http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html このリファレンスにある &ldquo;CreateDeployment&rdquo; については後に例をあげます。 ただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。 よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば 上記の流れが組めそうです。 machine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:&#43;CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot; services: - docker dependencies: pre: - sudo pip install awscli cache_directories: - &quot;~/.sbt&quot; test: override: - sbt compile deployment: master: branch: master commands: - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip .">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。
+最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。
+この記事の前提&hellip; ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、 それの回避方法等&hellip;についてまとめています。
+CirlceCI と併用するサービスについて CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが 省けそう。ってことで
+ AWS S3 (https://aws.amazon.com/jp/s3/) AWS CodeDeploy (https://aws.amazon.com/jp/codedeploy/)  を併用することを考えました。
+S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、 ビルドした結果を格納します。私の務めている会社ではプログラミング言語として Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り 戻すことが出来そうです。
+また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ ロイが可能になるサービスです。東京リージョンでは 2015&frasl;08 から利用が可能になり ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内 のインスタンスに対してもデプロイが可能なところです。">
 
 
 <meta itemprop="dateModified" content="2015-11-15T00:00:00&#43;00:00" />
@@ -213,6 +231,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
                     </li>
                 
@@ -222,10 +244,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
             </ul>
@@ -795,6 +813,20 @@ Deployment-Group を作成することで対応できます。ただ、cirlce.ym
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-03'>
+                                    November 3, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
                                 
                                     
@@ -830,20 +862,6 @@ Deployment-Group を作成することで対応できます。ただ、cirlce.ym
                                 <time class="published" datetime=
                                     '2016-07-14'>
                                     July 14, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-02'>
-                                    July 2, 2016</time>
                             </header>
                         </article>
                     </li>

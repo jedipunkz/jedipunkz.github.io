@@ -10,7 +10,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.16" />
+        <meta name="generator" content="Hugo 0.17" />
         
 
 
@@ -28,12 +28,24 @@
 
 
 <meta name="twitter:title" content="OpenStack Folsom 構築スクリプト"/>
-<meta name="twitter:description" content="※2012/12/04 に内容を修正しました。Network Node を切り出すよう修正。 ※213/01/09 に内容を修正しました。パラメータ修正です。 OpenStack の Folsom リリースからメインコンポーネントの仲間入りした Quantum を 理解するのに時間を要してしまったのだけど、もう数十回とインストールを繰り返して だいぶ理解出来てきました。手作業でインストールしてると日が暮れてしまうのでと思っ て自分用に bash で構築スクリプトを作ったのだけど、それを公開しようと思います。 OpenStack Folsom の構築に四苦八苦している方に使ってもらえたらと思ってます。 http://jedipunkz.github.com/openstack_folsom_deploy/ chef や puppet, juju などデプロイのフレームワークは今流行です。ただどれも環境 を予め構築しなくてはいけないので、誰でもすぐに使える環境ってことで bash スクリ プトで書いています。時間があれば是非 chef の cookbook を書いていきたいです。と いうか予定です。でも、もうすでに opscode 等は書き始めています。(汗 ではでは、紹介を始めます。 前提の構成 management segment 172.16.1.0/24 &#43;--------------------------------------------&#43;------------------&#43;----------------- | | | | | | | eth2 172.16.1.13 | eth2 172.16.1.12 | eth2 172.24.1.11 &#43;------------&#43; &#43;-----------&#43; &#43;------------&#43; | | eth1 ------------------- eth1 | | | | | network | vlan/gre seg = 172.24.17.0/24 | compute | | controller | | node | data segment = 172.16.2.0/24 | node | | node | &#43;------------&#43; 172.16.2.13 172.16.2.12 &#43;-----------&#43; &#43;------------&#43; | eth0 10.200.8.13 | eth0 10.200.8.11 | | | | &#43;--------------------------------------------&#43;------------------&#43;----------------- | public segment 10.200.8.0/24 | | 10.200.8.1 &#43;-----------&#43; | GW Router |-&gt; The Internet &#43;-----------&#43; Quantum は、 API network Public network Data network Management Network の4つのネットワークセグメントを前提に設計されています。4つ用意するのが大変なの で今回は API / Management network Public Network Data Network と API と Management を兼務させた3つのネットワークセグメントを前提に話続けます。 もちろん Management を追加で切り出しても構わないです。NIC を追加するだけで OK 。 詳しくは、 http://docs.openstack.org/trunk/openstack-network/admin/content/connectivity.html に掲載されています。 また今回は public network に 10.200.8&frasl;24 を使ってます。サービス環境ではここが グローバルセグメントになります。 インストール対象 OS は Ubuntu Server 12.04 LTS もしくは 12.10 で動作します。 3つの NIC があるマシンを1台、NIC 2つのマシンを2台を用意します。 controller node x 1台 network node x 1台 &#43; comupte node x n台 の構成で す。 controller : glance, keystone, mysql, horizon, quantum server が稼働する Node network : quantum dhcp agent, quantum l3 agent, quantum openvswitch agent が稼働する Node compute : nova, quntum openvswitch agent が稼働する Node 上記の構成では下記の通り /etc/network/interface を設定します。controller 側の 設定です。 auto lo iface lo inet loopback auto eth0 iface eth0 inet static address 10.200.8.11 netmask 255.255.255.0 dns-nameservers 8.8.8.8 8.8.4.4 dns-search cpi.ad.jp auto eth2 iface eth2 inet static address 172.16.1.11 netmask 255.255.255.0 gateway 172.16.1.1 Network Node は&hellip; auto lo iface lo inet loopback auto eth0 iface eth0 inet static up ifconfig $IFACE 0.0.0.0 up up ip link set $IFACE promisc on down ip link set $IFACE promisc off down ifconfig $IFACE down address 10.200.8.21 netmask 255.255.255.0 #gateway 10.200.8.1 # dns-* options are implemented by the resolvconf package, if installed dns-nameservers 8.8.8.8 8.8.4.4 dns-search cpi.ad.jp auto eth1 iface eth1 inet static address 172.16.2.13 netmask 255.255.255.0 auto eth2 iface eth2 inet static address 172.16.1.13 netmask 255.255.255.0 gateway 172.16.1.1 dns-nameservers 8.8.8.8 8.8.4.4 compute Node は&hellip; auto eth1 iface eth1 inet static address 172.16.2.12 netmask 255.255.255.0 auto eth2 iface eth2 inet static address 172.16.1.12 netmask 255.255.255.0 gateway 172.16.1.1 dns-nameservers 8.8.8.8 8.8.4.4 です。下記のコマンドでネットワークインターフェースを再起動してください。 ここまで用意出来たらいよいよ実行するのみです。 controller% sudo /etc/init.d/networking restart network % sudo /etc/init.d/networking restart compute % sudo /etc/init.d/networking restart スクリプト実行 下記の通りスクリプトを取得して&hellip; controller% git clone https://github.com/jedipunkz/openstack_folsom_deploy.git controller% cd openstack_folsom_deploy それぞれの構成に合わせて deploy.conf を修正します。上記の構成の場合下記のようになります。 BASE_DIR=`pwd` CONTROLLER_NODE_IP=&#39;172.16.1.11&#39; CONTROLLER_NODE_PUB_IP=&#39;10.200.8.11&#39; NETWORK_NODE_IP=&#39;172.16.1.12&#39; COMPUTE_NODE_IP=&#39;172.16.1.13&#39; DATA_NIC_COMPUTE=&#39;eth1&#39; MYSQL_PASS=&#39;secret&#39; CINDER_VOLUME=&#39;/dev/sda6&#39; DATA_NIC=&#39;eth1&#39; PUBLIC_NIC=&#39;eth0&#39; NETWORK_TYPE=&#39;gre&#39; INT_NET_GATEWAY=&#39;172.24.17.254&#39; INT_NET_RANGE=&#39;172.24.17.0/24&#39; EXT_NET_GATEWAY=&#39;10.200.8.1&#39; EXT_NET_START=&#39;10.200.8.36&#39; EXT_NET_END=&#39;10.200.8.40&#39; EXT_NET_RANGE=&#39;10.200.8.0/24&#39; OS_IMAGE_URL=&quot;https://launchpad.net/cirros/trunk/0.3.0/&#43;download/cirros-0.3.0-x86_64-disk.img&quot; OS_IMAGE_NAME=&quot;Cirros 0.3.0 x86_64&quot; 環境に合わせて設定すれば OK です。上記の前提の構成の場合このような値を入れてい きます。重要なところだけ説明すると.."/>
+<meta name="twitter:description" content="※2012/12/04 に内容を修正しました。Network Node を切り出すよう修正。 ※213/01/09 に内容を修正しました。パラメータ修正です。
+OpenStack の Folsom リリースからメインコンポーネントの仲間入りした Quantum を 理解するのに時間を要してしまったのだけど、もう数十回とインストールを繰り返して だいぶ理解出来てきました。手作業でインストールしてると日が暮れてしまうのでと思っ て自分用に bash で構築スクリプトを作ったのだけど、それを公開しようと思います。
+OpenStack Folsom の構築に四苦八苦している方に使ってもらえたらと思ってます。
+http://jedipunkz.github.com/openstack_folsom_deploy/
+chef や puppet, juju などデプロイのフレームワークは今流行です。ただどれも環境 を予め構築しなくてはいけないので、誰でもすぐに使える環境ってことで bash スクリ プトで書いています。時間があれば是非 chef の cookbook を書いていきたいです。と いうか予定です。でも、もうすでに opscode 等は書き始めています。(汗
+ではでは、紹介を始めます。
+前提の構成 management segment 172.16.1.0/24 &#43;--------------------------------------------&#43;------------------&#43;----------------- | | | | | | | eth2 172.16.1.13 | eth2 172.16.1.12 | eth2 172.24.1.11 &#43;------------&#43; &#43;-----------&#43; &#43;------------&#43; | | eth1 ------------------- eth1 | | | | | network | vlan/gre seg = 172."/>
 <meta name="twitter:site" content="@jedipunkz"/>
 
 
         <meta property="og:title" content="OpenStack Folsom 構築スクリプト" />
-<meta property="og:description" content="※2012/12/04 に内容を修正しました。Network Node を切り出すよう修正。 ※213/01/09 に内容を修正しました。パラメータ修正です。 OpenStack の Folsom リリースからメインコンポーネントの仲間入りした Quantum を 理解するのに時間を要してしまったのだけど、もう数十回とインストールを繰り返して だいぶ理解出来てきました。手作業でインストールしてると日が暮れてしまうのでと思っ て自分用に bash で構築スクリプトを作ったのだけど、それを公開しようと思います。 OpenStack Folsom の構築に四苦八苦している方に使ってもらえたらと思ってます。 http://jedipunkz.github.com/openstack_folsom_deploy/ chef や puppet, juju などデプロイのフレームワークは今流行です。ただどれも環境 を予め構築しなくてはいけないので、誰でもすぐに使える環境ってことで bash スクリ プトで書いています。時間があれば是非 chef の cookbook を書いていきたいです。と いうか予定です。でも、もうすでに opscode 等は書き始めています。(汗 ではでは、紹介を始めます。 前提の構成 management segment 172.16.1.0/24 &#43;--------------------------------------------&#43;------------------&#43;----------------- | | | | | | | eth2 172.16.1.13 | eth2 172.16.1.12 | eth2 172.24.1.11 &#43;------------&#43; &#43;-----------&#43; &#43;------------&#43; | | eth1 ------------------- eth1 | | | | | network | vlan/gre seg = 172.24.17.0/24 | compute | | controller | | node | data segment = 172.16.2.0/24 | node | | node | &#43;------------&#43; 172.16.2.13 172.16.2.12 &#43;-----------&#43; &#43;------------&#43; | eth0 10.200.8.13 | eth0 10.200.8.11 | | | | &#43;--------------------------------------------&#43;------------------&#43;----------------- | public segment 10.200.8.0/24 | | 10.200.8.1 &#43;-----------&#43; | GW Router |-&gt; The Internet &#43;-----------&#43; Quantum は、 API network Public network Data network Management Network の4つのネットワークセグメントを前提に設計されています。4つ用意するのが大変なの で今回は API / Management network Public Network Data Network と API と Management を兼務させた3つのネットワークセグメントを前提に話続けます。 もちろん Management を追加で切り出しても構わないです。NIC を追加するだけで OK 。 詳しくは、 http://docs.openstack.org/trunk/openstack-network/admin/content/connectivity.html に掲載されています。 また今回は public network に 10.200.8&frasl;24 を使ってます。サービス環境ではここが グローバルセグメントになります。 インストール対象 OS は Ubuntu Server 12.04 LTS もしくは 12.10 で動作します。 3つの NIC があるマシンを1台、NIC 2つのマシンを2台を用意します。 controller node x 1台 network node x 1台 &#43; comupte node x n台 の構成で す。 controller : glance, keystone, mysql, horizon, quantum server が稼働する Node network : quantum dhcp agent, quantum l3 agent, quantum openvswitch agent が稼働する Node compute : nova, quntum openvswitch agent が稼働する Node 上記の構成では下記の通り /etc/network/interface を設定します。controller 側の 設定です。 auto lo iface lo inet loopback auto eth0 iface eth0 inet static address 10.200.8.11 netmask 255.255.255.0 dns-nameservers 8.8.8.8 8.8.4.4 dns-search cpi.ad.jp auto eth2 iface eth2 inet static address 172.16.1.11 netmask 255.255.255.0 gateway 172.16.1.1 Network Node は&hellip; auto lo iface lo inet loopback auto eth0 iface eth0 inet static up ifconfig $IFACE 0.0.0.0 up up ip link set $IFACE promisc on down ip link set $IFACE promisc off down ifconfig $IFACE down address 10.200.8.21 netmask 255.255.255.0 #gateway 10.200.8.1 # dns-* options are implemented by the resolvconf package, if installed dns-nameservers 8.8.8.8 8.8.4.4 dns-search cpi.ad.jp auto eth1 iface eth1 inet static address 172.16.2.13 netmask 255.255.255.0 auto eth2 iface eth2 inet static address 172.16.1.13 netmask 255.255.255.0 gateway 172.16.1.1 dns-nameservers 8.8.8.8 8.8.4.4 compute Node は&hellip; auto eth1 iface eth1 inet static address 172.16.2.12 netmask 255.255.255.0 auto eth2 iface eth2 inet static address 172.16.1.12 netmask 255.255.255.0 gateway 172.16.1.1 dns-nameservers 8.8.8.8 8.8.4.4 です。下記のコマンドでネットワークインターフェースを再起動してください。 ここまで用意出来たらいよいよ実行するのみです。 controller% sudo /etc/init.d/networking restart network % sudo /etc/init.d/networking restart compute % sudo /etc/init.d/networking restart スクリプト実行 下記の通りスクリプトを取得して&hellip; controller% git clone https://github.com/jedipunkz/openstack_folsom_deploy.git controller% cd openstack_folsom_deploy それぞれの構成に合わせて deploy.conf を修正します。上記の構成の場合下記のようになります。 BASE_DIR=`pwd` CONTROLLER_NODE_IP=&#39;172.16.1.11&#39; CONTROLLER_NODE_PUB_IP=&#39;10.200.8.11&#39; NETWORK_NODE_IP=&#39;172.16.1.12&#39; COMPUTE_NODE_IP=&#39;172.16.1.13&#39; DATA_NIC_COMPUTE=&#39;eth1&#39; MYSQL_PASS=&#39;secret&#39; CINDER_VOLUME=&#39;/dev/sda6&#39; DATA_NIC=&#39;eth1&#39; PUBLIC_NIC=&#39;eth0&#39; NETWORK_TYPE=&#39;gre&#39; INT_NET_GATEWAY=&#39;172.24.17.254&#39; INT_NET_RANGE=&#39;172.24.17.0/24&#39; EXT_NET_GATEWAY=&#39;10.200.8.1&#39; EXT_NET_START=&#39;10.200.8.36&#39; EXT_NET_END=&#39;10.200.8.40&#39; EXT_NET_RANGE=&#39;10.200.8.0/24&#39; OS_IMAGE_URL=&quot;https://launchpad.net/cirros/trunk/0.3.0/&#43;download/cirros-0.3.0-x86_64-disk.img&quot; OS_IMAGE_NAME=&quot;Cirros 0.3.0 x86_64&quot; 環境に合わせて設定すれば OK です。上記の前提の構成の場合このような値を入れてい きます。重要なところだけ説明すると.." />
+<meta property="og:description" content="※2012/12/04 に内容を修正しました。Network Node を切り出すよう修正。 ※213/01/09 に内容を修正しました。パラメータ修正です。
+OpenStack の Folsom リリースからメインコンポーネントの仲間入りした Quantum を 理解するのに時間を要してしまったのだけど、もう数十回とインストールを繰り返して だいぶ理解出来てきました。手作業でインストールしてると日が暮れてしまうのでと思っ て自分用に bash で構築スクリプトを作ったのだけど、それを公開しようと思います。
+OpenStack Folsom の構築に四苦八苦している方に使ってもらえたらと思ってます。
+http://jedipunkz.github.com/openstack_folsom_deploy/
+chef や puppet, juju などデプロイのフレームワークは今流行です。ただどれも環境 を予め構築しなくてはいけないので、誰でもすぐに使える環境ってことで bash スクリ プトで書いています。時間があれば是非 chef の cookbook を書いていきたいです。と いうか予定です。でも、もうすでに opscode 等は書き始めています。(汗
+ではでは、紹介を始めます。
+前提の構成 management segment 172.16.1.0/24 &#43;--------------------------------------------&#43;------------------&#43;----------------- | | | | | | | eth2 172.16.1.13 | eth2 172.16.1.12 | eth2 172.24.1.11 &#43;------------&#43; &#43;-----------&#43; &#43;------------&#43; | | eth1 ------------------- eth1 | | | | | network | vlan/gre seg = 172." />
 <meta property="og:type" content="article" />
 <meta property="og:url" content="http://jedipunkz.github.io/blog/2012/11/10/openstack-folsom-install/" />
 
@@ -51,7 +63,13 @@
 
         
 <meta itemprop="name" content="OpenStack Folsom 構築スクリプト">
-<meta itemprop="description" content="※2012/12/04 に内容を修正しました。Network Node を切り出すよう修正。 ※213/01/09 に内容を修正しました。パラメータ修正です。 OpenStack の Folsom リリースからメインコンポーネントの仲間入りした Quantum を 理解するのに時間を要してしまったのだけど、もう数十回とインストールを繰り返して だいぶ理解出来てきました。手作業でインストールしてると日が暮れてしまうのでと思っ て自分用に bash で構築スクリプトを作ったのだけど、それを公開しようと思います。 OpenStack Folsom の構築に四苦八苦している方に使ってもらえたらと思ってます。 http://jedipunkz.github.com/openstack_folsom_deploy/ chef や puppet, juju などデプロイのフレームワークは今流行です。ただどれも環境 を予め構築しなくてはいけないので、誰でもすぐに使える環境ってことで bash スクリ プトで書いています。時間があれば是非 chef の cookbook を書いていきたいです。と いうか予定です。でも、もうすでに opscode 等は書き始めています。(汗 ではでは、紹介を始めます。 前提の構成 management segment 172.16.1.0/24 &#43;--------------------------------------------&#43;------------------&#43;----------------- | | | | | | | eth2 172.16.1.13 | eth2 172.16.1.12 | eth2 172.24.1.11 &#43;------------&#43; &#43;-----------&#43; &#43;------------&#43; | | eth1 ------------------- eth1 | | | | | network | vlan/gre seg = 172.24.17.0/24 | compute | | controller | | node | data segment = 172.16.2.0/24 | node | | node | &#43;------------&#43; 172.16.2.13 172.16.2.12 &#43;-----------&#43; &#43;------------&#43; | eth0 10.200.8.13 | eth0 10.200.8.11 | | | | &#43;--------------------------------------------&#43;------------------&#43;----------------- | public segment 10.200.8.0/24 | | 10.200.8.1 &#43;-----------&#43; | GW Router |-&gt; The Internet &#43;-----------&#43; Quantum は、 API network Public network Data network Management Network の4つのネットワークセグメントを前提に設計されています。4つ用意するのが大変なの で今回は API / Management network Public Network Data Network と API と Management を兼務させた3つのネットワークセグメントを前提に話続けます。 もちろん Management を追加で切り出しても構わないです。NIC を追加するだけで OK 。 詳しくは、 http://docs.openstack.org/trunk/openstack-network/admin/content/connectivity.html に掲載されています。 また今回は public network に 10.200.8&frasl;24 を使ってます。サービス環境ではここが グローバルセグメントになります。 インストール対象 OS は Ubuntu Server 12.04 LTS もしくは 12.10 で動作します。 3つの NIC があるマシンを1台、NIC 2つのマシンを2台を用意します。 controller node x 1台 network node x 1台 &#43; comupte node x n台 の構成で す。 controller : glance, keystone, mysql, horizon, quantum server が稼働する Node network : quantum dhcp agent, quantum l3 agent, quantum openvswitch agent が稼働する Node compute : nova, quntum openvswitch agent が稼働する Node 上記の構成では下記の通り /etc/network/interface を設定します。controller 側の 設定です。 auto lo iface lo inet loopback auto eth0 iface eth0 inet static address 10.200.8.11 netmask 255.255.255.0 dns-nameservers 8.8.8.8 8.8.4.4 dns-search cpi.ad.jp auto eth2 iface eth2 inet static address 172.16.1.11 netmask 255.255.255.0 gateway 172.16.1.1 Network Node は&hellip; auto lo iface lo inet loopback auto eth0 iface eth0 inet static up ifconfig $IFACE 0.0.0.0 up up ip link set $IFACE promisc on down ip link set $IFACE promisc off down ifconfig $IFACE down address 10.200.8.21 netmask 255.255.255.0 #gateway 10.200.8.1 # dns-* options are implemented by the resolvconf package, if installed dns-nameservers 8.8.8.8 8.8.4.4 dns-search cpi.ad.jp auto eth1 iface eth1 inet static address 172.16.2.13 netmask 255.255.255.0 auto eth2 iface eth2 inet static address 172.16.1.13 netmask 255.255.255.0 gateway 172.16.1.1 dns-nameservers 8.8.8.8 8.8.4.4 compute Node は&hellip; auto eth1 iface eth1 inet static address 172.16.2.12 netmask 255.255.255.0 auto eth2 iface eth2 inet static address 172.16.1.12 netmask 255.255.255.0 gateway 172.16.1.1 dns-nameservers 8.8.8.8 8.8.4.4 です。下記のコマンドでネットワークインターフェースを再起動してください。 ここまで用意出来たらいよいよ実行するのみです。 controller% sudo /etc/init.d/networking restart network % sudo /etc/init.d/networking restart compute % sudo /etc/init.d/networking restart スクリプト実行 下記の通りスクリプトを取得して&hellip; controller% git clone https://github.com/jedipunkz/openstack_folsom_deploy.git controller% cd openstack_folsom_deploy それぞれの構成に合わせて deploy.conf を修正します。上記の構成の場合下記のようになります。 BASE_DIR=`pwd` CONTROLLER_NODE_IP=&#39;172.16.1.11&#39; CONTROLLER_NODE_PUB_IP=&#39;10.200.8.11&#39; NETWORK_NODE_IP=&#39;172.16.1.12&#39; COMPUTE_NODE_IP=&#39;172.16.1.13&#39; DATA_NIC_COMPUTE=&#39;eth1&#39; MYSQL_PASS=&#39;secret&#39; CINDER_VOLUME=&#39;/dev/sda6&#39; DATA_NIC=&#39;eth1&#39; PUBLIC_NIC=&#39;eth0&#39; NETWORK_TYPE=&#39;gre&#39; INT_NET_GATEWAY=&#39;172.24.17.254&#39; INT_NET_RANGE=&#39;172.24.17.0/24&#39; EXT_NET_GATEWAY=&#39;10.200.8.1&#39; EXT_NET_START=&#39;10.200.8.36&#39; EXT_NET_END=&#39;10.200.8.40&#39; EXT_NET_RANGE=&#39;10.200.8.0/24&#39; OS_IMAGE_URL=&quot;https://launchpad.net/cirros/trunk/0.3.0/&#43;download/cirros-0.3.0-x86_64-disk.img&quot; OS_IMAGE_NAME=&quot;Cirros 0.3.0 x86_64&quot; 環境に合わせて設定すれば OK です。上記の前提の構成の場合このような値を入れてい きます。重要なところだけ説明すると..">
+<meta itemprop="description" content="※2012/12/04 に内容を修正しました。Network Node を切り出すよう修正。 ※213/01/09 に内容を修正しました。パラメータ修正です。
+OpenStack の Folsom リリースからメインコンポーネントの仲間入りした Quantum を 理解するのに時間を要してしまったのだけど、もう数十回とインストールを繰り返して だいぶ理解出来てきました。手作業でインストールしてると日が暮れてしまうのでと思っ て自分用に bash で構築スクリプトを作ったのだけど、それを公開しようと思います。
+OpenStack Folsom の構築に四苦八苦している方に使ってもらえたらと思ってます。
+http://jedipunkz.github.com/openstack_folsom_deploy/
+chef や puppet, juju などデプロイのフレームワークは今流行です。ただどれも環境 を予め構築しなくてはいけないので、誰でもすぐに使える環境ってことで bash スクリ プトで書いています。時間があれば是非 chef の cookbook を書いていきたいです。と いうか予定です。でも、もうすでに opscode 等は書き始めています。(汗
+ではでは、紹介を始めます。
+前提の構成 management segment 172.16.1.0/24 &#43;--------------------------------------------&#43;------------------&#43;----------------- | | | | | | | eth2 172.16.1.13 | eth2 172.16.1.12 | eth2 172.24.1.11 &#43;------------&#43; &#43;-----------&#43; &#43;------------&#43; | | eth1 ------------------- eth1 | | | | | network | vlan/gre seg = 172.">
 
 
 <meta itemprop="dateModified" content="2012-11-10T00:00:00&#43;00:00" />
@@ -213,6 +231,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
                     </li>
                 
@@ -222,10 +244,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
             </ul>
@@ -793,6 +811,20 @@ Quantum の構成になって、そう簡単にいかなくなった。</p>
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-03'>
+                                    November 3, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
                                 
                                     
@@ -828,20 +860,6 @@ Quantum の構成になって、そう簡単にいかなくなった。</p>
                                 <time class="published" datetime=
                                     '2016-07-14'>
                                     July 14, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-02'>
-                                    July 2, 2016</time>
                             </header>
                         </article>
                     </li>
