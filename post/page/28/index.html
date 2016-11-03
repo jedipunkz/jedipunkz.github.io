@@ -16,7 +16,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.16" />
+        <meta name="generator" content="Hugo 0.17" />
         
 
 
@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2012-12-08T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-01-01T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,229 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/01/01/freebsd-on-openstack/">FreeBSD on OpenStack</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-01-01'>
+            January 1, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>FreeBSD を OpenStack で管理したいなぁと思って自宅に OpenStack 環境作ってました。</p>
+
+<p>お正月なのに&hellip;</p>
+
+<p>使ったのは folsom ベースの OpenStack (nova-network) と FreeBSD 9.1 です。8 系
+の FreeBSD でも大体同じ作業で実現出来るぽいです。あと nova-network でって書い
+たのは自宅に quantum だと少し厳しいからです。FlatDHCPManager が調度良かった。</p>
+
+<p>今回のポイントは FreeBSD の HDD, NIC のドライバに virtio を使うように修正する
+ところです。OpenStack (KVM) は virtio 前提なので、そうせざるを得なかったです。</p>
+
+<h2 id="今回使ったソフトウェア">今回使ったソフトウェア</h2>
+
+<ul>
+<li>OpenStack Folsom (nova-network)</li>
+<li>Ubuntu Server 12.10</li>
+<li>FreeBSD 9.1 amd64</li>
+</ul>
+
+<h2 id="作業方法">作業方法</h2>
+
+<p>準備としてこれらが必要になります。事前に行なってください。</p>
+
+<ul>
+<li>FreeBSD-9.1-RELEASE-amd64-disc1.iso ダウンロード</li>
+<li>作業ホスト (Ubuntu Server 12.10) に qemu-kvm をインストール</li>
+</ul>
+
+<p>freebsd9.img として qcow2 イメージを作成します。</p>
+
+<pre><code>% kvm-img create -f qcow2 freebsd9.img 8G
+</code></pre>
+
+<p>作成したイメージファイルに FreeBSD 9.1 をインストールします。</p>
+
+<pre><code>% kvm -m 256 -cdrom ./FreeBSD-9.1-RELEASE-amd64-disc1.iso \
+-drive file=./freebsd9.img -boot d -net nic -net user -nographic -vnc :10
+</code></pre>
+
+<p>VNC のディスプレイ番号は空いているものを使ってください。空いていれば他でも構い
+ません。</p>
+
+<p>VNC viewer をインストールし localhost:10 に接続します。ここでは作業ホストに X
+Window System が入っていることを前提に書いていますが、Non-X な方は他のホストか
+らその他の VNC ソフトウェアを使ってアクセスしてもらっても構わないです。</p>
+
+<pre><code>% sudo apt-get update
+% sudo apt-get gvncviewer
+%gvncviewer localhost:10
+</code></pre>
+
+<p>インストーラが起動しているのでインストール行なってください。気をつける点として
+は一つ。src をインストールしてください。後に virtio をインストールするのに必要
+になってくるからです。kmod ファイルをコンパイルしてインストールすることになります。</p>
+
+<p>インストールが終わったら今度は仮想マシンを HDD から起動します。</p>
+
+<pre><code>% kvm -m 256 -drive file=./freebsd9.img -boot c -net nic -net user \
+  -nographic -vnc :10
+</code></pre>
+
+<p>VNC で再度接続し仮想マシン上で emulators/virtio-kmod をインストールします。</p>
+
+<pre><code>freebsd9% cd /usr/ports/emulators/virtio-kmod/
+freebsd9% su
+freebsd9# make install clean
+</code></pre>
+
+<p>次に virtio ドライバを扱うように HDD, NIC ドライバ周りの設定を変更します。
+virtio のインストールが終わった後に「こうしろ」とメッセージが出てきますので
+それを参考に行います。一部、僕の環境ではそのままではダメだったので修正して
+使いました。</p>
+
+<p>インストールした virtio を起動時に読み込むために下記を追記します。</p>
+
+<pre><code>freebsd9# vi /boot/loader.conf
+virtio_load=&quot;YES&quot;
+virtio_pci_load=&quot;YES&quot;
+virtio_blk_load=&quot;YES&quot;
+if_vtnet_load=&quot;YES&quot;
+virtio_balloon_load=&quot;YES&quot;
+</code></pre>
+
+<p>HDD ドライバを virtio を使うように変更します。これによってデバイス名が変わって
+くるので /etc/fstab を編集します。</p>
+
+<pre><code>freebsd9# sed -i.bak -Ee 's|/dev/ada?|/dev/vtbd|' /etc/fstab
+</code></pre>
+
+<p>NIC も virtio を使います。僕の環境では ifconfig_re0 でした。これを vtnet0 に変
+更します。</p>
+
+<pre><code>freebsd9# cat /etc/rc.conf
+ifconfig_vtnet0=&quot;DHCP&quot;
+..&lt;snip&gt;..
+</code></pre>
+
+<p>qemu の起動方法、もしくはデフォルトのハードウェア定義によって re0 は変わってく
+るかもしれません。適宜変更します。</p>
+
+<p>仮想マシンをシャットダウンします。</p>
+
+<pre><code>freebsd9# shutdown -p now
+</code></pre>
+
+<p>完成したイメージファイル freebsd9.img を openstack 環境に転送し (openstack 環
+境で作業している方は必要無いです) glance に登録します。</p>
+
+<p>環境変数諸々を揃えて&hellip;</p>
+
+<pre><code>% glance add name=&quot;FreeBSD 9&quot; is_public=true container_format=ovf disk_format=qcow2 &lt; freebsd9.img
+% glance image-list
++--------------------------------------+------------------------+-------------+------------------+-------------+--------+
+| ID                                   | Name                   | Disk Format | Container Format | Size        | Status |
++--------------------------------------+------------------------+-------------+------------------+-------------+--------+
+| 1af6f41b-1048-4d78-9715-87935c0bc6ae | FreeBSD 9              | qcow2       | ovf              | 4305584128  | active |
++--------------------------------------+------------------------+-------------+------------------+-------------+--------+
+</code></pre>
+
+<p>以上です。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>FreeBSD は仕事場でもプライベートでもまだまだ現役だし OpenStack で扱えるように
+することは僕にとってとても重要でした。なので満足ｗ FreeBSD 8 系では同じ手順で
+扱えるらしいのだけど、それ以前のバージョンになるとどうか&hellip; virtio がポイント
+なのと、KVM とゲスト OS バージョンって相性がめちゃ有るのでここもポイントになり
+そう。ハイパーバイザに VMWare も使えるらしいので今度やってみるかな。VMWare で
+も相性はあるけど、KVM ほどシビアにならなくていい印象がある。FreeBSD 3系でも頑
+張れば動いたし。</p>
+
+<p>あとは cloud-init 。まだ開発途中だそうです。なので metadata サーバにアクセスし
+て、色んな事しようと思ってもまだ難しい。</p>
+
+<p>この年末に Windows も OpenStack に乗せてみたので、そちらの記事も時間があったら
+載せようっと。</p>
+
+<h4 id="2013-01-02-追記">2013/01/02 追記</h4>
+
+<p>FreeBSD 8.3 で試してみましたが、全く同じ手順で起動してくれました。ただ、
+emulators/virtio-kmod が 8.2 or 9 に対応しているとあったので Makefile を修正し
+て virtio-kmod をインストールしています。今のところ何も問題出ていません。</p>
+
+<p>``` bash diff output of Makefiles</p>
+
+<h1 id="diff-u-usr-ports-emulators-virtio-kmod-makefile-org-usr-ports-emulators-virtio-kmod-makefile">diff -u /usr/ports/emulators/virtio-kmod/Makefile.org  /usr/ports/emulators/virtio-kmod/Makefile</h1>
+
+<p>&mdash; /usr/ports/emulators/virtio-kmod/Makefile.org   2013-01-02 06:02:48.000000000 +0900
++++ /usr/ports/emulators/virtio-kmod/Makefile   2013-01-02 06:02:59.000000000 +0900
+@@ -28,7 +28,7 @@</p>
+
+<p>.include <bsd.port.pre.mk></p>
+
+<p>-.if ${OSREL} != &ldquo;8.2&rdquo; &amp;&amp; ${OSREL} != &ldquo;9.0&rdquo;
++.if ${OSREL} != &ldquo;8.3&rdquo; &amp;&amp; ${OSREL} != &ldquo;9.0&rdquo;
+ IGNORE=not supported $${OSREL} (${OSREL})
+ .endif
+```</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/01/01/freebsd-on-openstack/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -929,343 +1152,6 @@ OpenFlow を Trema という OpenFlow コントローラフレームワークを
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2012/11/10/openstack-folsom-install/">OpenStack Folsom 構築スクリプト</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2012-11-10'>
-            November 10, 2012</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>※2012/12/04 に内容を修正しました。Network Node を切り出すよう修正。
-※213/01/09 に内容を修正しました。パラメータ修正です。</p>
-
-<p>OpenStack の Folsom リリースからメインコンポーネントの仲間入りした Quantum を
-理解するのに時間を要してしまったのだけど、もう数十回とインストールを繰り返して
-だいぶ理解出来てきました。手作業でインストールしてると日が暮れてしまうのでと思っ
-て自分用に bash で構築スクリプトを作ったのだけど、それを公開しようと思います。</p>
-
-<p>OpenStack Folsom の構築に四苦八苦している方に使ってもらえたらと思ってます。</p>
-
-<p><a href="http://jedipunkz.github.com/openstack_folsom_deploy/">http://jedipunkz.github.com/openstack_folsom_deploy/</a></p>
-
-<p>chef や puppet, juju などデプロイのフレームワークは今流行です。ただどれも環境
-を予め構築しなくてはいけないので、誰でもすぐに使える環境ってことで bash スクリ
-プトで書いています。時間があれば是非 chef の cookbook を書いていきたいです。と
-いうか予定です。でも、もうすでに opscode 等は書き始めています。(汗</p>
-
-<p>ではでは、紹介を始めます。</p>
-
-<h2 id="前提の構成">前提の構成</h2>
-
-<pre><code>management segment 172.16.1.0/24
-+--------------------------------------------+------------------+-----------------
-|                                            |                  |
-|                                            |                  |
-| eth2 172.16.1.13                           | eth2 172.16.1.12 | eth2 172.24.1.11
-+------------+                               +-----------+      +------------+
-|            | eth1 ------------------- eth1 |           |      |            |
-|  network   | vlan/gre seg = 172.24.17.0/24 |  compute  |      | controller |
-|    node    | data segment = 172.16.2.0/24  |   node    |      |    node    |
-+------------+ 172.16.2.13       172.16.2.12 +-----------+      +------------+      
-| eth0 10.200.8.13                                              | eth0 10.200.8.11
-|                                                               |
-|                                                               |
-+--------------------------------------------+------------------+-----------------
-|       public segment 10.200.8.0/24
-|
-| 10.200.8.1
-+-----------+
-| GW Router |-&gt; The Internet
-+-----------+
-</code></pre>
-
-<p>Quantum は、</p>
-
-<ul>
-<li>API network</li>
-<li>Public network</li>
-<li>Data network</li>
-<li>Management Network</li>
-</ul>
-
-<p>の4つのネットワークセグメントを前提に設計されています。4つ用意するのが大変なの
-で今回は</p>
-
-<ul>
-<li>API / Management network</li>
-<li>Public Network</li>
-<li>Data Network</li>
-</ul>
-
-<p>と API と Management を兼務させた3つのネットワークセグメントを前提に話続けます。
-もちろん Management を追加で切り出しても構わないです。NIC を追加するだけで OK
-。</p>
-
-<p>詳しくは、</p>
-
-<p><a href="http://docs.openstack.org/trunk/openstack-network/admin/content/connectivity.html">http://docs.openstack.org/trunk/openstack-network/admin/content/connectivity.html</a></p>
-
-<p>に掲載されています。</p>
-
-<p>また今回は public network に 10.200.<sup>8</sup>&frasl;<sub>24</sub> を使ってます。サービス環境ではここが
-グローバルセグメントになります。</p>
-
-<h2 id="インストール対象">インストール対象</h2>
-
-<p>OS は Ubuntu Server 12.04 LTS もしくは 12.10 で動作します。</p>
-
-<p>3つの NIC があるマシンを1台、NIC 2つのマシンを2台を用意します。
-controller node x 1台 network node x 1台 + comupte node x n台 の構成で
-す。</p>
-
-<ul>
-<li>controller : glance, keystone, mysql, horizon, quantum server が稼働する Node</li>
-<li>network : quantum dhcp agent, quantum l3 agent, quantum openvswitch agent が稼働する Node</li>
-<li>compute : nova, quntum openvswitch agent が稼働する Node</li>
-</ul>
-
-<p>上記の構成では下記の通り /etc/network/interface を設定します。controller 側の
-設定です。</p>
-
-<pre><code>auto lo
-iface lo inet loopback
-
-auto eth0
-iface eth0 inet static
-    address 10.200.8.11
-    netmask 255.255.255.0
-    dns-nameservers 8.8.8.8 8.8.4.4
-    dns-search cpi.ad.jp
-
-auto eth2
-iface eth2 inet static
-    address 172.16.1.11
-    netmask 255.255.255.0
-    gateway 172.16.1.1
-</code></pre>
-
-<p>Network Node は&hellip;</p>
-
-<pre><code>auto lo
-iface lo inet loopback
-
-auto eth0
-iface eth0 inet static
-    up ifconfig $IFACE 0.0.0.0 up
-    up ip link set $IFACE promisc on
-    down ip link set $IFACE promisc off
-    down ifconfig $IFACE down
-    address 10.200.8.21
-    netmask 255.255.255.0
-    #gateway 10.200.8.1
-    # dns-* options are implemented by the resolvconf package, if installed
-    dns-nameservers 8.8.8.8 8.8.4.4
-    dns-search cpi.ad.jp
-
-auto eth1
-    iface eth1 inet static
-    address 172.16.2.13
-    netmask 255.255.255.0
-
-auto eth2
-iface eth2 inet static
-    address 172.16.1.13
-    netmask 255.255.255.0
-    gateway 172.16.1.1
-    dns-nameservers 8.8.8.8 8.8.4.4
-</code></pre>
-
-<p>compute Node は&hellip;</p>
-
-<pre><code>auto eth1
-iface eth1 inet static
-    address 172.16.2.12
-    netmask 255.255.255.0
-
-auto eth2
-iface eth2 inet static
-    address 172.16.1.12
-    netmask 255.255.255.0
-    gateway 172.16.1.1
-    dns-nameservers 8.8.8.8 8.8.4.4
-</code></pre>
-
-<p>です。下記のコマンドでネットワークインターフェースを再起動してください。
-ここまで用意出来たらいよいよ実行するのみです。</p>
-
-<pre><code>controller% sudo /etc/init.d/networking restart
-network   % sudo /etc/init.d/networking restart
-compute   % sudo /etc/init.d/networking restart
-</code></pre>
-
-<h2 id="スクリプト実行">スクリプト実行</h2>
-
-<p>下記の通りスクリプトを取得して&hellip;</p>
-
-<pre><code>controller% git clone https://github.com/jedipunkz/openstack_folsom_deploy.git
-controller% cd openstack_folsom_deploy
-</code></pre>
-
-<p>それぞれの構成に合わせて deploy.conf を修正します。上記の構成の場合下記のようになります。</p>
-
-<pre><code>BASE_DIR=`pwd`
-CONTROLLER_NODE_IP='172.16.1.11'
-CONTROLLER_NODE_PUB_IP='10.200.8.11'
-NETWORK_NODE_IP='172.16.1.12'
-COMPUTE_NODE_IP='172.16.1.13'
-DATA_NIC_COMPUTE='eth1'
-
-MYSQL_PASS='secret'
-CINDER_VOLUME='/dev/sda6'
-DATA_NIC='eth1'
-PUBLIC_NIC='eth0'
-
-NETWORK_TYPE='gre'
-INT_NET_GATEWAY='172.24.17.254'
-INT_NET_RANGE='172.24.17.0/24'
-EXT_NET_GATEWAY='10.200.8.1'
-EXT_NET_START='10.200.8.36'
-EXT_NET_END='10.200.8.40'
-EXT_NET_RANGE='10.200.8.0/24'
-
-OS_IMAGE_URL=&quot;https://launchpad.net/cirros/trunk/0.3.0/+download/cirros-0.3.0-x86_64-disk.img&quot;
-OS_IMAGE_NAME=&quot;Cirros 0.3.0 x86_64&quot;
-</code></pre>
-
-<p>環境に合わせて設定すれば OK です。上記の前提の構成の場合このような値を入れてい
-きます。重要なところだけ説明すると..</p>
-
-<ul>
-<li>CONTROLLER_NODE_IP : Controller Node の IP アドレス</li>
-<li>NETWROK_NODE_IP : Network Node の IP アドレス</li>
-<li>COMPUTE_NODE_IP : Compute Node の IP アドレス</li>
-<li>INT<em>NET</em>.. : Quantum で管理する内部ネットワーク</li>
-<li>EXT_NET-.. : Quantum で管理する外部ネットワーク</li>
-</ul>
-
-<p>です。</p>
-
-<p>deploy.conf を修正したら、各 Node にディレクトリをコピーします。</p>
-
-<pre><code>network% scp -r &lt;CONTROLLER_NODE_IP&gt;:~/openstack_folsom_deploy .
-compute% scp -r &lt;CONTROLLER_NODE_IP&gt;:~/openstack_folsom_deploy .
-</code></pre>
-
-<p>いよいよ実行。それぞれの Node で順にスクリプトを実行します。</p>
-
-<pre><code>controller% sudo ./deploy.sh controller quantum
-network   % sudo ./deploy.sh network quantum
-compute   % sudo ./deploy.sh compute quantum
-</code></pre>
-
-<p>また構築が終了したら quantum 上にネットワークを作成します。</p>
-
-<pre><code>controller% sudo ./deploy.sh create_network qunatum
-</code></pre>
-
-<p>完成です。http://${CONTROLLER_NODE_IP}/horizon/ にアクセスすれば管
-理画面が表示されるはずです。</p>
-
-<p>更に compute node を追加したければ&hellip;</p>
-
-<pre><code>compute02% scp -r &lt;CONTROLLER_NODE_IP&gt;:~/openstack_folsom_deploy .
-compute02% cd openstack_folsom_deploy
-compute02% vim deploy.conf # $COMPUTE_NODE_IP を修正する。その他はそのまま。
-compute02% sudo ./deploy.sh compute quantum
-</code></pre>
-
-<p>と deploy.conf 内 $COMPUTE_NODE_IP を更新して実行すれば OK です。</p>
-
-<h2 id="floating-ip-の利用">Floating IP の利用</h2>
-
-<p>現在、folsom リリース版には floating ip が horizon 経由で利用できない問題があ
-ります。コマンドラインでは利用できるのでその方法を。</p>
-
-<pre><code>% source $HOME/openstackrc
-% quantum net-list
-% quantun floatingip-create &lt;ext_net_id&gt;
-% quantun floatingip-list
-% quantum port-list
-% quantum floatingip-associate &lt;floatingip_id&gt; &lt;vm_port_id&gt;
-</code></pre>
-
-<h2 id="quantum-と-i-o-と-所感">Quantum と I/O と..所感</h2>
-
-<p><a href="http://www.readability.com/read?url=http://docs.openstack.org/trunk/openstack-network/admin/content/services.html">http://www.readability.com/read?url=http://docs.openstack.org/trunk/openstack-network/admin/content/services.html</a></p>
-
-<p>最近、メーリングリストで挙がっている話題。今回の構成だと Quantum は controller
-上で稼働し全ての VM がこの Quantum を利用することになります。つまり単一障害点っ
-ていうだけではなく I/O が集中するので負荷も上昇する。前リリース版 ESSEX の
-nova-network の時は追加する compute node 上全てで nova-network を稼働させ、
-node が増えるにつれ I/O も拡張出来るシンプルな構成が組めるモノだったのですが、
-Quantum の構成になって、そう簡単にいかなくなった。</p>
-
-<h2 id="オールインワン構成等-ほかの構成について">オールインワン構成等、ほかの構成について</h2>
-
-<p>2013/01/09 に nova-network にも対応しました。</p>
-
-<p>オールインワン構成や quantum に代わって nova-network を使う構成等、その他の構成構築方法
-については下記のドキュメントを参考にしてください。</p>
-
-<p><a href="https://github.com/jedipunkz/openstack_folsom_deploy/blob/master/README_jp.md">https://github.com/jedipunkz/openstack_folsom_deploy/blob/master/README_jp.md</a></p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/11/10/openstack-folsom-install/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1382,6 +1268,20 @@ Quantum の構成になって、そう簡単にいかなくなった。</p>
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-03'>
+                                    November 3, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
                                 
                                     
@@ -1417,20 +1317,6 @@ Quantum の構成になって、そう簡単にいかなくなった。</p>
                                 <time class="published" datetime=
                                     '2016-07-14'>
                                     July 14, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-02'>
-                                    July 2, 2016</time>
                             </header>
                         </article>
                     </li>

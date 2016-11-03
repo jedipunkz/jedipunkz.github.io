@@ -2,12 +2,274 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>ジェダイさんのブログ</title>
-    <link>http://jedipunkz.github.io/</link>
+    <link>http://jedipunkz.github.io/index.xml</link>
     <description>Recent content on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Mon, 25 Jul 2016 23:18:16 +0900</lastBuildDate>
+    <lastBuildDate>Thu, 03 Nov 2016 09:08:48 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>kubernetes1.4 で実装された ScheduledJob を試してみた！</title>
+      <link>http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/</link>
+      <pubDate>Thu, 03 Nov 2016 09:08:48 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/</guid>
+      <description>
+
+&lt;p&gt;こんにちは、@jedipunkz です。今回は Kubernetes1.4 から実装された ScheduledJob を試してみたのでその内容を記したいと思います。&lt;/p&gt;
+
+&lt;p&gt;ScheduledJob はバッチ的な処理を Kubernetes の pod を使って実行するための仕組みです。現在は alpha バージョンとして実装されています。
+kubernetes の pod, service は通常、永続的に立ち上げておくサーバなどを稼働させるものですが、それに対してこの scheduledJob は cron 感覚でバッチ処理を pod に任せることができます。&lt;/p&gt;
+
+&lt;p&gt;Alpha バージョンということで今回の環境構築は minikube を使って簡易的に Mac 上に構築しました。Docker がインストールされていれば Linux でも環境を作れます。&lt;/p&gt;
+
+&lt;h2 id=&#34;参考-url&#34;&gt;参考 URL&lt;/h2&gt;
+
+&lt;p&gt;今回利用する yaml ファイルなどは下記のサイトを参考にしています。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;http://kubernetes.io/docs/user-guide/scheduled-jobs/&#34;&gt;http://kubernetes.io/docs/user-guide/scheduled-jobs/&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/kubernetes/minikube&#34;&gt;https://github.com/kubernetes/minikube&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;前提の環境&#34;&gt;前提の環境&lt;/h2&gt;
+
+&lt;p&gt;私の環境では下記の環境を利用しました。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Mac OSX&lt;/li&gt;
+&lt;li&gt;Docker-machine or Docker for Mac&lt;/li&gt;
+&lt;li&gt;minikube&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;kubernetes-1-4-以降の構成を-minikube-で構築する&#34;&gt;kubernetes 1.4 以降の構成を minikube で構築する&lt;/h2&gt;
+
+&lt;p&gt;まず minikube のインストールを行います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.12.0/minikube-darwin-amd64 &amp;amp;&amp;amp; chmod +x minikube &amp;amp;&amp;amp; sudo mv minikube /usr/local/bin/
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;早速 minikube を起動します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ docker-machine start default
+$ minikube start
+$ eval $(minikube docker-env)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;google-cloud-の-gke-を利用する場合&#34;&gt;Google Cloud の GKE を利用する場合&lt;/h2&gt;
+
+&lt;p&gt;今回は minikube を使ってローカルマシンに kubernetes 1.4 環境を作りましたが Google Cloud の GKE を用いている場合下記のように gcloud SDK を用いて GKE クラスターノードを構築することで対応できます。ですが Google に確認したところこの構築方法を取った場合には Google からのサポートを得られないのと SLA も対象外になるとのことでした。リスクは大きいと思います。(2016/11現在)&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;gcloud alpha container clusters create alpha-test-cluster --zone asia-northeast1-b --enable-kubernetes-alpha
+gcloud container clusters get-credentials alpha-test-cluster
+gcloud container node-pools create alpha-test-pool --zone asia-northeast1-b --cluster alpha-test-cluster
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;scheduledjob-を試す&#34;&gt;scheduledjob を試す&lt;/h2&gt;
+
+&lt;h4 id=&#34;yaml-ファイルの生成&#34;&gt;yaml ファイルの生成&lt;/h4&gt;
+
+&lt;p&gt;scheduledjob を実行するための yaml ファイルを生成します。公式サイト (&lt;a href=&#34;http://kubernetes.io/docs/user-guide/scheduled-jobs/&#34;&gt;http://kubernetes.io/docs/user-guide/scheduled-jobs/&lt;/a&gt;) にあるものを一部修正して記述しています。ファイル名は sj.yaml とします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;apiVersion: batch/v2alpha1
+kind: ScheduledJob
+metadata:
+  name: hello
+spec:
+  schedule: 0/1 * * * ?
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: busybox
+            args:
+            - /bin/sh
+            - -c
+            - date; echo Hello from the Kubernetes cluster
+          restartPolicy: OnFailure
+  concurrencyPolicy: Allow
+  #suspend: true
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;scheduledjob-の実行&#34;&gt;scheduledJob の実行&lt;/h4&gt;
+
+&lt;p&gt;生成した yaml ファイルを元に kubectl コマンドで scheduledjob を実行します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f ./sj.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;実行したジョブがどのような状況か確認します。下記のコマンドで生成した scheduledjob 一覧が確認できます。
+yaml ファイルの通り、1分間隔で &amp;lsquo;hello&amp;rsquo; という scheduledJob が実行されることが確認できると思います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get scheduledjob
+NAME      SCHEDULE      SUSPEND   ACTIVE    LAST-SCHEDULE
+hello     0/1 * * * ?   False     0         &amp;lt;none&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;scheduledjob を元に実行された(実行される) ジョブ(job) 一覧を確認します。
+1分間隔で実行されている様子が確認できます。また、DESIRED:1 で SUCCESSFUL:0 の行は、1分間隔で実行される直前のジョブとして認識されていることがわかります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get jobs --watch
+NAME               DESIRED   SUCCESSFUL   AGE
+hello-1856276298   1         1            59s
+NAME               DESIRED   SUCCESSFUL   AGE
+hello-1780451143   1         0            0s
+hello-1780451143   1         0         0s
+hello-1780451143   1         1         5s
+hello-1476429627   1         0         0s
+hello-1476429627   1         0         0s
+hello-1476429627   1         1         5s
+hello-1628211009   1         0         0s
+hello-1628211009   1         0         0s
+hello-1628211009   1         1         5s
+hello-1552385854   1         0         0s
+hello-1552385854   1         0         0s
+hello-1552385854   1         1         5s
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;下記のコマンドで実行されたジョブ一覧を取得できます。こちらは結果のみですので SUCCESSFULL=1 のみが表示されています。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get job
+NAME               DESIRED   SUCCESSFUL   AGE
+hello-1476429627   1         1            6m
+hello-1552385854   1         1            4m
+hello-1552516926   1         1            1m
+hello-1628211009   1         1            5m
+hello-1628342081   1         1            2m
+hello-1704167236   1         1            3m
+hello-1704298308   1         1            49s
+hello-1780451143   1         1            7m
+hello-1856276298   1         1            8m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;この際に pod の様子も確認してみます。&amp;ndash;show-all オプションで過去の pod を一覧表示します。今回のジョブは一瞬で実行可能な内容なのでこのオプションを付けないと pod 一覧が取得できない可能性が高いです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get pod --show-all
+NAME                     READY     STATUS      RESTARTS   AGE
+hello-1476429627-pxr06   0/1       Completed   0          8m
+hello-1552385854-y68ci   0/1       Completed   0          6m
+hello-1552516926-ggjpk   0/1       Completed   0          3m
+hello-1628211009-iih0i   0/1       Completed   0          7m
+hello-1628342081-ig5lg   0/1       Completed   0          4m
+hello-1628473153-9wvn4   0/1       Completed   0          1m
+hello-1704167236-zqg94   0/1       Completed   0          5m
+hello-1704298308-eaq8m   0/1       Completed   0          2m
+hello-1780254535-64mah   0/1       Completed   0          28s
+hello-1780451143-tjg8r   0/1       Completed   0          9m
+hello-1856276298-y2o65   0/1       Completed   0          10m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;最終行のジョブ &amp;lsquo;hello-1856276298-y2o65&amp;rsquo; の内容を確認します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl logs hello-1856276298-y2o65
+Thu Oct 27 01:18:11 UTC 2016
+Hello from the Kubernetes cluster
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;sj.yaml 内に記述したジョブ内容 &amp;lsquo;echo &amp;hellip;&amp;rsquo; の実行結果が表示されていることが確認できます。&lt;/p&gt;
+
+&lt;p&gt;docker のイメージも確認します。ジョブ内で指定した image: busybox が確認できます。
+その他のイメージは minikube を構成するものです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ docker images
+REPOSITORY                                            TAG                 IMAGE ID            CREATED             SIZE
+busybox                                               latest              e02e811dd08f        2 weeks ago         1.093 MB
+gcr.io/google_containers/kubernetes-dashboard-amd64   v1.4.0              436faaeba2e2        5 weeks ago         86.27 MB
+gcr.io/google-containers/kube-addon-manager           v5.1                735ce4344f7f        3 months ago        255.8 MB
+gcr.io/google_containers/pause-amd64                  3.0                 99e59f495ffa        5 months ago        746.9 kB
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;ジョブの削除&#34;&gt;ジョブの削除&lt;/h2&gt;
+
+&lt;p&gt;ジョブを削除します。削除する対象は scheduledjob とそれを元に生成・実行された jobs です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl delete scheduledjob hello
+$ kubectl delete jobs $(kubectl get jobs | awk &#39;{print $1}&#39; | grep -v NAME)
+job &amp;quot;hello-1476429627&amp;quot; deleted
+job &amp;quot;hello-1552385854&amp;quot; deleted
+job &amp;quot;hello-1552516926&amp;quot; deleted
+job &amp;quot;hello-1628211009&amp;quot; deleted
+job &amp;quot;hello-1628342081&amp;quot; deleted
+job &amp;quot;hello-1628473153&amp;quot; deleted
+job &amp;quot;hello-1628604225&amp;quot; deleted
+job &amp;quot;hello-1704167236&amp;quot; deleted
+job &amp;quot;hello-1704298308&amp;quot; deleted
+job &amp;quot;hello-1704429380&amp;quot; deleted
+job &amp;quot;hello-1780254535&amp;quot; deleted
+job &amp;quot;hello-1780385607&amp;quot; deleted
+job &amp;quot;hello-1780451143&amp;quot; deleted
+job &amp;quot;hello-1856276298&amp;quot; deleted
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで確認できたのは scheduledjob を削除するとそれ以降の jobs は新規実行されませんでした。が、実行された後の jobs は情報として残ったままでした。&lt;/p&gt;
+
+&lt;h2 id=&#34;その他のオプション&#34;&gt;その他のオプション&lt;/h2&gt;
+
+&lt;h4 id=&#34;concurrencypolicy&#34;&gt;concurrencyPolicy&lt;/h4&gt;
+
+&lt;p&gt;下記のように spec.concurrencyPolicy オプションが指定できます。下記のような value を渡すと実行されるジョブの動作を変えることが可能です。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Allow (Default) : 重複するジョブ実行を許可&lt;/li&gt;
+&lt;li&gt;Forbid : 直前のジョブが終了していない場合ジョブ実行をスキップする&lt;/li&gt;
+&lt;li&gt;Replace : 直前のジョブが終了していない場合新しいジョブを上書きする&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h4 id=&#34;suspend&#34;&gt;suspend&lt;/h4&gt;
+
+&lt;p&gt;&amp;lsquo;spec.suspend: true&amp;rsquo; に設定すると ScheduledJob は生成されますが次回実行時のジョブがサスペンドされ実行されません。デフォルトは false です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get scheduledjob
+NAME      SCHEDULE      SUSPEND   ACTIVE    LAST-SCHEDULE
+hello     0/1 * * * ?   True      0         &amp;lt;none&amp;gt;
+$ kubectl get job
+$
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;オプションの適用例ファイル&#34;&gt;オプションの適用例ファイル&lt;/h4&gt;
+
+&lt;pre&gt;&lt;code&gt;apiVersion: batch/v2alpha1
+kind: ScheduledJob
+metadata:
+  name: hello
+spec:
+  schedule: 0/1 * * * ?
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: busybox
+            args:
+            - /bin/sh
+            - -c
+            - date; echo Hello from the Kubernetes cluster
+          restartPolicy: OnFailure
+  concurrencyPolicy: Forbid
+  suspend: true
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
+
+&lt;p&gt;今回試してみて、バッチ的な処理を kubernetes で行うならこの scheduledJob しかないな、と思いました。
+ですが、2016/11 現在ではまだ Alpha バージョンということで下記のようなリスクを含んでいます。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;このバージョンはバギーです&lt;/li&gt;
+&lt;li&gt;アナウンス無しに機能が削られることがあります&lt;/li&gt;
+&lt;li&gt;アナウンス無しにそれまでの互換性を変更することがあります&lt;/li&gt;
+&lt;li&gt;テスト用としての利用を勧めます。&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;参考サイト : &lt;a href=&#34;http://kubernetes.io/docs/api/&#34;&gt;http://kubernetes.io/docs/api/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;また上記にも記しましたが、ジョブの結果が残っていくため、通常使う cron のように数分間隔で実行しているとあっという間に job の量が大量に肥大化することが予想されます。この job には実行結果も含まれているため、消されるものではないのは理解できるのですが kubernetes api が持っている DB 上に大量のデータが生成され続けてしまうため、kubernetes api/サーバを管理している場合には問題になると思います。この辺り、仕様の修正が入ることを期待しています。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>Minikube で簡易 kubernetes 環境構築</title>
@@ -3448,157 +3710,6 @@ rtt min/avg/max/mdev = 0.272/0.380/0.451/0.079 ms
 トンネルがどのように張られているか確認する手段があれば良いのですが。&lt;/p&gt;
 
 &lt;p&gt;以上です。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>Aviator でモダンに OpenStack を操作する</title>
-      <link>http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/</link>
-      <pubDate>Sat, 13 Dec 2014 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;自分は Ruby を普段使うのでいつも Fog というライブラリを使って OpenStack, AWS
-を操作していました。Fog を使うとクラウドの操作が Ruby のネイティブコードで行え
-るのでシステムコマンド打つよりミス無く済みます。&lt;/p&gt;
-
-&lt;p&gt;Fog より後発で Aviator というライブラリが登場してきたので少し使ってみたのです
-がまだ未完成なところがあるものの便利な点もあって今後に期待だったので紹介します。&lt;/p&gt;
-
-&lt;h2 id=&#34;認証情報を-yaml-ファイルに記す&#34;&gt;認証情報を yaml ファイルに記す&lt;/h2&gt;
-
-&lt;p&gt;接続に必要な認証情報を yaml ファイルで記述します。名前を &amp;lsquo;aviator.yml&amp;rsquo; として
-保存。この時に下記のように環境毎に認証情報を別けて書くことができます。こうする
-ことでコードの中で開発用・サービス用等と使い分けられます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-yaml&#34;&gt;production:
-  provider: openstack
-  auth_service:
-    name: identity
-    host_uri: &amp;lt;Auth URL&amp;gt;
-    request: create_token
-    validator: list_tenants
-  auth_credentials:
-    username: &amp;lt;User Name&amp;gt;
-    password: &amp;lt;Password&amp;gt;
-    tenant_name: &amp;lt;Tenant Name&amp;gt;
-
-development:
-  provider: openstack
-  auth_service:
-    name: identity
-    host_uri: &amp;lt;Auth URL&amp;gt;
-    request: create_token
-    validator: list_tenants
-  auth_credentials:
-    username: &amp;lt;User Name&amp;gt;
-    password: &amp;lt;Password&amp;gt;
-    tenant_name: &amp;lt;Tenant Name&amp;gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;シンタックス確認
-+++&lt;/p&gt;
-
-&lt;p&gt;次に aviator のシンタックスを確認します。Fog に無い機能で、コマンドラインでシ
-ンタックスを確認できてしかも指定可能はパラメータと必須なパラメータと共にサンプ
-ルコードまで提供してくれます。公式サイトに&amp;rsquo;サーバ作成&amp;rsquo;のメソッドが掲載されてい
-るので、ここでは仮想ディスクを作るシンタックスを確認してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% gem install aviator
-% aviator describe openstack volume # &amp;lt;-- 利用可能な機能を確認
-Available requests for openstack volume_service:
-v1 public list_volume_types
-v1 public list_volumes
-v1 public delete_volume
-v1 public create_volume
-v1 public get_volume
-v1 public update_volume
-  v1 public root
-% aviator describe openstack volume v1 public create_volume # &amp;lt;-- シンタックスを確認
-:Request =&amp;gt; create_volume
-
-Parameters:
- +---------------------+-----------+
- | NAME                | REQUIRED? |
- +---------------------+-----------+
- | availability_zone   |     N     |
- | display_description |     Y     |
- | display_name        |     Y     |
- | metadata            |     N     |
- | size                |     Y     |
- | snapshot_id         |     N     |
- | volume_type         |     N     |
- +---------------------+-----------+
-
-Sample Code:
-  session.volume_service.request(:create_volume) do |params|
-    params.volume_type = value
-    params.availability_zone = value
-    params.snapshot_id = value
-    params.metadata = value
-    params.display_name = value
-    params.display_description = value
-    params.size = value
-  end
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;このように create_volume というメソッドが用意されていて、指定出来るパラメータ・
-必須なパラメータが確認できます。必須なモノには &amp;ldquo;Y&amp;rdquo; が REQUIRED に付いています。
-またサンプルコードが出力されるので、めちゃ便利です。&lt;/p&gt;
-
-&lt;p&gt;では create_volume のシンタックスがわかったので、コードを書いてみましょう。&lt;/p&gt;
-
-&lt;p&gt;コードを書いてみる
-+++&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;#!/usr/bin/env ruby
-
-require &#39;aviator&#39;
-require &#39;json&#39;
-
-volume_session = Aviator::Session.new(
-              :config_file =&amp;gt; &#39;/home/thirai/aviator/aviator.yml&#39;,
-              :environment =&amp;gt; :production,
-              :log_file    =&amp;gt; &#39;/home/thirai/aviator/aviator.log&#39;
-            )
-
-volume_session.authenticate
-
-volume_session.volume_service.request(:create_volume) do |params|
-  params.display_description = &#39;testvol&#39;
-  params.display_name = &#39;testvol01&#39;
-  params.size = 1
-end
-puts volume_session.volume_service.request(:list_volumes).body
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;6行目で先ほど作成した認証情報ファイル aviator.yml とログ出力ファイル
-aviator.log を指定します。12行目で実際に OpenStack にログインしています。&lt;/p&gt;
-
-&lt;p&gt;14-18行目はサンプルコードそのままです。必須パラメータの display_description,
-display_name, size のみを指定し仮想ディスクを作成しました。最後の puts &amp;hellip; は
-実際に作成した仮想ディスク一覧を出力しています。&lt;/p&gt;
-
-&lt;p&gt;結果は下記のとおりです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{ volumes: [{ status: &#39;available&#39;, display_name: &#39;testvol01&#39;, attachments: [],
-availability_zone: &#39;az3&#39;, bootable: &#39;false&#39;, created_at:
-description = &#39;testvol&#39;, volume_type:
-&#39;standard&#39;, snapshot_id: nil, source_volid: nil, metadata:  }, id:
-&#39;3a5f616e-a732-4442-a419-10369111bd4c&#39;, size: 1 }] }
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;まとめ
-+++&lt;/p&gt;
-
-&lt;p&gt;サンプルコードやパラメータ一覧等がひと目でわかる aviator はとても便利です。ま
-だ利用できるクラウドプラットフォームが OpenStack しかないのと、Neutron の機能
-がスッポリ抜けているので、まだ利用するには早いかもです&amp;hellip;。逆に言えばコントリ
-ビューションするチャンスなので、もし気になった方がいたら開発に参加してみるのも
-いいかもしれません。&lt;/p&gt;
 </description>
     </item>
     

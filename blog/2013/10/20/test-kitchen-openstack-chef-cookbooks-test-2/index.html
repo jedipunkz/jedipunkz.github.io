@@ -10,7 +10,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.16" />
+        <meta name="generator" content="Hugo 0.17" />
         
 
 
@@ -28,12 +28,34 @@
 
 
 <meta name="twitter:title" content="test-kitchen と OpenStack で Chef Cookbooks テスト (後篇)"/>
-<meta name="twitter:description" content="こんにちは。@jedipunkz です。 前回、OpenStack と test-kitchen を使った環境構築方法を書きました。下記の記事で す。 http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/ 今回は実際にテストを書く方法を記していたい思います。 今回使用するテストツールは下記の2つです。 rspec と serverspec busser-bats 参考資料 Creationline lab さんの資料を参考にさせて頂きました。 http://www.creationline.com/lab/2933 用意するモノ達 OpenStack にアクセスするためのユーザ・パスワード Keystone の AUTH_URL テストに用いる OS イメージの Image ID テナント ID nova 管理のキーペアの作成 これらは OpenStack を普段から利用されている方なら馴染みのモノかと思います。 .kitchen.yml ファイルの作成 下記の通り .kitchen.yml ファイルを test-kitchen のルートディレクトリで作成しま す。今後の操作は全てこのディレクトリで作業行います。 &ldquo;&lt;&gt;&rdquo; で括った箇所が環境に合わせた設定になります。 また、ここでは前回同様に &lsquo;ntp&rsquo; の Cookbook をテストする前提で記します。 &#43;&#43;&#43; driver_plugin: openstack suites: - name: default run_list: - recipe[ntp::default] attributes: {} platforms: - name: ubuntu-12.04 driver_config: openstack_username: &lt;openstack_username&gt; openstack_api_key: &lt;openstack_password&gt; openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens image_ref: &lt;image_id&gt; flavor_ref: 1 key_name: &lt;key_name&gt; openstack_tenant: &lt;tenant_name&gt; username: &lt;ssh_username&gt; private_key_path: &lt;path_to_secretkey&gt; - name: centos-64 driver_config: openstack_username: &lt;openstack_username&gt; openstack_api_key: &lt;openstack_password&gt; openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens image_ref: &lt;image_id&gt; flavor_ref: 1 key_name: &lt;key_name&gt; openstack_tenant: &lt;tenant_name&gt; username: &lt;ssh_username&gt; private_key_path: &lt;path_to_secretkey&gt; busser-bats テスト &#43;&#43;&#43; まずはじめに busser-bats のテストを記します。 ディレクトリ作成 kitchen init を行うことでもこの操作は可能なのですが kitchen-openstack を利用すること を想定しない形で成形されてしまうため、下記の通り実行する。 % cd $TEST-KITCHEN-ROOT/ % mkdir -p test/integration/default/bats ディレクトリ構成 ディレクトリ構成は test/integration/${SUITE_NAME}/${BUSSER_NAME}/${TEST_NAME} となっています。 テスト作成 test/integration/default/bats/test.bats として下記のファイルを作成します。 @test &quot;ntp must be installed&quot; { which ntpd } @test &quot;ntp.conf must be exist&quot; { cat /etc/ntp.conf | grep &quot;server 0.pool.ntp.org iburst&quot; } 一項目と二項目の説明を書いておきます。 一項目の @test ntpd コマンドが存在するか否かで package &lsquo;ntp&rsquo; がインストール されていることを確認。 二項目の @test 特定の文字列が /etc/ntp.conf に記述あるか否かでファイルの存在を確認。 rspec serverspec によるテスト実施 次に rspec &#43; serverspec のテストの記述方法を記します。 ディレクトリ作成 ディレクトリを作成します。 % mkdir test/integration/default/rspec Gemfile 追記 下記の通り test/integration/default/rspec/Gemfile を作成します。 source &#39;https://rubygems.org&#39; gem &#39;serverspec&#39; serverspec-init の実行 serverspec-init コマンドにより初期化を行います。 % cd test/integration/default/rspec % serverspec-init Select OS type: 1) UN*X 2) Windows Select number: 1 Select a backend type: 1) SSH 2) Exec (local) Select number: 2 &#43; spec/ &#43; spec/localhost/ &#43; spec/localhost/httpd_spec.rb &#43; spec/spec_helper.rb &#43; Rakefile 上記の通り spec ディレクトリ・ファイルが作成されることを確認します。 ntp_spec.rb を作成 下記の通り test/integration/default/rspec/spec/localhost/ntp_spec.rb を作成し ます。 require &#39;spec_helper&#39; describe package(&#39;ntp&#39;) do it { should be_installed } end describe service(&#39;ntp&#39;) do it { should be_enabled } it { should be_running } end describe port(123) do it { should be_listening } end describe file(&#39;/etc/ntp.conf&#39;) do it { should be_file } it { should contain &quot;server 0.pool.ntp.org iburst&quot; } end テスト内容の解説は&hellip; 1) &lsquo;ntp&rsquo; パッケージがインストールされていることを確認 2) &lsquo;ntp&rsquo; サービスが再起動時有効になっていること・起動していることを確認 3) 123 番ポートで Listen していることを確認 4) /etc/ntp.conf に特定の文字列が存在することを確認 テスト実行 下記の通りテストを実行する。 % cd $TEST-KITCHEN-ROOT % bundle exec kitchen create # &lt;---- OpenStack 上にインスタンス作成 % bundle exec kitchen setup # &lt;---- Chef Cookbooks の実行 % bundle exec kitchen verify # &lt;---- テストの実施 またこれらの操作は下記の一つのコマンドで実施出来る。 % bundle exec kitchen test テスト結果 busser-bats 下記の通り2つのテストが実施され &lsquo;ok&rsquo; ステータスが帰って来たことを確認する。 -----&gt; Running bats test suite 1..2 ok 1 ntp must be installed ok 2 ntp.conf must be exist serverspec 下記の通り 6 個のテスト全てが通り failure 0 個であることを確認する。 -----&gt; Running rspec test suite [2013-10-17T02:27:19&#43;00:00] INFO: Run List is [] [2013-10-17T02:27:19&#43;00:00] INFO: Run List expands to [] Recipe: (chef-apply cookbook)::(chef-apply recipe) * execute[bundle install --local || bundle install] action run [2013-10-17T02:27:19&#43;00:00] INFO: Processing execute[bundle install --local || bundle install] action run ((chef-apply cookbook)::(chef-apply recipe) line 42) Resolving dependencies..."/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。
+前回、OpenStack と test-kitchen を使った環境構築方法を書きました。下記の記事で す。
+http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/
+今回は実際にテストを書く方法を記していたい思います。
+今回使用するテストツールは下記の2つです。
+ rspec と serverspec busser-bats  参考資料 Creationline lab さんの資料を参考にさせて頂きました。
+http://www.creationline.com/lab/2933
+用意するモノ達  OpenStack にアクセスするためのユーザ・パスワード Keystone の AUTH_URL テストに用いる OS イメージの Image ID テナント ID nova 管理のキーペアの作成  これらは OpenStack を普段から利用されている方なら馴染みのモノかと思います。
+.kitchen.yml ファイルの作成 下記の通り .kitchen.yml ファイルを test-kitchen のルートディレクトリで作成しま す。今後の操作は全てこのディレクトリで作業行います。
+&ldquo;&lt;&gt;&rdquo; で括った箇所が環境に合わせた設定になります。
+また、ここでは前回同様に &lsquo;ntp&rsquo; の Cookbook をテストする前提で記します。
+&#43;&#43;&#43; driver_plugin: openstack suites: - name: default run_list: - recipe[ntp::default] attributes: {} platforms: - name: ubuntu-12."/>
 <meta name="twitter:site" content="@jedipunkz"/>
 
 
         <meta property="og:title" content="test-kitchen と OpenStack で Chef Cookbooks テスト (後篇)" />
-<meta property="og:description" content="こんにちは。@jedipunkz です。 前回、OpenStack と test-kitchen を使った環境構築方法を書きました。下記の記事で す。 http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/ 今回は実際にテストを書く方法を記していたい思います。 今回使用するテストツールは下記の2つです。 rspec と serverspec busser-bats 参考資料 Creationline lab さんの資料を参考にさせて頂きました。 http://www.creationline.com/lab/2933 用意するモノ達 OpenStack にアクセスするためのユーザ・パスワード Keystone の AUTH_URL テストに用いる OS イメージの Image ID テナント ID nova 管理のキーペアの作成 これらは OpenStack を普段から利用されている方なら馴染みのモノかと思います。 .kitchen.yml ファイルの作成 下記の通り .kitchen.yml ファイルを test-kitchen のルートディレクトリで作成しま す。今後の操作は全てこのディレクトリで作業行います。 &ldquo;&lt;&gt;&rdquo; で括った箇所が環境に合わせた設定になります。 また、ここでは前回同様に &lsquo;ntp&rsquo; の Cookbook をテストする前提で記します。 &#43;&#43;&#43; driver_plugin: openstack suites: - name: default run_list: - recipe[ntp::default] attributes: {} platforms: - name: ubuntu-12.04 driver_config: openstack_username: &lt;openstack_username&gt; openstack_api_key: &lt;openstack_password&gt; openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens image_ref: &lt;image_id&gt; flavor_ref: 1 key_name: &lt;key_name&gt; openstack_tenant: &lt;tenant_name&gt; username: &lt;ssh_username&gt; private_key_path: &lt;path_to_secretkey&gt; - name: centos-64 driver_config: openstack_username: &lt;openstack_username&gt; openstack_api_key: &lt;openstack_password&gt; openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens image_ref: &lt;image_id&gt; flavor_ref: 1 key_name: &lt;key_name&gt; openstack_tenant: &lt;tenant_name&gt; username: &lt;ssh_username&gt; private_key_path: &lt;path_to_secretkey&gt; busser-bats テスト &#43;&#43;&#43; まずはじめに busser-bats のテストを記します。 ディレクトリ作成 kitchen init を行うことでもこの操作は可能なのですが kitchen-openstack を利用すること を想定しない形で成形されてしまうため、下記の通り実行する。 % cd $TEST-KITCHEN-ROOT/ % mkdir -p test/integration/default/bats ディレクトリ構成 ディレクトリ構成は test/integration/${SUITE_NAME}/${BUSSER_NAME}/${TEST_NAME} となっています。 テスト作成 test/integration/default/bats/test.bats として下記のファイルを作成します。 @test &quot;ntp must be installed&quot; { which ntpd } @test &quot;ntp.conf must be exist&quot; { cat /etc/ntp.conf | grep &quot;server 0.pool.ntp.org iburst&quot; } 一項目と二項目の説明を書いておきます。 一項目の @test ntpd コマンドが存在するか否かで package &lsquo;ntp&rsquo; がインストール されていることを確認。 二項目の @test 特定の文字列が /etc/ntp.conf に記述あるか否かでファイルの存在を確認。 rspec serverspec によるテスト実施 次に rspec &#43; serverspec のテストの記述方法を記します。 ディレクトリ作成 ディレクトリを作成します。 % mkdir test/integration/default/rspec Gemfile 追記 下記の通り test/integration/default/rspec/Gemfile を作成します。 source &#39;https://rubygems.org&#39; gem &#39;serverspec&#39; serverspec-init の実行 serverspec-init コマンドにより初期化を行います。 % cd test/integration/default/rspec % serverspec-init Select OS type: 1) UN*X 2) Windows Select number: 1 Select a backend type: 1) SSH 2) Exec (local) Select number: 2 &#43; spec/ &#43; spec/localhost/ &#43; spec/localhost/httpd_spec.rb &#43; spec/spec_helper.rb &#43; Rakefile 上記の通り spec ディレクトリ・ファイルが作成されることを確認します。 ntp_spec.rb を作成 下記の通り test/integration/default/rspec/spec/localhost/ntp_spec.rb を作成し ます。 require &#39;spec_helper&#39; describe package(&#39;ntp&#39;) do it { should be_installed } end describe service(&#39;ntp&#39;) do it { should be_enabled } it { should be_running } end describe port(123) do it { should be_listening } end describe file(&#39;/etc/ntp.conf&#39;) do it { should be_file } it { should contain &quot;server 0.pool.ntp.org iburst&quot; } end テスト内容の解説は&hellip; 1) &lsquo;ntp&rsquo; パッケージがインストールされていることを確認 2) &lsquo;ntp&rsquo; サービスが再起動時有効になっていること・起動していることを確認 3) 123 番ポートで Listen していることを確認 4) /etc/ntp.conf に特定の文字列が存在することを確認 テスト実行 下記の通りテストを実行する。 % cd $TEST-KITCHEN-ROOT % bundle exec kitchen create # &lt;---- OpenStack 上にインスタンス作成 % bundle exec kitchen setup # &lt;---- Chef Cookbooks の実行 % bundle exec kitchen verify # &lt;---- テストの実施 またこれらの操作は下記の一つのコマンドで実施出来る。 % bundle exec kitchen test テスト結果 busser-bats 下記の通り2つのテストが実施され &lsquo;ok&rsquo; ステータスが帰って来たことを確認する。 -----&gt; Running bats test suite 1..2 ok 1 ntp must be installed ok 2 ntp.conf must be exist serverspec 下記の通り 6 個のテスト全てが通り failure 0 個であることを確認する。 -----&gt; Running rspec test suite [2013-10-17T02:27:19&#43;00:00] INFO: Run List is [] [2013-10-17T02:27:19&#43;00:00] INFO: Run List expands to [] Recipe: (chef-apply cookbook)::(chef-apply recipe) * execute[bundle install --local || bundle install] action run [2013-10-17T02:27:19&#43;00:00] INFO: Processing execute[bundle install --local || bundle install] action run ((chef-apply cookbook)::(chef-apply recipe) line 42) Resolving dependencies..." />
+<meta property="og:description" content="こんにちは。@jedipunkz です。
+前回、OpenStack と test-kitchen を使った環境構築方法を書きました。下記の記事で す。
+http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/
+今回は実際にテストを書く方法を記していたい思います。
+今回使用するテストツールは下記の2つです。
+ rspec と serverspec busser-bats  参考資料 Creationline lab さんの資料を参考にさせて頂きました。
+http://www.creationline.com/lab/2933
+用意するモノ達  OpenStack にアクセスするためのユーザ・パスワード Keystone の AUTH_URL テストに用いる OS イメージの Image ID テナント ID nova 管理のキーペアの作成  これらは OpenStack を普段から利用されている方なら馴染みのモノかと思います。
+.kitchen.yml ファイルの作成 下記の通り .kitchen.yml ファイルを test-kitchen のルートディレクトリで作成しま す。今後の操作は全てこのディレクトリで作業行います。
+&ldquo;&lt;&gt;&rdquo; で括った箇所が環境に合わせた設定になります。
+また、ここでは前回同様に &lsquo;ntp&rsquo; の Cookbook をテストする前提で記します。
+&#43;&#43;&#43; driver_plugin: openstack suites: - name: default run_list: - recipe[ntp::default] attributes: {} platforms: - name: ubuntu-12." />
 <meta property="og:type" content="article" />
 <meta property="og:url" content="http://jedipunkz.github.io/blog/2013/10/20/test-kitchen-openstack-chef-cookbooks-test-2/" />
 
@@ -51,7 +73,18 @@
 
         
 <meta itemprop="name" content="test-kitchen と OpenStack で Chef Cookbooks テスト (後篇)">
-<meta itemprop="description" content="こんにちは。@jedipunkz です。 前回、OpenStack と test-kitchen を使った環境構築方法を書きました。下記の記事で す。 http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/ 今回は実際にテストを書く方法を記していたい思います。 今回使用するテストツールは下記の2つです。 rspec と serverspec busser-bats 参考資料 Creationline lab さんの資料を参考にさせて頂きました。 http://www.creationline.com/lab/2933 用意するモノ達 OpenStack にアクセスするためのユーザ・パスワード Keystone の AUTH_URL テストに用いる OS イメージの Image ID テナント ID nova 管理のキーペアの作成 これらは OpenStack を普段から利用されている方なら馴染みのモノかと思います。 .kitchen.yml ファイルの作成 下記の通り .kitchen.yml ファイルを test-kitchen のルートディレクトリで作成しま す。今後の操作は全てこのディレクトリで作業行います。 &ldquo;&lt;&gt;&rdquo; で括った箇所が環境に合わせた設定になります。 また、ここでは前回同様に &lsquo;ntp&rsquo; の Cookbook をテストする前提で記します。 &#43;&#43;&#43; driver_plugin: openstack suites: - name: default run_list: - recipe[ntp::default] attributes: {} platforms: - name: ubuntu-12.04 driver_config: openstack_username: &lt;openstack_username&gt; openstack_api_key: &lt;openstack_password&gt; openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens image_ref: &lt;image_id&gt; flavor_ref: 1 key_name: &lt;key_name&gt; openstack_tenant: &lt;tenant_name&gt; username: &lt;ssh_username&gt; private_key_path: &lt;path_to_secretkey&gt; - name: centos-64 driver_config: openstack_username: &lt;openstack_username&gt; openstack_api_key: &lt;openstack_password&gt; openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens image_ref: &lt;image_id&gt; flavor_ref: 1 key_name: &lt;key_name&gt; openstack_tenant: &lt;tenant_name&gt; username: &lt;ssh_username&gt; private_key_path: &lt;path_to_secretkey&gt; busser-bats テスト &#43;&#43;&#43; まずはじめに busser-bats のテストを記します。 ディレクトリ作成 kitchen init を行うことでもこの操作は可能なのですが kitchen-openstack を利用すること を想定しない形で成形されてしまうため、下記の通り実行する。 % cd $TEST-KITCHEN-ROOT/ % mkdir -p test/integration/default/bats ディレクトリ構成 ディレクトリ構成は test/integration/${SUITE_NAME}/${BUSSER_NAME}/${TEST_NAME} となっています。 テスト作成 test/integration/default/bats/test.bats として下記のファイルを作成します。 @test &quot;ntp must be installed&quot; { which ntpd } @test &quot;ntp.conf must be exist&quot; { cat /etc/ntp.conf | grep &quot;server 0.pool.ntp.org iburst&quot; } 一項目と二項目の説明を書いておきます。 一項目の @test ntpd コマンドが存在するか否かで package &lsquo;ntp&rsquo; がインストール されていることを確認。 二項目の @test 特定の文字列が /etc/ntp.conf に記述あるか否かでファイルの存在を確認。 rspec serverspec によるテスト実施 次に rspec &#43; serverspec のテストの記述方法を記します。 ディレクトリ作成 ディレクトリを作成します。 % mkdir test/integration/default/rspec Gemfile 追記 下記の通り test/integration/default/rspec/Gemfile を作成します。 source &#39;https://rubygems.org&#39; gem &#39;serverspec&#39; serverspec-init の実行 serverspec-init コマンドにより初期化を行います。 % cd test/integration/default/rspec % serverspec-init Select OS type: 1) UN*X 2) Windows Select number: 1 Select a backend type: 1) SSH 2) Exec (local) Select number: 2 &#43; spec/ &#43; spec/localhost/ &#43; spec/localhost/httpd_spec.rb &#43; spec/spec_helper.rb &#43; Rakefile 上記の通り spec ディレクトリ・ファイルが作成されることを確認します。 ntp_spec.rb を作成 下記の通り test/integration/default/rspec/spec/localhost/ntp_spec.rb を作成し ます。 require &#39;spec_helper&#39; describe package(&#39;ntp&#39;) do it { should be_installed } end describe service(&#39;ntp&#39;) do it { should be_enabled } it { should be_running } end describe port(123) do it { should be_listening } end describe file(&#39;/etc/ntp.conf&#39;) do it { should be_file } it { should contain &quot;server 0.pool.ntp.org iburst&quot; } end テスト内容の解説は&hellip; 1) &lsquo;ntp&rsquo; パッケージがインストールされていることを確認 2) &lsquo;ntp&rsquo; サービスが再起動時有効になっていること・起動していることを確認 3) 123 番ポートで Listen していることを確認 4) /etc/ntp.conf に特定の文字列が存在することを確認 テスト実行 下記の通りテストを実行する。 % cd $TEST-KITCHEN-ROOT % bundle exec kitchen create # &lt;---- OpenStack 上にインスタンス作成 % bundle exec kitchen setup # &lt;---- Chef Cookbooks の実行 % bundle exec kitchen verify # &lt;---- テストの実施 またこれらの操作は下記の一つのコマンドで実施出来る。 % bundle exec kitchen test テスト結果 busser-bats 下記の通り2つのテストが実施され &lsquo;ok&rsquo; ステータスが帰って来たことを確認する。 -----&gt; Running bats test suite 1..2 ok 1 ntp must be installed ok 2 ntp.conf must be exist serverspec 下記の通り 6 個のテスト全てが通り failure 0 個であることを確認する。 -----&gt; Running rspec test suite [2013-10-17T02:27:19&#43;00:00] INFO: Run List is [] [2013-10-17T02:27:19&#43;00:00] INFO: Run List expands to [] Recipe: (chef-apply cookbook)::(chef-apply recipe) * execute[bundle install --local || bundle install] action run [2013-10-17T02:27:19&#43;00:00] INFO: Processing execute[bundle install --local || bundle install] action run ((chef-apply cookbook)::(chef-apply recipe) line 42) Resolving dependencies...">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。
+前回、OpenStack と test-kitchen を使った環境構築方法を書きました。下記の記事で す。
+http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/
+今回は実際にテストを書く方法を記していたい思います。
+今回使用するテストツールは下記の2つです。
+ rspec と serverspec busser-bats  参考資料 Creationline lab さんの資料を参考にさせて頂きました。
+http://www.creationline.com/lab/2933
+用意するモノ達  OpenStack にアクセスするためのユーザ・パスワード Keystone の AUTH_URL テストに用いる OS イメージの Image ID テナント ID nova 管理のキーペアの作成  これらは OpenStack を普段から利用されている方なら馴染みのモノかと思います。
+.kitchen.yml ファイルの作成 下記の通り .kitchen.yml ファイルを test-kitchen のルートディレクトリで作成しま す。今後の操作は全てこのディレクトリで作業行います。
+&ldquo;&lt;&gt;&rdquo; で括った箇所が環境に合わせた設定になります。
+また、ここでは前回同様に &lsquo;ntp&rsquo; の Cookbook をテストする前提で記します。
+&#43;&#43;&#43; driver_plugin: openstack suites: - name: default run_list: - recipe[ntp::default] attributes: {} platforms: - name: ubuntu-12.">
 
 
 <meta itemprop="dateModified" content="2013-10-20T00:00:00&#43;00:00" />
@@ -213,6 +246,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
                     </li>
                 
@@ -222,10 +259,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
             </ul>
@@ -803,6 +836,20 @@ Using bundler (1.3.5)
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-03'>
+                                    November 3, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
                                 
                                     
@@ -838,20 +885,6 @@ Using bundler (1.3.5)
                                 <time class="published" datetime=
                                     '2016-07-14'>
                                     July 14, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-02'>
-                                    July 2, 2016</time>
                             </header>
                         </article>
                     </li>

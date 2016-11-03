@@ -10,7 +10,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.16" />
+        <meta name="generator" content="Hugo 0.17" />
         
 
 
@@ -28,12 +28,34 @@
 
 
 <meta name="twitter:title" content="sensu-chef で監視システム Sensu を管理 #2"/>
-<meta name="twitter:description" content="こんにちは。@jedipunkz です。 以前、Sensu を Chef で管理する方法について書きました。 http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/ これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも 公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、 sensu-chef を再確認したのですが、だいぶ更新されていました。 下記が sensu-chef です。 https://github.com/sensu/sensu-chef この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使 い方を書いていきます。 下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。 {% img /pix/sensu.png %} 使い方 sensu-chef を取得する。chef-repo になっています。 % git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu bundle にて Gemfile に記述の在る gem パッケージをインストールします。 % cd ~/chef-repo-sensu % bundle install .chef/ 配下の設定は割愛します。chef サーバの情報に合わせて設定します。 ssl 鍵を生成して data bags に投入します。 % cd examples/ssl % ./ssl_certs.sh generate % cd ../../ % knife data bag create sensu % knife data bag from file sensu examples/ssl/ssl.json % ./examples/ssl/ssl_certs.sh clean Roles を作成します。chef-repo なのに何も入っていませんでした&hellip;汗 ここで面白いのは &lsquo;sensu-client&rsquo; は sensu で言う subscribers の名前にそのまま利 用されるところです。つまり &lsquo;sensu-client&rsquo; の名前が記された sensu サーバ上の監 視項目 (checks) がこの sensu クライアントに割り当てられます。 % mkdir roles % ${EDITOR} roles/sensu-server.rb name &quot;sensu-server&quot; description &quot;role applied to sensu server.&quot; run_list &#39;recipe[sensu::default]&#39;, &#39;recipe[sensu::rabbitmq]&#39;, &#39;recipe[sensu::redis]&#39;, &#39;recipe[sensu::server_service]&#39;, &#39;recipe[sensu::api_service]&#39;, &#39;recipe[sensu::dashboard_service]&#39;, &#39;recipe[chef-client::service]&#39; % ${EDITOR} roles/sensu-client.rb name &quot;sensu-client&quot; description &quot;role applied to sensu client.&quot; run_list &#39;recipe[sensu::default]&#39;, &#39;recipe[sensu::client_service]&#39;, &#39;recipe[chef-client::service]&#39; Cheffile に &lsquo;chef-client&rsquo; の Cookbook 名を追記します。 site &#39;http://community.opscode.com/api/v1&#39; cookbook &#39;sensu&#39;, path: &#39;./&#39; cookbook &#39;sensu-test&#39;, path: &#39;./test/cookbooks/sensu-test&#39; cookbook &#39;chef-client&#39; # &lt;---- 追記 librarian-chef を実行して Cookbooks を取得します。 % librarian-chef install Rabbitmq, Redis, API の IP アドレスを設定します。IP アドレスは例です。 % ${EDITOR} cookbooks/sensu/attributes/default.rb default.sensu.rabbitmq.host = &quot;172.24.19.11&quot; default.sensu.redis.host = &quot;172.24.19.11&quot; default.sensu.api.host = &quot;172.24.19.11&quot; sensu-server 用の Recipe に監視項目を追記します。ここでは cron デーモンの稼働 状況を監視してみました。 % ${EDITOR} cookbooks/sensu/recipes/server_service.rb # 下記を追記 sensu_check &quot;cron_process&quot; do command &quot;check-procs.rb -p cron -C 1&quot; handlers [&quot;default&quot;] subscribers [&quot;sensu-client&quot;] interval 30 additional(:notification =&gt; &quot;Cron is not running&quot;, :occurrences =&gt; 5) end sensu-client 用の Recipe に client.json (クライアント用設定ファイル) の記述と 上記監視項目に合った plugins 設定の追記を行います。 % ${EDITOR} cookbooks/sensu/recipes/client_service.rb # 下記を追記 sensu_client node.name do address node.ipaddress subscriptions node.roles &#43; [&quot;all&quot;] end cookbook_file &#39;check-procs.rb&#39; do source &#39;check-procs.rb&#39; mode 0755 path &#39;/etc/sensu/plugins/check-procs.rb&#39; end 上記 check-procs.rb は community サイトからダウンロードする必要があるのですが cookbook_file で対応したので files/ ディレクトリ配下に置いておきます。 % mkdir -p cookbooks/sensu/files/default % wget -o cookbooks/sensu/files/default/check-procs.rb \ https://github.com/sensu/sensu-community-plugins/raw/master/plugins/processes/check-procs.rb 上記の check-procs.rb は行頭に &lsquo;#!/usr/bin/env ruby&rsquo; が記されているのですが Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby にあるので行頭 の1行を書き換えます。 % diff cookbooks/sensu/files/default/check-procs.rb.org cookbooks/sensu/files/default/check-procs.rb - #!/usr/bin/env ruby &#43; #!/opt/sensu/embedded/bin/ruby Roles, Cookbooks を Chef サーバにアップロードします。 % knife cookbook upload -o ./cookbooks -a % knife role from file roles/*.rb いよいよブートストラップします!"/>
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。
+以前、Sensu を Chef で管理する方法について書きました。
+http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/
+これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも 公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、 sensu-chef を再確認したのですが、だいぶ更新されていました。
+下記が sensu-chef です。
+https://github.com/sensu/sensu-chef
+この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使 い方を書いていきます。
+下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。
+{% img /pix/sensu.png %}
+使い方 sensu-chef を取得する。chef-repo になっています。
+% git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu  bundle にて Gemfile に記述の在る gem パッケージをインストールします。
+% cd ~/chef-repo-sensu % bundle install  ."/>
 <meta name="twitter:site" content="@jedipunkz"/>
 
 
         <meta property="og:title" content="sensu-chef で監視システム Sensu を管理 #2" />
-<meta property="og:description" content="こんにちは。@jedipunkz です。 以前、Sensu を Chef で管理する方法について書きました。 http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/ これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも 公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、 sensu-chef を再確認したのですが、だいぶ更新されていました。 下記が sensu-chef です。 https://github.com/sensu/sensu-chef この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使 い方を書いていきます。 下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。 {% img /pix/sensu.png %} 使い方 sensu-chef を取得する。chef-repo になっています。 % git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu bundle にて Gemfile に記述の在る gem パッケージをインストールします。 % cd ~/chef-repo-sensu % bundle install .chef/ 配下の設定は割愛します。chef サーバの情報に合わせて設定します。 ssl 鍵を生成して data bags に投入します。 % cd examples/ssl % ./ssl_certs.sh generate % cd ../../ % knife data bag create sensu % knife data bag from file sensu examples/ssl/ssl.json % ./examples/ssl/ssl_certs.sh clean Roles を作成します。chef-repo なのに何も入っていませんでした&hellip;汗 ここで面白いのは &lsquo;sensu-client&rsquo; は sensu で言う subscribers の名前にそのまま利 用されるところです。つまり &lsquo;sensu-client&rsquo; の名前が記された sensu サーバ上の監 視項目 (checks) がこの sensu クライアントに割り当てられます。 % mkdir roles % ${EDITOR} roles/sensu-server.rb name &quot;sensu-server&quot; description &quot;role applied to sensu server.&quot; run_list &#39;recipe[sensu::default]&#39;, &#39;recipe[sensu::rabbitmq]&#39;, &#39;recipe[sensu::redis]&#39;, &#39;recipe[sensu::server_service]&#39;, &#39;recipe[sensu::api_service]&#39;, &#39;recipe[sensu::dashboard_service]&#39;, &#39;recipe[chef-client::service]&#39; % ${EDITOR} roles/sensu-client.rb name &quot;sensu-client&quot; description &quot;role applied to sensu client.&quot; run_list &#39;recipe[sensu::default]&#39;, &#39;recipe[sensu::client_service]&#39;, &#39;recipe[chef-client::service]&#39; Cheffile に &lsquo;chef-client&rsquo; の Cookbook 名を追記します。 site &#39;http://community.opscode.com/api/v1&#39; cookbook &#39;sensu&#39;, path: &#39;./&#39; cookbook &#39;sensu-test&#39;, path: &#39;./test/cookbooks/sensu-test&#39; cookbook &#39;chef-client&#39; # &lt;---- 追記 librarian-chef を実行して Cookbooks を取得します。 % librarian-chef install Rabbitmq, Redis, API の IP アドレスを設定します。IP アドレスは例です。 % ${EDITOR} cookbooks/sensu/attributes/default.rb default.sensu.rabbitmq.host = &quot;172.24.19.11&quot; default.sensu.redis.host = &quot;172.24.19.11&quot; default.sensu.api.host = &quot;172.24.19.11&quot; sensu-server 用の Recipe に監視項目を追記します。ここでは cron デーモンの稼働 状況を監視してみました。 % ${EDITOR} cookbooks/sensu/recipes/server_service.rb # 下記を追記 sensu_check &quot;cron_process&quot; do command &quot;check-procs.rb -p cron -C 1&quot; handlers [&quot;default&quot;] subscribers [&quot;sensu-client&quot;] interval 30 additional(:notification =&gt; &quot;Cron is not running&quot;, :occurrences =&gt; 5) end sensu-client 用の Recipe に client.json (クライアント用設定ファイル) の記述と 上記監視項目に合った plugins 設定の追記を行います。 % ${EDITOR} cookbooks/sensu/recipes/client_service.rb # 下記を追記 sensu_client node.name do address node.ipaddress subscriptions node.roles &#43; [&quot;all&quot;] end cookbook_file &#39;check-procs.rb&#39; do source &#39;check-procs.rb&#39; mode 0755 path &#39;/etc/sensu/plugins/check-procs.rb&#39; end 上記 check-procs.rb は community サイトからダウンロードする必要があるのですが cookbook_file で対応したので files/ ディレクトリ配下に置いておきます。 % mkdir -p cookbooks/sensu/files/default % wget -o cookbooks/sensu/files/default/check-procs.rb \ https://github.com/sensu/sensu-community-plugins/raw/master/plugins/processes/check-procs.rb 上記の check-procs.rb は行頭に &lsquo;#!/usr/bin/env ruby&rsquo; が記されているのですが Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby にあるので行頭 の1行を書き換えます。 % diff cookbooks/sensu/files/default/check-procs.rb.org cookbooks/sensu/files/default/check-procs.rb - #!/usr/bin/env ruby &#43; #!/opt/sensu/embedded/bin/ruby Roles, Cookbooks を Chef サーバにアップロードします。 % knife cookbook upload -o ./cookbooks -a % knife role from file roles/*.rb いよいよブートストラップします!" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。
+以前、Sensu を Chef で管理する方法について書きました。
+http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/
+これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも 公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、 sensu-chef を再確認したのですが、だいぶ更新されていました。
+下記が sensu-chef です。
+https://github.com/sensu/sensu-chef
+この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使 い方を書いていきます。
+下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。
+{% img /pix/sensu.png %}
+使い方 sensu-chef を取得する。chef-repo になっています。
+% git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu  bundle にて Gemfile に記述の在る gem パッケージをインストールします。
+% cd ~/chef-repo-sensu % bundle install  ." />
 <meta property="og:type" content="article" />
 <meta property="og:url" content="http://jedipunkz.github.io/blog/2013/11/27/sensu-chef-deploy-2/" />
 
@@ -51,7 +73,18 @@
 
         
 <meta itemprop="name" content="sensu-chef で監視システム Sensu を管理 #2">
-<meta itemprop="description" content="こんにちは。@jedipunkz です。 以前、Sensu を Chef で管理する方法について書きました。 http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/ これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも 公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、 sensu-chef を再確認したのですが、だいぶ更新されていました。 下記が sensu-chef です。 https://github.com/sensu/sensu-chef この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使 い方を書いていきます。 下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。 {% img /pix/sensu.png %} 使い方 sensu-chef を取得する。chef-repo になっています。 % git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu bundle にて Gemfile に記述の在る gem パッケージをインストールします。 % cd ~/chef-repo-sensu % bundle install .chef/ 配下の設定は割愛します。chef サーバの情報に合わせて設定します。 ssl 鍵を生成して data bags に投入します。 % cd examples/ssl % ./ssl_certs.sh generate % cd ../../ % knife data bag create sensu % knife data bag from file sensu examples/ssl/ssl.json % ./examples/ssl/ssl_certs.sh clean Roles を作成します。chef-repo なのに何も入っていませんでした&hellip;汗 ここで面白いのは &lsquo;sensu-client&rsquo; は sensu で言う subscribers の名前にそのまま利 用されるところです。つまり &lsquo;sensu-client&rsquo; の名前が記された sensu サーバ上の監 視項目 (checks) がこの sensu クライアントに割り当てられます。 % mkdir roles % ${EDITOR} roles/sensu-server.rb name &quot;sensu-server&quot; description &quot;role applied to sensu server.&quot; run_list &#39;recipe[sensu::default]&#39;, &#39;recipe[sensu::rabbitmq]&#39;, &#39;recipe[sensu::redis]&#39;, &#39;recipe[sensu::server_service]&#39;, &#39;recipe[sensu::api_service]&#39;, &#39;recipe[sensu::dashboard_service]&#39;, &#39;recipe[chef-client::service]&#39; % ${EDITOR} roles/sensu-client.rb name &quot;sensu-client&quot; description &quot;role applied to sensu client.&quot; run_list &#39;recipe[sensu::default]&#39;, &#39;recipe[sensu::client_service]&#39;, &#39;recipe[chef-client::service]&#39; Cheffile に &lsquo;chef-client&rsquo; の Cookbook 名を追記します。 site &#39;http://community.opscode.com/api/v1&#39; cookbook &#39;sensu&#39;, path: &#39;./&#39; cookbook &#39;sensu-test&#39;, path: &#39;./test/cookbooks/sensu-test&#39; cookbook &#39;chef-client&#39; # &lt;---- 追記 librarian-chef を実行して Cookbooks を取得します。 % librarian-chef install Rabbitmq, Redis, API の IP アドレスを設定します。IP アドレスは例です。 % ${EDITOR} cookbooks/sensu/attributes/default.rb default.sensu.rabbitmq.host = &quot;172.24.19.11&quot; default.sensu.redis.host = &quot;172.24.19.11&quot; default.sensu.api.host = &quot;172.24.19.11&quot; sensu-server 用の Recipe に監視項目を追記します。ここでは cron デーモンの稼働 状況を監視してみました。 % ${EDITOR} cookbooks/sensu/recipes/server_service.rb # 下記を追記 sensu_check &quot;cron_process&quot; do command &quot;check-procs.rb -p cron -C 1&quot; handlers [&quot;default&quot;] subscribers [&quot;sensu-client&quot;] interval 30 additional(:notification =&gt; &quot;Cron is not running&quot;, :occurrences =&gt; 5) end sensu-client 用の Recipe に client.json (クライアント用設定ファイル) の記述と 上記監視項目に合った plugins 設定の追記を行います。 % ${EDITOR} cookbooks/sensu/recipes/client_service.rb # 下記を追記 sensu_client node.name do address node.ipaddress subscriptions node.roles &#43; [&quot;all&quot;] end cookbook_file &#39;check-procs.rb&#39; do source &#39;check-procs.rb&#39; mode 0755 path &#39;/etc/sensu/plugins/check-procs.rb&#39; end 上記 check-procs.rb は community サイトからダウンロードする必要があるのですが cookbook_file で対応したので files/ ディレクトリ配下に置いておきます。 % mkdir -p cookbooks/sensu/files/default % wget -o cookbooks/sensu/files/default/check-procs.rb \ https://github.com/sensu/sensu-community-plugins/raw/master/plugins/processes/check-procs.rb 上記の check-procs.rb は行頭に &lsquo;#!/usr/bin/env ruby&rsquo; が記されているのですが Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby にあるので行頭 の1行を書き換えます。 % diff cookbooks/sensu/files/default/check-procs.rb.org cookbooks/sensu/files/default/check-procs.rb - #!/usr/bin/env ruby &#43; #!/opt/sensu/embedded/bin/ruby Roles, Cookbooks を Chef サーバにアップロードします。 % knife cookbook upload -o ./cookbooks -a % knife role from file roles/*.rb いよいよブートストラップします!">
+<meta itemprop="description" content="こんにちは。@jedipunkz です。
+以前、Sensu を Chef で管理する方法について書きました。
+http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/
+これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも 公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、 sensu-chef を再確認したのですが、だいぶ更新されていました。
+下記が sensu-chef です。
+https://github.com/sensu/sensu-chef
+この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使 い方を書いていきます。
+下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。
+{% img /pix/sensu.png %}
+使い方 sensu-chef を取得する。chef-repo になっています。
+% git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu  bundle にて Gemfile に記述の在る gem パッケージをインストールします。
+% cd ~/chef-repo-sensu % bundle install  .">
 
 
 <meta itemprop="dateModified" content="2013-11-27T00:00:00&#43;00:00" />
@@ -213,6 +246,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
                     </li>
                 
@@ -222,10 +259,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
             </ul>
@@ -709,6 +742,20 @@ Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby に�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-03'>
+                                    November 3, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
                                 
                                     
@@ -744,20 +791,6 @@ Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby に�
                                 <time class="published" datetime=
                                     '2016-07-14'>
                                     July 14, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-02'>
-                                    July 2, 2016</time>
                             </header>
                         </article>
                     </li>

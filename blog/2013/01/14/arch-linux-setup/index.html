@@ -10,7 +10,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.16" />
+        <meta name="generator" content="Hugo 0.17" />
         
 
 
@@ -28,12 +28,28 @@
 
 
 <meta name="twitter:title" content="Arch Linux セットアップまとめ"/>
-<meta name="twitter:description" content="(2013/08/31 修正しました) 自宅のノート PC にいつも Debian Gnu/Linux unstable を入れて作業してたのだけど、 Arch Linux が試したくなって入れてみた。すごくイイ。ミニマル思考で常に最新。端 末に入れる OS としては最適かも!と思えてきた。Ubuntu はデスクトップ環境で扱う にはチト大きすぎるし。FreeBSD のコンパイル待ち時間が最近耐えられないし&hellip;。 前リリースの Arch Linux には /arch/setup という簡易インストーラがあったのだけ ど、それすら最近無くなった。環境作る方法を自分のためにもメモしておきます。 OS イメージ iso 取得とインストール用 USB スティック作成 Linux, Windows, Mac で作り方が変わるようだけど、自分は Mac OSX を使ってインス トール USB スティックを作成した。 diskutil で USB スティック装着前後の disk デバイス番号を覚える % diskutil list (ここでは /dev/rdisk4 として進める。) アンマウントする。 % sudo diskutil unmountDisk /dev/rdisk4 ダウンロードした iso を USB スティックに書き込む。 % sudo dd if=/path/to/downloaded/iso of=/dev/rdisk4 bs=8192 % sudo diskutil eject /dev/rdisk4 USB スティック装着しインストール開始 起動するとメニューが表示されるので x86_64 を選んで起動。プロンプトが表示される。 まず disk のパーティション作成。 # fdisk /dev/sda # 環境に合わせてデバイス名変更 # fdisk -l /dev/sda デバイス ブート 始点 終点 ブロック Id システム /dev/sda1 2048 4196351 2097152 82 Linux スワップ / Solaris /dev/sda2 * 4196352 156301487 76052568 83 Linux 上記のように切りました。fdisk の使い方は&hellip;ぐぐってください。また /boot にあたるパーティション にブートフラグを必ず付けること。 ファイルシステムを作ってマウント。 # mkfs.ext4 /dev/sda2 # mount -t ext4 /dev/sda2 /mnt コアシステムのインストール # pacstrap /mnt base base-devel fstab の配置。必要に応じて /dev/sda1 (上記で作った) をスワップとして加筆。 # genfstab -p /mnt &gt;&gt; /mnt/etc/fstab chroot して /dev/sda2 内コアシステムで作業 chroot する。 # arch-chroot /mnt キーマップを us 配列で CTRL と Caps をスワップしたいので下記の作業を実施。 # cd /usr/share/kbd/keymaps/i386/qwerty # cp us.map.gz usx.map.gz # gunzip usx.map.gz # vi usx.map keycode 58 = Control # Caps_Lock を Control に置き換え # gzip usx.map # loadkeys usx # キーマップをロード # vi /etc/vconsole.conf KEYMAP=usx # 追記 ロケールの生成。 # vi /etc/locale.gen # ja_JP.UTF-8 のコメントアウトを削除 # locale-gen タイムゾーンの設定。 # ln -s /usr/share/zoneinfo/Asia/Tokyo /etc/localtime ホスト名修正。 # echo &quot;&lt;ホスト名&gt;&quot; &gt; /etc/hostname # vi /etc/hosts # 適宜修正 ネットワークの設定。まずは有線。 # systemctl enable dhcpcd@eth0.service ブートローダとして syslinux を使う。ディスクデバイス名だけ修正。syslinux のインストーラが うまくデバイス名を拾ってくれない。 # pacman -S syslinux # vi /boot/syslinux/syslinux.cfg LABEL arch MENU LABEL Arch Linux LINUX ../vmlinuz-linux APPEND root=/dev/sda2 ro INITRD ../initramfs-linux.img パスワード設定。 # passwd 再起動し システムをインストールした /dev/sda2 で起動する。 再起動し USB スティックを抜く。起動したら root ユーザでログイン。 無線デバイスの設定。 # pacman -S dialog wpa_supplicant # wifi-menu 検知されたアクセスポイント名が表示されるので希望のモノを選択しパスフレーズを入力。 一般ユーザの作成と sudo 設定。 # useradd -u &lt;UID) -d /home/&lt;UESRNAME&gt; -m &lt;USERNAME&gt; # passwd &lt;USERNAME&gt; # pacman -S sudo # vigr # wheel グループに自分を追記 # visudo # wheel のところのコメントアウトを削除 %wheel ALL=(ALL) ALL X 周りの設定 X とウィンドウマネージャのインストール。ウィンドウマネージャは好きなものを。私 は awesome を選びました。 # pacman -S xorg xorg-xinit xterm rxvt-unicode xf86-video-intel awesome 日本語フォントのインストールと日本語インプットメソッドの設定。ibus と mozc を選んだ。 結構賢い。とりあえずのフォントとして sazanami を。 # vi /etc/pacman.conf # 下記のレポジトリを追記 [pnsft-pur] SigLevel = Optional TrustAll Server = http://downloads.sourceforge.net/project/pnsft-aur/pur/$arch # pacman -Syy # pacman -S ttf-sazanami ibus-mozc mozc 一般ユーザの ~/.xinitrc に下記を追記。 % vi ~/.xinitrc xrdb -merge $HOME/.Xresources export LANG=ja_JP.UTF-8 export LANGUAGE=ja_JP.UTF-8 export LC_ALL=ja_JP.UTF-8 export LC_CTYPE=ja_JP.UTF-8 export GTK_IM_MODULE=ibus export QT_IM_MODULE=xim export XMODIFIERS=@im=ibus ibus-daemon --daemonize --xim &amp; setxkbmap -layout us -option ctrl:nocaps exec awesome X を起動。 % startx 私は awesome を選びましたが、たまに enlightenment も選択します。この時点で enlightenment の メニューなど、日本語化されているはずだが、厳しければ https://wiki.archlinux.org/index.php/Input_Japanese_using_uim_(%E6%97%A5%E6%9C%AC%E8%AA%9E) にある IPA フォント、VL ゴシックなどを入れる。こちらのほうが数段綺麗。 IPA フォントの入れ方だけメモっておく。 % wget https://aur.archlinux.org/packages/ot/otf-ipafont/otf-ipafont.tar.gz % tar zxvf otf-ipafont.tar.gz % cd otf-ipafont % makepkg -s % sudo pacman -U &lt;生成された pkg.tar.xz ファイル&gt; Thinkpad の真ん中ボタンでスクロールする。 # vi /etc/X11/xorg.conf.d/10-thinkpad.conf # 新規生成 Section &quot;InputClass&quot; Identifier &quot;Trackpoint Wheel Emulation&quot; MatchProduct &quot;TPPS/2 IBM TrackPoint|DualPoint Stick|Synaptics Inc."/>
+<meta name="twitter:description" content="(2013/08/31 修正しました)
+自宅のノート PC にいつも Debian Gnu/Linux unstable を入れて作業してたのだけど、 Arch Linux が試したくなって入れてみた。すごくイイ。ミニマル思考で常に最新。端 末に入れる OS としては最適かも!と思えてきた。Ubuntu はデスクトップ環境で扱う にはチト大きすぎるし。FreeBSD のコンパイル待ち時間が最近耐えられないし&hellip;。
+前リリースの Arch Linux には /arch/setup という簡易インストーラがあったのだけ ど、それすら最近無くなった。環境作る方法を自分のためにもメモしておきます。
+OS イメージ iso 取得とインストール用 USB スティック作成 Linux, Windows, Mac で作り方が変わるようだけど、自分は Mac OSX を使ってインス トール USB スティックを作成した。
+diskutil で USB スティック装着前後の disk デバイス番号を覚える
+% diskutil list  (ここでは /dev/rdisk4 として進める。)
+アンマウントする。
+% sudo diskutil unmountDisk /dev/rdisk4  ダウンロードした iso を USB スティックに書き込む。
+% sudo dd if=/path/to/downloaded/iso of=/dev/rdisk4 bs=8192 % sudo diskutil eject /dev/rdisk4  USB スティック装着しインストール開始 起動するとメニューが表示されるので x86_64 を選んで起動。プロンプトが表示される。"/>
 <meta name="twitter:site" content="@jedipunkz"/>
 
 
         <meta property="og:title" content="Arch Linux セットアップまとめ" />
-<meta property="og:description" content="(2013/08/31 修正しました) 自宅のノート PC にいつも Debian Gnu/Linux unstable を入れて作業してたのだけど、 Arch Linux が試したくなって入れてみた。すごくイイ。ミニマル思考で常に最新。端 末に入れる OS としては最適かも!と思えてきた。Ubuntu はデスクトップ環境で扱う にはチト大きすぎるし。FreeBSD のコンパイル待ち時間が最近耐えられないし&hellip;。 前リリースの Arch Linux には /arch/setup という簡易インストーラがあったのだけ ど、それすら最近無くなった。環境作る方法を自分のためにもメモしておきます。 OS イメージ iso 取得とインストール用 USB スティック作成 Linux, Windows, Mac で作り方が変わるようだけど、自分は Mac OSX を使ってインス トール USB スティックを作成した。 diskutil で USB スティック装着前後の disk デバイス番号を覚える % diskutil list (ここでは /dev/rdisk4 として進める。) アンマウントする。 % sudo diskutil unmountDisk /dev/rdisk4 ダウンロードした iso を USB スティックに書き込む。 % sudo dd if=/path/to/downloaded/iso of=/dev/rdisk4 bs=8192 % sudo diskutil eject /dev/rdisk4 USB スティック装着しインストール開始 起動するとメニューが表示されるので x86_64 を選んで起動。プロンプトが表示される。 まず disk のパーティション作成。 # fdisk /dev/sda # 環境に合わせてデバイス名変更 # fdisk -l /dev/sda デバイス ブート 始点 終点 ブロック Id システム /dev/sda1 2048 4196351 2097152 82 Linux スワップ / Solaris /dev/sda2 * 4196352 156301487 76052568 83 Linux 上記のように切りました。fdisk の使い方は&hellip;ぐぐってください。また /boot にあたるパーティション にブートフラグを必ず付けること。 ファイルシステムを作ってマウント。 # mkfs.ext4 /dev/sda2 # mount -t ext4 /dev/sda2 /mnt コアシステムのインストール # pacstrap /mnt base base-devel fstab の配置。必要に応じて /dev/sda1 (上記で作った) をスワップとして加筆。 # genfstab -p /mnt &gt;&gt; /mnt/etc/fstab chroot して /dev/sda2 内コアシステムで作業 chroot する。 # arch-chroot /mnt キーマップを us 配列で CTRL と Caps をスワップしたいので下記の作業を実施。 # cd /usr/share/kbd/keymaps/i386/qwerty # cp us.map.gz usx.map.gz # gunzip usx.map.gz # vi usx.map keycode 58 = Control # Caps_Lock を Control に置き換え # gzip usx.map # loadkeys usx # キーマップをロード # vi /etc/vconsole.conf KEYMAP=usx # 追記 ロケールの生成。 # vi /etc/locale.gen # ja_JP.UTF-8 のコメントアウトを削除 # locale-gen タイムゾーンの設定。 # ln -s /usr/share/zoneinfo/Asia/Tokyo /etc/localtime ホスト名修正。 # echo &quot;&lt;ホスト名&gt;&quot; &gt; /etc/hostname # vi /etc/hosts # 適宜修正 ネットワークの設定。まずは有線。 # systemctl enable dhcpcd@eth0.service ブートローダとして syslinux を使う。ディスクデバイス名だけ修正。syslinux のインストーラが うまくデバイス名を拾ってくれない。 # pacman -S syslinux # vi /boot/syslinux/syslinux.cfg LABEL arch MENU LABEL Arch Linux LINUX ../vmlinuz-linux APPEND root=/dev/sda2 ro INITRD ../initramfs-linux.img パスワード設定。 # passwd 再起動し システムをインストールした /dev/sda2 で起動する。 再起動し USB スティックを抜く。起動したら root ユーザでログイン。 無線デバイスの設定。 # pacman -S dialog wpa_supplicant # wifi-menu 検知されたアクセスポイント名が表示されるので希望のモノを選択しパスフレーズを入力。 一般ユーザの作成と sudo 設定。 # useradd -u &lt;UID) -d /home/&lt;UESRNAME&gt; -m &lt;USERNAME&gt; # passwd &lt;USERNAME&gt; # pacman -S sudo # vigr # wheel グループに自分を追記 # visudo # wheel のところのコメントアウトを削除 %wheel ALL=(ALL) ALL X 周りの設定 X とウィンドウマネージャのインストール。ウィンドウマネージャは好きなものを。私 は awesome を選びました。 # pacman -S xorg xorg-xinit xterm rxvt-unicode xf86-video-intel awesome 日本語フォントのインストールと日本語インプットメソッドの設定。ibus と mozc を選んだ。 結構賢い。とりあえずのフォントとして sazanami を。 # vi /etc/pacman.conf # 下記のレポジトリを追記 [pnsft-pur] SigLevel = Optional TrustAll Server = http://downloads.sourceforge.net/project/pnsft-aur/pur/$arch # pacman -Syy # pacman -S ttf-sazanami ibus-mozc mozc 一般ユーザの ~/.xinitrc に下記を追記。 % vi ~/.xinitrc xrdb -merge $HOME/.Xresources export LANG=ja_JP.UTF-8 export LANGUAGE=ja_JP.UTF-8 export LC_ALL=ja_JP.UTF-8 export LC_CTYPE=ja_JP.UTF-8 export GTK_IM_MODULE=ibus export QT_IM_MODULE=xim export XMODIFIERS=@im=ibus ibus-daemon --daemonize --xim &amp; setxkbmap -layout us -option ctrl:nocaps exec awesome X を起動。 % startx 私は awesome を選びましたが、たまに enlightenment も選択します。この時点で enlightenment の メニューなど、日本語化されているはずだが、厳しければ https://wiki.archlinux.org/index.php/Input_Japanese_using_uim_(%E6%97%A5%E6%9C%AC%E8%AA%9E) にある IPA フォント、VL ゴシックなどを入れる。こちらのほうが数段綺麗。 IPA フォントの入れ方だけメモっておく。 % wget https://aur.archlinux.org/packages/ot/otf-ipafont/otf-ipafont.tar.gz % tar zxvf otf-ipafont.tar.gz % cd otf-ipafont % makepkg -s % sudo pacman -U &lt;生成された pkg.tar.xz ファイル&gt; Thinkpad の真ん中ボタンでスクロールする。 # vi /etc/X11/xorg.conf.d/10-thinkpad.conf # 新規生成 Section &quot;InputClass&quot; Identifier &quot;Trackpoint Wheel Emulation&quot; MatchProduct &quot;TPPS/2 IBM TrackPoint|DualPoint Stick|Synaptics Inc." />
+<meta property="og:description" content="(2013/08/31 修正しました)
+自宅のノート PC にいつも Debian Gnu/Linux unstable を入れて作業してたのだけど、 Arch Linux が試したくなって入れてみた。すごくイイ。ミニマル思考で常に最新。端 末に入れる OS としては最適かも!と思えてきた。Ubuntu はデスクトップ環境で扱う にはチト大きすぎるし。FreeBSD のコンパイル待ち時間が最近耐えられないし&hellip;。
+前リリースの Arch Linux には /arch/setup という簡易インストーラがあったのだけ ど、それすら最近無くなった。環境作る方法を自分のためにもメモしておきます。
+OS イメージ iso 取得とインストール用 USB スティック作成 Linux, Windows, Mac で作り方が変わるようだけど、自分は Mac OSX を使ってインス トール USB スティックを作成した。
+diskutil で USB スティック装着前後の disk デバイス番号を覚える
+% diskutil list  (ここでは /dev/rdisk4 として進める。)
+アンマウントする。
+% sudo diskutil unmountDisk /dev/rdisk4  ダウンロードした iso を USB スティックに書き込む。
+% sudo dd if=/path/to/downloaded/iso of=/dev/rdisk4 bs=8192 % sudo diskutil eject /dev/rdisk4  USB スティック装着しインストール開始 起動するとメニューが表示されるので x86_64 を選んで起動。プロンプトが表示される。" />
 <meta property="og:type" content="article" />
 <meta property="og:url" content="http://jedipunkz.github.io/blog/2013/01/14/arch-linux-setup/" />
 
@@ -51,7 +67,15 @@
 
         
 <meta itemprop="name" content="Arch Linux セットアップまとめ">
-<meta itemprop="description" content="(2013/08/31 修正しました) 自宅のノート PC にいつも Debian Gnu/Linux unstable を入れて作業してたのだけど、 Arch Linux が試したくなって入れてみた。すごくイイ。ミニマル思考で常に最新。端 末に入れる OS としては最適かも!と思えてきた。Ubuntu はデスクトップ環境で扱う にはチト大きすぎるし。FreeBSD のコンパイル待ち時間が最近耐えられないし&hellip;。 前リリースの Arch Linux には /arch/setup という簡易インストーラがあったのだけ ど、それすら最近無くなった。環境作る方法を自分のためにもメモしておきます。 OS イメージ iso 取得とインストール用 USB スティック作成 Linux, Windows, Mac で作り方が変わるようだけど、自分は Mac OSX を使ってインス トール USB スティックを作成した。 diskutil で USB スティック装着前後の disk デバイス番号を覚える % diskutil list (ここでは /dev/rdisk4 として進める。) アンマウントする。 % sudo diskutil unmountDisk /dev/rdisk4 ダウンロードした iso を USB スティックに書き込む。 % sudo dd if=/path/to/downloaded/iso of=/dev/rdisk4 bs=8192 % sudo diskutil eject /dev/rdisk4 USB スティック装着しインストール開始 起動するとメニューが表示されるので x86_64 を選んで起動。プロンプトが表示される。 まず disk のパーティション作成。 # fdisk /dev/sda # 環境に合わせてデバイス名変更 # fdisk -l /dev/sda デバイス ブート 始点 終点 ブロック Id システム /dev/sda1 2048 4196351 2097152 82 Linux スワップ / Solaris /dev/sda2 * 4196352 156301487 76052568 83 Linux 上記のように切りました。fdisk の使い方は&hellip;ぐぐってください。また /boot にあたるパーティション にブートフラグを必ず付けること。 ファイルシステムを作ってマウント。 # mkfs.ext4 /dev/sda2 # mount -t ext4 /dev/sda2 /mnt コアシステムのインストール # pacstrap /mnt base base-devel fstab の配置。必要に応じて /dev/sda1 (上記で作った) をスワップとして加筆。 # genfstab -p /mnt &gt;&gt; /mnt/etc/fstab chroot して /dev/sda2 内コアシステムで作業 chroot する。 # arch-chroot /mnt キーマップを us 配列で CTRL と Caps をスワップしたいので下記の作業を実施。 # cd /usr/share/kbd/keymaps/i386/qwerty # cp us.map.gz usx.map.gz # gunzip usx.map.gz # vi usx.map keycode 58 = Control # Caps_Lock を Control に置き換え # gzip usx.map # loadkeys usx # キーマップをロード # vi /etc/vconsole.conf KEYMAP=usx # 追記 ロケールの生成。 # vi /etc/locale.gen # ja_JP.UTF-8 のコメントアウトを削除 # locale-gen タイムゾーンの設定。 # ln -s /usr/share/zoneinfo/Asia/Tokyo /etc/localtime ホスト名修正。 # echo &quot;&lt;ホスト名&gt;&quot; &gt; /etc/hostname # vi /etc/hosts # 適宜修正 ネットワークの設定。まずは有線。 # systemctl enable dhcpcd@eth0.service ブートローダとして syslinux を使う。ディスクデバイス名だけ修正。syslinux のインストーラが うまくデバイス名を拾ってくれない。 # pacman -S syslinux # vi /boot/syslinux/syslinux.cfg LABEL arch MENU LABEL Arch Linux LINUX ../vmlinuz-linux APPEND root=/dev/sda2 ro INITRD ../initramfs-linux.img パスワード設定。 # passwd 再起動し システムをインストールした /dev/sda2 で起動する。 再起動し USB スティックを抜く。起動したら root ユーザでログイン。 無線デバイスの設定。 # pacman -S dialog wpa_supplicant # wifi-menu 検知されたアクセスポイント名が表示されるので希望のモノを選択しパスフレーズを入力。 一般ユーザの作成と sudo 設定。 # useradd -u &lt;UID) -d /home/&lt;UESRNAME&gt; -m &lt;USERNAME&gt; # passwd &lt;USERNAME&gt; # pacman -S sudo # vigr # wheel グループに自分を追記 # visudo # wheel のところのコメントアウトを削除 %wheel ALL=(ALL) ALL X 周りの設定 X とウィンドウマネージャのインストール。ウィンドウマネージャは好きなものを。私 は awesome を選びました。 # pacman -S xorg xorg-xinit xterm rxvt-unicode xf86-video-intel awesome 日本語フォントのインストールと日本語インプットメソッドの設定。ibus と mozc を選んだ。 結構賢い。とりあえずのフォントとして sazanami を。 # vi /etc/pacman.conf # 下記のレポジトリを追記 [pnsft-pur] SigLevel = Optional TrustAll Server = http://downloads.sourceforge.net/project/pnsft-aur/pur/$arch # pacman -Syy # pacman -S ttf-sazanami ibus-mozc mozc 一般ユーザの ~/.xinitrc に下記を追記。 % vi ~/.xinitrc xrdb -merge $HOME/.Xresources export LANG=ja_JP.UTF-8 export LANGUAGE=ja_JP.UTF-8 export LC_ALL=ja_JP.UTF-8 export LC_CTYPE=ja_JP.UTF-8 export GTK_IM_MODULE=ibus export QT_IM_MODULE=xim export XMODIFIERS=@im=ibus ibus-daemon --daemonize --xim &amp; setxkbmap -layout us -option ctrl:nocaps exec awesome X を起動。 % startx 私は awesome を選びましたが、たまに enlightenment も選択します。この時点で enlightenment の メニューなど、日本語化されているはずだが、厳しければ https://wiki.archlinux.org/index.php/Input_Japanese_using_uim_(%E6%97%A5%E6%9C%AC%E8%AA%9E) にある IPA フォント、VL ゴシックなどを入れる。こちらのほうが数段綺麗。 IPA フォントの入れ方だけメモっておく。 % wget https://aur.archlinux.org/packages/ot/otf-ipafont/otf-ipafont.tar.gz % tar zxvf otf-ipafont.tar.gz % cd otf-ipafont % makepkg -s % sudo pacman -U &lt;生成された pkg.tar.xz ファイル&gt; Thinkpad の真ん中ボタンでスクロールする。 # vi /etc/X11/xorg.conf.d/10-thinkpad.conf # 新規生成 Section &quot;InputClass&quot; Identifier &quot;Trackpoint Wheel Emulation&quot; MatchProduct &quot;TPPS/2 IBM TrackPoint|DualPoint Stick|Synaptics Inc.">
+<meta itemprop="description" content="(2013/08/31 修正しました)
+自宅のノート PC にいつも Debian Gnu/Linux unstable を入れて作業してたのだけど、 Arch Linux が試したくなって入れてみた。すごくイイ。ミニマル思考で常に最新。端 末に入れる OS としては最適かも!と思えてきた。Ubuntu はデスクトップ環境で扱う にはチト大きすぎるし。FreeBSD のコンパイル待ち時間が最近耐えられないし&hellip;。
+前リリースの Arch Linux には /arch/setup という簡易インストーラがあったのだけ ど、それすら最近無くなった。環境作る方法を自分のためにもメモしておきます。
+OS イメージ iso 取得とインストール用 USB スティック作成 Linux, Windows, Mac で作り方が変わるようだけど、自分は Mac OSX を使ってインス トール USB スティックを作成した。
+diskutil で USB スティック装着前後の disk デバイス番号を覚える
+% diskutil list  (ここでは /dev/rdisk4 として進める。)
+アンマウントする。
+% sudo diskutil unmountDisk /dev/rdisk4  ダウンロードした iso を USB スティックに書き込む。
+% sudo dd if=/path/to/downloaded/iso of=/dev/rdisk4 bs=8192 % sudo diskutil eject /dev/rdisk4  USB スティック装着しインストール開始 起動するとメニューが表示されるので x86_64 を選んで起動。プロンプトが表示される。">
 
 
 <meta itemprop="dateModified" content="2013-01-14T00:00:00&#43;00:00" />
@@ -213,6 +237,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
                     </li>
                 
@@ -222,10 +250,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/"><p>イベントドリブンな StackStorm で運用自動化</p></a>
                     </li>
                 
             </ul>
@@ -755,6 +779,20 @@ EndSection
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-03'>
+                                    November 3, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
                                 
                                     
@@ -790,20 +828,6 @@ EndSection
                                 <time class="published" datetime=
                                     '2016-07-14'>
                                     July 14, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-02'>
-                                    July 2, 2016</time>
                             </header>
                         </article>
                     </li>
