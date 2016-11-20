@@ -6,8 +6,200 @@
     <description>Recent content on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Thu, 03 Nov 2016 09:08:48 +0900</lastBuildDate>
+    <lastBuildDate>Sun, 20 Nov 2016 11:27:00 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Helm を使って Kubernetes を管理する</title>
+      <link>http://jedipunkz.github.io/blog/2016/11/20/helm/</link>
+      <pubDate>Sun, 20 Nov 2016 11:27:00 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/11/20/helm/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;今回は Helm という kubernetes のパッケージマネージャ的なソフトウェアを使ってみたので記事にしたいと思います。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;公式サイト : &lt;a href=&#34;https://helm.sh/&#34;&gt;https://helm.sh/&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Kubernetes を仕事で使っているのですが &amp;ldquo;レプリケーションコントローラ&amp;rdquo; や &amp;ldquo;サービス&amp;rdquo; といった単位を使って Pod, Service を管理しています。Helm を使うことでこれらの管理方法が変わるのか調べたいと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;依存するソフトウェア&#34;&gt;依存するソフトウェア&lt;/h2&gt;
+
+&lt;p&gt;今回は MacOS を使って環境を整えます。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;virtualbox&lt;/li&gt;
+&lt;li&gt;minikube&lt;/li&gt;
+&lt;li&gt;kubectl&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;これらのソフトウェアをインストールしていきます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ brew cask install virtualbo
+$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.12.2/minikube-darwin-amd64 &amp;amp;&amp;amp; chmod +x minikube &amp;amp;&amp;amp; sudo mv minikube /usr/local/bin/
+$ brew install kubectl
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;minikube を使って簡易的な kubernetes 環境を起動します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ minikube start
+$ eval $(minikube docker-env)
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;helm-を使ってみる&#34;&gt;Helm を使ってみる&lt;/h2&gt;
+
+&lt;p&gt;Helm は Charts という単位で Kubernetes をパッケージングします。Charts の一覧を見てみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ helm search
+NAME                    VERSION         DESCRIPTION
+stable/drupal           0.3.7           One of the most versatile open source content m...
+stable/factorio         0.1.1           Factorio dedicated server.
+stable/ghost            0.4.0           A simple, powerful publishing platform that all...
+stable/jenkins          0.1.1           A Jenkins Helm chart for Kubernetes.
+stable/joomla           0.4.0           PHP content management system (CMS) for publish...
+stable/mariadb          0.5.3           Chart for MariaDB
+stable/mediawiki        0.4.0           Extremely powerful, scalable software and a fea...
+stable/memcached        0.4.0           Chart for Memcached
+stable/minecraft        0.1.0           Minecraft server
+stable/mysql            0.2.1           Chart for MySQL
+stable/phpbb            0.4.0           Community forum that supports the notion of use...
+stable/postgresql       0.2.0           Chart for PostgreSQL
+stable/prometheus       1.3.1           A Prometheus Helm chart for Kubernetes. Prometh...
+stable/redis            0.4.1           Chart for Redis
+stable/redmine          0.3.5           A flexible project management web application.
+stable/spark            0.1.1           A Apache Spark Helm chart for Kubernetes. Apach...
+stable/spartakus        1.0.0           A Spartakus Helm chart for Kubernetes. Spartaku...
+stable/testlink         0.4.0           Web-based test management system that facilitat...
+stable/traefik          1.1.0-rc3-a     A Traefik based Kubernetes ingress controller w...
+stable/uchiwa           0.1.0           Dashboard for the Sensu monitoring framework
+stable/wordpress        0.3.2           Web publishing platform for building blogs and ...
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;各アプリケーションの名前で Charts が管理されていることが分かります。
+ここでは stable/mysql を使って kubernetes の中に MySQL 環境を作ってみます。まず stable/mysql に設定できるパラメータ一覧を取得します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ helm inspect stable/mysql
+Fetched stable/mysql to mysql-0.2.1.tgz
+description: Chart for MySQL
+engine: gotpl
+home: https://www.mysql.com/
+keywords:
+- mysql
+- database
+- sql
+maintainers:
+- email: viglesias@google.com
+  name: Vic Iglesias
+name: mysql
+sources:
+- https://github.com/kubernetes/charts
+- https://github.com/docker-library/mysql
+version: 0.2.1
+
+---
+## mysql image version
+## ref: https://hub.docker.com/r/library/mysql/tags/
+##
+imageTag: &amp;quot;5.7.14&amp;quot;
+
+## Specify password for root user
+##
+## Default: random 10 character string
+# mysqlRootPassword: testing
+
+## Create a database user
+##
+# mysqlUser:
+# mysqlPassword:
+
+## Allow unauthenticated access, uncomment to enable
+##
+# mysqlAllowEmptyPassword: true
+
+## Create a database
+##
+# mysqlDatabase:
+
+## Specify a imagePullPolicy
+## &#39;Always&#39; if imageTag is &#39;latest&#39;, else set to &#39;IfNotPresent&#39;
+## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
+##
+# imagePullPolicy:
+
+## Persist data to a persitent volume
+persistence:
+  enabled: true
+  storageClass: generic
+  accessMode: ReadWriteOnce
+  size: 8Gi
+
+## Configure resource requests and limits
+## ref: http://kubernetes.io/docs/user-guide/compute-resources/
+##
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 100m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;stable/mysql という Charts を構成するパラメータ一覧が取得できました。今回は DB 上のユーザを作ってパスワードを設定してみようと思います。上記のパラメータの中から &amp;lsquo;mysqlUser&amp;rsquo;, &amp;lsquo;mysqlPasswword&amp;rsquo; を編集してみます。下記の内容を config.yaml というファイル名で保存します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;mysqlUser: user1
+mysqlPassword: password1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;この config.yaml を使って stable/mysql を起動してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ helm install -f config.yaml stable/mysql
+$ helm ls # &amp;lt;--- 起動した環境を確認する
+NAME            REVISION        UPDATED                         STATUS          CHART
+dealing-ladybug 1               Sun Nov 20 10:44:00 2016        DEPLOYED        mysql-0.2.1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&amp;lsquo;dealing-ladybug&amp;rsquo; という名前で mysql が起動したことが分かります。&lt;/p&gt;
+
+&lt;p&gt;kubectl をつかって Services を確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get svc
+NAME                    CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
+dealing-ladybug-mysql   10.0.0.24    &amp;lt;none&amp;gt;        3306/TCP   33m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;&amp;lsquo;dealing-ladybug-mysql&amp;rsquo; という Service が kubernetes 環境に作られました。この名前は Kubernetes 内のコンテナから DNS 名前解決できるアドレスとなります。&lt;/p&gt;
+
+&lt;p&gt;ここで mysql-client 環境を作るために下記のようなコンテナを起動して mysql-client をインストール、config.yaml で作成したユーザ・パスワードで mysql サーバにアクセス確認します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl run -i --tty ubuntu02 --image=ubuntu:16.04 --restart=Never -- bash -il
+# apt-get update; apt-get install -y mysql-client
+# mysql -h dealing-ladybug-mysql -u user1 -ppassword1
+&amp;lt;省略&amp;gt;
+mysql&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;config.yaml に記したユーザ情報で MySQL にアクセスできることを確認できました。&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;Helm を使うことでレプリケーションコントローラやサービスを直接 yaml で作らなくても MySQL 環境構築と設定が行えました。Helm の Charts は自分で開発することも可能です。(参考 URL)&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/kubernetes/helm/blob/master/docs/charts.md&#34;&gt;https://github.com/kubernetes/helm/blob/master/docs/charts.md&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;パッケージングすることで他人の作った資源を有用に活用することもできるため、こういった何かを抽象化する技術を採用することにはとても意味があると思います。自動化を考える上でも抽象化できる技術は有用だと思います。&lt;/p&gt;
+
+&lt;p&gt;ですがレプリケーションコントローラを使っても Helm でも Yaml で管理することに変わりはなく、またレプリケーションコントローラで指定できる詳細なパラメータ (replicas や command, image など) を指定できないためすぐに実用するというわけにはいかないなぁと感じました。&lt;/p&gt;
+
+&lt;h2 id=&#34;参考-url&#34;&gt;参考 URL&lt;/h2&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/kubernetes/helm/blob/master/docs/charts.md&#34;&gt;https://github.com/kubernetes/helm/blob/master/docs/charts.md&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href=&#34;https://github.com/kubernetes/helm/blob/master/docs/quickstart.md&#34;&gt;https://github.com/kubernetes/helm/blob/master/docs/quickstart.md&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+</description>
+    </item>
     
     <item>
       <title>kubernetes1.4 で実装された ScheduledJob を試してみた！</title>
@@ -3505,209 +3697,6 @@ func main() {
 Python のライブラリは下記の URL にあります。&lt;/p&gt;
 
 &lt;p&gt;&lt;a href=&#34;https://github.com/minio/minio-py&#34;&gt;https://github.com/minio/minio-py&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;以上です。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>VyOS で VXLAN を使ってみる</title>
-      <link>http://jedipunkz.github.io/blog/2014/12/16/vyos-vxlan/</link>
-      <pubDate>Tue, 16 Dec 2014 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2014/12/16/vyos-vxlan/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;VyOS に VXLAN が実装されたと聞いて少し触ってみました。この情報を知ったきっかけ
-は @upaa さんの下記の資料です。&lt;/p&gt;
-
-&lt;p&gt;参考資料 : &lt;a href=&#34;http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan&#34;&gt;http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;VyOS は御存知の通り実体は Debian Gnu/Linux 系の OS でその上に OSS なミドル
-ウェアが搭載されていて CLI でミドルウェアのコンフィギュレーション等が行えるモ
-ノになっています。Linux で VXLAN といえば OVS を使ったモノがよく知られています
-が VyOS の VXLAN 機能は Linux Kernel の実装を使っているようです。&lt;/p&gt;
-
-&lt;h2 id=&#34;要件&#34;&gt;要件&lt;/h2&gt;
-
-&lt;ul&gt;
-&lt;li&gt;トンネルを張るためのセグメントを用意&lt;/li&gt;
-&lt;li&gt;VyOS 1.1.1 (現在最新ステーブルバージョン) が必要&lt;/li&gt;
-&lt;li&gt;Ubuntu Server 14.04 LTS (同じく Linux VXLAN 搭載バージョン)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h2 id=&#34;構成&#34;&gt;構成&lt;/h2&gt;
-
-&lt;p&gt;特徴&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;マネージメント用セグメント 10.0.1.0/24 を用意&lt;/li&gt;
-&lt;li&gt;GRE と同じくトンネル終端が必要なのでそのためのセグメント 10.0.2.0/24 を用意&lt;/li&gt;
-&lt;li&gt;各 eth1 は IP reachable である必要があるので予め IP アドレスの設定と疎通を確認&lt;/li&gt;
-&lt;li&gt;VXLAN を喋れる Ubuntu 14.04 LTS x 1 台と VyOS 1.1.1 x 2 台で相互に疎通確認&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;pre&gt;&lt;code&gt;+-------------+-------------+------------ Management 10.0.1.0/24
-|10.0.0.254   |10.0.0.253   |10.0.0.1
-|eth0         |eth0         |eth0
-+----------+  +----------+  +----------+ 
-|  vyos01  |  |  vyos02  |  |  ubuntu  |
-+-+--------+  +----------+  +----------+ 
-| |eth1       | |eth1       | |eth1
-| |10.0.2.254 | |10.0.2.253 | |10.0.2.1
-| +-----------)-+-----------)-+---------- Tunneling 10.0.2.0/24
-|             |             |
-+-------------+-------------+------------ VXLAN(eth1にlink) 10.0.1.0/24
-10.0.1.254     10.0.1.253    10.0.1.1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;設定を投入&#34;&gt;設定を投入&lt;/h2&gt;
-
-&lt;p&gt;vyos01 の設定を行う。VXLAN の設定に必要なものは&amp;hellip;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;VNI (VXLAN Network Ideintity)という識別子&lt;/li&gt;
-&lt;li&gt;Multicast Group Address&lt;/li&gt;
-&lt;li&gt;互いに IP reachable なトンネルを張るためのインターフェース&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;です。これらを意識して下記の設定を vyos01 に投入します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ configure
-% set interfaces vxlan vxlan0
-% set interfaces vxlan vxlan0 group 239.1.1.1
-% set interfaces vxlan vxlan0 vni 42
-% set interfaces vxlan vxlan0 address &#39;10.0.1.254/24&#39;
-% set interfaces vxlan vxlan0 link eth1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;設定を確認します&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% exit
-$ show int
-...&amp;lt;省略&amp;gt;...
-    vxlan vxlan0 {
-     address 10.0.1.254/24
-     group 239.1.1.1
-     link eth1
-     vni 42
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;VyOS の CLI を介さず直 Linux の設定を iproute2 で確認してみましょう。
-VNI, Multicast Group Address と共に &amp;lsquo;link eth1&amp;rsquo; で設定したトンネルを終端するための物理 NIC が確認できます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;vyos@vyos01# ip -d link show vxlan0
-5: vxlan0: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
-    link/ether 86:24:26:b2:11:5c brd ff:ff:ff:ff:ff:ff promiscuity 0
-    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ttl 16 ageing 300
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;vyos02 の設定を同様に行います。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ congigure
-% set interfaces vxlan vxlan0 address &#39;10.0.1.253/24&#39;
-% set interfaces vxlan vxlan0 vni 42
-% set interfaces vxlan vxlan0 group 239.1.1.1
-% set interfaces vxlan vxlan0 link eth1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;設定の確認を行います。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;... 省略 ...
-vxlan vxlan0 {
-     address 10.0.1.254/24
-     group 239.1.1.1
-     link eth1
-     vni 42
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;同じく Linux の iproute2 で確認します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;vyos@vyos01# ip -d link show vxlan0
-5: vxlan0: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
-    link/ether 86:24:26:b2:11:5c brd ff:ff:ff:ff:ff:ff promiscuity 0
-    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ttl 16 ageing 300
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ubuntu ホストの設定を行っていきます。&lt;/p&gt;
-
-&lt;p&gt;Ubuntu Server 14.04 LTS であればパッチを当てること無く Linux Kernel の VXLAN 機能を使うことができます。
-設定内容は VyOS と同等です。VyOS がこの Linux の実装を使っているのがよく分かります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo modprobe vxlan
-sudo ip link add vxlan0 type vxlan id 42 group 239.1.1.1 dev eth1
-sudo ip link set up vxlan0
-sudo ip a add 10.0.1.1/24 dev vxlan0
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;同じく Linux iproute2 で確認を行います。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt; ip -d link show vxlan0
-5: vxlan0: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
-    link/ether d6:ff:c1:27:69:a0 brd ff:ff:ff:ff:ff:ff promiscuity 0
-    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ageing 300
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;疎通確認&#34;&gt;疎通確認&lt;/h2&gt;
-
-&lt;p&gt;疎通確認を行います。&lt;/p&gt;
-
-&lt;p&gt;ubuntu -&amp;gt; vyos01 の疎通確認です。ICMP で疎通が取れることを確認できます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;thirai@ubuntu:~$ ping 10.0.1.254 -c 3
-PING 10.0.1.254 (10.0.1.254) 56(84) bytes of data.
-64 bytes from 10.0.1.254: icmp_seq=1 ttl=64 time=0.272 ms
-64 bytes from 10.0.1.254: icmp_seq=2 ttl=64 time=0.336 ms
-64 bytes from 10.0.1.254: icmp_seq=3 ttl=64 time=0.490 ms
-
---- 10.0.1.254 ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss, time 1999ms
-rtt min/avg/max/mdev = 0.272/0.366/0.490/0.091 ms
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に ubuntu -&amp;gt; vyos02 の疎通確認です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;thirai@ubuntu:~$ ping 10.0.1.253 -c 3
-PING 10.0.1.253 (10.0.1.253) 56(84) bytes of data.
-64 bytes from 10.0.1.253: icmp_seq=1 ttl=64 time=0.272 ms
-64 bytes from 10.0.1.253: icmp_seq=2 ttl=64 time=0.418 ms
-64 bytes from 10.0.1.253: icmp_seq=3 ttl=64 time=0.451 ms
-
---- 10.0.1.253 ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss, time 1998ms
-rtt min/avg/max/mdev = 0.272/0.380/0.451/0.079 ms
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;この時点で ubuntu ホストの fdb (forwarding db) の内容を確認します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ bridge fdb show dev vxlan0
-00:00:00:00:00:00 dst 239.1.1.1 via eth1 self permanent
-4e:69:a4:a7:ef:1c dst 10.0.2.253 self
-86:24:26:b2:11:5c dst 10.0.2.254 self
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;vyos01, vyos02 のトンネル終端 IP アドレスと Mac アドレスが確認できます。ubuntu ホストから見ると
-送信先は vyos0[12] の VXLAN インターフェースではなく、あくまでもトンネル終端を行っているインターフェース
-になることがわかります。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;VyOS ver 1.1.0 には VXLAN を物理インターフェースに link する機能に不具合がありそうなので今ら ver 1.1.1 を使うしか
-なさそう。とは言え、ver 1.1.1 なら普通に動作しました。&lt;/p&gt;
-
-&lt;p&gt;VyOS は仮想ルータという位置付けなので今回紹介したようにインターフェースを VXLAN ネットワークに所属させる
-機能があるのみです。VXLAN Trunk を行うような設定はありません。これはハイパーバイザ上で動作させることを前提
-に設計されているので仕方ないです..というかスイッチで行うべき機能ですよね..。VM を接続して云々するには OVS
-のようなソフトウェアスイッチを使えばできます。&lt;/p&gt;
-
-&lt;p&gt;また fdb は時間が経つと情報が消えます。これは VXLAN のメッシュ構造なトンネルがその都度張られているのかどうか
-気になるところです。ICMP の送信で一発目のみマルチキャストでその後ユニキャストになることを確認しましたが、その
-一発目のマルチキャストでトンネリングがされるものなのでしょうか&amp;hellip;。あとで調べてみます。OVS のように CLI で
-トンネルがどのように張られているか確認する手段があれば良いのですが。&lt;/p&gt;
 
 &lt;p&gt;以上です。&lt;/p&gt;
 </description>

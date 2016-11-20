@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2013-05-25T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-06-12T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,183 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/06/12/chef-ruby-code/">Chef を Ruby コード内で利用する</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-06-12'>
+            June 12, 2013</time>
+        <span class="author"></span>
+        
+            <p>1 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>require &lsquo;chef&rsquo; して Ruby コードの中で chef を利用したいと思って色々調べていた
+のですが、そもそもリファレンスが無くサンプルコードもごくわずかしかネット上に見
+つけられない状態でした。結局ソースコードを読んで理解していく世界なわけですが、
+サンプルコードが幾つかあると他の人に役立つかなぁと思い、ブログに載せていこうか
+なぁと。</p>
+
+<p>まず Chef サーバへアクセスするためには下記の情報が必要です。</p>
+
+<ul>
+<li>ユーザ名</li>
+<li>ユーザ用のクライアント鍵</li>
+<li>Chef サーバの URL</li>
+</ul>
+
+<p>これらは Chef::Config で記していきます。</p>
+
+<p>では早速サンプルコードです。まずは data bags 内データの一覧を取得するコードで
+す。data bags 内のデータを全で取得し配列で表示します。</p>
+
+<pre><code class="language-ruby">#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'chef/rest'
+require 'chef/search/query'
+
+Chef::Config[:node_name]='user01'
+Chef::Config[:client_key]='/home/user01/user01.pem'
+Chef::Config[:chef_server_url]=&quot;https://10.200.9.22&quot;
+
+Chef::DataBag::list.each do |bag_name, url|
+  Chef::DataBag::load(bag_name).each do |item_name, url|
+    item = Chef::DataBagItem.load(bag_name, item_name).to_hash
+    puts item
+  end
+end
+</code></pre>
+
+<p>次は data bags にデータを入力するコードです。json_data という JSON 形式のデー
+タを test_data という data bag に放り込んでいます。</p>
+
+<pre><code class="language-ruby">#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'chef/rest'
+require 'chef/search/query'
+
+Chef::Config[:node_name]='user01'
+Chef::Config[:client_key]='/home/user01/user01.pem'
+Chef::Config[:chef_server_url]=&quot;https://10.0.0.10&quot;
+
+json_data = {
+  &quot;id&quot; =&gt; &quot;test&quot;,
+  &quot;command&quot; =&gt; &quot;echo test&quot;
+}
+
+databag_item = Chef::DataBagItem.new
+databag_item.data_bag('test_data')
+databag_item.raw_data = proc_nginx
+databag_item.save
+</code></pre>
+
+<p>次は nodes 一覧の取得です。</p>
+
+<pre><code class="language-ruby">#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'chef/rest'
+require 'chef/search/query'
+
+
+Chef::Config[:node_name]='user01'
+Chef::Config[:client_key]='/home/user01/user01.pem'
+Chef::Config[:chef_server_url]=&quot;https://10.0.0.10&quot;
+
+Chef::Node.list.each do |node|
+  puts node
+end
+</code></pre>
+
+<p>次は bootstrap するコード。</p>
+
+<pre><code class="language-ruby">#!/usr/bin/env ruby
+require 'rubygems'
+require &quot;chef&quot;
+require &quot;chef/knife/core/bootstrap_context&quot;
+require 'chef/knife'
+require 'chef/knife/ssh'
+require 'net/ssh'
+require 'net/ssh/multi'
+require 'chef/knife/bootstrap'
+
+
+Chef::Config[:node_name]='user01'
+Chef::Config[:client_key]='/home/user01/user01.pem'
+Chef::Config[:validation_key]='/home/user01/chef-validator.pem'
+Chef::Config[:chef_server_url]=&quot;https://10.0.0.10&quot;
+
+kb = Chef::Knife::Bootstrap.new
+kb.name_args = [&quot;sensu-client04.deathstar.jp&quot;, &quot;10.0.0.20&quot;]
+kb.config[:ssh_user] = &quot;root&quot;
+kb.config[:identity_file] = &quot;~/novakey01&quot;
+kb.config[:ssh_port] = &quot;22&quot;
+kb.config[:run_list ] = &quot;role[sensu-client]&quot;
+kb.config[:template_file] = &quot;/home/thirai/chef-full.erb&quot;
+kb.run
+</code></pre>
+
+<p>以上です。他のサンプルもこれから探していこうかと思ってます。knife のソース見る
+のが一番はやいかなぁと。もしくは Chef のテストコード見るか。皆さんもご存知であ
+れば共有してくださーい。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/06/12/chef-ruby-code/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -771,155 +948,6 @@ OpenStack 全体が復旧できることになります。実際にやってみ�
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/05/18/chef-cookbook-adding-users/">Chef Cookbook でユーザ・グループ追加</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-05-18'>
-            May 18, 2013</time>
-        <span class="author"></span>
-        
-            <p>1 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
-今回は Opscode Chef でユーザ・グループを作成する方法をまとめます。</p>
-
-<p>&lsquo;users&rsquo; Cookbook を使います。</p>
-
-<pre><code>% cd ${YOUR_CHEF_REPO}
-% ${EDITOR} Berksfile
-cookbook 'users'
-% berks install --path ./cookbooks
-</code></pre>
-
-<p>data_bag を使ってユーザ・グループの管理をしたいので管理ディレクトリを作成しま
-す。</p>
-
-<pre><code>% mkdir -p data_bags/users
-</code></pre>
-
-<p>data_bags/users/jedipunkz.json ファイルを作成します。必要に応じて内容を書き換えてください。</p>
-
-<pre><code>{
-  &quot;id&quot;: &quot;jedipunkz&quot;,
-  &quot;ssh_keys&quot;: &quot;ssh-rsa AAAABx92tstses jedipunkz@somewhere&quot;,
-  &quot;groups&quot;: [ &quot;sysadmin&quot;, &quot;sudo&quot; ],
-  &quot;uid&quot;: 2001,
-  &quot;shell&quot;: &quot;\/usr\/bin\/zsh&quot;,
-  &quot;comment&quot;: &quot;jedipunkz sysadmin&quot;,
-  &quot;password&quot;: &quot;$1$s%H8BMHlB$7s3h30y9IB1SklftZXYhvssJ&quot;
-
-}
-</code></pre>
-
-<p>json ファイルの説明です。</p>
-
-<ul>
-<li>id : ユーザ名</li>
-<li>ssh_keys : SSH 公開鍵</li>
-<li>groups : 所属させるグループ</li>
-<li>uid : unix id</li>
-<li>sheell : ログインシェル</li>
-<li>comment : コメント</li>
-<li>passwd : ハッシュ化したパスワード</li>
-</ul>
-
-<p>特にハッシュ化したパスワードは下記のコマンドで生成出来ます。</p>
-
-<pre><code>% openssl passwd -1 'yourPassword'
-</code></pre>
-
-<p>data_bag を作成し json ファイルを読み込みます。</p>
-
-<pre><code>% knife data bag create users
-% knife data bag from file users data_bags/users/jedipunkz.json
-</code></pre>
-
-<p>現在 (2013/05/18 現在) 、&rsquo;users&rsquo; Cookbook に不具合があるらしく groups に記した
-グループにユーザが所属してくれませんでした。なので下記の対処をします。
-sysadmins.rb を今回は利用します。このファイルに下記の行を追記します。僕は sudo
-グループに所属させたかったので (先ほど groups: に記した) こうしましたが、他の
-グループが良ければ変更してください。また、Ubuntu Server を扱うことがメインの僕
-なので group_id は 27 にしています。適宜変更してください。</p>
-
-<pre><code>% ${EDITOR} cookbooks/users/recipes/sysadmins.rb
-# 下記の行を追記
-users_manage &quot;sudo&quot; do
-  group_id 27
-end
-</code></pre>
-
-<p>cookbook を Chef サーバにアップロードします。</p>
-
-<pre><code>% knife cookbook upload users
-</code></pre>
-
-<p>適用したいノードの run_list に Recipe &lsquo;users::sysadmins&rsquo; を追加します。</p>
-
-<pre><code>% knife node run_list add ${YOUR_NODE_NAME} users::sysadmins
-</code></pre>
-
-<p>chef-client の次回実行時にユーザ &lsquo;jedipunkz&rsquo; が作成されているはずです。SSH で
-ログインして確認してみてください。待ちきれなかったら knife ssh して
-chef-client を実行してください。</p>
-
-<p>この &lsquo;users&rsquo; cookbook は他の Cookbook からも呼び出して利用することが出来るので
-応用が利きますね。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/05/18/chef-cookbook-adding-users/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1036,6 +1064,20 @@ chef-client を実行してください。</p>
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-20'>
+                                    November 20, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
                                 
                                     
@@ -1075,20 +1117,6 @@ chef-client を実行してください。</p>
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-14'>
-                                    July 14, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1123,7 +1151,7 @@ chef-client を実行してください。</p>
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">102</span>
+                                <span style="float:right;">103</span>
                             </header>
                         </article>
                     </li>

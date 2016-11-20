@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-07-08T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-07-17T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,349 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/07/17/openstach-ha-chef-deploy/">OpenStack HA 構成を Chef でデプロイ</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-07-17'>
+            July 17, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>OpenStack を運用する中でコントローラは重要です。コントローラノードが落ちると、
+仮想マシンの操作等が利用出来ません。コントローラの冗長構成を取るポイントは公式
+wiki サイトに記述あるのですが PaceMaker を使った構成でしんどいです。何より運用
+する人が混乱する仕組みは避けたいです。</p>
+
+<p>RackSpace 社の管理している Chef Cookbooks の Roles に &lsquo;ha-controller1&rsquo;,
+&lsquo;ha-controller2&rsquo; というモノがあります。今回はこれを使った HA 構成の構築方法に
+ついて書いていこうかと思います。</p>
+
+<h2 id="構成">構成</h2>
+
+<p>最小構成を作りたいと思います。HA のためのコントローラノード2台, コンピュートノー
+ド1台, Chef ワークショテーション1台, Chef サーバノード1台。</p>
+
+<pre><code>+----------------+----------------+----------------+----------------+--------------- public network
+|                |                | eth0           |                |                10.0.0.0/24
++--------------+ +--------------+ +--------------+ +--------------+ +--------------+
+| controller01 | | controller01 | |  compute01   | | chef server  | | workstation  |
++--------------+ +--------------+ +--------------+ +--------------+ +--------------+
+                                  | eth1
+                                  +------------------------------------------------- fixed range network
+                                                                                     172.16.0.0/24
+</code></pre>
+
+<h4 id="特徴">特徴</h4>
+
+<ul>
+<li>&lsquo;controller01&rsquo;, &lsquo;controller02&rsquo; で HA 化コントローラ</li>
+<li>&lsquo;compute01&rsquo; はコンピュートノード</li>
+<li>&lsquo;chef server&rsquo; は Chef サーバ、Chef11 推奨</li>
+<li>ほとんどの作業を行う &lsquo;workstaion&rsquo; は Chef ワークステーション</li>
+<li>nova-network 構成</li>
+</ul>
+
+<h2 id="chef-サーバの構築">Chef サーバの構築</h2>
+
+<p>Chef サーバの構築方法は本題から外れるので割愛します。今は Omnibus インストーラで一発です。</p>
+
+<h2 id="wokstation-ノードでの準備">wokstation ノードでの準備</h2>
+
+<ul>
+<li>workstation で knife を使えるまでの準備についても割愛します。</li>
+<li>プロンプトに何もホスト名が記されていないモノは全て workstation ノード上での操作です。</li>
+</ul>
+
+<p>Rackspace 管理の Cookbook を取得します。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo
+% cd ~/openstack-chef-repo
+</code></pre>
+
+<p>v4.0.0 というタグ (現在 2013/07/16 最新リリース版) をチェックアウトします。また submodue update で関連
+する Cookbooks を全て取得する事ができます。</p>
+
+<pre><code class="language-bash">% git checkout v4.0.0
+% git submodule init
+% git submodule sync
+% git submodule update
+</code></pre>
+
+<p>取得した Cookbooks を Chef サーバにアップロードします。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
+</code></pre>
+
+<p>同様に Roles も Chef サーバにアップロードします。</p>
+
+<pre><code class="language-bash">% knife role from file roles/*rb
+</code></pre>
+
+<p>environment ファイルを生成します。ここで指定するパラメターは各々の Cookbooks の Attributes を上書き出来ます。
+また、Recipe 内でノードサーチする際に同じ environment 名が指定されているノードをクラスタ構成の一部と判断出来る
+といった仕組みです。</p>
+
+<pre><code class="language-json">% ${EDITOR} environments/Cluster01.json
+{
+  &quot;name&quot;: &quot;Cluster01&quot;,
+  &quot;description&quot;: &quot;&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;package_component&quot;: &quot;grizzly&quot;,
+    &quot;osops_networks&quot;: {
+      &quot;management&quot;: &quot;10.0.0.0/24&quot;,
+      &quot;public&quot;: &quot;10.0.0.0/24&quot;,
+      &quot;nova&quot;: &quot;10.0.0.0/24&quot;
+    },
+    &quot;nova&quot;: {
+      &quot;networks&quot;: [
+        {
+          &quot;bridge&quot;: &quot;br100&quot;,
+          &quot;num_networks&quot;: &quot;1&quot;,
+          &quot;dns2&quot;: &quot;8.8.4.4&quot;,
+          &quot;dns1&quot;: &quot;8.8.8.8&quot;,
+          &quot;ipv4_cidr&quot;: &quot;172.16.0.0/24&quot;,
+          &quot;network_size&quot;: &quot;256&quot;,
+          &quot;label&quot;: &quot;private&quot;,
+          &quot;bridge_dev&quot;: &quot;eth1&quot;
+        }
+      ],
+      &quot;config&quot;: {
+        &quot;use_single_default_gateway&quot;: false,
+        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
+        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
+      },
+      &quot;network&quot;: {
+        &quot;dmz_cidr&quot;: &quot;172.18.0.0/24&quot;,
+        &quot;public_interface&quot;: &quot;eth0&quot;,
+        &quot;multi_host&quot;: true,
+        &quot;fixed_range&quot;: &quot;172.16.0.0/24&quot;
+      },
+      &quot;apply_patches&quot;: true,
+      &quot;libvirt&quot;: {
+        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
+        &quot;virt_type&quot;: &quot;kvm&quot;
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;nova&quot;
+      }
+    },
+    &quot;cinder&quot;: {
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;cinder&quot;
+      }
+    },
+    &quot;keystone&quot;: {
+      &quot;admin_user&quot;: &quot;admin&quot;,
+      &quot;tenants&quot;: [
+        &quot;admin&quot;,
+        &quot;service&quot;
+      ],
+      &quot;users&quot;: {
+        &quot;admin&quot;: {
+          &quot;password&quot;: &quot;secrete&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [
+              &quot;admin&quot;
+            ]
+          }
+        },
+        &quot;demo&quot;: {
+          &quot;password&quot;: &quot;demo&quot;,
+          &quot;default_tenant&quot; : &quot;service&quot;,
+          &quot;roles&quot;: {
+            &quot;service&quot;: [ &quot;service&quot; ]
+          }
+        }
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;keystone&quot;
+      }
+    },
+    &quot;horizon&quot;: {
+      &quot;theme&quot;: &quot;Rackspace&quot;,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;horizon&quot;
+      }
+    },
+    &quot;mysql&quot;: {
+      &quot;root_network_acl&quot;: &quot;%&quot;,
+      &quot;allow_remote_root&quot;: true
+    },
+    &quot;monitoring&quot;: {
+      &quot;procmon_provider&quot;: &quot;monit&quot;,
+      &quot;metric_provider&quot;: &quot;collectd&quot;
+    },
+    &quot;glance&quot;: {
+      &quot;images&quot;: [
+        &quot;precise&quot;, &quot;cirros&quot;
+      ],
+      &quot;image&quot;: {
+      },
+      &quot;image_upload&quot;: true,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;glance&quot;
+      }
+    },
+    &quot;vips&quot;: {
+      &quot;cinder-api&quot;: &quot;10.0.0.22&quot;,
+      &quot;glance-api&quot;: &quot;10.0.0.22&quot;,
+      &quot;glance-registry&quot;: &quot;10.0.0.22&quot;,
+      &quot;horizon-dash&quot;: &quot;10.0.0.22&quot;,
+      &quot;horizon-dash_ssl&quot;: &quot;10.0.0.22&quot;,
+      &quot;keystone-admin-api&quot;: &quot;10.0.0.22&quot;,
+      &quot;keystone-service-api&quot;: &quot;10.0.0.22&quot;,
+      &quot;keystone-internal-api&quot;: &quot;10.0.0.22&quot;,
+      &quot;mysql-db&quot;: &quot;10.0.0.21&quot;,
+      &quot;nova-api&quot;: &quot;10.0.0.22&quot;,
+      &quot;nova-ec2-public&quot;: &quot;10.0.0.22&quot;,
+      &quot;nova-novnc-proxy&quot;: &quot;10.0.0.22&quot;,
+      &quot;nova-xvpvnc-proxy&quot;: &quot;10.0.0.22&quot;,
+      &quot;rabbitmq-queue&quot;: &quot;10.0.0.23&quot;
+    },
+    &quot;developer_mode&quot;: false
+  }
+}
+</code></pre>
+
+<p>作成した environment を Chef サーバにアップロードします。</p>
+
+<pre><code class="language-bash">% knife environment from file environments/Cluster01.json
+</code></pre>
+
+<h2 id="ha-コントローラデプロイ">HA コントローラデプロイ</h2>
+
+<p>controller01, controller02 ノードを HA 化するわけですが、この操作を全て Chef
+で行います。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_controller01&gt; -N controller01 -r 'role[ha-controller1]' -E Cluster01 --sudo -x jedipunkz
+% knife bootstrap &lt;ip_controller02&gt; -N controller02 -r 'role[ha-controller2]' -E Cluster01 --sudo -x jedipunkz
+</code></pre>
+
+<p>chef サーバに node の情報が登録されました。ここから environment で指定した VIP を利用した
+HA 構成を組むため再度 chef-client を実行します。chef-client をデーモン化しておいた場合は
+時間と共に自動で構築されるはずです。</p>
+
+<pre><code class="language-bash">controller01# chef-client
+controller02# chef-client
+</code></pre>
+
+<p>Cinder の利用に関しては片系のコントローラノードに寄せる必要があります。&rsquo;cinder-volumes&rsquo; という名前の Volume Group を
+controller01 ノードに作成し下記の操作を行います。</p>
+
+<pre><code class="language-bash">% knife node run_list add controller01 'role[cinder-volume]'
+</code></pre>
+
+<pre><code class="language-bash">controller01# chef-client
+controller01# service cinder-volume restart
+</code></pre>
+
+<h2 id="compute-ノードのデプロイ">Compute ノードのデプロイ</h2>
+
+<p>compute ノードのデプロイも同様に Chef を用います。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_compute01&gt; -N compute01 -r 'role[single-compute]' -E Cluster01 --sudo -x jedipunkz
+</code></pre>
+
+<p>compute ノードの追加に関しても同様に行なっていくことで仮想マシンの数を拡張出来ます。</p>
+
+<h2 id="デプロイされた-ha-構成の内部">デプロイされた HA 構成の内部</h2>
+
+<p>PaceMaker は今回使われていないようです。デプロイされた構成の内部を覗いてみると下記のような特徴がありました。</p>
+
+<h4 id="各-openstack-apis">各 OpenStack APIs</h4>
+
+<p>Keepalived で VRRP 構成。active/passive 構成で明示的な Master は存在しない。その都度、評価の高いノードが VIP
+を引き継ぎサービスリクエストに応じる。また、リクエストを受けたコントローラノードは haproxy により HA の2台に対して
+それぞれリクエストを分散。ラウンドロビンの冗長が取られている。</p>
+
+<h4 id="rabbitmq">RabbitMQ</h4>
+
+<p>Keepalived で VRRP 構成。APIs と同様に active/passive 構成。その後は HA 内片系のコントローラの RabbitMQ が全てのリクエストに
+応え処理を行う。</p>
+
+<h4 id="mysql">MySQL</h4>
+
+<p>Keepalived で VRRP 構成。APIs と同様に active/passive 構成。MySQL はミドルウェアベースで master/master, active/passive
+レプリケーションが組まれている。</p>
+
+<h2 id="障害系の対処">障害系の対処</h2>
+
+<p>ここまで来ると、HA 構成が壊れた際に Chef で復旧を自動化してみたくなります。試したところ HA 構成の MySQL 的な passive 側
+が壊れた際には knife bootstrap で直ちに復旧することが出来ました。ただし active (master) 側が壊れた際にはバックアップした
+データからのリストア作業が必要でした。つまり Chef での自動復旧はできませんでした。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>keepalived と haproxy によるシンプルな HA 構成のため運用する人間が理解・対処する事も容易になると考えられます。
+コントローラノード障害といっても、大抵は disk 交換や筐体交換で復旧出来るわけですから、HA さえ組まれていればかなり
+安心して運用が出来そうです。今回は nova-network を試してみましたが、neutron 構成も組める Cookbooks になっているので
+時間を見つけてやってみようかなと考えています。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/07/17/openstach-ha-chef-deploy/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -736,301 +1079,6 @@ oc-chef# knife environment show NovaCluster01
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/">Sensu 監視システムを Chef で制御</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-06-20'>
-            June 20, 2013</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>自動化の基盤を導入するために色々調べているのですが、監視も自動化しなくちゃ！と
-いうことで Sensu を調べてたのですが Chef との相性バッチリな感じで、自分的にイ
-ケてるなと思いました。</p>
-
-<ul>
-<li>公式サイト <a href="http://www.sonian.com/cloud-monitoring-sensu/">http://www.sonian.com/cloud-monitoring-sensu/</a></li>
-<li>ドキュメント <a href="http://docs.sensuapp.org/0.9/index.html">http://docs.sensuapp.org/0.9/index.html</a></li>
-</ul>
-
-<p>開発元が予め Chef の Cookbook (正確にはラッパー Cookbook 開発のための
-Cookbook で Include して使う) を用意してくれていたり、インストールを容易にする
-ための Omnibus 形式のパッケージの提供だったり。Omnibus なのでインストールと共
-に Sensu が推奨する Ruby 一式も一緒にインストールされます。Chef と同じですね。</p>
-
-<p>今回紹介したいのは、Chef で Sensu を構築・制御する方法です。</p>
-
-<pre><code>+--------------+ +--------------+
-| chef-server  | | workstation  |
-+--------------+ +--------------+
-       |                |
-       +----------------+ 
-       |
-+--------------+
-| sensu-server |
-+--------------+
-       |
-       +----------------+----------------+----------------+
-       |                |                |                |
-+--------------+ +--------------+ +--------------+ +--------------+
-| sensu-client | | sensu-client | | sensu-client | | sensu-client | ..&gt;
-+--------------+ +--------------+ +--------------+ +--------------+
-| service node | | service node | | service node | | service node |
-+--------------+ +--------------+ +--------------+ +--------------+
-</code></pre>
-
-<p>この構成の処理の流れとしては&hellip;</p>
-
-<h4 id="sensu-server-sensu-client-の構築の流れ">sensu-server, sensu-client の構築の流れ</h4>
-
-<ul>
-<li>1. workstation から cookbook, role, data_bag を chef-server へアップ</li>
-<li>2. workstation から sensu-server を bootstrap で構築</li>
-<li>3. workstation から sensu-client を boostrrap で構築</li>
-</ul>
-
-<h4 id="監視項目の追加-無効化の流れ">監視項目の追加・無効化の流れ</h4>
-
-<ul>
-<li>4. workstation から監視項目 data bag の chef-server へのアップ</li>
-<li>5. sensu-server 上の chef-client が chef-server から data bag の取得</li>
-<li>6. sensu-server に新たな(削除された)監視項目が追加</li>
-<li>7. sensu-client が新たな(削除された)監視項目を検知し、監視開始</li>
-</ul>
-
-<p>つまり&hellip; 運用で必要な操作 (監視対象の追加・監視項目の追加・無効化)を
-workstation から knife を使って全て行えるっていうことです。しかも Chef も Sensu
-も API を持っているので自動化を形成するプログラムの開発も容易です。実際に API
-を叩くちょっとしたダッシュボードを Ruby on Rails で作ってみましたが簡単に出来
-ました。</p>
-
-<p>今回はこの構成の構築と操作方法について書いていきます。予め私のほうで作っておい
-た sensu のための chef-repo を使って環境を作っていきます。</p>
-
-<p><a href="https://github.com/jedipunkz/sensu-chef-repo">https://github.com/jedipunkz/sensu-chef-repo</a></p>
-
-<p>この chef-repo には</p>
-
-<ul>
-<li>Berksfile</li>
-<li>サンプルの監視項目 data bag</li>
-<li>SSL 鍵生成の仕組み (後に data bag に収める)</li>
-</ul>
-
-<p>のみが入っています。公式の sensu-chef レポジトリ内にあったサンプルを利用して作っ
-ています。また、Berksfile 内で、これまた</p>
-
-<ul>
-<li>chef-redis (redis の cookbook)</li>
-<li>sensu-chef (公式の sensu cookbook, ラッパー cookbook 内で用いる)</li>
-<li>chef-monitor (ラッパー cookbook の例)</li>
-</ul>
-
-<p>を取得するようにしています。それぞれ fork して私のレポジトリに置いています。動
-く状態を保ちたかったためです。redis に関しては結構手を加えました。そのままでは
-全く構築出来ない状態でしたので。chef-monitor は内部で sensu-chef (公式
-cookbook) を Include しているラッパー cookbook です。公式 cookbook 内で例とし
-て挙げられていたモノです。こちらは手を加えていません。</p>
-
-<p>では手順を&hellip;</p>
-
-<p>(chef 環境の構築方法は割愛します)</p>
-
-<h2 id="sensu-server-のデプロイ">sensu-server のデプロイ</h2>
-
-<p>sensu-chef-repo の取得を行います。ここからの操作は全て上図の workstation 上で
-の操作になります。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/jedipunkz/sensu-chef-repo
-</code></pre>
-
-<p>SSL 鍵ペアを生成し data bag に投入します。</p>
-
-<pre><code class="language-bash">% cd ~/sensu-chef-repo/data_bags/ssl
-% ./ssl_certs.sh generate
-% knife data bag create sensu
-% knife data bag from file sensu ./ssl.json
-</code></pre>
-
-<p>サンプル監視項目 proc_cron.json を data bags に投入します。</p>
-
-<pre><code class="language-bash">% cd ~/sensu-chef-repo/
-% knife data bag create sensu_checks
-% knife data bag from file sensu_checks data_bags/sensu_checks/proc_cron.json
-</code></pre>
-
-<p>proc_cron.json の内容は下記の通り</p>
-
-<pre><code class="language-json">{
-  &quot;id&quot;: &quot;proc_cron&quot;,
-  &quot;command&quot;: &quot;check-procs.rb -p cron -C 1&quot;,
-  &quot;subscribers&quot;: [
-    &quot;sensu-client&quot;
-  ],
-  &quot;interval&quot;: 10
-}
-</code></pre>
-
-<p>json の構成を説明すると..</p>
-
-<ul>
-<li>id : 監視項目名</li>
-<li>command : agent が実行するコマンド</li>
-<li>subscribers : 監視対象のグループ名, chef role 名が自動で監視対象に割り当てられる</li>
-<li>interval : 監視間隔 (秒)</li>
-</ul>
-
-<p>となります。</p>
-
-<p>Berkshelf を使って cookbook の取得を行います。</p>
-
-<pre><code class="language-bash">% gem install berksfile --no-ri --no-rdoc
-% berks install --path ./cookbooks/
-</code></pre>
-
-<p>roles を chef server へアップロードします。</p>
-
-<pre><code class="language-bash">% knife role from file roles/sensu-client.rb # 後の sensu-client デプロイのためついでに準備します
-% knife role from file roles/sensu-server.rb
-</code></pre>
-
-<p>&ldquo;master_address&rdquo; を sensu-server の IP アドレスに書き換えます。書き換える箇所
-は &lsquo;monitor&rsquo; cookbook の attributes です。</p>
-
-<pre><code class="language-bash">% ${EDITOR} cookbooks/monitor/attributes/default.rb
-default[&quot;monitor&quot;][&quot;master_address&quot;] = &quot;XXX.XXX.XXX.XXX&quot;
-</code></pre>
-
-<p>cookbooks を chef server へアップロードします。</p>
-
-<pre><code class="language-bash">workstation% knife cookbook upload -a
-</code></pre>
-
-<p>sensu-server を knife を用いてブートストラップします。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;server-ip&gt; -N &lt;server-name&gt; -r 'role[sensu-server]' -x root -i &lt;secret-key&gt;
-</code></pre>
-
-<p>sensu ダッシュボード URL : http://<server-ip>:8080 にアクセスし動作確認, アカ
-ウント情報は下記の attributes に記載してあります。</p>
-
-<pre><code>cookbooks/sensu/attributes/default.rb
-</code></pre>
-
-<h2 id="sensu-client-デプロイ方法">sensu-client デプロイ方法</h2>
-
-<p>knife を用いて sensu-client をデプロイします。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;client-ip&gt; -N &lt;client-name&gt; -r 'role[sensu-client]' -x root -i &lt;secret-key&gt;
-</code></pre>
-
-<p>この状態で先ほどの &lsquo;proc_cron&rsquo; が監視開始されます。</p>
-
-<h2 id="監視項目の追加方法">監視項目の追加方法</h2>
-
-<p>下記のような json ファイルを生成します。ここでは例として nginx のプロセス監視
-のための項目を追加してみます。</p>
-
-<pre><code class="language-bash">% ${EDITOR} data_bags/sensu_checks/proc_nginx.json
-</code></pre>
-
-<pre><code class="language-json">{
-  &quot;id&quot;: &quot;proc_nginx&quot;,
-  &quot;command&quot;: &quot;check-procs.rb -p nginx -w 5 -c 10&quot;,
-  &quot;subscribers&quot;: [
-    &quot;sensu-client&quot;
-  ],
-  &quot;interval&quot;: 10
-}
-</code></pre>
-
-<p>先ほども書きましたが subscribers は chef 的な role 名と一致しています。なので
-sensu の監視をグルーピングしたいときは role 名を変えて knife bootstrap すると
-良いと思います。ここでは例として &lsquo;sensu-client&rsquo; という先ほど利用した role 名を
-用います。</p>
-
-<p>data bags に監視項目情報を投入します。</p>
-
-<pre><code class="language-bash">% knife data bag from file sensu_checks data_bags/sensu_checks/proc_nginx.json
-</code></pre>
-
-<p>暫くすると下記のプロセスを経て監視が開始される</p>
-
-<ul>
-<li>sensu-server 上の chef-client が interval 間隔後実行</li>
-<li>sensu-server に proc_nginx.json が配置</li>
-<li>sensu-server が chef により再起動</li>
-<li>sensu-client 上の sensu agent が自らの subscribers が属している proc_nginx.json を検知</li>
-<li>sensu-client が nginx のプロセス監視開始</li>
-</ul>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>監視対象追加 (agent 仕込み), 監視項目追加を workstation 上から knife を使って
-操作出来ました。監視項目の削除についてはダミーの json (command 項に &lsquo;echo ok&rsquo;
-など設定) を投入することで、私は対処していますが、本来は data bag が存在しない
-ことを検知して sensu-server 上から監視項目を削除する cookbook に仕上げなければ
-いけないと思います。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1147,6 +1195,20 @@ sensu の監視をグルーピングしたいときは role 名を変えて knif
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-20'>
+                                    November 20, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
                                 
                                     
@@ -1186,20 +1248,6 @@ sensu の監視をグルーピングしたいときは role 名を変えて knif
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-14'>
-                                    July 14, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1234,7 +1282,7 @@ sensu の監視をグルーピングしたいときは role 名を変えて knif
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">102</span>
+                                <span style="float:right;">103</span>
                             </header>
                         </article>
                     </li>
