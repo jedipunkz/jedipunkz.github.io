@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2014-01-29T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2014-02-27T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,322 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/">Journal 用 SSD を用いた Ceph 構成の構築</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-02-27'>
+            February 27, 2014</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは、@jedipunkz です。</p>
+
+<p>前回、&rsquo;Ceph のプロセス配置ベストプラクティス&rsquo; というタイトルで記事を書きました。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/">http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/</a></p>
+
+<p>今回はこの記事にあるポリシに従って下記のような特徴を持った構成を作る手順を具体
+的に書いていきたいと思います。</p>
+
+<ul>
+<li>ceph01 - ceph04 の4台構成</li>
+<li>ノードに HDD 2台搭載されていることを前提 (/dev/sdb, /dev/sdc)</li>
+<li>ノードに Journal 用 SSD 1台搭載されていることを前提 (/dev/ssd)</li>
+<li>ceph04 は mds サービス稼働</li>
+<li>ceph05 は ceph-deploy を実行するためのワークステーション</li>
+<li>最終的に ceph04 から Ceph をマウントする</li>
+<li>mon は ノード単位で稼働</li>
+<li>osd は HDD 単位で稼働</li>
+<li>mds は ceph04 に稼働</li>
+</ul>
+
+<h2 id="構成-ハードウェアとノードとネットワークの関係">構成 : ハードウェアとノードとネットワークの関係</h2>
+
+<pre><code>                                                                                      public network
+         +-------------------+-------------------+-------------------+-------------------+---------
+         |                   |                   |                   |                   |
++--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+
+|      ceph01     | |      ceph02     | |      ceph03     | |      ceph04     | |      ceph05     |
+| +-----+ +-----+ | | +-----+ +-----+ | | +-----+ +-----+ | |                 | |                 |
+| | sdb | | sdc | | | | sdb | | sdc | | | | sdb | | sdc | | |                 | |                 |
+| +-----+-+-----+ | | +-----+-+-----+ | | +-----+-+-----+ | |                 | |                 |
+| |     ssd     | | | |     ssd     | | | |     ssd     | | |                 | |                 |
+| +-------------+ | | +-------------+ | | +-------------+ | |                 | |                 |
++--------+--------+ +--------+--------+ +--------+--------+ +-----------------+ +-----------------+
+         |                   |                   |                                    cluster network
+         +-------------------+-------------------+-------------------------------------------------
+</code></pre>
+
+<h2 id="構成-プロセスとノードとネットワークの関係">構成 : プロセスとノードとネットワークの関係</h2>
+
+<pre><code>                                                                                      public network
+         +-------------------+-------------------+-------------------+-------------------+---------
+         |                   |                   |                   |                   |
++--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+
+|      ceph01     | |      ceph02     | |      ceph03     | |      ceph04     | |      ceph05     |
+| +-----+ +-----+ | | +-----+ +-----+ | | +-----+ +-----+ | | +-------------+ | |                 |
+| | osd | | osd | | | | osd | | osd | | | | osd | | osd | | | |     mds     | | |                 |
+| +-----+-+-----+ | | +-----+-+-----+ | | +-----+-+-----+ | | +-------------+ | |                 |
+| |     mon     | | | |     mon     | | | |     mon     | | |                 | |                 |
+| +-------------+ | | +-------------+ | | +-------------+ | |                 | |                 |
++--------+--------+ +--------+--------+ +--------+--------+ +-----------------+ +-----------------+
+         |                   |                   |                                    cluster network
+         +-------------------+-------------------+-------------------------------------------------
+</code></pre>
+
+<p>注意 : 上記の図だと ssd : mon が対に見えますが、そうではありません。</p>
+
+<p>では構築方法について書いていきます。</p>
+
+<h2 id="作業用ホストの準備">作業用ホストの準備</h2>
+
+<p>ノンパスフレーズの SSH 公開鍵・秘密鍵を生成する。</p>
+
+<pre><code class="language-bash">% ssh-keygen
+</code></pre>
+
+<p>公開鍵をターゲットホスト (ceph01-03) に配置</p>
+
+<pre><code class="language-bash">% ssh-copy-id ceph@ceph01
+% ssh-copy-id ceph@ceph02
+% ssh-copy-id ceph@ceph03
+</code></pre>
+
+<p>ceph-deploy の取得を行う。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/ceph/ceph-deploy.git ~/ceph-deploy
+</code></pre>
+
+<p>&lsquo;python-virtualenv&rsquo; パッケージをインストールする。</p>
+
+<pre><code class="language-bash">% sudo apt-get update ; sudo apt-get -y install python-virtualenv
+</code></pre>
+
+<p>ceph-deploy をブートストラップする</p>
+
+<pre><code class="language-bash">% cd ~/ceph-deploy
+% ./bootstrap
+</code></pre>
+
+<p>PATH を通す。下記は例。</p>
+
+<pre><code class="language-bash">% ${EDITOR} ~/.zshrc
+export PATH=$HOME/ceph-deploy:$PATH
+</code></pre>
+
+<p>ホスト名の解決を行う。IP アドレスは例。</p>
+
+<pre><code class="language-bash">% sudo ${EDITOR} /etc/hosts
+10.200.10.11    ceph01
+10.200.10.12    ceph02
+10.200.10.13    ceph03
+10.200.10.14    ceph04
+10.200.10.15    ceph05
+</code></pre>
+
+<h2 id="上記の構成の構築方法">上記の構成の構築方法</h2>
+
+<p>以前の記事同様に ceph-deploy をデプロイツールとして用いる。</p>
+
+<p>ceph-deploy に関しては下記の URL を参照のこと。</p>
+
+<p><a href="https://github.com/ceph/ceph-deploy">https://github.com/ceph/ceph-deploy</a></p>
+
+<p>下記の手順でコンフィギュレーションと鍵の生成を行う。またこれからの操作はすべて public network
+上の ceph-deploy 専用 node からの操作とする。</p>
+
+<pre><code class="language-bash">% mkdir ~/ceph-work
+% cd ~/ceph-work
+% ceph-deploy --cluster cluster01 new ceph01 ceph02 ceph03 ceph04
+</code></pre>
+
+<p>~/ceph-work ディレクトリ上に cluster01.conf が生成されているので下記の通り
+cluster network を扱う形へと追記を行う。</p>
+
+<pre><code class="language-bash">public network = &lt;public_network_addr&gt;/&lt;netmask&gt;
+cluster network = &lt;cluster_network_addr&gt;/&lt;netmask&gt;
+
+[mon.a]
+    host = ceph01
+    mon addr = &lt;ceph01_ip_addr&gt;:6789
+
+[mon.b]
+    host = ceph02
+    mon addr = &lt;ceph02_ip_addr&gt;:6789
+
+[mon.c]
+    host = ceph03
+    mon addr = &lt;ceph03_ip_addr&gt;:6789
+
+[osd.0]
+    public addr = &lt;ceph01_public_ip_addr&gt;
+    cluster addr = &lt;ceph01_cluster_ip_addr&gt;
+
+[osd.1]
+    public addr = &lt;ceph01_public_ip_addr&gt;
+    cluster addr = &lt;ceph01_cluster_ip_addr&gt;
+
+[osd.2]
+    public addr = &lt;ceph01_public_ip_addr&gt;
+    cluster addr = &lt;ceph01_cluster_ip_addr&gt;
+
+[mds.a]
+    host = ceph04
+</code></pre>
+
+<p>ceph の各 nodes へのインストールを行う。ceph はワークステーションである ceph05 にも
+インストールしておきます。後に Ceph ストレージをマウントするためです。</p>
+
+<pre><code class="language-bash">% ceph-deploy --cluster cluster01 install ceph01 ceph02 ceph03 ceph04 ceph04
+</code></pre>
+
+<p>mon プロセスを各 nodes で稼働する。</p>
+
+<pre><code class="language-bash">% ceph-deploy --cluster cluster01 mon create ceph01 ceph02 ceph03
+</code></pre>
+
+<p>鍵の配布を各 nodes に行う。</p>
+
+<pre><code class="language-bash">% ceph-deploy --cluster cluster01 gatherkeys ceph01 ceph02 ceph03 ceph04 ceph05
+</code></pre>
+
+<p>disk のリストを確認。</p>
+
+<p>各 node 毎に用いることが可能は disk の一覧を確認する。</p>
+
+<pre><code class="language-bash">% ceph-deploy --cluster cluster01 disk list ceph01
+% ceph-deploy --cluster cluster01 disk list ceph02
+% ceph-deploy --cluster cluster01 disk list ceph03
+</code></pre>
+
+<p>disk の初期化を行う。この作業を行うと指定ディスク上のデータは消去される。</p>
+
+<pre><code class="language-bash">% ceph-deploy --cluster cluster01 disk zap ceph01:/dev/sdb ceph01:/dev/sdc
+% ceph-deploy --cluster cluster01 disk zap ceph02:/dev/sdb ceph02:/dev/sdc
+% ceph-deploy --cluster cluster01 disk zap ceph03:/dev/sdb ceph03:/dev/sdc
+</code></pre>
+
+<p>journal 用の ssd のパーティションを切る。ここでは 10GB 毎に切った
+/dev/ssd1, /dev/ssd2 が存在することを前提に記す。ceph と同時にインストールされた
+gdisk を用いる。</p>
+
+<pre><code class="language-bash">% sudo gdisk /dev/ssd
+</code></pre>
+
+<p>(注意) 下記の公式ドキュメントでは osd prepare, osc activate の手順が掲載されて
+いるがその後の osd create のコマンドにて prepare が実行されるようでこれら2つの
+手順を行うと正常に osd create コマンドが実行できなかった。よってこのタイミング
+にて osd create を行うものとする。</p>
+
+<ul>
+<li><a href="http://ceph.com/docs/master/rados/deployment/ceph-deploy-osd/#prepare-osds">http://ceph.com/docs/master/rados/deployment/ceph-deploy-osd/#prepare-osds</a></li>
+<li><a href="http://ceph.com/docs/dumpling/start/quick-ceph-deploy/">http://ceph.com/docs/dumpling/start/quick-ceph-deploy/</a></li>
+</ul>
+
+<p>2 つの disk に対してそれぞれ osd を稼働させる。</p>
+
+<pre><code class="language-bash">% ceph-deploy --cluster cluster01 osd create ceph01:sdb:/dev/ssd1 ceph02:sdb:/dev/ssd1 ceph03:sdb:/dev/ssd1
+% ceph-deploy --cluster cluster01 osd create ceph01:sdc:/dev/ssd2 ceph02:sdc:/dev/ssd2 ceph03:sdc:/dev/ssd2
+</code></pre>
+
+<p>mds の稼働を行う。ここでは1号機にのみ稼働を行う。</p>
+
+<pre><code class="language-bash">% ceph-deploy --cluster cluster01 mds create ceph04
+</code></pre>
+
+<h2 id="クライアントからのマウント方法各種">クライアントからのマウント方法各種</h2>
+
+<p>上記で構築した Ceph ストレージを利用する方法を3つ説明する。先に述べたように
+POSIX 互換 filesystem として利用が可能。それぞれ mds が稼働しているホストに対
+して接続を行う。</p>
+
+<h4 id="block-device-としてマウントする方法">Block Device としてマウントする方法</h4>
+
+<p>ストレージ上に block device を生成しそれをマウントする</p>
+
+<pre><code class="language-bash">cephclient% rbd create foo --size 4096
+cephclient% sudo modprobe rbd
+cephclient% sudo rbd map foo --pool rbd --name client.admin
+cephclient% sudo mkfs.ext4 -m0 /dev/rbd/rbd/foo
+cephclient% sudo mkdir /mnt/myrbd
+cephclinet% sudo mount /dev/rbd/rbd/foo /mnt/myrbd
+</code></pre>
+
+<h4 id="kernel-driver-を用いてマウントする方法">Kernel Driver を用いてマウントする方法</h4>
+
+<p>kernel Driver を用いてストレージをマウントする</p>
+
+<pre><code class="language-bash">cephclient% sudo mkdir /mnt/mycephfs
+cephclient% sudo mount -t ceph 10.200.10.26:6789:/ /mnt/mycephfs -o \
+            name=admin,secret=`sudo ceph-authtool -p /etc/ceph/cluster01.client.admin.keyring`
+</code></pre>
+
+<h4 id="fuse-driver-ユーザランド-を用いてマウントする方法">Fuse Driver (ユーザランド) を用いてマウントする方法</h4>
+
+<p>ユーザランドソフトウェア FUSE を用いてマウントする方法</p>
+
+<pre><code class="language-bash">cephclient% sudo mkdir /home/&lt;username&gt;/cephfs
+cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
+</code></pre>
+</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -552,194 +868,6 @@ src="//speakerdeck.com/assets/embed.js"></script>
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/12/09/chef-autonoumous-cluster/">Chef で自律的クラスタを考える</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-12-09'>
-            December 9, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>Serf の登場があったり、ここ最近オーケストレーションについて考える人が増えた気
-がします。システムをデプロイしてその後各ノード間の連結だったりも同じ Chef,
-Puppet 等のコンフィギュレーションツールで行うのか？全く別のツールで？..</p>
-
-<p>最近 Serf というツールの登場がありました。</p>
-
-<p>僕も Serf を触ってつい先日ブログに書きました。有用なツールだと思います。シ
-ンプルだからこそ応用が効きますし、リアルタイム性もあり、将来的に異なるネットワー
-クセグメント上のノードとも連結出来るようになりそうですし、とても期待です。</p>
-
-<p>話が少し飛びますが..</p>
-
-<p>いつも Rebuild.fm を楽しく聞いているのですが Immutable Infrastructure の話題の
-時にオーケストレーションの話題になって、どうも &lsquo;Chef でも自律的なクラスタを組
-むことが認知されていないのでは？&rsquo; と思うようになりました。もちろん Chef でやる
-べき！とは言い切りませんし、今後どうなるかわかりません。Opscode の中の人も &lsquo;オー
-ケストレーションは自分でやってね&rsquo; というスタンスだったとずいぶん前ですが聞きま
-した。Serf を等のオーケストレーションツールを使う使わないの話は今回はしないの
-ですが Chef でも自律的クラスタを組むことは出来ますよ〜というのが今回の話題。</p>
-
-<p>まえがきが長くなりました。</p>
-
-<p>今回は Chef で自律的クラスタを構成する方法を記したいと思います。</p>
-
-<p>haproxy 等を利用すれば尚良いと思いますが、よりクラスタを組むのが簡単な nginx
-を今回は利用したいと思います。</p>
-
-<p><a href="https://github.com/opscode-cookbooks/nginx">https://github.com/opscode-cookbooks/nginx</a></p>
-
-<h2 id="構成">構成</h2>
-
-<p>&lsquo;web&rsquo; という Role 名と &lsquo;lb&rsquo; という Role 名で単純な HTTP サーバとしての nginx
-ノードを複数台と、ロードバランサとしての nginx ノードを1台でクラスタを構成しま
-す。また共に environment 名は同じものを利用します。別の environment 名の場合は
-別クラスタという区切りです。</p>
-
-<ul>
-<li>&lsquo;lb&rsquo; node x 1 + &lsquo;web&rsquo; node x n (&lsquo;foo&rsquo; environment)</li>
-<li>&lsquo;lb&rsquo; node x 1 + &lsquo;web&rsquo; node x n (&lsquo;bar&rsquo; environment)</li>
-</ul>
-
-<h2 id="lb-nginx-ロードバランサのレシピ">&lsquo;lb&rsquo; nginx ロードバランサのレシピ</h2>
-
-<p>下記が &lsquo;lb&rsquo; Role の recipes/cmomnos_conf.rb の修正した内容です。</p>
-
-<pre><code class="language-ruby">environment = node.chef_environment
-webservers = search(:node, &quot;role:web AND chef_environment:#{environment}&quot;)
- 
-template &quot;#{node['nginx']['dir']}/sites-available/default&quot; do
-  source &quot;default-site.erb&quot;
-  owner &quot;root&quot;
-  group &quot;root&quot;
-  mode 00644
-  notifies :reload, 'service[nginx]'
-    variables ({
-      :webservers =&gt; webservers
-    })
-end
-</code></pre>
-
-<p>何をやっているかと言うと、environment という変数に自ノードの environment 名を。
-webservers という変数に role 名が &lsquo;web&rsquo; で尚且つ自ノードと同じ environment 名
-が付いたノード名を入れています。これで自分と同じ environment に所属している
-&lsquo;web&rsquo; Role なノードを Chef サーバに対して検索しています。また、template 内で
-webservers という変数をそのまま利用できるように variables で渡しています。</p>
-
-<h2 id="lb-nginx-ロードバランサのテンプレート">&lsquo;lb&rsquo; nginx ロードバランサのテンプレート</h2>
-
-<p>下記が webservers 変数を受け取った後の template 内の処理です。</p>
-
-<pre><code class="language-ruby">&lt;% if @webservers and ( @webservers != [] ) %&gt;
-upstream backend {
-&lt;% @webservers.each do |hostname| -%&gt;
-  server &lt;%= hostname['ipaddr'] -%&gt;;
-&lt;% end -%&gt;
-}
-&lt;% end %&gt;
-  
-server {
-  listen   80;
-  server_name  &lt;%= node['hostname'] %&gt;;
-    
-  access_log  &lt;%= node['nginx']['log_dir'] %&gt;/localhost.access.log;
-    
-  location / {
-    &lt;% if @webservers and ( @webservers != [] ) %&gt;
-    proxy_pass http://backend;
-    &lt;% else %&gt;
-    root   /var/www/nginx-default;
-    index  index.html index.htm;
-    &lt;% end %&gt;
-  }
-}
-</code></pre>
-
-<p>upstream backend { &hellip; は皆さん見慣れた記述だと思うのですが、バックエンドの
-HTTP サーバの IP アドレスを一覧化します。each で回しているので台数分だけ
-server <ip_addr>; の記述が入ります。</p>
-
-<p>chef-client をデーモン稼働しておけば、新規に Chef サーバに登録された &lsquo;web&rsquo;
-Role の HTTP サーバを自動で &lsquo;lb&rsquo; Role のロードバランサが組み込む、つまり自律的
-なクラスタが組めることになります。もちろんこの間の手作業は一切ありません。</p>
-
-<p>ちなみに chef-client をデーモン稼働するには</p>
-
-<pre><code>recipe[chef-client::service]
-</code></pre>
-
-<p>というレシピをノードに割り当てることで可能です。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>Chef でも自律的なクラスタが組めました。もちろん chef-client の稼働間隔があるの
-でリアルタイム性はありません。chef-client の稼働間隔は &lsquo;chef-client&rsquo; レシピの
-attributes で調整出来ます。その点は serf のほうが確実に勝っていると見るべきで
-しょう。冒頭に記したようにこの辺りの操作を Chef で行うのか別のツールを使うのか
-はまだまだ模索が必要そう。ただ、私がいつも使っている &lsquo;OpenStack を Chef で構成
-する Cookbooks&rsquo; 等は複数台構成を Chef で構成しています。なので僕にとってはこの
-辺りの話は当たり前だと思っていたのだけど、どうも勉強会に出たりすると &ldquo;Chef は
-複数台構成を作るのが苦手だ&rdquo; って話があがってくるので気になっていました。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/12/09/chef-autonoumous-cluster/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -856,6 +984,20 @@ attributes で調整出来ます。その点は serf のほうが確実に勝っ
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-20'>
+                                    November 20, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
                                 
                                     
@@ -895,20 +1037,6 @@ attributes で調整出来ます。その点は serf のほうが確実に勝っ
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-14'>
-                                    July 14, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -943,7 +1071,7 @@ attributes で調整出来ます。その点は serf のほうが確実に勝っ
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">102</span>
+                                <span style="float:right;">103</span>
                             </header>
                         </article>
                     </li>

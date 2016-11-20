@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2013-11-27T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-12-05T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,285 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/12/05/ironic-openstack-beremetal/">Ironic でベアメタル OpenStack ！..の一歩手前</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-12-05'>
+            December 5, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>アドベントカレンダーの季節がやって参りました。</p>
+
+<p>Ironic を使って OpenStack でベアメタルサーバを扱いたい！ということで色々とやっ
+ている最中 (今週から始めました..) なのですが、まだまだ incubator プロジェクト
+ということもあって実装が追い付いていなかったりドキュメントも揃っていなかったり
+とシンドい状況ｗ ここ2日程で集めた情報を整理するためにも 2013年 OpenStack アド
+ベントカレンダーに参加させてもらいますー。</p>
+
+<h2 id="参考資料のまとめ">参考資料のまとめ</h2>
+
+<p>まずは公式 wiki ページ。逆に言うとここに記されている以上の情報は無いんじゃ？あ
+とはコード読め！の世界かも..。</p>
+
+<p><a href="https://wiki.openstack.org/wiki/Ironic">https://wiki.openstack.org/wiki/Ironic</a></p>
+
+<p>devtest_undercloud です。上の資料の中でも手順の中で度々こちらにジャンプしている。
+同じく incubator プロジェクトの TrippleO のデベロッパ用ドキュメントになっている。
+上記の公式 wiki の情報を合わせ読むことで Ironic を使ったデプロイの手順に仕上がります。</p>
+
+<p><a href="http://docs.openstack.org/developer/tripleo-incubator/devtest_undercloud.html">http://docs.openstack.org/developer/tripleo-incubator/devtest_undercloud.html</a></p>
+
+<p>ソースコードとドキュメント。あとでドキュメント作成方法を記しますが、こちらを取
+得して作成します。</p>
+
+<p><a href="https://github.com/openstack/ironic">https://github.com/openstack/ironic</a></p>
+
+<p>ドキュメントサイト。まだ情報が揃っていません。よって上の github から取得したモ
+ノからドキュメントを作る方法を後で書きます。</p>
+
+<p><a href="http://docs.openstack.org/developer/ironic/">http://docs.openstack.org/developer/ironic/</a></p>
+
+<p>launchpad サイト。全てのバグ情報やブループリント等が閲覧出来ます。まだ絶賛開発
+中なので読む必要があると思います。</p>
+
+<p><a href="https://launchpad.net/ironic">https://launchpad.net/ironic</a></p>
+
+<p>ドキュメントを作る
++++</p>
+
+<p>公式 ドキュメントサイトは一応、上記の通りあるのですが、ドキュメントも絶賛執筆
+中ということで所々抜けがあります。また公式ドキュメントサイトがどのスパンで更新
+されているか分からないので、いち早く情報をゲットしたい場合ドキュメントを作る必
+要があると思います。ということで、その作り方を記していきます。尚、公式 wiki サ
+イトにも手順が載っていますが Vagrant と Apache を用いた方法になっているので、
+普通に Ubuntu サーバが手元にある環境を想定して読み替えながら説明していきます。</p>
+
+<p>必要なパッケージのインストールを行います。</p>
+
+<pre><code class="language-bash">% sudo apt-get update
+% sudo apt-get install -y git python-dev swig libssl-dev python-pip \
+  libmysqlclient-dev libxml2-dev libxslt-dev libxslt1-dev python-mysqldb \
+  libpq-dev
+% sudo pip install virtualenv setuptools-git flake8 tox
+% sudo easy_install nose
+</code></pre>
+
+<p>ソースコード・ドキュメントを取得します。</p>
+
+<pre><code class="language-bash">% git clone git://github.com/openstack/ironic.git
+</code></pre>
+
+<p>Sphinx で構成されているのでビルドします。</p>
+
+<pre><code class="language-bash">% cd ironic
+% tox -evenv -- echo 'done'
+% source .tox/venv/bin/activate
+&gt; python setup.ph build_sphinx
+&gt; deactivate
+</code></pre>
+
+<p>ironic/doc/build/html ディレクトリ配下に HTML のドキュメントが生成されたはずで
+す。これを手元の端末に持ってきて開けばブラウザで最新のドキュメントが閲覧出来ま
+す。</p>
+
+<h2 id="ironic-を有効にした-devstack-による構築">ironic を有効にした devstack による構築</h2>
+
+<p>devstack を使って ironic を機能させていきます。私は下記の localrc を用いて
+ironic の試験をしていました。またブランチは &lsquo;master&rsquo; を使います。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/openstack-dev/devstack.git
+% cd devstack
+% ${EDITOR} localrc # 下記の通り
+
+HOST_IP=&lt;your_machine_ip_addr&gt;
+
+LOGFILE=stack.sh.log
+
+ADMIN_PASSWORD=nomoresecrete
+MYSQL_PASSWORD=$ADMIN_PASSWORD
+RABBIT_PASSWORD=$ADMIN_PASSWORD
+SERVICE_PASSWORD=$ADMIN_PASSWORD
+SERVICE_TOKEN=admintoken
+
+disable_service n-obj
+
+# ironic
+enable_service ir-api
+enable_service ir-cond
+
+# use neutron
+disable_service n-net
+enable_service q-svc
+enable_service q-agt
+enable_service q-dhcp
+enable_service q-l3
+enable_service q-meta
+enable_service q-lbaas
+enable_service neutron
+
+ENABLE_TENANT_TUNNELS=True
+
+# heat
+ENABLED_SERVICES+=,heat,h-api,h-api-cfn,h-api-cw,h-eng
+## It would also be useful to automatically download and register VM images that Heat can launch.
+# 64bit image (~660MB)
+IMAGE_URLS+=&quot;,http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-x86_64-cfntools.qcow2&quot;
+# 32bit image (~640MB)
+IMAGE_URLS+=&quot;,http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-i386-cfntools.qcow2&quot;
+
+# syslog
+SYSLOG=True
+SYSLOG_HOST=$HOST_IP
+SYSLOG_PORT=514
+</code></pre>
+
+<p>stack.sh を実行します。</p>
+
+<pre><code class="language-bash">% ./stack.sh
+</code></pre>
+
+<p>Ironic を有効にした OpenStack 環境が出来上がったはずです。</p>
+
+<h2 id="diskimage-builder-を使ったイメージ作成">diskimage-builder を使ったイメージ作成</h2>
+
+<p>ベアメタルサーバをデプロイするためのイメージを作成します。元々は TrippleO のプ
+ロジェクト内に存在していましたが、現在は git レポジトリが別れています。</p>
+
+<p>先ほど devstack を導入したホストでイメージを作ります。作成には結構時間が掛かります。</p>
+
+<pre><code class="language-bash">% cd ~     
+% git clone https://github.com/openstack/diskimage-builder.git
+% git clone https://github.com/openstack/tripleo-incubator.git
+% git clone https://github.com/openstack/tripleo-image-elements.git
+% git clone https://github.com/openstack/tripleo-heat-templates.git
+% export UNDERCLOUD_DIB_EXTRA_ARGS='ironic-api ironic-conductor'
+% export ELEMENTS_PATH=/home/thirai/tripleo-image-elements/elements
+% ./diskimage-builder/bin/disk-image-create -a amd64 -o ~/undercloud boot-stack \
+  nova-baremetal os-collect-config stackuser dhcp-all-interfaces \
+  neutron-dhcp-agent ${UNDERCLOUD_DIB_EXTRA_ARGS:-} ubuntu 2&gt;&amp;1 | tee /tmp/undercloud.log 
+</code></pre>
+
+<p>イメージが ~/undercloud.qcow2 が生成されたはずです。作成したイメージを Glance に登録します。</p>
+
+<pre><code class="language-bash">% ~/tripleo-incubator/scripts/load-image undercloud.qcow2
+</code></pre>
+
+<p>undercloud.yaml と ironic.yaml をマージします。</p>
+
+<pre><code class="language-bash">% cd ~/tripleo-heat-templates
+% make undercloud-vm-ironic.yaml
+</code></pre>
+
+<p>パスワードの生成と環境変数への読み込みを行います。</p>
+
+<pre><code class="language-bash">% cd ~/tripleo-incubator/scripts/
+% export PATH=$PATH:.
+% ./setup-undercloud-passwords
+% source tripleo-undercloud-passwords
+</code></pre>
+
+<p>UNDERCLOUD_IRONIC_PASSWORD 環境変数にも読み込みます。</p>
+
+<pre><code class="language-bash">% export UNDERCLOUD_IRONIC_PASSWORD=$(~/tripleo-incubator/scripts/os-make-password)
+</code></pre>
+
+<p>さて、イメージを利用したベアメタルへの稼働ですが、&hellip;</p>
+
+<pre><code class="language-bash">if [ &quot;$DHCP_DRIVER&quot; = &quot;bm-dnsmasq&quot; ]; then
+    UNDERCLOUD_NATIVE_PXE=&quot;&quot;
+else
+    UNDERCLOUD_NATIVE_PXE=&quot;;NeutronNativePXE=True&quot;
+fi
+
+heat stack-create -f ./tripleo-heat-templates/undercloud-vm-ironic.yaml \
+-P &quot;PowerUserName=$(whoami);\
+AdminToken=${UNDERCLOUD_ADMIN_TOKEN};\
+AdminPassword=${UNDERCLOUD_ADMIN_PASSWORD};\
+GlancePassword=${UNDERCLOUD_GLANCE_PASSWORD};\
+HeatPassword=${UNDERCLOUD_HEAT_PASSWORD};\
+NeutronPassword=${UNDERCLOUD_NEUTRON_PASSWORD};\
+NovaPassword=${UNDERCLOUD_NOVA_PASSWORD};\
+BaremetalArch=${NODE_ARCH}$UNDERCLOUD_NATIVE_PXE&quot; \
+IronicPassword=${UNDERCLOUD_IRONIC_PASSWORD}&quot; \
+undercloud
+</code></pre>
+
+<p>コケました。&hellip;エラーは下記の通り。</p>
+
+<pre><code>TRACE heat.engine.resource Error: Creation of server teststack01-WikiDatabase-5nyiqluilnxn failed: No valid host was found. Exceeded max
+scheduling attempts 3 for instance 733b69df-2b54-44ae-9d61-de766746f21a (500)#0122013-12-03 16:04:14.513 10022 TRACE heat.engine.resource
+</code></pre>
+
+<p>No Valid Host とな&hellip;。うーん。確かに IPMI を積んだベアメタルマシンの情報って
+どこにも記していないんだよなぁ。しかも heat のテンプレート
+(underclound-vm-ironic.yaml) 見てもよく理解していない自分がいる&hellip;(´・ω・`)</p>
+
+<p>というか手順にはその周りのこと何も書いていないのでぇすがぁ！&hellip;</p>
+
+<p>ということで、まだまだコントリビュートするチャンス満載の状態なので、よかったら
+皆さん参加されませんか !?!?</p>
+
+<p><a href="https://wiki.openstack.org/wiki/HowToContribute">https://wiki.openstack.org/wiki/HowToContribute</a></p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/12/05/ironic-openstack-beremetal/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -643,405 +922,6 @@ Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby に�
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/">OpenStack Havana を Chef でデプロイ</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-11-17'>
-            November 17, 2013</time>
-        <span class="author"></span>
-        
-            <p>4 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>毎度お馴染みになった OpenStack の Chef によるデプロイですが、今回は OpenStack
-Havana 構成を Chef でデプロイする方法についてです。使用するのは今回も
-rcbops/chef-cookbooks です。ブランチは &lsquo;havana&rsquo; を用います。</p>
-
-<p>早速ですが構成について。4.1.2 辺りからだと思うのですが構成の前提が物理ネットワー
-ク4つを前提にし始めました。public, external (VM) を別ける必要が出てきました。
-通信の特性も異なるので (public は public API を。external は VM 用) 、別けるの
-が得策かもしれません。</p>
-
-<h2 id="構成">構成</h2>
-
-<pre><code>                  +--------------+------------------------------------------------------- external
-                  |              |
-+--------------+--(-----------+--(-----------+--------------+---------------------------- public
-|              |  |           |  |           |              |
-+------------+ +------------+ +------------+ +------------+ +------------+ +------------+
-| controller | |  network   | |  network   | |  compute   | |  compute   | | workstation|
-+------------+ +------------+ +------------+ +------------+ +------------+ +------------+
-|              |  |           |  |           |  |           |  |           |
-+--------------+--(-----------+--(-----------+--(-----------+--(-----------+------------- management
-                  |              |              |              |
-                  +--------------+--------------+--------------+------------------------- guest
-</code></pre>
-
-<h4 id="上記の構成の特徴">上記の構成の特徴</h4>
-
-<ul>
-<li>4つの物理ネットワークを前提</li>
-<li>public ネットワーク : 外部 API 用ネットワーク</li>
-<li>external ネットワーク : インスタンス外部接続用ネットワーク</li>
-<li>guest ネットワーク : インスタンス内部用ネットワーク</li>
-<li>management ネットワーク : 各コンポーネント接続用ネットワーク</li>
-<li>public, external のみグローバルネットワーク</li>
-<li>controller : 2 nics, network : 4 nics, compute : 3nics の構成</li>
-<li>controller はシングル構成</li>
-<li>network ノードは台数拡張可能, agent 単位でノード間移動可能</li>
-<li>compute ノードも台数拡張可能</li>
-<li>workstation は chef-repo の所在地, management ネットワークに所属</li>
-</ul>
-
-<h2 id="各ノードの準備">各ノードの準備</h2>
-
-<p>OS インストール後、各ノードのネットワークインターフェースの設定を下記の通り行っ
-てください。また LVM を使うのであれば cinder ボリュームの設定も必要になってきます。</p>
-
-<h4 id="controller-ノード">controller ノード</h4>
-
-<p>2 nics を下記の通り設定します。</p>
-
-<ul>
-<li>eth0 を public ネットワークに。gateway をこのインターフェースに設定</li>
-<li>eth1 を guest ネットワークに。gateway はなし</li>
-</ul>
-
-<p>/etc/network/interfaces の例</p>
-
-<pre><code>auto eth0
-iface eth0 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    gateway &lt;gateway&gt;
-    dns-nameservers &lt;dns_cache_server&gt;
-    dns-search &lt;domain&gt;
-
-auto eth1
-iface eth1 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-</code></pre>
-
-<p>/dev/sdb を cinder 用ディスクデバイスとします。</p>
-
-<pre><code class="language-bash">% sudo pvcreate /dev/sdb
-% sudo vgcreate cinder-volumes /dev/sdb
-</code></pre>
-
-<h4 id="network-ノード">network ノード</h4>
-
-<p>4 nics を下記の通り設定します。up route で仮想ネットワークへのルーティングを書
-いてあげると、network ノードから直接仮想ネットワーク上のインスタンスへ通信する
-ことが可能です。最初は書かなくても OK です。</p>
-
-<pre><code>auto eth0
-iface eth0 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    dns-nameservers &lt;dns_cache_server&gt;
-    dns-search &lt;domain&gt;
-
-auto eth1
-iface eth1 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-
-auto eth2
-iface eth2 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    gateway 10.200.10.1
-    dns-nameservers 8.8.8.8 8.8.4.4
-    dns-search cpi.ad.jp
-
-auto eth3
-iface eth3 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    # 仮想ネットワークへのルーティング
-    # up route add -net &lt;virtual_net_cidr&gt; gw &lt;neutron_gw&gt;
-    # up route add -net &lt;virtual_net_cidr&gt; gw &lt;neutron_gw&gt;
-</code></pre>
-
-<h4 id="compute-ノード">compute ノード</h4>
-
-<p>3 nics を下記の通り設定します。</p>
-
-<pre><code>auto eth0
-iface eth0 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    dns-nameservers &lt;dns_cache_server&gt;
-    dns-search &lt;domain&gt;
-
-auto eth1
-iface eth1 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    
-auto eth2
-iface eth2 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    gateway &lt;gateway&gt;
-    dns-nameservers &lt;dns_cache_server&gt;
-    dns-search &lt;domain&gt;
-</code></pre>
-
-<h2 id="cookbooks-roles-environments-等の準備">Cookbooks, Roles, Environments 等の準備</h2>
-
-<p>下記の操作は全て workstation ノードからの操作です。
-また chef のインストールや chef サーバの構築方法については割愛します。</p>
-
-<p>rcbops/chef-cookbooks を取得します。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git
-% cd chef-cookbooks
-% git checkout -b havana remotes/origin/havana
-% # .chef 配下の準備割愛。各 Chef サーバ環境に合わせる
-% git submodule init
-% git submodule sync
-% git submodule update
-% knife cookbook upload -o cookbooks -a
-% knife role from file roles/*.rb
-</code></pre>
-
-<p>今回の構成用の environment を生成します。それぞれの環境に合わせて作成してくだ
-さい。生成のコツは各 Cookbooks の attributes を見ながら設定することです。
-生成した json ファイルを environments ディレクトリ配下に配置します。</p>
-
-<pre><code class="language-json">{
-  &quot;name&quot;: &quot;havana-neutron&quot;,
-  &quot;description&quot;: &quot;&quot;,
-  &quot;cookbook_versions&quot;: {
-  },
-  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
-  &quot;chef_type&quot;: &quot;environment&quot;,
-  &quot;default_attributes&quot;: {
-  },
-  &quot;override_attributes&quot;: {
-    &quot;package_component&quot;: &quot;havana&quot;,
-    &quot;osops_networks&quot;: {
-      &quot;management&quot;: &quot;10.200.10.0/24&quot;,
-      &quot;public&quot;: &quot;10.200.9.0/24&quot;,
-      &quot;nova&quot;: &quot;10.200.10.0/24&quot;
-    },
-    &quot;nova&quot;: {
-      &quot;config&quot;: {
-        &quot;use_single_default_gateway&quot;: false,
-        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
-        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
-      },
-      &quot;network&quot;: {
-        &quot;provider&quot;: &quot;neutron&quot;,
-        &quot;network_type&quot;: &quot;vlan&quot;
-      },
-      &quot;apply_patches&quot;: true,
-      &quot;libvirt&quot;: {
-        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
-        &quot;virt_type&quot;: &quot;kvm&quot;
-      },
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;nova&quot;
-      },
-      &quot;services&quot;: {
-        &quot;novnc-proxy&quot;: {
-          &quot;network&quot;: &quot;public&quot;
-        },
-        &quot;ec2-admin&quot;: {
-          &quot;network&quot;: &quot;management&quot;
-        }
-      }
-    },
-    &quot;cinder&quot;: {
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;cinder&quot;
-      }
-    },
-    &quot;keystone&quot;: {
-      &quot;admin_user&quot;: &quot;admin&quot;,
-      &quot;tenants&quot;: [
-        &quot;admin&quot;,
-        &quot;service&quot;
-      ],
-      &quot;users&quot;: {
-        &quot;admin&quot;: {
-          &quot;password&quot;: &quot;secrete&quot;,
-          &quot;roles&quot;: {
-            &quot;admin&quot;: [
-              &quot;admin&quot;
-            ]
-          }
-        },
-        &quot;demo&quot;: {
-          &quot;password&quot;: &quot;demo&quot;,
-          &quot;default_tenant&quot; : &quot;service&quot;,
-          &quot;roles&quot;: {
-            &quot;service&quot;: [ &quot;service&quot; ]
-          }
-        }
-      },
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;keystone&quot;
-      }
-    },
-    &quot;horizon&quot;: {
-      &quot;theme&quot;: &quot;Rackspace&quot;,
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;horizon&quot;
-      },
-      &quot;endpoint_type&quot; : &quot;publicURL&quot;,
-      &quot;endpoint_scheme&quot; : &quot;http&quot;
-    },
-    &quot;mysql&quot;: {
-      &quot;root_network_acl&quot;: &quot;%&quot;,
-      &quot;allow_remote_root&quot;: true,
-      &quot;server_root_password&quot;: &quot;secrete&quot;,
-      &quot;server_repl_password&quot;: &quot;secrete&quot;,
-      &quot;server_debian_password&quot;: &quot;secrete&quot;
-    },
-    &quot;monitoring&quot;: {
-      &quot;procmon_provider&quot;: &quot;monit&quot;,
-      &quot;metric_provider&quot;: &quot;collectd&quot;
-    },
-    &quot;glance&quot;: {
-      &quot;images&quot;: [
-        &quot;precise&quot;, &quot;cirros&quot;
-      ],
-      &quot;image&quot;: {
-      },
-      &quot;image_upload&quot;: false,
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;glance&quot;
-      }
-    },
-    &quot;neutron&quot;: {
-      &quot;service_pass&quot;: &quot;neutron&quot;,
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;neutron&quot;
-      }
-    },
-    &quot;developer_mode&quot;: false
-  }
-}
-</code></pre>
-
-<p>environment ファイルの chef サーバへのアップロード。</p>
-
-<pre><code class="language-bash">% knife environment from file environments/havana-neutron.json
-</code></pre>
-
-<h2 id="knife-bootstrap-によるデプロイ">knife bootstrap によるデプロイ</h2>
-
-<p>下記の通り knife bootstrap することで各ノードをデプロイします。</p>
-
-<p>controller ノードのデプロイ。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;controller_ipaddr&gt; -N &lt;controller_name&gt; \
-  -r 'role[single-controller]','role[cinder-volume]' \
-  -E havana-neutron -x &lt;username&gt; --sudo
-</code></pre>
-
-<p>network ノードのデプロイ。台数分デプロイしてください。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;network_ipaddr&gt; -N &lt;network_name&gt; \
-  -r 'role[single-network-node]','recipe[nova-network::neutron-l3-agent]' \
-  -E neutron-havana -x &lt;username&gt; --sudo
-</code></pre>
-
-<p>compute ノードのデプロイ。台数分デプロイしてください。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;compute_ipaddr&gt; -N &lt;compute_name&gt; \
-  -r 'role[single-compute]' \
-  -E havana-neutron -x &lt;username&gt; --sudo
-</code></pre>
-
-<h2 id="openvswitch-の物理-nic-とブリッジインタフェースマッピング作業">openvswitch の物理 NIC とブリッジインタフェースマッピング作業</h2>
-
-<p>各ノードで下記の通り物理 NIC とブリッジのマッピング作業を行ってください。操作
-は必ず management ネットワークを介して行うようにしましょう。その他のネットワー
-クから操作すると通信が途絶える可能性があります。</p>
-
-<p>network ノード</p>
-
-<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
-% sudo ovs-vsctl add-port br-ex eth3
-</code></pre>
-
-<p>compute ノード</p>
-
-<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
-</code></pre>
-
-<h2 id="まとめと考察">まとめと考察</h2>
-
-<p>havana の roles にはコアプロジェクトのコンポーネントが入っています。つまり
-ceilometer と heat も上記のデプロイで入ってきます。ceilometer に関して公式のド
-キュメントではデータ格納用 DB として mongodb が記されていますが、ここでは
-mysqld 上に格納する構成になっていました。これは個人的には非常に助かります。
-また、compute ノードから controller ノードの public api を叩く必要が出てきて、
-compute ノードにも public ネットワーク用の NIC を足しましたが、こうするべきな
-のかどうかは今後考えてみます。理想は management ネットワークを介することですが
-attributes の調整でけではうまくいきませんでした。&rsquo;havana&rsquo; ブランチはまだ開発が
-進んでいるので改善されるかもしれません。コントリビュートするのも手だと思います。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1158,6 +1038,20 @@ attributes の調整でけではうまくいきませんでした。&rsquo;havan
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-20'>
+                                    November 20, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
                                 
                                     
@@ -1197,20 +1091,6 @@ attributes の調整でけではうまくいきませんでした。&rsquo;havan
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-14'>
-                                    July 14, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1245,7 +1125,7 @@ attributes の調整でけではうまくいきませんでした。&rsquo;havan
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">102</span>
+                                <span style="float:right;">103</span>
                             </header>
                         </article>
                     </li>

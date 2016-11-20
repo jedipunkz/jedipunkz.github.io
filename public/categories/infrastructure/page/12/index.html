@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-11-26T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-11-27T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,261 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/11/27/sensu-chef-deploy-2/">sensu-chef で監視システム Sensu を管理 #2</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-11-27'>
+            November 27, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>以前、Sensu を Chef で管理する方法について書きました。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/">http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/</a></p>
+
+<p>これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef
+Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも
+公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ
+た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、
+sensu-chef を再確認したのですが、だいぶ更新されていました。</p>
+
+<p>下記が sensu-chef です。</p>
+
+<p><a href="https://github.com/sensu/sensu-chef">https://github.com/sensu/sensu-chef</a></p>
+
+<p>この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は
+Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使
+い方を書いていきます。</p>
+
+<p>下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。</p>
+
+<p>{% img /pix/sensu.png %}</p>
+
+<h2 id="使い方">使い方</h2>
+
+<p>sensu-chef を取得する。chef-repo になっています。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu
+</code></pre>
+
+<p>bundle にて Gemfile に記述の在る gem パッケージをインストールします。</p>
+
+<pre><code class="language-bash">% cd ~/chef-repo-sensu
+% bundle install
+</code></pre>
+
+<p>.chef/ 配下の設定は割愛します。chef サーバの情報に合わせて設定します。</p>
+
+<p>ssl 鍵を生成して data bags に投入します。</p>
+
+<pre><code class="language-bash">% cd examples/ssl
+% ./ssl_certs.sh generate
+% cd ../../
+% knife data bag create sensu
+% knife data bag from file sensu examples/ssl/ssl.json
+% ./examples/ssl/ssl_certs.sh clean
+</code></pre>
+
+<p>Roles を作成します。chef-repo なのに何も入っていませんでした&hellip;汗
+ここで面白いのは &lsquo;sensu-client&rsquo; は sensu で言う subscribers の名前にそのまま利
+用されるところです。つまり &lsquo;sensu-client&rsquo; の名前が記された sensu サーバ上の監
+視項目 (checks) がこの sensu クライアントに割り当てられます。</p>
+
+<pre><code class="language-ruby">% mkdir roles
+% ${EDITOR} roles/sensu-server.rb
+name &quot;sensu-server&quot;
+description &quot;role applied to sensu server.&quot;
+run_list 'recipe[sensu::default]',
+         'recipe[sensu::rabbitmq]',
+         'recipe[sensu::redis]',
+         'recipe[sensu::server_service]',
+         'recipe[sensu::api_service]',
+         'recipe[sensu::dashboard_service]',
+         'recipe[chef-client::service]'
+
+% ${EDITOR} roles/sensu-client.rb
+name &quot;sensu-client&quot;
+description &quot;role applied to sensu client.&quot;
+run_list 'recipe[sensu::default]',
+         'recipe[sensu::client_service]',
+         'recipe[chef-client::service]'
+</code></pre>
+
+<p>Cheffile に &lsquo;chef-client&rsquo; の Cookbook 名を追記します。</p>
+
+<pre><code class="language-ruby">site 'http://community.opscode.com/api/v1'
+
+cookbook 'sensu', path: './'
+cookbook 'sensu-test', path: './test/cookbooks/sensu-test'
+cookbook 'chef-client' # &lt;---- 追記
+</code></pre>
+
+<p>librarian-chef を実行して Cookbooks を取得します。</p>
+
+<pre><code class="language-bash">% librarian-chef install
+</code></pre>
+
+<p>Rabbitmq, Redis, API の IP アドレスを設定します。IP アドレスは例です。</p>
+
+<pre><code class="language-bash">% ${EDITOR} cookbooks/sensu/attributes/default.rb
+default.sensu.rabbitmq.host = &quot;172.24.19.11&quot;
+default.sensu.redis.host = &quot;172.24.19.11&quot;
+default.sensu.api.host = &quot;172.24.19.11&quot;
+</code></pre>
+
+<p>sensu-server 用の Recipe に監視項目を追記します。ここでは cron デーモンの稼働
+状況を監視してみました。</p>
+
+<pre><code class="language-bash">% ${EDITOR} cookbooks/sensu/recipes/server_service.rb # 下記を追記
+</code></pre>
+
+<pre><code class="language-ruby">sensu_check &quot;cron_process&quot; do
+  command &quot;check-procs.rb -p cron -C 1&quot;
+  handlers [&quot;default&quot;]
+  subscribers [&quot;sensu-client&quot;]
+  interval 30
+  additional(:notification =&gt; &quot;Cron is not running&quot;, :occurrences =&gt; 5)
+end
+</code></pre>
+
+<p>sensu-client 用の Recipe に client.json (クライアント用設定ファイル) の記述と
+上記監視項目に合った plugins 設定の追記を行います。</p>
+
+<pre><code class="language-bash">% ${EDITOR} cookbooks/sensu/recipes/client_service.rb # 下記を追記
+</code></pre>
+
+<pre><code class="language-ruby">sensu_client node.name do
+  address node.ipaddress
+  subscriptions node.roles + [&quot;all&quot;]
+end
+
+cookbook_file 'check-procs.rb' do
+  source 'check-procs.rb'
+  mode 0755
+  path '/etc/sensu/plugins/check-procs.rb'
+end
+</code></pre>
+
+<p>上記 check-procs.rb は community サイトからダウンロードする必要があるのですが
+cookbook_file で対応したので files/ ディレクトリ配下に置いておきます。</p>
+
+<pre><code class="language-bash">% mkdir -p cookbooks/sensu/files/default
+% wget -o cookbooks/sensu/files/default/check-procs.rb \
+  https://github.com/sensu/sensu-community-plugins/raw/master/plugins/processes/check-procs.rb
+</code></pre>
+
+<p>上記の check-procs.rb は行頭に &lsquo;#!/usr/bin/env ruby&rsquo; が記されているのですが
+Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby にあるので行頭
+の1行を書き換えます。</p>
+
+<pre><code class="language-diff">% diff cookbooks/sensu/files/default/check-procs.rb.org cookbooks/sensu/files/default/check-procs.rb
+- #!/usr/bin/env ruby
++ #!/opt/sensu/embedded/bin/ruby
+</code></pre>
+
+<p>Roles, Cookbooks を Chef サーバにアップロードします。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o ./cookbooks -a
+% knife role from file roles/*.rb
+</code></pre>
+
+<p>いよいよブートストラップします!</p>
+
+<p>まずは sensu-server を。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;server_ip_addr&gt; -N sensu-server -r 'role[sensu-server]' \
+  -x ubuntu --sudo
+</code></pre>
+
+<p>次に監視対象である sensu-client を。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;client_ip_addr&gt; -N sensu-client01 -r 'role[sensu-client]' \
+  -x ubuntu --sudo
+</code></pre>
+
+<p>http://<sensu-server の IP アドレス>:8080/ にアクセスすると Sensu の管理画面が
+表示されます。認証アカウントは cookbooks/sensu/attributes/default.rb に記述が
+ありますので確認して下さい。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>インフラリソースのフルオートメーション化について情報リサーチしていますが監視も
+重要なインフラリソースの一部です。Sensu サーバ・クライアントの自動デプロイが出
+来たのでこれで一つパーツが揃ったことに。Sensu は API を持っていますのでアプリ
+から検知することも簡単に出来ますよ。API については下記を参照してください。</p>
+
+<p><a href="http://sensuapp.org/docs/0.12/api">http://sensuapp.org/docs/0.12/api</a></p>
+
+<p>また以前抱えていた問題もスッキリクリアになって、これでまた前進できた感があります。</p>
+
+<h2 id="参考サイト">参考サイト</h2>
+
+<ul>
+<li><a href="http://sensuapp.org/docs/0.12">http://sensuapp.org/docs/0.12</a></li>
+<li><a href="http://blog.glidenote.com/blog/2013/11/26/sensu/">http://blog.glidenote.com/blog/2013/11/26/sensu/</a></li>
+<li><a href="https://github.com/sensu/sensu-chef">https://github.com/sensu/sensu-chef</a></li>
+</ul>
+</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/11/27/sensu-chef-deploy-2/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -789,311 +1044,6 @@ attributes の調整でけではうまくいきませんでした。&rsquo;havan
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/">第2回 Elasticsearch 勉強会参加レポート</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-11-13'>
-            November 13, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>第2回 Elasticsearch 勉強会に参加してきました。箇条書きですが参加レポートを記し
-ておきます。</p>
-
-<pre><code>開催日 : 2013/11/12
-場所 : 東京駅 グラントウキョウサウスタワー リクルートテクノロジーズさま
-URL : http://elasticsearch.doorkeeper.jp/events/6532
-</code></pre>
-
-<h2 id="routing-周りの話">Routing 周りの話</h2>
-
-<pre><code>株式会社シーマーク　大谷純さん (@johtani)
-</code></pre>
-
-<h4 id="index-構成">Index 構成</h4>
-
-<ul>
-<li>cluster の中に index -&gt; type が作成される</li>
-<li>index は shard という部分的な index の集まり</li>
-<li>shard 数は生成時のみ指定可能</li>
-<li>node ごとに replica, primary を別ける</li>
-<li>replica 数は後に変えられる</li>
-<li>doc -&gt; hash 値を shard 数で割って replica, primary に登録</li>
-<li>doc の id の ハッシュ値を利用</li>
-<li>type も含める場合はかの設定を true に</li>
-<li>クライアントはどのノードに対してクエリを投げても OK</li>
-</ul>
-
-<h4 id="routing">routing</h4>
-
-<ul>
-<li>id の代わりに routing (URL パラメータ) で登録</li>
-<li>url リクエストパラメータとして登録時にルーティングパラメータを登録</li>
-<li>id の代わりにパラメータで指定された値のハッシュ値を計算して利用</li>
-<li>検索時 routing 指定で関係のある shard のみを指定出来る</li>
-</ul>
-
-<h4 id="スケールアウト">スケールアウト</h4>
-
-<ul>
-<li>sharding によるスケールアウト数 = インデックス作成時に指定</li>
-<li>shard によるインデックスの分割以外にインデックス自体を複数持つことによるスケール</li>
-<li>複数のドキュメントをエイリアス書けることが可能</li>
-</ul>
-
-<h4 id="所感">所感</h4>
-
-<p>個人的には非常に興味のあるところでした。mongodb のような sharding をイメージし
-てよいのか？そうでないのか？すら理解出来ていなかったので。sharding を理解する
-前提知識の話もあって非常に参考になりました。</p>
-
-<h2 id="elasticsearchを使ったbaas基盤の開発">ElasticSearchを使ったBaaS基盤の開発</h2>
-
-<pre><code>株式会社富士通ソフトウェアテクノロジーズ 滝田聖己さん（@pisatoshi）
-</code></pre>
-
-<p>運用の話。これは貴重&hellip;。</p>
-
-<ul>
-<li>shard 数 : 10 , replica : 1 で運用している</li>
-<li>データは業務データ , トラッキングデータ</li>
-<li>マルチテナント, 更新の即時反映, ルーティングによる性能向上 が要件</li>
-<li>登録更新 -&gt; 検索結果反映までタイムラグがある -&gt; replica 完了まで待つので高コスト</li>
-<li>replica 数を減らすことで性能向上</li>
-</ul>
-
-<h4 id="routing-id-を指定することで">routing id を指定することで&hellip;</h4>
-
-<ul>
-<li>doc id の has から shard 自動選択がデフォルト</li>
-<li>-&gt; hash key を指定して格納シャードを制御出来る</li>
-<li>-&gt; doc 登録性能向上</li>
-<li>-&gt; 検索対象の shard を絞りこみえる</li>
-<li>-&gt; 不可を軽減</li>
-</ul>
-
-<h4 id="バックアップ-リストア">バックアップ/リストア</h4>
-
-<ul>
-<li>mysql にもデータ格納 -&gt; backup</li>
-<li>elasticsearch の index はバックアップ取らず -&gt; bug を踏みたくないのが理由</li>
-</ul>
-
-<h4 id="dynamic-mapping-の問題">dynamic mapping の問題</h4>
-
-<ul>
-<li>入力データから型を推測 -&gt; 自動マッピング登録</li>
-<li>-&gt; マッピング定義が肥大化</li>
-<li>-&gt; データ型のコンフリクト</li>
-</ul>
-
-<h4 id="mapping-の肥大化">mapping の肥大化</h4>
-
-<ul>
-<li>mapping 定義は type, field の数に応じてサイズが増加</li>
-<li>-&gt; index 性能低下</li>
-<li>-&gt; mapping を伴う doc 登録 3sec (mapping size 80MB)</li>
-<li>-&gt; 各 node への mapping 定義の同期</li>
-<li>大量のデータを一気に登録するときは 1 node が速い</li>
-<li>-&gt; その後シャード再配置したことがある</li>
-</ul>
-
-<p>=&gt; dynamic mapping を使うのをやめた -&gt; app で指定</p>
-
-<h4 id="よく利用するツール">よく利用するツール</h4>
-
-<ul>
-<li>bigdesk</li>
-<li>elasticsearch-head</li>
-<li>sense (chrome extention)</li>
-</ul>
-
-<h4 id="unit-test">unit test</h4>
-
-<p>unit test はどうする？</p>
-
-<ul>
-<li>nodeClient テスト開始時に起動</li>
-<li>テストデータを配置して起動, 終了時に削除</li>
-<li>memoryIndex で高速に実行</li>
-<li>elasticsearch-test が便利</li>
-</ul>
-
-<h4 id="所感-1">所感</h4>
-
-<p>運用の話はどの技術でも重要!!! 実際に困った話、トラブル等聞けて貴重な時間でした。
-よく使うツールの話も意外と参考になるので聞けてよかった。</p>
-
-<h2 id="kibana">Kibana</h2>
-
-<pre><code>Cookpad 水戸祐介さん (@y_310)
-</code></pre>
-
-<ul>
-<li>作った dashboard は elasticsearch に保存される</li>
-<li>db 要らず , web サーバのみ, クライアントサイドの技術のみで実装されている</li>
-<li>term, trends, map, table, column&hellip; それぞれ図形式がある
-title = &ldquo;test&rdquo;, -title</li>
-<li>1つの index に異なるスキーマを持つデータを入れられる</li>
-<li>1つの index に入れることでグラフを重ねて比較出来る</li>
-<li>やはり dynamic mapping は使わないほうが良い</li>
-<li>m1.large x 1 : 1日のインデックスサイズが10GB 超えるあたりで ES が詰まる</li>
-</ul>
-
-<p>下記が当日の資料です。</p>
-
-<script async class="speakerdeck-embed"
-data-id="3d0776802ddb0131fdd042970ce72c15" data-ratio="1.33333333333333" src="//speakerdeck.com/assets/embed.js"></script>
-
-<h4 id="所感-2">所感</h4>
-
-<p>Cookpad さんで実際に利用されているとか。運用の話と同じくやはり dynamic routing
-でのトラブルの話があった。また Cookpad さんでのトラブル例の話もあってよかった。</p>
-
-<h2 id="elasticsearch-kibana-v3を利用する際の運用ノウハウ">ElasticSearch＋Kibana v3を利用する際の運用ノウハウ</h2>
-
-<pre><code>株式会社リブセンス Y.Kentaro さん (@yoshi_ken)
-</code></pre>
-
-<p>下記が発表資料。</p>
-
-<p><iframe src="http://www.slideshare.net/slideshow/embed_code/28165189"
-width="597" height="486" frameborder="0" marginwidth="0" marginheight="0"
-scrolling="no" style="border:1px solid #CCC;border-width:1px 1px
-0;margin-bottom:5px" allowfullscreen> </iframe> <div
-style="margin-bottom:5px"> <strong> <a
-href="https://www.slideshare.net/y-ken/elasticsearch-kibnana-fluentd-management-tips"
-title="ElasticSearch+Kibanaでログデータの検索と視覚化を実現するテクニックと運
-用ノウハウ" target="_blank">ElasticSearch+Kibanaでログデータの検索と視覚化を実
-現するテクニックと運用ノウハウ</a> </strong> from <strong><a
-href="http://www.slideshare.net/y-ken" target="_blank">Kentaro
-Yoshida</a></strong> </div></p>
-
-<ul>
-<li>nginx の basic 認証等でアクセス制限を掛ける例</li>
-</ul>
-
-<p>等など&hellip; ごめんなさい！メモが取れてなかった！&hellip;汗</p>
-
-<h2 id="fluentd-as-a-kibana">Fluentd as a Kibana</h2>
-
-<pre><code>@repeatedly さん
-</code></pre>
-
-<p>fluentd-plugin-kibana-server  というkibana をダウンロードしてくるのがめんどい
-ので fluentd の中で kibana を動かすプラグインを作った話。下記が発表資料。</p>
-
-<p><a href="https://gist.github.com/repeatedly/7427856">https://gist.github.com/repeatedly/7427856</a></p>
-
-<ul>
-<li>fluentd input plugin として実装</li>
-<li>logstash 版もあるらしい</li>
-</ul>
-
-<h4 id="所感-3">所感</h4>
-
-<p>さすが&hellip;。確かにサーバをいちいち作るのめんどいです。fluentd plugin の中で
-kibana を動かすって発想が&hellip;。</p>
-
-<h2 id="auth-プラグインでアクセスコントロール">auth プラグインでアクセスコントロール</h2>
-
-<pre><code>株式会社エヌツーエスエム 菅谷信介さん (@shinsuke_sugaya)
-</code></pre>
-
-<ul>
-<li>elasticsearch のアクセス制御をしたい</li>
-<li>rest api をアクセス制御する</li>
-<li>ユーザ管理, REST API のアクセス管理, ログイン・ログアウト・トーケン</li>
-<li>ユーザ管理は elasticsearch 内に格納</li>
-<li>path, http method, role の組み合わせで制御</li>
-</ul>
-
-<p>インストールは下記の通り elasticsearch plugin コマンドで。</p>
-
-<pre><code>% ./bin/plugin --install org.codelibs/elasticsearch-auth/1.0.0
-</code></pre>
-
-<ul>
-<li>ユーザ作成は POST で可能</li>
-</ul>
-
-<h2 id="所感とまとめ">所感とまとめ</h2>
-
-<p>箇条書きのざっくりしたまとめでしたが&hellip;。個人的には sharding の話はとても聞き
-たかったので貴重な時間でした。また、運用の話もとてもおもしろかったし plugin 作っ
-てみた話も「すごい..」って感じでした。僕はこれからアプリも書くけどインフラエン
-ジニアなのでアーキテクチャをまず知りたいかなぁという印象。と言うかスケールさせ
-るときにも横に並べて shard するだけの様な話に聞こえましたが、まだぼんやり感が
-あります。特に shard 周り。mongo の sharding と同じ様なものを想像していますが。
-またモチベーション上がったので週末やってみますー！</p>
-
-<p>kibana3 は一回使いました。javascript, html で実装されているのでクライアントか
-ら elasticsearch まで直接アクセス出来なければならないとなって、構成的にどうな
-のかな？と思っていたら菅谷さんの &lsquo;auth プラグイン&rsquo; の話があったりしたので、良
-かったです。使ってみます！</p>
-
-<p>主催の方々、発表者の方々、当日はありがとうございましたー。また参加させてもらい
-ます。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1210,6 +1160,20 @@ kibana を動かすって発想が&hellip;。</p>
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-20'>
+                                    November 20, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
                                 
                                     
@@ -1249,20 +1213,6 @@ kibana を動かすって発想が&hellip;。</p>
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-14'>
-                                    July 14, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1297,7 +1247,7 @@ kibana を動かすって発想が&hellip;。</p>
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">102</span>
+                                <span style="float:right;">103</span>
                             </header>
                         </article>
                     </li>

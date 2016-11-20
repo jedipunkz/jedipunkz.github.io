@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2015-06-25T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2015-07-16T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/"><p>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,516 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2015/07/16/chef-zero-openstack-allinone/">Chef-ZeroでOpenStack Kiloデプロイ(オールインワン編)</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2015-07-16'>
+            July 16, 2015</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。@jedipunkz です。</p>
+
+<p>久々に openstack-chef-repo を覗いてみたら &lsquo;openstack/openstack-chef-repo&rsquo; とし
+て公開されていました。今まで stackforge 側で管理されていましたが &lsquo;openstack&rsquo;
+の方に移動したようです。</p>
+
+<p><a href="https://github.com/openstack/openstack-chef-repo">https://github.com/openstack/openstack-chef-repo</a></p>
+
+<p>結構安定してきているのかな？と想い、ちらっと試したのですが案の定、簡単に動作さ
+せることが出来ました。</p>
+
+<p>今回はこのレポジトリを使ってオールインワン構成の OpenStack Kilo を作る方法をま
+とめていきます。</p>
+
+<h2 id="前提の構成">前提の構成</h2>
+
+<p>このレポジトリは Vagrant で OpenStack を作るための環境一式が最初から用意されて
+いますが、Vagrant では本番環境を作ることは出来ないため、Ubuntu ホストを前提と
+した記述に差し替えて説明していきます。前提にする構成は下記のとおりです。</p>
+
+<ul>
+<li>Uuntu Linux 14.04 x 1 台</li>
+<li>ネットワークインターフェース x 3 つ</li>
+<li>eth0 : External ネットワーク用</li>
+<li>eth1 : Internal (API, Manage) ネットワーク用</li>
+<li>eth2 : Guest ネットワーク用</li>
+</ul>
+
+<p>特徴としては上記なのですが、eth2 に関してはオールインワンなので必ずしも必要と
+いうわけではありません。複数台構成を考慮した設定になっています。</p>
+
+<h2 id="前提のip-アドレス">前提のIP アドレス</h2>
+
+<p>この記事では下記の IP アドレスを前提にします。お手持ちの環境の IP アドレスが違
+い場合はそれに合わせて後に示す json ファイルを変更してください。</p>
+
+<ul>
+<li>10.0.1.10 (eth0) : external ネットワーク</li>
+<li>10.0.2.10 (eth1) : api/management ネットワーク</li>
+<li>10.0.3.10 (eth2) : Guest ネットワーク</li>
+</ul>
+
+<h2 id="事前の準備">事前の準備</h2>
+
+<p>事前に対象ホスト (OpenStack ホスト) に chef, berkshelf をインストールします。</p>
+
+<pre><code class="language-bash">sudo -i
+curl -L https://www.opscode.com/chef/install.sh | bash
+</code></pre>
+
+<p>Berkshelf をインストールするのに必要なソフトウェアをインストールします。</p>
+
+<pre><code class="language-bash">apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev ruby-dev libxml2-dev libxslt-dev g++
+</code></pre>
+
+<p>Berkshelf をインストールします。</p>
+
+<pre><code class="language-bash">/opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc
+</code></pre>
+
+<h2 id="デプロイ作業">デプロイ作業</h2>
+
+<p>それでは openstack-chef-repo を取得してデプロイの準備を行います。
+ブランチの指定は行わず master ブランチを取得します。Kilo は master ブランチで
+管理されています。次のバージョンの開発が始まるタイミングで &lsquo;stable/kilo&rsquo; ブラ
+ンチに管理が移されます。</p>
+
+<pre><code class="language-bash">sudo -i
+cd ~/
+git clone https://github.com/openstack/openstack-chef-repo.git
+</code></pre>
+
+<p>次に Berkshelf を使って必要な Cookbooks をダウンロードします。</p>
+
+<pre><code class="language-bash">cd ~/openstack-chef-repo
+/opt/chef/embedded/bin/berks vendor ./cookbooks
+</code></pre>
+
+<p>Environment を作成します。これは各環境に合わせた設定ファイルのようなもので、各
+Cookbooks の Attributes を上書きする仕組みになっています。下記の内容を</p>
+
+<pre><code>openstack-chef-repo/environments/aio-neutron-kilo.json
+</code></pre>
+
+<p>というファイル名で保存してください。</p>
+
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;aio-neutron-kilo&quot;,
+  &quot;description&quot;: &quot;test&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;mysql&quot;: {
+      &quot;bind_address&quot;: &quot;0.0.0.0&quot;,
+      &quot;server_root_password&quot;: &quot;mysqlroot&quot;,
+      &quot;server_debian_password&quot;: &quot;mysqlroot&quot;,
+      &quot;server_repl_password&quot;: &quot;mysqlroot&quot;,
+      &quot;allow_remote_root&quot;: true,
+      &quot;root_network_acl&quot;: [&quot;10.0.0.0/8&quot;]
+    },
+    &quot;rabbitmq&quot;: {
+      &quot;address&quot;: &quot;0.0.0.0&quot;,
+      &quot;port&quot;: &quot;5672&quot;,
+      &quot;loopback_users&quot;: []
+    },
+    &quot;openstack&quot;: {
+      &quot;auth&quot;: {
+        &quot;validate_certs&quot;: false
+      },
+      &quot;dashboard&quot;: {
+        &quot;session_backend&quot;: &quot;file&quot;
+      },
+      &quot;block-storage&quot;: {
+        &quot;syslog&quot;: {
+          &quot;use&quot;: false
+        },
+        &quot;api&quot;: {
+          &quot;ratelimit&quot;: &quot;False&quot;
+        },
+        &quot;debug&quot;: true,
+        &quot;image_api_chef_role&quot;: &quot;os-image&quot;,
+        &quot;identity_service_chef_role&quot;: &quot;os-identity&quot;,
+        &quot;rabbit_server_chef_role&quot;: &quot;os-ops-messaging&quot;
+      },
+      &quot;compute&quot;: {
+        &quot;rabbit&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;
+        },
+        &quot;novnc_proxy&quot;: {
+          &quot;bind_interface&quot;: &quot;eth1&quot;
+        },
+        &quot;libvirt&quot;: {
+          &quot;virt_type&quot;: &quot;qemu&quot;,
+          &quot;bind_interface&quot;: &quot;eth1&quot;
+        },
+        &quot;novnc_proxy&quot;: {
+          &quot;bind_interface&quot;: &quot;eth1&quot;
+        },
+        &quot;xvpvnc_proxy&quot;: {
+          &quot;bind_interface&quot;: &quot;eth1&quot;
+        },
+        &quot;image_api_chef_role&quot;: &quot;os-image&quot;,
+        &quot;identity_service_chef_role&quot;: &quot;os-identity&quot;,
+        &quot;nova_setup_chef_role&quot;: &quot;os-compute-api&quot;,
+        &quot;rabbit_server_chef_role&quot;: &quot;os-ops-messaging&quot;,
+        &quot;network&quot;: {
+          &quot;public_interface&quot;: &quot;eth1&quot;,
+          &quot;service_type&quot;: &quot;neutron&quot;
+        }
+      },
+      &quot;network&quot;: {
+        &quot;debug&quot;: &quot;True&quot;,
+        &quot;dhcp&quot;: {
+          &quot;enable_isolated_metadata&quot;: &quot;True&quot;
+        },
+        &quot;metadata&quot;: {
+          &quot;nova_metadata_ip&quot;: &quot;10.0.2.10&quot;
+        },
+        &quot;openvswitch&quot;: {
+          &quot;tunnel_id_ranges&quot;: &quot;1:1000&quot;,
+          &quot;enable_tunneling&quot;: &quot;True&quot;,
+          &quot;tenant_network_type&quot;: &quot;gre&quot;,
+          &quot;local_ip_interface&quot;: &quot;eth2&quot;
+        },
+        &quot;api&quot;: {
+          &quot;bind_interface&quot;: &quot;eth1&quot;
+        },
+        &quot;l3&quot;: {
+          &quot;external_network_bridge_interface&quot;: &quot;eth0&quot;
+        },
+        &quot;service_plugins&quot;: [&quot;neutron.services.l3_router.l3_router_plugin.L3RouterPlugin&quot;]
+      },
+      &quot;db&quot;: {
+        &quot;bind_interface&quot;: &quot;eth1&quot;,
+        &quot;compute&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;
+        },
+        &quot;identity&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;
+        },
+        &quot;image&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;
+        },
+        &quot;network&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;
+        },
+        &quot;volume&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;
+        },
+        &quot;dashboard&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;
+        },
+        &quot;telemetry&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;
+        },
+        &quot;orchestration&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;
+        }
+      },
+      &quot;developer_mode&quot;: true,
+      &quot;endpoints&quot;: {
+        &quot;compute-api-bind&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;8774&quot;
+        },
+        &quot;compute-api&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;8774&quot;
+        },
+        &quot;compute-ec2-admin-bind&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;8773&quot;
+        },
+        &quot;compute-ec2-admin&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;8773&quot;
+        },
+       &quot;compute-ec2-api-bind&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;8773&quot;
+        },
+        &quot;compute-ec2-api&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;8773&quot;
+        },
+        &quot;compute-xvpvnc&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;6081&quot;
+        },
+        &quot;compute-novnc-bind&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;6080&quot;
+        },
+        &quot;compute-novnc&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;6080&quot;
+        },
+        &quot;compute-vnc&quot;: {
+          &quot;host&quot;: &quot;0.0.0.0&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;6080&quot;
+        },
+        &quot;image-api&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;9292&quot;
+        },
+        &quot;image-api-bind&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;9292&quot;
+        },
+        &quot;image-registry&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;9191&quot;
+        },
+        &quot;image-registry-bind&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;9191&quot;
+        },
+        &quot;identity-api&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;5000&quot;
+        },
+        &quot;identity-bind&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;5000&quot;
+        },
+        &quot;identity-admin&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;35357&quot;
+        },
+        &quot;identity-internal&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;35357&quot;
+        },
+        &quot;volume-api-bind&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;8776&quot;
+        },
+        &quot;volume-api&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;8776&quot;
+        },
+        &quot;telemetry-api&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;8777&quot;
+        },
+        &quot;network-api-bind&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;9696&quot;
+        },
+        &quot;network-api&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;9696&quot;
+        },
+        &quot;orchestration-api&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;8004&quot;
+        },
+        &quot;orchestration-api-cfn&quot;: {
+          &quot;host&quot;: &quot;10.0.2.10&quot;,
+          &quot;scheme&quot;: &quot;http&quot;,
+          &quot;port&quot;: &quot;8000&quot;
+        },
+        &quot;db&quot;: {
+          &quot;host&quot;: &quot;0.0.0.0&quot;,
+          &quot;port&quot;: &quot;3306&quot;
+        },
+        &quot;bind-host&quot;: &quot;0.0.0.0&quot;
+      },
+      &quot;identity&quot;: {
+        &quot;admin_user&quot;: &quot;admin&quot;,
+        &quot;bind_interface&quot;: &quot;eth1&quot;,
+        &quot;debug&quot;: true
+      },
+      &quot;image&quot;: {
+        &quot;api&quot;: {
+          &quot;bind_interface&quot;: &quot;eth1&quot;
+        },
+        &quot;debug&quot;: true,
+        &quot;identity_service_chef_role&quot;: &quot;os-identity&quot;,
+        &quot;rabbit_server_chef_role&quot;: &quot;os-ops-messaging&quot;,
+        &quot;registry&quot;: {
+          &quot;bind_interface&quot;: &quot;eth1&quot;
+        },
+        &quot;syslog&quot;: {
+          &quot;use&quot;: false
+        }
+      },
+      &quot;mq&quot;: {
+        &quot;bind_interface&quot;: &quot;eth1&quot;,
+        &quot;host&quot;: &quot;10.0.2.10&quot;,
+        &quot;user&quot;: &quot;guest&quot;,
+        &quot;vhost&quot;: &quot;/nova&quot;,
+        &quot;network&quot;: {
+          &quot;rabbit&quot;: {
+             &quot;host&quot;: &quot;10.0.2.10&quot;,
+             &quot;port&quot;: &quot;5672&quot;
+          }
+        },
+        &quot;compute&quot;: {
+           &quot;service_type&quot;: &quot;rabbitmq&quot;,
+          &quot;rabbit&quot;: {
+            &quot;host&quot;: &quot;10.0.2.10&quot;,
+            &quot;port&quot;: &quot;5672&quot;
+          }
+        },
+        &quot;block-storage&quot;: {
+          &quot;service_type&quot;: &quot;rabbitmq&quot;,
+          &quot;rabbit&quot;: {
+            &quot;host&quot;: &quot;10.0.2.10&quot;,
+            &quot;port&quot;: &quot;5672&quot;
+          }
+        }
+      }
+    },
+    &quot;queue&quot;: {
+      &quot;host&quot;: &quot;10.0.2.10&quot;,
+      &quot;user&quot;: &quot;guest&quot;,
+      &quot;vhost&quot;: &quot;/nova&quot;
+    }
+  }
+}
+</code></pre>
+
+<p>上記ファイルは KVM が使えない環境用に virt_type : qemu にしていますが、KVM が
+利用できる環境をご利用であれば該当行を削除してください。デフォルト値の &lsquo;kvm&rsquo;
+が入るはずです。</p>
+
+<p>次にデプロイ前に databag 関連の事前操作を行います。Vagrant 用に作成されたファ
+イルを除くと&hellip;</p>
+
+<pre><code class="language-ruby">machine 'controller' do
+  add_machine_options vagrant_config: controller_config
+  role 'allinone-compute'
+  role 'os-image-upload'
+  chef_environment env
+  file('/etc/chef/openstack_data_bag_secret',
+       &quot;#{File.dirname(__FILE__)}/.chef/encrypted_data_bag_secret&quot;)
+  converge true
+end
+</code></pre>
+
+<p>となっていて /etc/chef/openstack_data_bag_secret というファイルを事前にコピー
+する必要がありそうです。下記のように操作します。</p>
+
+<pre><code class="language-bash">cp .chef/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
+</code></pre>
+
+<p>デプロイを実行します。</p>
+
+<p>この openstack-chef-repo には .chef ディレクトリが存在していてノード名が記され
+ています。&rsquo;nodienode&rsquo; というノード名です。これを利用してそのままデプロイを実行
+します。</p>
+
+<pre><code class="language-bash">chef-client -z
+knife node -z run_list add nodienode 'role[allinone-compute]'
+chef-client -z -E aio-neutron-kilo
+</code></pre>
+
+<p>上記の説明を行います。
+１行目 chef-client -z で Chef-Zero サーバをメモリ上に起動し、2行目で自ノードへ
+run_list を追加しています。最後、3行目でデプロイ実行、となります。</p>
+
+<p>数分待つと OpenStack Kilo が構成されているはずです。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>Chef-Zero を用いることで Chef サーバを利用せずに楽に構築が行えました。ですが、
+OpenStack の複数台構成となるとそれぞれのノードのパラメータを連携させる必要が出
+てくるので Chef サーバを用いたほうが良さそうです。今度、時間を見つけて Kilo の
+複数台構成についても調べておきます。</p>
+
+<p>また、master ブランチを使用していますので、まだ openstack-chef-repo 自体が流動
+的な状態とも言えます。が launchpad で管理されている Bug リストを見ると、ステー
+タス Critical, High の Bug が見つからなかったので Kilo に関しては、大きな問題
+無く安定してきている感があります。</p>
+
+<p><a href="https://bugs.launchpad.net/openstack-chef">https://bugs.launchpad.net/openstack-chef</a></p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2015/07/16/chef-zero-openstack-allinone/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -705,213 +1215,6 @@ rtt min/avg/max/mdev = 0.272/0.380/0.451/0.079 ms
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/">Aviator でモダンに OpenStack を操作する</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2014-12-13'>
-            December 13, 2014</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>自分は Ruby を普段使うのでいつも Fog というライブラリを使って OpenStack, AWS
-を操作していました。Fog を使うとクラウドの操作が Ruby のネイティブコードで行え
-るのでシステムコマンド打つよりミス無く済みます。</p>
-
-<p>Fog より後発で Aviator というライブラリが登場してきたので少し使ってみたのです
-がまだ未完成なところがあるものの便利な点もあって今後に期待だったので紹介します。</p>
-
-<h2 id="認証情報を-yaml-ファイルに記す">認証情報を yaml ファイルに記す</h2>
-
-<p>接続に必要な認証情報を yaml ファイルで記述します。名前を &lsquo;aviator.yml&rsquo; として
-保存。この時に下記のように環境毎に認証情報を別けて書くことができます。こうする
-ことでコードの中で開発用・サービス用等と使い分けられます。</p>
-
-<pre><code class="language-yaml">production:
-  provider: openstack
-  auth_service:
-    name: identity
-    host_uri: &lt;Auth URL&gt;
-    request: create_token
-    validator: list_tenants
-  auth_credentials:
-    username: &lt;User Name&gt;
-    password: &lt;Password&gt;
-    tenant_name: &lt;Tenant Name&gt;
-
-development:
-  provider: openstack
-  auth_service:
-    name: identity
-    host_uri: &lt;Auth URL&gt;
-    request: create_token
-    validator: list_tenants
-  auth_credentials:
-    username: &lt;User Name&gt;
-    password: &lt;Password&gt;
-    tenant_name: &lt;Tenant Name&gt;
-</code></pre>
-
-<p>シンタックス確認
-+++</p>
-
-<p>次に aviator のシンタックスを確認します。Fog に無い機能で、コマンドラインでシ
-ンタックスを確認できてしかも指定可能はパラメータと必須なパラメータと共にサンプ
-ルコードまで提供してくれます。公式サイトに&rsquo;サーバ作成&rsquo;のメソッドが掲載されてい
-るので、ここでは仮想ディスクを作るシンタックスを確認してみます。</p>
-
-<pre><code class="language-bash">% gem install aviator
-% aviator describe openstack volume # &lt;-- 利用可能な機能を確認
-Available requests for openstack volume_service:
-v1 public list_volume_types
-v1 public list_volumes
-v1 public delete_volume
-v1 public create_volume
-v1 public get_volume
-v1 public update_volume
-  v1 public root
-% aviator describe openstack volume v1 public create_volume # &lt;-- シンタックスを確認
-:Request =&gt; create_volume
-
-Parameters:
- +---------------------+-----------+
- | NAME                | REQUIRED? |
- +---------------------+-----------+
- | availability_zone   |     N     |
- | display_description |     Y     |
- | display_name        |     Y     |
- | metadata            |     N     |
- | size                |     Y     |
- | snapshot_id         |     N     |
- | volume_type         |     N     |
- +---------------------+-----------+
-
-Sample Code:
-  session.volume_service.request(:create_volume) do |params|
-    params.volume_type = value
-    params.availability_zone = value
-    params.snapshot_id = value
-    params.metadata = value
-    params.display_name = value
-    params.display_description = value
-    params.size = value
-  end
-</code></pre>
-
-<p>このように create_volume というメソッドが用意されていて、指定出来るパラメータ・
-必須なパラメータが確認できます。必須なモノには &ldquo;Y&rdquo; が REQUIRED に付いています。
-またサンプルコードが出力されるので、めちゃ便利です。</p>
-
-<p>では create_volume のシンタックスがわかったので、コードを書いてみましょう。</p>
-
-<p>コードを書いてみる
-+++</p>
-
-<pre><code class="language-ruby">#!/usr/bin/env ruby
-
-require 'aviator'
-require 'json'
-
-volume_session = Aviator::Session.new(
-              :config_file =&gt; '/home/thirai/aviator/aviator.yml',
-              :environment =&gt; :production,
-              :log_file    =&gt; '/home/thirai/aviator/aviator.log'
-            )
-
-volume_session.authenticate
-
-volume_session.volume_service.request(:create_volume) do |params|
-  params.display_description = 'testvol'
-  params.display_name = 'testvol01'
-  params.size = 1
-end
-puts volume_session.volume_service.request(:list_volumes).body
-</code></pre>
-
-<p>6行目で先ほど作成した認証情報ファイル aviator.yml とログ出力ファイル
-aviator.log を指定します。12行目で実際に OpenStack にログインしています。</p>
-
-<p>14-18行目はサンプルコードそのままです。必須パラメータの display_description,
-display_name, size のみを指定し仮想ディスクを作成しました。最後の puts &hellip; は
-実際に作成した仮想ディスク一覧を出力しています。</p>
-
-<p>結果は下記のとおりです。</p>
-
-<pre><code class="language-json">{ volumes: [{ status: 'available', display_name: 'testvol01', attachments: [],
-availability_zone: 'az3', bootable: 'false', created_at:
-description = 'testvol', volume_type:
-'standard', snapshot_id: nil, source_volid: nil, metadata:  }, id:
-'3a5f616e-a732-4442-a419-10369111bd4c', size: 1 }] }
-</code></pre>
-
-<p>まとめ
-+++</p>
-
-<p>サンプルコードやパラメータ一覧等がひと目でわかる aviator はとても便利です。ま
-だ利用できるクラウドプラットフォームが OpenStack しかないのと、Neutron の機能
-がスッポリ抜けているので、まだ利用するには早いかもです&hellip;。逆に言えばコントリ
-ビューションするチャンスなので、もし気になった方がいたら開発に参加してみるのも
-いいかもしれません。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Categories
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-        <li><a href='/categoriestools'>tools</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1028,6 +1331,20 @@ description = 'testvol', volume_type:
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-20'>
+                                    November 20, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
                                 
                                     
@@ -1067,20 +1384,6 @@ description = 'testvol', volume_type:
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-14'>
-                                    July 14, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1115,7 +1418,7 @@ description = 'testvol', volume_type:
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">102</span>
+                                <span style="float:right;">103</span>
                             </header>
                         </article>
                     </li>
