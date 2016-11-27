@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2014-01-21T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2014-01-29T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,219 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/">Ceph のプロセス配置ベストプラクティス</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-01-29'>
+            January 29, 2014</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>Ceph はブロック型の分散ストレージファイルシステムです。POSIX のファイルシステ
+ムとしてマウント出来ます。Linux の Kernel ドライバや FUSE ドライバを用いてマウ
+ントします。またブロックデバイスとしてマウントする方法もあります。</p>
+
+<p>だいぶ前ですが、Ceph に関する記事を以前下記の通り書きました。</p>
+
+<ul>
+<li><a href="http://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/">http://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/</a></li>
+<li><a href="http://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/">http://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/</a></li>
+</ul>
+
+<p>Ceph の構築方法について記したブログだったのですが、今まで mon, osd, mds の各プ
+ロセスをそれぞれ何台のノードに対して配置し、またそれぞれのプロセス幾つを何に対
+して配置するのか？という疑問が付きまとわっていました。node, disk, process のそ
+れぞれの数の関係について知りたいなぁと思っていました。幾つかのドキュメントを読
+んでいて、ぼんやり見えてきた事があるのでそれを今回はまとめたいと思います。</p>
+
+<p>また、皆さん気になるトコロだと思われる容量設計についても軽く触れたいと思います。</p>
+
+<h2 id="参考資料">参考資料</h2>
+
+<ul>
+<li><a href="http://ceph.com/docs/master/rados/configuration/mon-config-ref/">http://ceph.com/docs/master/rados/configuration/mon-config-ref/</a></li>
+<li><a href="http://www.sebastien-han.fr/blog/2013/12/02/ceph-performance-interesting-things-going-on/">http://www.sebastien-han.fr/blog/2013/12/02/ceph-performance-interesting-things-going-on/</a></li>
+</ul>
+
+<h2 id="各要素の数の関係">各要素の数の関係</h2>
+
+<p>ハードウェア要素である node, disk(hdd), ssd そしてソフトウェア要素である mon,
+osd, mds の数の関係はどのようにするべきか？基本となる関係は</p>
+
+<ul>
+<li>1 mds process / node</li>
+<li>1 mon process / node</li>
+<li>1 osd process / disk</li>
+<li>n jornal ssd device / disk / node</li>
+</ul>
+
+<p>だと考えられます。僕が今のところ理想かなぁと思っている構成をまとめたいと思いま
+す。</p>
+
+<p>下記の図がそれです。</p>
+
+<pre><code>+------------------------+
+|         client         |
++------------------------+
+|
++--------------------------+--------------------------+-------------------------------+-------------------------
+|                          |                          |                               |            public network
++------------------------+ +------------------------+ +------------------------+      +------------------------+
+|          mon           | |          mon           | |          mon           |      |          mds           |
++------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+      +------------------------+
+| osd  | | osd  | | osd  | | osd  | | osd  | | osd  | | osd  | | osd  | | osd  |      |                        |
++------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+      |                        |
+| disk | | disk | | disk | | disk | | disk | | disk | | disk | | disk | | disk |....&gt; |                        |
++------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+scale |          node          |
+|          ssd           | |          ssd           | |          ssd           |      |                        |
++------------------------+ +------------------------+ +------------------------+      |                        |
+|          node          | |          node          | |          node          |      |                        |
++------------------------+ +------------------------+ +------------------------+      +------------------------+
+|                          |                          |                               |
++--------------------------+--------------------------+-------------------------------+-------------------------
+                                                                                                  cluster network
+</code></pre>
+
+<h4 id="mds-と-node-の関係">mds と node の関係</h4>
+
+<p>mds はリモートクライアントへのファイルシステムサービスの提供を行うことや特性が
+全く異なることから別ノードに切り出しました。また mds は幾つかのノードで稼働さ
+せる事も可能。が、mds はそれぞれのサービスを HA 組む仕組みは持っていないので
+どれか一方の mds をクライアントは指し示す必要があり、その mds が停止すれば直
+ちに障害に発展します。</p>
+
+<h4 id="mon-と-node-の関係">mon と node の関係</h4>
+
+<p>mon は比較的少量のリソースで稼働します。今回 osd と同じノードの搭載しましたが
+別ノードに切り出すことも勿論可能です。mon は CRUSH Maps アルゴリズムの元に連携
+が取れますので複数のプロセスを稼働することが推奨されていることからも、比較的少
+ないノード数のクラスタの場合は osd と同ノードに搭載するのが容易かなと考えまし
+た。</p>
+
+<h4 id="osd-と-node-の関係">osd と node の関係</h4>
+
+<p>1 osd プロセスに対して 1 disk が基本となります。osd は実データのレプリケーショ
+ンを行うことからコンフィギュレーションに対して上図の様にクラスタ用のネットワー
+クを紐付け、高トラヒックに対応する必要があります。また osd 用の disk device で
+すが RAID を組まないことが推奨されています。CEPH 自体に HA の仕組みがあること、
+また RAID 構成にもよりますがディスクアクセスが遅くなることは Ceph にとってボト
+ルネックを早く招くことになりますし、小さいディスク容量しか扱えなくなることは
+Ceph にとって不利になると思います。</p>
+
+<h4 id="journal-用の-ssd-device-と-disk-node-の関係">journal 用の ssd device と disk, node の関係</h4>
+
+<p>現在の Stable Release 版の Ceph は journal を用いてメタデータを管理します。各
+osd の disk 単位に journal 用の disk device を指定出来るようになっています。メ
+タデータですので実データ用の disk よりだいぶ小さな容量で構わないこと、また比較
+的高速なアクセスを要求されることからも SSD を選択することが推奨されつつあるよ
+うです。実際にストアされるデータの特性にもよりますが 1 node に対して 1 ssd
+device を配置すれば十分かと思います。また osd のプロセスの数 (disk の数) に対
+して一つのパーティションを切ることで対応出来るかと思います。</p>
+
+<p>設定方法の例を記します。ここに ceph01-03 の3台のノードがありそれぞれ 2 disk, 1
+ssd が搭載されているとします。/dev/ssd は gdisk 等を用いて2つ以上のパーティショ
+ンに切り分けます。</p>
+
+<p>下記のように /dev/sdb (hdd) に対して /dev/ssd1 (ssd), /dev/sdc (hdd) に対して /dev/ssd2 (ssd)
+を割り当てることが出来ます。</p>
+
+<pre><code class="language-bash">% ceph-deploy --cluster cluster01 osd create ceph01:sdb:/dev/ssd1 ceph02:sdb:/dev/ssd1 ceph03:sdb:/dev/ssd1
+% ceph-deploy --cluster cluster01 osd create ceph01:sdc:/dev/ssd2 ceph02:sdc:/dev/ssd2 ceph03:sdc:/dev/ssd2
+</code></pre>
+
+<h2 id="ceph-ストレージ全体の容量設計と-mon-の-ratio-の関係">Ceph ストレージ全体の容量設計と mon の ratio の関係</h2>
+
+<p>3TB のディスクを持ったノードが 33 台並んでいるとします。各ノードには osd プロ
+セスが1つ稼働します。合計容量は 99 TB となりますが mon が持っているコンフィギュ
+レーションである full ratio というパラメータがありデフォルト値が 0.95 となって
+います。よってこのクラスタで扱える全体のディスク容量は 95TB となります。</p>
+
+<p>また、ラックに数台のノードを積むのが通常ですが、電源故障等で一気にラック単位で
+障害が発生したとします。この場合 Ceph はすべてのデータに関してレプリカを取り復
+旧作業を行います。しかしながら停止するノード数によってはストレージ全体の扱える
+容量をオーバーすることも懸念されます。これに対応するために先ほど登場した ratio
+パラメータを調整することが出来ます。</p>
+
+<pre><code>[global]
+
+mon osd full ratio = .80
+mon osd nearfull ratio = .70
+</code></pre>
+
+<p>上記の例では full ステートの ratio が 0.80, nearfull ステートの ratio が 0.70
+となります。想定の障害ノード数を考慮し ratio パラメータにてその台数分を減算す
+れば良いわけです。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>前述した通り上図は比較的少ないノード数のクラスタを組む場合を想定しています。ノー
+ド数が増える場合は mon は mds, osd とも必要とするリソースの特性が異なりますの
+で別ノードに切り出すことも考えたほうが良さそうです。2014年の2月には Firefly と
+いう新しいリリース版が出ます。ここでのブループリント(設計書)を確認すると&hellip;</p>
+
+<p><a href="http://wiki.ceph.com/Planning/Blueprints/Firefly/osd%3A_new_key%2F%2Fvalue_backend">http://wiki.ceph.com/Planning/Blueprints/Firefly/osd%3A_new_key%2F%2Fvalue_backend</a></p>
+
+<p>journal に変わる新たなメタデータ管理方法として KVS データベースを扱うことも視
+野に入っているようです。上記の URL 見る限りでは Facebook がオープンソースにし
+た rocksdb や fusionio の nvmkv, seagate の kinetic 等が挙がっています。2月に
+期待しましょう！</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -525,248 +738,6 @@ attributes で調整出来ます。その点は serf のほうが確実に勝っ
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/12/09/coreos-etcd-cluster/">CoreOS etcd のクラスタとその応用性</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-12-09'>
-            December 9, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>皆さん CoreOS は利用されたことありますか？CoreOS は軽量な docker との相性の良
-い OS です。下記が公式サイト。</p>
-
-<p><a href="http://coreos.com/">http://coreos.com/</a></p>
-
-<p>特徴としては下記の3つがあります。</p>
-
-<ul>
-<li>etcd</li>
-<li>systemd</li>
-<li>docker</li>
-</ul>
-
-<p>ここではこの中の etcd について注目していきたいと思います。etcd はクラスタエイ
-ブルな KVS データベースです。コンフィギュレーションをクラスタ間で共有すること
-がなので、オーケストレーションの分野でも期待出来るのでは？と個人的に感じていま
-す。今回は etcd のクラスタ構成構築の手順とその基本動作の確認、またどう応用出来
-るのか？について記していきたいと思います。</p>
-
-<h2 id="参考-url">参考 URL</h2>
-
-<ul>
-<li><a href="http://coreos.com/using-coreos/etcd/">http://coreos.com/using-coreos/etcd/</a></li>
-<li><a href="https://github.com/coreos/etcd">https://github.com/coreos/etcd</a></li>
-</ul>
-
-<h2 id="ビルド">ビルド</h2>
-
-<p>go 1.1 or later をインストールして etcd のコンパイル準備を行います。Ubuntu
-Saucy のパッケージを用いると容易に行えます。</p>
-
-<pre><code class="language-bash">% apt-get -y install golang
-</code></pre>
-
-<p>coreos/etcd を取得しビルド</p>
-
-<pre><code class="language-bash">% git clone https://github.com/coreos/etcd
-% cd coreos
-% ./build
-% ./etcd --version
-v0.2.0-rc1-60-g73f04d5
-</code></pre>
-
-<h2 id="coreos-の用意">CoreOS の用意</h2>
-
-<p>ここではたまたま手元にあった OpenStack を用いて CoreOS のイメージを登録してい
-みます。ベアメタルでも可能ですのでその場合は手順を読み替えて作業してみてくださ
-い。OpenStack 等クラウドプラットフォームを利用する場合は metadata サービスが必
-須となるので注意してください。</p>
-
-<pre><code class="language-bash">% wget http://storage.core-os.net/coreos/amd64-generic/dev-channel/coreos_production_openstack_image.img.bz2
-% bunzip2 coreos_production_openstack_image.img.bz2
-% glance image-create --name coreos-image --container-format ovf \
-  --disk-format qcow2 --file coreos_production_openstack_image.img
-</code></pre>
-
-<p>nova boot にて CoreOS を起動します。(下記は例)</p>
-
-<pre><code class="language-bash">% nova keypair-add testkey01 &gt; testkey01.pem
-% nova boot --nic net-id .... --image coreos-image --flavor 1 --key_name testkey01 coreos01
-</code></pre>
-
-<h2 id="coreos-上での-etcd-クラスタ起動">CoreOS 上での etcd クラスタ起動</h2>
-
-<p>上記でコンパイルした etcd のバイナリを起動したインスタンス (CoreOS) に転送しま
-す。scp 等で転送してください。</p>
-
-<p>ここでは 1 node 上で複数のポート番号を用いて 3 つの etcd を稼働することでクラ
-スタを構築します。</p>
-
-<p>7002 番ポートを peer addr として master を起動。listen ポートは 4002</p>
-
-<pre><code class="language-bash">% ./etcd -peer-addr 127.0.0.1:7002 -addr 127.0.0.1:4002 -data-dir machines/machine1 -name machine1
-</code></pre>
-
-<p>上記の master を参照する slaves (残り2台) を起動。</p>
-
-<pre><code class="language-bash">% ./etcd -peer-addr 127.0.0.1:7003 -addr 127.0.0.1:4003 -peers 127.0.0.1:7002 -data-dir machines/machine2 -name machine2
-% ./etcd -peer-addr 127.0.0.1:7004 -addr 127.0.0.1:4004 -peers 127.0.0.1:7002 -data-dir machines/machine3 -name machine3
-</code></pre>
-
-<p>クラスタ構成内のノード情報を確認する。</p>
-
-<pre><code class="language-bash">% curl -L http://127.0.0.1:4002/v2/machines
-[etcd] Dec  4 03:46:44.153 INFO      | URLs: machine1 / machine1 (http://127.0.0.1:4002,http://127.0.0.1:4003,http://127.0.0.1:4004)
-http://127.0.0.1:4002, http://127.0.0.1:4003, http://127.0.0.1:4004
-</code></pre>
-
-<p>leader (master) 情報を確認する。</p>
-
-<pre><code class="language-bash">% curl -L http://127.0.0.1:4002/v2/leader
-http://127.0.0.1:7002
-</code></pre>
-
-<p>上記で起動した master プロセスが leader (master) になっていることを確認出来る
-と思います。</p>
-
-<h2 id="キーの投入と参照">キーの投入と参照</h2>
-
-<p>テストでキーと値を入力してみましょう。&rsquo;foo&rsquo; キーに &lsquo;bar&rsquo; という値を投入てくだ
-さい。</p>
-
-<pre><code class="language-bash">% curl -L http://127.0.0.1:4002/v2/keys/foo -XPUT -d value=bar
-</code></pre>
-
-<p>クラスタ内全てのプロセスから上記のキーの取得できることを確認します。</p>
-
-<pre><code class="language-bash">% curl -L http://127.0.0.1:4002/v2/keys/foo
-{&quot;action&quot;:&quot;get&quot;,&quot;node&quot;:{&quot;key&quot;:&quot;/foo&quot;,&quot;value&quot;:&quot;bar&quot;,&quot;modifiedIndex&quot;:4,&quot;createdIndex&quot;:4}}
-% curl -L http://127.0.0.1:4003/v2/keys/foo
-{&quot;action&quot;:&quot;get&quot;,&quot;node&quot;:{&quot;key&quot;:&quot;/foo&quot;,&quot;value&quot;:&quot;bar&quot;,&quot;modifiedIndex&quot;:4,&quot;createdIndex&quot;:4}}
-% curl -L http://127.0.0.1:4004/v2/keys/foo
-{&quot;action&quot;:&quot;get&quot;,&quot;node&quot;:{&quot;key&quot;:&quot;/foo&quot;,&quot;value&quot;:&quot;bar&quot;,&quot;modifiedIndex&quot;:4,&quot;createdIndex&quot;:4}}
-</code></pre>
-
-<h2 id="master-のシャットダウンと-master-選挙後の動作確認">master のシャットダウンと master 選挙後の動作確認</h2>
-
-<p>テストで master のプロセスをシャットダウンしてみます。</p>
-
-<p>master プロセスのシャットダウン</p>
-
-<pre><code class="language-bash">% kill &lt;master プロセスの ID&gt;
-</code></pre>
-
-<p>その他 2 つのプロセスから &lsquo;foo&rsquo; キーの確認を行う。</p>
-
-<pre><code class="language-bash">% curl -L http://127.0.0.1:4004/v2/keys/foo
-{&quot;action&quot;:&quot;get&quot;,&quot;node&quot;:{&quot;key&quot;:&quot;/foo&quot;,&quot;value&quot;:&quot;bar&quot;,&quot;modifiedIndex&quot;:4,&quot;createdIndex&quot;:4}}
-% curl -L http://127.0.0.1:4003/v2/keys/foo
-{&quot;action&quot;:&quot;get&quot;,&quot;node&quot;:{&quot;key&quot;:&quot;/foo&quot;,&quot;value&quot;:&quot;bar&quot;,&quot;modifiedIndex&quot;:4,&quot;createdIndex&quot;:4}}
-</code></pre>
-
-<p>勿論、旧 master からは確認出来ない。</p>
-
-<pre><code class="language-bash">% curl -L http://127.0.0.1:4002/v2/keys/foo
- curl: (7) Failed connect to 127.0.0.1:4002; Connection refused
-</code></pre>
-
-<p>新 master の確認を行う。選挙の結果 3 つ目のプロセスが master に昇格しているこ
-とが確認出来る。</p>
-
-<pre><code class="language-bash">% curl -L http://127.0.0.1:4003/v2/leader
-http://127.0.0.1:7004
-</code></pre>
-
-<h2 id="考察とその応用性について">考察とその応用性について</h2>
-
-<p>とてもシンプルな KVS ではあるけど大きな可能性を秘めていると思っています。オー
-ケストレーション等への応用です。お互いのノード (今回はプロセス) 間で情報をやり
-とりできるので自律的なクラスタの構築も可能になるのでは？と思っています。</p>
-
-<p>&lsquo;etcenv&rsquo; という @mattn さんが開発したツールを見てみましょう。</p>
-
-<p><a href="https://github.com/mattn/etcdenv">https://github.com/mattn/etcdenv</a></p>
-
-<p>下記、README から引用。</p>
-
-<pre><code class="language-bash">$ curl http://127.0.0.1:4001/v1/keys/app/db -d value=&quot;newdb&quot;
-$ curl http://127.0.0.1:4001/v1/keys/app/cache -d value=&quot;new cache&quot;
-
-$ curl http://localhost:4001/v1/keys/app
-[{&quot;action&quot;:&quot;GET&quot;,&quot;key&quot;:&quot;/app/db&quot;,&quot;value&quot;:&quot;newdb&quot;,&quot;index&quot;:4},{&quot;action&quot;:&quot;GET&quot;,&quot;key&quot;:&quot;/app/cache&quot;,&quot;value&quot;:&quot;new cache&quot;,&quot;index&quot;:4}]
-
-$ etcdenv -key=/app/
-DB=newdb
-CACHE=new cache
-
-$ etcdenv -key=/app/ ruby web.rb
-</code></pre>
-
-<p>クラスタ間の情報を環境変数に落としこむツールです。自ノードの環境変数まで落ちれ
-ば、クラスタ構築も色々想像出来るのではないでしょうか？</p>
-
-<p>軽量で docker との相性も良くて etcd 等の仕組みも持っている CoreOS にはこれから
-も期待です。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/12/09/coreos-etcd-cluster/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -883,6 +854,20 @@ $ etcdenv -key=/app/ ruby web.rb
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-27'>
+                                    November 27, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
                                 
                                     
@@ -922,20 +907,6 @@ $ etcdenv -key=/app/ ruby web.rb
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-23'>
-                                    July 23, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -970,7 +941,7 @@ $ etcdenv -key=/app/ ruby web.rb
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">103</span>
+                                <span style="float:right;">104</span>
                             </header>
                         </article>
                     </li>

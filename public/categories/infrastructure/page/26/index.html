@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-02-10T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-03-15T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/"><p>Go言語とInfluxDBで監視のコード化</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,264 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/03/15/chef-contenuously-deploy/">chef-client の継続的デリバリ</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-03-15'>
+            March 15, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>久々に Chef の話題。</p>
+
+<p>有名な方々が最近 Chef について記事書いたりで Chef が再び盛り上がってきましたね。
+僕のブログにも chef-solo で検索してアクセスしてくる方が増えているようです。</p>
+
+<p>ちょうど今、仕事で試験的なサービスを立ち上げてそこで Chef を使っているのですが Server,
+Workstation, Target Node(s) の構成で使っていて、僕らは最初から chef-solo と
+capistrano でってことは考えていませんでした。もちろん chef-solo + capistrano
+の環境も調査しましたが、今の Server 構成が便利なのでもう戻れない。</p>
+
+<p>今日は Chef サーバ構成の良さについての記事ではないですが、それについては次回、
+時間見つけて書こうかと思ってます。</p>
+
+<p>今日は &lsquo;chef-client をどうアップデートするか&rsquo; について。せっかく Chef
+でサーバ構成を継続的にデプロイ出来ても Chef 自身をアップデート出来ないと悲しい
+ですよね。chef-client が稼働しているインスタンスなんて起動して利用してすぐに破
+棄だって時代ですが、なかなかそうもいなかい気がしています。</p>
+
+<p>「ほら、だから chef-solo 使えばいいんだよ！」って思ってるあなた！違うんですよー。
+そのデメリットを上回るメリットが Chef サーバ構成にあるんです。次回書きますｗ</p>
+
+<p>Chef10 から Chef11 と試験してみるにはちょうど良い時期でした。今回の構成は&hellip;</p>
+
+<h2 id="旧環境">旧環境</h2>
+
+<pre><code>+------------------+
+|   chef server    |
+|  version 10.18   |
++------------------+
+^
+|
++--------------------+
+|                    |
+|                    |
++------------------+ +------------------+
+| chef workstation | |   target node    |
+|  version 10.24   | |  version 10.24   |
++------------------+ +------------------+
+</code></pre>
+
+<ul>
+<li>chef server は apt.opscode.com レポジトリを利用した Chef 10.18 なもの</li>
+<li>chef workstaion は version 10.24 (2013年3月15日現在 10.x 系最新)</li>
+<li>target node は chef workstaion から knife bootstrap を行い構成</li>
+</ul>
+
+<p>knife bootstrap の際に下記のオプションを指定します。</p>
+
+<pre><code>% knife bootstrap -N vmtest01 -r 'role[base]' \ -i -x root -d chef-full
+</code></pre>
+
+<p>distro は chef-full を選択。chef-full については下記にコードがあります。</p>
+
+<p><a href="https://github.com/opscode/chef/blob/master/lib/chef/knife/bootstrap/chef-full.erb">https://github.com/opscode/chef/blob/master/lib/chef/knife/bootstrap/chef-full.erb</a></p>
+
+<p>コードを抜粋すると、omnibus インストーラをダンロードして実行しているのがわかり
+ます。つまり Chef11 環境で再度 knife bootstrap すれば新しい Chef がインストー
+ルされるはず。</p>
+
+<pre><code class="language-bash">install_sh=&quot;http://opscode.com/chef/install.sh&quot;
+version_string=&quot;-v &lt;%= chef_version %&gt;&quot;
+
+if ! exists /usr/bin/chef-client; then
+  if exists wget; then
+    bash &lt;(wget &lt;%= &quot;--proxy=on &quot; if knife_config[:bootstrap_proxy] %&gt; ${install_sh} -O -) ${version_string}
+  elif exists curl; then
+    bash &lt;(curl -L &lt;%= &quot;--proxy \&quot;#{knife_config[:bootstrap_proxy]}\&quot; &quot; if knife_config[:bootstrap_proxy] %&gt; ${install_sh}) ${version_string}
+  else
+    echo &quot;Neither wget nor curl found. Please install one and try again.&quot; &gt;&amp;2
+    exit 1
+  fi
+fi
+</code></pre>
+
+<p>このように Chef10 で運用している状態を Chef11 に移行します。新しい環境は&hellip;</p>
+
+<h2 id="新環境">新環境</h2>
+
+<pre><code>+------------------+ +------------------+
+|   chef server    | |   chef server    |
+|  version 10.18   | |  version 11.0.6  |
++------------------+ +------------------+
+                     ^
+                     |
++--------------------+
+|                    |
+|                    |
++------------------+ +------------------+
+| chef workstation | |   target node    |
+|  version 11.4    | |  version 11.4    |
++------------------+ +------------------+
+</code></pre>
+
+<ul>
+<li>chef server は omnibus インストールから構築</li>
+<li>chef workstation は version 11.4 (2013年3月15日現在最新)</li>
+</ul>
+
+<h2 id="移行手順">移行手順</h2>
+
+<h4 id="chef11-サーバを用意する">Chef11 サーバを用意する</h4>
+
+<p>Omnibus インストーラでコマンド3つ打つだけで Chef サーバは構築出来ます。Chef11
+からはこの方法が推奨されているようです。bootstrap を使った方法より簡単ですし。</p>
+
+<pre><code>% wget https://opscode-omnitruck-release.s3.amazonaws.com/ubuntu/12.04/x86_64/chef-server_11.0.6-1.ubuntu.12.04_amd64.deb
+% sudo dpkg -i chef-server_11.0.6-1.ubuntu.12.04_amd64.deb
+% sudo chef-server-ctl reconfigure
+</code></pre>
+
+<h4 id="chef11-workstation-を用意する">Chef11 Workstation を用意する</h4>
+
+<p>詳細は割愛します。chef10 と同じです。手順としては</p>
+
+<ul>
+<li>chef10 の chef-repo をコピー</li>
+<li>pem ファイル群を chef11 server からコピー</li>
+<li>knife configure -i にて knife.rb の生成</li>
+<li>cookbooks, roles, data_bags, environments 等を chef11 にアップロード。若干修正が必要な場合がある。</li>
+</ul>
+
+<p>です。</p>
+
+<h4 id="target-node-における旧-chef-client-の停止と削除">Target Node における旧 chef-client の停止と削除</h4>
+
+<p>稼働している Chef10 の chef-client を停止し削除、そして pem ファイル達を退避し
+てあげます。ここでは ssh で消す例を書きますが、これこそ Cookbook を書いて実行
+すれば良いと思います。</p>
+
+<pre><code>% ssh -i &lt;ssh_secret_key&gt; -l root &lt;ip_address&gt; \
+'service chef-client stop; apt-get -y remove chef; mv /etc/chef /etc/chef.old'
+</code></pre>
+
+<h4 id="再-knife-bootstrap-実行">再 knife bootstrap 実行</h4>
+
+<p>Chef11 の Workstation から knife bootstrap を実行します。これによって Target
+Node に Chef11 の環境がインストールされ Chef11 Server と接続出来ます。</p>
+
+<pre><code>% knife bootstrap &lt;ip_address&gt; -N vmtest01 -r 'role[base]' -i &lt;ssh_secret_key&gt; \
+-x root -d chef-full
+</code></pre>
+
+<p>role[base] 中の run_list に&rsquo;chef-client::service&rsquo; を追加すると chef-client が
+常時稼動してくれて定期的に Chef Server と接続、更新してくれます。</p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>chef-client の更新は簡単に出来た！</p>
+
+<p>今回はデフォルトの distro &lsquo;chef-full&rsquo; の例で書いたのだけど、distro には他にも
+下記がある。</p>
+
+<p><a href="https://github.com/opscode/chef/tree/master/lib/chef/knife/bootstrap">https://github.com/opscode/chef/tree/master/lib/chef/knife/bootstrap</a></p>
+
+<p>Linux のディストリビューション名がついた distro は ruby をパッケージで, Chef
+を gem でインストールしている。下記は distro &lsquo;ubuntu12.04-gems&rsquo; のコードの抜粋
+です。</p>
+
+<pre><code class="language-bash">if [ ! -f /usr/bin/chef-client ]; then
+  aptitude update
+  aptitude install -y ruby ruby1.8-dev build-essential wget libruby1.8 rubygems
+fi
+  
+gem update --no-rdoc --no-ri
+gem install ohai --no-rdoc --no-ri --verbose
+gem install chef --no-rdoc --no-ri --verbose &lt;%= bootstrap_version_string %&gt;
+</code></pre>
+
+<p>ruby はディストリビューションが用意しているパッケージを。Chef は
+bootstrap_version_string を指定し gem でインストールしている。</p>
+
+<p>つまり &lsquo;ubuntu12.04-gems&rsquo; でも chef-client の更新は出来る。ちなみに試してみま
+した。chef-client の停止・削除を下記の通り行うと、全く同じ knife bootstrap コ
+マンドで chef-client のアップデートが行えた。</p>
+
+<pre><code>% ssh -i &lt;ssh_secret_key&gt; -l root &lt;ip_address&gt; 'service chef-client stop; mv \
+/usr/local/bin/chef-client /usr/local/bin/chef-client.old; mv /etc/chef /etc/chef.old'
+</code></pre>
+
+<p>以上です。</p>
+
+<p>なんか簡単なこと書くのに長くなっちゃったけど&hellip;。運用を僕らはまだ出来ていない
+のだけど、その時のことを考えると今回の試験はしてみたかったし、いい結果が出てよ
+かった。Chef がメジャーバージョンアップされて Chef Server の構成が大きく代わっ
+ても対応した cookbook, role, .. があればスムースに移行出来る。</p>
+
+<p>Chef 無しにはインフラエンジニアやってられない時代が来たって感じｗ Chef 周りた
+のしー！</p>
+
+<p>追伸: 今回の方法より良いベストプラクティス的な方法があれば教えて下さい。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/03/15/chef-contenuously-deploy/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -759,306 +1017,6 @@ Swift-Proxy の関連付け、または Load-Balancer と HTTP-Server の関連�
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/01/14/arch-linux-setup/">Arch Linux セットアップまとめ</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-01-14'>
-            January 14, 2013</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>(2013/08/31 修正しました)</p>
-
-<p>自宅のノート PC にいつも Debian Gnu/Linux unstable を入れて作業してたのだけど、
-Arch Linux が試したくなって入れてみた。すごくイイ。ミニマル思考で常に最新。端
-末に入れる OS としては最適かも!と思えてきた。Ubuntu はデスクトップ環境で扱う
-にはチト大きすぎるし。FreeBSD のコンパイル待ち時間が最近耐えられないし&hellip;。</p>
-
-<p>前リリースの Arch Linux には /arch/setup という簡易インストーラがあったのだけ
-ど、それすら最近無くなった。環境作る方法を自分のためにもメモしておきます。</p>
-
-<h4 id="os-イメージ-iso-取得とインストール用-usb-スティック作成">OS イメージ iso 取得とインストール用 USB スティック作成</h4>
-
-<p>Linux, Windows, Mac で作り方が変わるようだけど、自分は Mac OSX を使ってインス
-トール USB スティックを作成した。</p>
-
-<p>diskutil で USB スティック装着前後の disk デバイス番号を覚える</p>
-
-<pre><code>% diskutil list
-</code></pre>
-
-<p>(ここでは /dev/rdisk4 として進める。)</p>
-
-<p>アンマウントする。</p>
-
-<pre><code>% sudo diskutil unmountDisk /dev/rdisk4
-</code></pre>
-
-<p>ダウンロードした iso を USB スティックに書き込む。</p>
-
-<pre><code>% sudo dd if=/path/to/downloaded/iso of=/dev/rdisk4 bs=8192
-% sudo diskutil eject /dev/rdisk4
-</code></pre>
-
-<h4 id="usb-スティック装着しインストール開始">USB スティック装着しインストール開始</h4>
-
-<p>起動するとメニューが表示されるので x86_64 を選んで起動。プロンプトが表示される。</p>
-
-<p>まず disk のパーティション作成。</p>
-
-<pre><code># fdisk /dev/sda # 環境に合わせてデバイス名変更
-# fdisk -l /dev/sda
-デバイス ブート      始点        終点     ブロック   Id  システム
-/dev/sda1            2048     4196351     2097152   82  Linux スワップ / Solaris
-/dev/sda2   *     4196352   156301487    76052568   83  Linux
-</code></pre>
-
-<p>上記のように切りました。fdisk の使い方は&hellip;ぐぐってください。また /boot にあたるパーティション
-にブートフラグを必ず付けること。</p>
-
-<p>ファイルシステムを作ってマウント。</p>
-
-<pre><code># mkfs.ext4 /dev/sda2
-# mount -t ext4 /dev/sda2 /mnt
-</code></pre>
-
-<p>コアシステムのインストール</p>
-
-<pre><code># pacstrap /mnt base base-devel
-</code></pre>
-
-<p>fstab の配置。必要に応じて /dev/sda1 (上記で作った) をスワップとして加筆。</p>
-
-<pre><code># genfstab -p /mnt &gt;&gt; /mnt/etc/fstab
-</code></pre>
-
-<h4 id="chroot-して-dev-sda2-内コアシステムで作業">chroot して /dev/sda2 内コアシステムで作業</h4>
-
-<p>chroot する。</p>
-
-<pre><code># arch-chroot /mnt
-</code></pre>
-
-<p>キーマップを us 配列で CTRL と Caps をスワップしたいので下記の作業を実施。</p>
-
-<pre><code># cd /usr/share/kbd/keymaps/i386/qwerty
-# cp us.map.gz usx.map.gz
-# gunzip usx.map.gz
-# vi usx.map
-keycode  58 = Control # Caps_Lock を Control に置き換え
-# gzip usx.map
-# loadkeys usx # キーマップをロード
-# vi /etc/vconsole.conf
-KEYMAP=usx # 追記
-</code></pre>
-
-<p>ロケールの生成。</p>
-
-<pre><code># vi /etc/locale.gen # ja_JP.UTF-8 のコメントアウトを削除
-# locale-gen
-</code></pre>
-
-<p>タイムゾーンの設定。</p>
-
-<pre><code># ln -s /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
-</code></pre>
-
-<p>ホスト名修正。</p>
-
-<pre><code># echo &quot;&lt;ホスト名&gt;&quot; &gt; /etc/hostname
-# vi /etc/hosts # 適宜修正
-</code></pre>
-
-<p>ネットワークの設定。まずは有線。</p>
-
-<pre><code># systemctl enable dhcpcd@eth0.service
-</code></pre>
-
-<p>ブートローダとして syslinux を使う。ディスクデバイス名だけ修正。syslinux のインストーラが
-うまくデバイス名を拾ってくれない。</p>
-
-<pre><code># pacman -S syslinux
-# vi /boot/syslinux/syslinux.cfg
-LABEL arch
-    MENU LABEL Arch Linux
-    LINUX ../vmlinuz-linux
-    APPEND root=/dev/sda2 ro
-    INITRD ../initramfs-linux.img
-</code></pre>
-
-<p>パスワード設定。</p>
-
-<pre><code># passwd
-</code></pre>
-
-<h4 id="再起動し-システムをインストールした-dev-sda2-で起動する">再起動し システムをインストールした /dev/sda2 で起動する。</h4>
-
-<p>再起動し USB スティックを抜く。起動したら root ユーザでログイン。</p>
-
-<p>無線デバイスの設定。</p>
-
-<pre><code># pacman -S dialog wpa_supplicant
-# wifi-menu
-</code></pre>
-
-<p>検知されたアクセスポイント名が表示されるので希望のモノを選択しパスフレーズを入力。</p>
-
-<p>一般ユーザの作成と sudo 設定。</p>
-
-<pre><code># useradd -u &lt;UID) -d /home/&lt;UESRNAME&gt; -m &lt;USERNAME&gt;
-# passwd &lt;USERNAME&gt;
-# pacman -S sudo
-# vigr # wheel グループに自分を追記
-# visudo # wheel のところのコメントアウトを削除
-%wheel ALL=(ALL) ALL
-</code></pre>
-
-<h4 id="x-周りの設定">X 周りの設定</h4>
-
-<p>X とウィンドウマネージャのインストール。ウィンドウマネージャは好きなものを。私
-は awesome を選びました。</p>
-
-<pre><code># pacman -S xorg xorg-xinit xterm rxvt-unicode xf86-video-intel awesome
-</code></pre>
-
-<p>日本語フォントのインストールと日本語インプットメソッドの設定。ibus と mozc を選んだ。
-結構賢い。とりあえずのフォントとして sazanami を。</p>
-
-<pre><code># vi /etc/pacman.conf # 下記のレポジトリを追記
-[pnsft-pur]
-SigLevel = Optional TrustAll
-Server = http://downloads.sourceforge.net/project/pnsft-aur/pur/$arch
-# pacman -Syy
-# pacman -S ttf-sazanami ibus-mozc mozc
-</code></pre>
-
-<p>一般ユーザの ~/.xinitrc に下記を追記。</p>
-
-<pre><code>% vi ~/.xinitrc
-xrdb -merge $HOME/.Xresources
-
-export LANG=ja_JP.UTF-8
-export LANGUAGE=ja_JP.UTF-8
-export LC_ALL=ja_JP.UTF-8
-export LC_CTYPE=ja_JP.UTF-8
-
-export GTK_IM_MODULE=ibus
-export QT_IM_MODULE=xim
-export XMODIFIERS=@im=ibus
-ibus-daemon --daemonize --xim &amp;
-
-setxkbmap -layout us -option ctrl:nocaps
-exec awesome
-</code></pre>
-
-<p>X を起動。</p>
-
-<pre><code>% startx
-</code></pre>
-
-<p>私は awesome を選びましたが、たまに enlightenment も選択します。この時点で enlightenment の
-メニューなど、日本語化されているはずだが、厳しければ</p>
-
-<p><a href="https://wiki.archlinux.org/index.php/Input_Japanese_using_uim_(%E6%97%A5%E6%9C%AC%E8%AA%9E)">https://wiki.archlinux.org/index.php/Input_Japanese_using_uim_(%E6%97%A5%E6%9C%AC%E8%AA%9E)</a></p>
-
-<p>にある IPA フォント、VL ゴシックなどを入れる。こちらのほうが数段綺麗。</p>
-
-<p>IPA フォントの入れ方だけメモっておく。</p>
-
-<pre><code>% wget https://aur.archlinux.org/packages/ot/otf-ipafont/otf-ipafont.tar.gz
-% tar zxvf otf-ipafont.tar.gz
-% cd otf-ipafont
-% makepkg -s
-% sudo pacman -U &lt;生成された pkg.tar.xz ファイル&gt;
-</code></pre>
-
-<p>Thinkpad の真ん中ボタンでスクロールする。</p>
-
-<pre><code># vi /etc/X11/xorg.conf.d/10-thinkpad.conf # 新規生成
-Section &quot;InputClass&quot;
-  Identifier &quot;Trackpoint Wheel Emulation&quot;
-  MatchProduct &quot;TPPS/2 IBM TrackPoint|DualPoint Stick|Synaptics Inc. Composite TouchPad / TrackPoint|ThinkPad USB Keyboard with TrackPoint|USB Trackpoint pointing device|Composite TouchPad / TrackPoint&quot;
-  MatchDevicePath &quot;/dev/input/event*&quot;
-  Option  &quot;EmulateWheel&quot;  &quot;true&quot;
-  Option  &quot;EmulateWheelButton&quot; &quot;2&quot;
-  Option  &quot;Emulate3Buttons&quot; &quot;false&quot;
-  Option  &quot;XAxisMapping&quot;  &quot;6 7&quot;
-  Option  &quot;YAxisMapping&quot;  &quot;4 5&quot;
-EndSection
-</code></pre>
-
-<p>X の再起動をして終了。</p>
-
-<h4 id="まとめ">まとめ</h4>
-
-<p>今回はブログというより雑多なまとめになったけど、メモするだけでも意味があるので
-残しておいた。Debian / Ubuntu より手間は掛かるけど、エンジニアが何をやっている
-か掴めるのでいいカンジ。無駄なプロセスいないので起動もめちゃ速いし。何より最新
-のソフトウェア (安定したもの) が簡単に使えるのは嬉しい。ここに書いた手順は時間
-がすぎるに連れて意味がないものになっていくだろう。開発が活発でここ数年でも結構
-劇的にシステムが変更になってるみたい。systemd .. とか。理解するのに苦労する所
-はないので、エンジニアであれば誰でも扱えそうなところも魅力。</p>
-
-<p>OS なんて何でもいい時代 (抽象化されつつあるから) だけど、手元の端末に入れる OS
-だけは Arch Linux がいいなぁ。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/01/14/arch-linux-setup/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1175,6 +1133,20 @@ EndSection
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-11-27'>
+                                    November 27, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
                                 
                                     
@@ -1214,20 +1186,6 @@ EndSection
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-23'>
-                                    July 23, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1262,7 +1220,7 @@ EndSection
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">103</span>
+                                <span style="float:right;">104</span>
                             </header>
                         </article>
                     </li>

@@ -6,8 +6,246 @@
     <description>Recent content on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sun, 20 Nov 2016 11:27:00 +0900</lastBuildDate>
+    <lastBuildDate>Sun, 27 Nov 2016 21:00:45 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>coreos の etcd operator を触ってみた</title>
+      <link>http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/</link>
+      <pubDate>Sun, 27 Nov 2016 21:00:45 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/</guid>
+      <description>
+
+&lt;p&gt;こんにちは @jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;今日は某アドベントカレンダーに参加していて記事を書いています。
+記事だけ先出ししちゃいます..。&lt;/p&gt;
+
+&lt;p&gt;今日は最近 coreos がリリースした &amp;lsquo;etcd-operator&amp;rsquo; を触ってみようかと思います。ほぼ、README に書かれている手順通りに実施するのですが、所感を交えながら作業して記事にしてみたいと思います。&lt;/p&gt;
+
+&lt;p&gt;coreos が提供している etcd についてご存知ない方もいらっしゃると思いますが etcd は KVS ストレージでありながら Configuration Management Store として利用できる分散型ストレージです。Docker 等の環境を提供する coreos という軽量 OS 内でも etcd が起動していてクラスタで管理された情報をクラスタ内の各 OS が読み書きできる、といった機能を etcd が提供しています。
+詳細については公式サイトを御覧ください。&lt;/p&gt;
+
+&lt;p&gt;etcd 公式サイト : &lt;a href=&#34;https://coreos.com/etcd/docs/latest/&#34;&gt;https://coreos.com/etcd/docs/latest/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;etcd-operator はこの etcd クラスタを kubernetes 上でクラスタ管理するための簡単に運用管理するためのソフトウェアになります。&lt;/p&gt;
+
+&lt;p&gt;etcd-operator 公式アナウンス : &lt;a href=&#34;https://coreos.com/blog/introducing-the-etcd-operator.html&#34;&gt;https://coreos.com/blog/introducing-the-etcd-operator.html&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;後に実際に触れていきますが下記のような管理が可能になります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;etcd クラスタの構築&lt;/li&gt;
+&lt;li&gt;etcd クラスタのスケールアップ・ダウン&lt;/li&gt;
+&lt;li&gt;etcd Pod の障害時自動復旧&lt;/li&gt;
+&lt;li&gt;etcd イメージをオンラインで最新のモノにアップグレード&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;では早速利用してみたいと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;必要な環境&#34;&gt;必要な環境&lt;/h2&gt;
+
+&lt;p&gt;下記の環境が事前に用意されている必要があります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Docker&lt;/li&gt;
+&lt;li&gt;Kubernetes or minikube+kubernetes (&lt;a href=&#34;https://github.com/kubernetes/minikube&#34;&gt;https://github.com/kubernetes/minikube&lt;/a&gt;)&lt;/li&gt;
+&lt;li&gt;etcdctl : &lt;a href=&#34;https://github.com/coreos/etcd/tree/master/etcdctl&#34;&gt;https://github.com/coreos/etcd/tree/master/etcdctl&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;作業準備&#34;&gt;作業準備&lt;/h2&gt;
+
+&lt;p&gt;下記のレポジトリをクローンします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git clone https://github.com/coreos/etcd-operator.git
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;operator-のデプロイ&#34;&gt;Operator のデプロイ&lt;/h2&gt;
+
+&lt;p&gt;下記のような内容のファイルが記さているファイルを利用します。中身を確認しましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ cat  example/deployment.yaml
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: etcd-operator
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: etcd-operator
+    spec:
+      containers:
+      - name: etcd-operator
+        image: quay.io/coreos/etcd-operator
+        env:
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;kind: Deployment で etcd-operator のイメージを使ってレプリカ数1のポッドを起動しているのが分かると思います。実際にデプロイします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f example/deployment.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;どんなポッドが起動したか確認します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-operator-217127005-futo0            1/1       Running   0          1m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;あと、これは自分も知りませんでしたがサードパーティリソースという枠があるらしく下記のように確認することができます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get thirdpartyresources
+NAME                      DESCRIPTION             VERSION(S)
+etcd-cluster.coreos.com   Managed etcd clusters   v1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;replica数1 ですが、ポッドなのでポッド内のプロセスに問題があれば kubernetes が自動で修復 (場合によってポッドの再構築) されます。また replica 数を増やす運用も考えられそうです。&lt;/p&gt;
+
+&lt;h2 id=&#34;etcd-クラスタの構築&#34;&gt;etcd クラスタの構築&lt;/h2&gt;
+
+&lt;p&gt;下記の内容のファイルで etcd をデプロイします。中身を確認しましょう。
+API は coreos.com/v1 で kind: EtcdCluster という情報が記されています。また version でイメージバージョンが記されているのかなということが後に確認できます。また size でレプリカ数が記されているようです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ cat example/example-etcd-cluster.yaml
+apiVersion: &amp;quot;coreos.com/v1&amp;quot;
+kind: &amp;quot;EtcdCluster&amp;quot;
+metadata:
+  name: &amp;quot;etcd-cluster&amp;quot;
+spec:
+  size: 3
+  version: &amp;quot;v3.1.0-alpha.1&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;デプロイをしてみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f example/example-etcd-cluster.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;クラスタがデプロイされたか見てみます。3つのポッドが確認できます。やはりファイル中 size: 3 はレプリカ数だったようです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get pods --show-all
+NAME                                     READY     STATUS      RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running     0          1m
+etcd-cluster-0001                        1/1       Running     0          36s
+etcd-cluster-0002                        1/1       Running     0          21s
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;同様に Service について確認します。etcd-cluster-000[012] の3つが今回作った etcd クラスタです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get svc
+NAME                    CLUSTER-IP   EXTERNAL-IP   PORT(S)             AGE
+etcd-cluster            10.0.0.80    &amp;lt;none&amp;gt;        2379/TCP            1m
+etcd-cluster-0000       10.0.0.13    &amp;lt;none&amp;gt;        2380/TCP,2379/TCP   1m
+etcd-cluster-0001       10.0.0.111   &amp;lt;none&amp;gt;        2380/TCP,2379/TCP   1m
+etcd-cluster-0002       10.0.0.183   &amp;lt;none&amp;gt;        2380/TCP,2379/TCP   50s
+kubernetes              10.0.0.1     &amp;lt;none&amp;gt;        443/TCP             5d
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;etcd-クラスタをスケールアウト&#34;&gt;etcd クラスタをスケールアウト&lt;/h2&gt;
+
+&lt;p&gt;では etcd クラスタのレプリカ数を増やすことでスケールアウトしてみます。が、今現在 (&lt;sup&gt;2016&lt;/sup&gt;&amp;frasl;&lt;sub&gt;12&lt;/sub&gt;) 時点では一部不具合があるらしく回避策として下記の通り curl を用いてスケールアウトすることが可能なようです。&lt;/p&gt;
+
+&lt;p&gt;下記の内容で body.json ファイルを用意します。size: 5 になっていることが確認できて、レプリカ数5になるのだなと判断できます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ cat body.json
+{
+  &amp;quot;apiVersion&amp;quot;: &amp;quot;coreos.com/v1&amp;quot;,
+  &amp;quot;kind&amp;quot;: &amp;quot;EtcdCluster&amp;quot;,
+  &amp;quot;metadata&amp;quot;: {
+    &amp;quot;name&amp;quot;: &amp;quot;etcd-cluster&amp;quot;,
+    &amp;quot;namespace&amp;quot;: &amp;quot;default&amp;quot;
+  },
+  &amp;quot;spec&amp;quot;: {
+    &amp;quot;size&amp;quot;: 5
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで curl で実行するためプロキシを稼働します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl proxy --port=8080
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;curl で先程作った body.json を PUT してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;curl -H &#39;Content-Type: application/json&#39; -X PUT --data @body.json http://127.0.0.1:8080/apis/coreos.com/v1/namespaces/default/etcdclusters/etcd-cluster
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;クラスタがスケールアウトされたか確認しましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get pods --show-all
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          5m
+etcd-cluster-0001                        1/1       Running   0          4m
+etcd-cluster-0002                        1/1       Running   0          4m
+etcd-cluster-0003                        1/1       Running   0          32s
+etcd-cluster-0004                        1/1       Running   0          17s
+etcd-operator-217127005-futo0            1/1       Running   0          9m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;5台構成のクラスタにスケールアウトしたことが確認できます。&lt;/p&gt;
+
+&lt;h2 id=&#34;etcd-にアクセス&#34;&gt;etcd にアクセス&lt;/h2&gt;
+
+&lt;p&gt;5台構成の etcd クラスタがデプロイできたので etcd に etcdctl を使ってアクセスしてみましょう。事前に etcdctl をインストールする必要があります。また私の環境もそうだったのですがローカルの Mac に minikube を使って kubernetes 環境を構築しているので下記のように nodePort を作るため作業が必要です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f example/example-etcd-cluster-nodeport-service.json
+$ export ETCDCTL_API=3
+$ export ETCDCTL_ENDPOINTS=$(minikube service etcd-cluster-client-service --url)
+$ etcdctl put foo bar
+$ etcdctl get foo
+foo
+bar
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;etcdctl でキー・値を入力・読み込みが可能であることが分かりました！&lt;/p&gt;
+
+&lt;h2 id=&#34;ポッドの自動復旧&#34;&gt;ポッドの自動復旧&lt;/h2&gt;
+
+&lt;p&gt;kubernetes を普段使っている方は分かると思うのですがポッドを落としても kubernetes が自動復旧してくれます。ここで一つポッドを削除してみようと思います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          11m
+etcd-cluster-0001                        1/1       Running   0          11m
+etcd-cluster-0002                        1/1       Running   0          11m
+etcd-cluster-0003                        1/1       Running   0          6m
+etcd-cluster-0004                        1/1       Running   0          6m
+etcd-operator-217127005-futo0            1/1       Running   0          16m
+
+$kubect delete pod etcd-cluster-0004
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;しばらくすると下記の通り etcd-cluster-0004 に代わり etcd-cluster-0005 が稼働していることが確認できると思います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          12m
+etcd-cluster-0001                        1/1       Running   0          12m
+etcd-cluster-0002                        1/1       Running   0          11m
+etcd-cluster-0003                        1/1       Running   0          7m
+etcd-cluster-0005                        1/1       Running   0          3s
+etcd-operator-217127005-futo0            1/1       Running   0          17m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;kubernetes の上で構成することでうまく kubernetes のメリットを活かしつつ etcd クラスタを構成できていると言えると思います。記事執筆時ではまだ不具合が幾つかありました (上記の curl で実施した箇所や、イメージのアップグレード) が、etcd を手動で構築するより kubernetes で構成するほうがメリットが多いことは明らかです。また kubernetes のポッドから kubernetes dns を介してサービスネームに直接アクセスできるのでポッドから etcd に情報を読み書きすることも容易になりそうです。&lt;/p&gt;
+
+&lt;p&gt;ですが etcd に収めるデータの性質によっては運用面で厳しくなることも想定できます。coreos 内で etcd クラスタを介して互いのコンテナ間でコンフィグを共有し合う使い方は非常に意味があると思うのですが、coreos 外の独自のソフトウェアがいろんな種別のデータを etcd クラスタに外から入出力することの意味はそれほど無いように思えます。であれば高耐久性で運用のし易い軽量な KVS ソフトウェアを使うべきだからです。&lt;/p&gt;
+
+&lt;p&gt;また今回紹介した etcd-operator とは別に coreos が同時にアナウンスした(&lt;a href=&#34;https://coreos.com/blog/the-prometheus-operator.html&#34;&gt;https://coreos.com/blog/the-prometheus-operator.html&lt;/a&gt;) に関しても興味を持っているので後に触ってみたいと思います。&lt;/p&gt;
+
+&lt;p&gt;何と言うか所感として最後に述べるとサーバレスが叫ばれている中でわざわざクラスタソフトウェアを自前で管理するのか？と疑問も確かに残ります。それこそクラウドプラットフォームが提供すべき機能だと思うからです..。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>Helm を使って Kubernetes を管理する</title>
@@ -3531,174 +3769,6 @@ OpenStack の複数台構成となるとそれぞれのノードのパラメー�
 無く安定してきている感があります。&lt;/p&gt;
 
 &lt;p&gt;&lt;a href=&#34;https://bugs.launchpad.net/openstack-chef&#34;&gt;https://bugs.launchpad.net/openstack-chef&lt;/a&gt;&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>オブジェクトストレージ minio を使ってみる</title>
-      <link>http://jedipunkz.github.io/blog/2015/06/25/minio/</link>
-      <pubDate>Thu, 25 Jun 2015 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2015/06/25/minio/</guid>
-      <description>
-
-&lt;p&gt;こんにちは、@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;久々にブログ更新になりましたが、ウォーミングアップで minio というオブジェクト
-ストレージを使ってみたメモを記事にしたいと想います。&lt;/p&gt;
-
-&lt;p&gt;minio は Minimal Object Storage の名の通り、最小限の小さなオブジェクトストレー
-ジになります。公式サイトは下記のとおりです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://minio.io/&#34;&gt;http://minio.io/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;Golang で記述されていて Apache License v2 の元に公開されています。&lt;/p&gt;
-
-&lt;p&gt;最近、資金調達の話も挙がっていたので、これから一般的になってくるのかもしれません。&lt;/p&gt;
-
-&lt;p&gt;早速ですが、minio を動かしてみます。&lt;/p&gt;
-
-&lt;h2 id=&#34;minio-を起動する&#34;&gt;Minio を起動する&lt;/h2&gt;
-
-&lt;p&gt;方法は mithub.com/minio/minio の README に書かれていますが、バイナリを持ってき
-て実行権限を与えるだけのシンプルな手順になります。&lt;/p&gt;
-
-&lt;p&gt;Linux でも Mac でも動作しますが、今回私は Mac 上で動作させました。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% wget https://dl.minio.io:9000/updates/2015/Jun/darwin-amd64/minio
-% chmod +x minio
-% ./minio mode memory limit 512MB
-Starting minio server on: http://127.0.0.1:9000
-Starting minio server on: http://192.168.1.123:9000
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;起動すると Listening Port と共に EndPoint の URL が表示されます。&lt;/p&gt;
-
-&lt;p&gt;次に mc という minio client を使って動作確認します。&lt;/p&gt;
-
-&lt;h2 id=&#34;mc-を使ってアクセスする&#34;&gt;Mc を使ってアクセスする&lt;/h2&gt;
-
-&lt;p&gt;mc は下記の URL にあります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/minio/mc&#34;&gt;https://github.com/minio/mc&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;こちらもダウンロードして実行権限を付与するのみです。mc は minio だけではなく、
-Amazon S3 とも互換性がありアクセス出来ますが、せっかくなので上記で起動した
-minio にアクセスします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% wget https://dl.minio.io:9000/updates/2015/Jun/darwin-amd64/mc
-% chmod +x mc
-% ./mc config generate
-/mc ls  http://127.0.0.1:9000/bucket01
-[2015-06-25 16:21:37 JST]     0B testfile
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;上記では予め作っておいた bucket01 という名前のバケットの中身を表示しています。
-作り方はこれから minio の Golang ライブラリである minio-go を使って作りました。
-これから説明します。&lt;/p&gt;
-
-&lt;p&gt;また ls コマンドの他にも Usage を確認すると幾つかのサブコマンドが見つかります。&lt;/p&gt;
-
-&lt;h2 id=&#34;minio-の-golang-ライブラリ-minio-go-を使ってアクセスする&#34;&gt;Minio の Golang ライブラリ minio-go を使ってアクセスする&lt;/h2&gt;
-
-&lt;p&gt;さて、せっかくのオブジェクトストレージも手作業でファイルやバケットのアクセスを
-行うのはもったいないです。ソフトウェアを使って操作してす。&lt;/p&gt;
-
-&lt;p&gt;minio のサンプルのコードを参考にして、下記のコードを作成してみました。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-go&#34;&gt;package main
-
-import (
-    &amp;quot;log&amp;quot;
-    &amp;quot;os&amp;quot;
-
-    &amp;quot;github.com/minio/minio-go&amp;quot;
-)
-
-func main() {
-    config := minio.Config{
-        // AccessKeyID:     &amp;quot;YOUR-ACCESS-KEY-HERE&amp;quot;,
-        // SecretAccessKey: &amp;quot;YOUR-PASSWORD-HERE&amp;quot;,
-        Endpoint:        &amp;quot;http://127.0.0.1:9000&amp;quot;,
-    }
-
-    s3Client, err := minio.New(config)
-    if err != nil {
-        log.Fatalln(err)
-    }
-
-    err = s3Client.MakeBucket(&amp;quot;bucket01&amp;quot;, minio.BucketACL(&amp;quot;public-read-write&amp;quot;))
-    if err != nil {
-        log.Fatalln(err)
-    }
-    log.Println(&amp;quot;Success: I made a bucket.&amp;quot;)
-
-    object, err := os.Open(&amp;quot;testfile&amp;quot;)
-    if err != nil {
-        log.Fatalln(err)
-    }
-    defer object.Close()
-    objectInfo, err := object.Stat()
-    if err != nil {
-        object.Close()
-        log.Fatalln(err)
-    }
-
-    err = s3Client.PutObject(&amp;quot;bucket01&amp;quot;, &amp;quot;testfile&amp;quot;, &amp;quot;application/octet-stream&amp;quot;, objectInfo.Size(), object)
-    if err != nil {
-        log.Fatalln(err)
-    }
-
-    for bucket := range s3Client.ListBuckets() {
-        if bucket.Err != nil {
-            log.Fatalln(bucket.Err)
-        }
-        log.Println(bucket.Stat)
-    }
-
-    for object := range s3Client.ListObjects(&amp;quot;bucket01&amp;quot;, &amp;quot;&amp;quot;, true) {
-        if object.Err != nil {
-            log.Fatalln(object.Err)
-        }
-        log.Println(object.Stat)
-    }
-
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;簡単ですがコードの説明をします。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;11行目で config の上書きをします。先ほど起動した minio の EndPoint を記します。&lt;/li&gt;
-&lt;li&gt;17行目で minio にセッションを張り接続を行っています。&lt;/li&gt;
-&lt;li&gt;22行目で &amp;lsquo;bucket01&amp;rsquo; というバケットを生成しています。その際にACLも設定&lt;/li&gt;
-&lt;li&gt;28行目から42行目で &amp;lsquo;testfile&amp;rsquo; というローカルファイルをストレージにPUTしています。&lt;/li&gt;
-&lt;li&gt;44行目でバケット一覧を表示しています。&lt;/li&gt;
-&lt;li&gt;51行目で上記で作成したバケットの中のオブジェクト一覧を表示しています。&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;実行結果は下記のとおりです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;2015/06/25 16:56:21 Success: I made a bucket.
-2015/06/25 16:56:21 {bucket01 2015-06-25 07:56:21.155 +0000 UTC}
-2015/06/25 16:56:21 {&amp;quot;d41d8cd98f00b204e9800998ecf8427e&amp;quot; testfile 2015-06-25
-07:56:21.158 +0000 UTC 0 {minio minio} STANDARD}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;バケットの作成とオブジェクトの PUT が正常に行えたことをログから確認できます。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;上記の通り、今現在出来ることは少ないですが冒頭にも記したとおり資金調達の話も挙
-がってきていますので、これからどのような方向に向かうか楽しみでもあります。また
-最初から Golang, Python 等のライブラリが用意されているところが今どきだなぁと想
-いました。オブジェクトストレージを手作業で操作するケースは現場では殆ど無いと想
-いますので、その辺は現在では当たり前になりつつあるかもしれません。ちなみに
-Python のライブラリは下記の URL にあります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/minio/minio-py&#34;&gt;https://github.com/minio/minio-py&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;以上です。&lt;/p&gt;
 </description>
     </item>
     
