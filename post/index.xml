@@ -6,8 +6,246 @@
     <description>Recent content in Post-rsses on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sun, 20 Nov 2016 11:27:00 +0900</lastBuildDate>
+    <lastBuildDate>Sun, 27 Nov 2016 21:00:45 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/post/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>coreos の etcd operator を触ってみた</title>
+      <link>http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/</link>
+      <pubDate>Sun, 27 Nov 2016 21:00:45 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/</guid>
+      <description>
+
+&lt;p&gt;こんにちは @jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;今日は某アドベントカレンダーに参加していて記事を書いています。
+記事だけ先出ししちゃいます..。&lt;/p&gt;
+
+&lt;p&gt;今日は最近 coreos がリリースした &amp;lsquo;etcd-operator&amp;rsquo; を触ってみようかと思います。ほぼ、README に書かれている手順通りに実施するのですが、所感を交えながら作業して記事にしてみたいと思います。&lt;/p&gt;
+
+&lt;p&gt;coreos が提供している etcd についてご存知ない方もいらっしゃると思いますが etcd は KVS ストレージでありながら Configuration Management Store として利用できる分散型ストレージです。Docker 等の環境を提供する coreos という軽量 OS 内でも etcd が起動していてクラスタで管理された情報をクラスタ内の各 OS が読み書きできる、といった機能を etcd が提供しています。
+詳細については公式サイトを御覧ください。&lt;/p&gt;
+
+&lt;p&gt;etcd 公式サイト : &lt;a href=&#34;https://coreos.com/etcd/docs/latest/&#34;&gt;https://coreos.com/etcd/docs/latest/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;etcd-operator はこの etcd クラスタを kubernetes 上でクラスタ管理するための簡単に運用管理するためのソフトウェアになります。&lt;/p&gt;
+
+&lt;p&gt;etcd-operator 公式アナウンス : &lt;a href=&#34;https://coreos.com/blog/introducing-the-etcd-operator.html&#34;&gt;https://coreos.com/blog/introducing-the-etcd-operator.html&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;後に実際に触れていきますが下記のような管理が可能になります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;etcd クラスタの構築&lt;/li&gt;
+&lt;li&gt;etcd クラスタのスケールアップ・ダウン&lt;/li&gt;
+&lt;li&gt;etcd Pod の障害時自動復旧&lt;/li&gt;
+&lt;li&gt;etcd イメージをオンラインで最新のモノにアップグレード&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;では早速利用してみたいと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;必要な環境&#34;&gt;必要な環境&lt;/h2&gt;
+
+&lt;p&gt;下記の環境が事前に用意されている必要があります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Docker&lt;/li&gt;
+&lt;li&gt;Kubernetes or minikube+kubernetes (&lt;a href=&#34;https://github.com/kubernetes/minikube&#34;&gt;https://github.com/kubernetes/minikube&lt;/a&gt;)&lt;/li&gt;
+&lt;li&gt;etcdctl : &lt;a href=&#34;https://github.com/coreos/etcd/tree/master/etcdctl&#34;&gt;https://github.com/coreos/etcd/tree/master/etcdctl&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;作業準備&#34;&gt;作業準備&lt;/h2&gt;
+
+&lt;p&gt;下記のレポジトリをクローンします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git clone https://github.com/coreos/etcd-operator.git
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;operator-のデプロイ&#34;&gt;Operator のデプロイ&lt;/h2&gt;
+
+&lt;p&gt;下記のような内容のファイルが記さているファイルを利用します。中身を確認しましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ cat  example/deployment.yaml
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: etcd-operator
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: etcd-operator
+    spec:
+      containers:
+      - name: etcd-operator
+        image: quay.io/coreos/etcd-operator
+        env:
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;kind: Deployment で etcd-operator のイメージを使ってレプリカ数1のポッドを起動しているのが分かると思います。実際にデプロイします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f example/deployment.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;どんなポッドが起動したか確認します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-operator-217127005-futo0            1/1       Running   0          1m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;あと、これは自分も知りませんでしたがサードパーティリソースという枠があるらしく下記のように確認することができます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get thirdpartyresources
+NAME                      DESCRIPTION             VERSION(S)
+etcd-cluster.coreos.com   Managed etcd clusters   v1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;replica数1 ですが、ポッドなのでポッド内のプロセスに問題があれば kubernetes が自動で修復 (場合によってポッドの再構築) されます。また replica 数を増やす運用も考えられそうです。&lt;/p&gt;
+
+&lt;h2 id=&#34;etcd-クラスタの構築&#34;&gt;etcd クラスタの構築&lt;/h2&gt;
+
+&lt;p&gt;下記の内容のファイルで etcd をデプロイします。中身を確認しましょう。
+API は coreos.com/v1 で kind: EtcdCluster という情報が記されています。また version でイメージバージョンが記されているのかなということが後に確認できます。また size でレプリカ数が記されているようです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ cat example/example-etcd-cluster.yaml
+apiVersion: &amp;quot;coreos.com/v1&amp;quot;
+kind: &amp;quot;EtcdCluster&amp;quot;
+metadata:
+  name: &amp;quot;etcd-cluster&amp;quot;
+spec:
+  size: 3
+  version: &amp;quot;v3.1.0-alpha.1&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;デプロイをしてみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f example/example-etcd-cluster.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;クラスタがデプロイされたか見てみます。3つのポッドが確認できます。やはりファイル中 size: 3 はレプリカ数だったようです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get pods --show-all
+NAME                                     READY     STATUS      RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running     0          1m
+etcd-cluster-0001                        1/1       Running     0          36s
+etcd-cluster-0002                        1/1       Running     0          21s
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;同様に Service について確認します。etcd-cluster-000[012] の3つが今回作った etcd クラスタです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get svc
+NAME                    CLUSTER-IP   EXTERNAL-IP   PORT(S)             AGE
+etcd-cluster            10.0.0.80    &amp;lt;none&amp;gt;        2379/TCP            1m
+etcd-cluster-0000       10.0.0.13    &amp;lt;none&amp;gt;        2380/TCP,2379/TCP   1m
+etcd-cluster-0001       10.0.0.111   &amp;lt;none&amp;gt;        2380/TCP,2379/TCP   1m
+etcd-cluster-0002       10.0.0.183   &amp;lt;none&amp;gt;        2380/TCP,2379/TCP   50s
+kubernetes              10.0.0.1     &amp;lt;none&amp;gt;        443/TCP             5d
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;etcd-クラスタをスケールアウト&#34;&gt;etcd クラスタをスケールアウト&lt;/h2&gt;
+
+&lt;p&gt;では etcd クラスタのレプリカ数を増やすことでスケールアウトしてみます。が、今現在 (&lt;sup&gt;2016&lt;/sup&gt;&amp;frasl;&lt;sub&gt;12&lt;/sub&gt;) 時点では一部不具合があるらしく回避策として下記の通り curl を用いてスケールアウトすることが可能なようです。&lt;/p&gt;
+
+&lt;p&gt;下記の内容で body.json ファイルを用意します。size: 5 になっていることが確認できて、レプリカ数5になるのだなと判断できます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ cat body.json
+{
+  &amp;quot;apiVersion&amp;quot;: &amp;quot;coreos.com/v1&amp;quot;,
+  &amp;quot;kind&amp;quot;: &amp;quot;EtcdCluster&amp;quot;,
+  &amp;quot;metadata&amp;quot;: {
+    &amp;quot;name&amp;quot;: &amp;quot;etcd-cluster&amp;quot;,
+    &amp;quot;namespace&amp;quot;: &amp;quot;default&amp;quot;
+  },
+  &amp;quot;spec&amp;quot;: {
+    &amp;quot;size&amp;quot;: 5
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで curl で実行するためプロキシを稼働します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl proxy --port=8080
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;curl で先程作った body.json を PUT してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;curl -H &#39;Content-Type: application/json&#39; -X PUT --data @body.json http://127.0.0.1:8080/apis/coreos.com/v1/namespaces/default/etcdclusters/etcd-cluster
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;クラスタがスケールアウトされたか確認しましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get pods --show-all
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          5m
+etcd-cluster-0001                        1/1       Running   0          4m
+etcd-cluster-0002                        1/1       Running   0          4m
+etcd-cluster-0003                        1/1       Running   0          32s
+etcd-cluster-0004                        1/1       Running   0          17s
+etcd-operator-217127005-futo0            1/1       Running   0          9m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;5台構成のクラスタにスケールアウトしたことが確認できます。&lt;/p&gt;
+
+&lt;h2 id=&#34;etcd-にアクセス&#34;&gt;etcd にアクセス&lt;/h2&gt;
+
+&lt;p&gt;5台構成の etcd クラスタがデプロイできたので etcd に etcdctl を使ってアクセスしてみましょう。事前に etcdctl をインストールする必要があります。また私の環境もそうだったのですがローカルの Mac に minikube を使って kubernetes 環境を構築しているので下記のように nodePort を作るため作業が必要です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f example/example-etcd-cluster-nodeport-service.json
+$ export ETCDCTL_API=3
+$ export ETCDCTL_ENDPOINTS=$(minikube service etcd-cluster-client-service --url)
+$ etcdctl put foo bar
+$ etcdctl get foo
+foo
+bar
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;etcdctl でキー・値を入力・読み込みが可能であることが分かりました！&lt;/p&gt;
+
+&lt;h2 id=&#34;ポッドの自動復旧&#34;&gt;ポッドの自動復旧&lt;/h2&gt;
+
+&lt;p&gt;kubernetes を普段使っている方は分かると思うのですがポッドを落としても kubernetes が自動復旧してくれます。ここで一つポッドを削除してみようと思います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          11m
+etcd-cluster-0001                        1/1       Running   0          11m
+etcd-cluster-0002                        1/1       Running   0          11m
+etcd-cluster-0003                        1/1       Running   0          6m
+etcd-cluster-0004                        1/1       Running   0          6m
+etcd-operator-217127005-futo0            1/1       Running   0          16m
+
+$kubect delete pod etcd-cluster-0004
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;しばらくすると下記の通り etcd-cluster-0004 に代わり etcd-cluster-0005 が稼働していることが確認できると思います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          12m
+etcd-cluster-0001                        1/1       Running   0          12m
+etcd-cluster-0002                        1/1       Running   0          11m
+etcd-cluster-0003                        1/1       Running   0          7m
+etcd-cluster-0005                        1/1       Running   0          3s
+etcd-operator-217127005-futo0            1/1       Running   0          17m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;kubernetes の上で構成することでうまく kubernetes のメリットを活かしつつ etcd クラスタを構成できていると言えると思います。記事執筆時ではまだ不具合が幾つかありました (上記の curl で実施した箇所や、イメージのアップグレード) が、etcd を手動で構築するより kubernetes で構成するほうがメリットが多いことは明らかです。また kubernetes のポッドから kubernetes dns を介してサービスネームに直接アクセスできるのでポッドから etcd に情報を読み書きすることも容易になりそうです。&lt;/p&gt;
+
+&lt;p&gt;ですが etcd に収めるデータの性質によっては運用面で厳しくなることも想定できます。coreos 内で etcd クラスタを介して互いのコンテナ間でコンフィグを共有し合う使い方は非常に意味があると思うのですが、coreos 外の独自のソフトウェアがいろんな種別のデータを etcd クラスタに外から入出力することの意味はそれほど無いように思えます。であれば高耐久性で運用のし易い軽量な KVS ソフトウェアを使うべきだからです。&lt;/p&gt;
+
+&lt;p&gt;また今回紹介した etcd-operator とは別に coreos が同時にアナウンスした(&lt;a href=&#34;https://coreos.com/blog/the-prometheus-operator.html&#34;&gt;https://coreos.com/blog/the-prometheus-operator.html&lt;/a&gt;) に関しても興味を持っているので後に触ってみたいと思います。&lt;/p&gt;
+
+&lt;p&gt;何と言うか所感として最後に述べるとサーバレスが叫ばれている中でわざわざクラスタソフトウェアを自前で管理するのか？と疑問も確かに残ります。それこそクラウドプラットフォームが提供すべき機能だと思うからです..。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>Helm を使って Kubernetes を管理する</title>
@@ -3683,209 +3921,6 @@ func main() {
 Python のライブラリは下記の URL にあります。&lt;/p&gt;
 
 &lt;p&gt;&lt;a href=&#34;https://github.com/minio/minio-py&#34;&gt;https://github.com/minio/minio-py&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;以上です。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>VyOS で VXLAN を使ってみる</title>
-      <link>http://jedipunkz.github.io/blog/2014/12/16/vyos-vxlan/</link>
-      <pubDate>Tue, 16 Dec 2014 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2014/12/16/vyos-vxlan/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;VyOS に VXLAN が実装されたと聞いて少し触ってみました。この情報を知ったきっかけ
-は @upaa さんの下記の資料です。&lt;/p&gt;
-
-&lt;p&gt;参考資料 : &lt;a href=&#34;http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan&#34;&gt;http://www.slideshare.net/upaa/vyos-users-meeting-2-vyosvxlan&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;VyOS は御存知の通り実体は Debian Gnu/Linux 系の OS でその上に OSS なミドル
-ウェアが搭載されていて CLI でミドルウェアのコンフィギュレーション等が行えるモ
-ノになっています。Linux で VXLAN といえば OVS を使ったモノがよく知られています
-が VyOS の VXLAN 機能は Linux Kernel の実装を使っているようです。&lt;/p&gt;
-
-&lt;h2 id=&#34;要件&#34;&gt;要件&lt;/h2&gt;
-
-&lt;ul&gt;
-&lt;li&gt;トンネルを張るためのセグメントを用意&lt;/li&gt;
-&lt;li&gt;VyOS 1.1.1 (現在最新ステーブルバージョン) が必要&lt;/li&gt;
-&lt;li&gt;Ubuntu Server 14.04 LTS (同じく Linux VXLAN 搭載バージョン)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h2 id=&#34;構成&#34;&gt;構成&lt;/h2&gt;
-
-&lt;p&gt;特徴&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;マネージメント用セグメント 10.0.1.0/24 を用意&lt;/li&gt;
-&lt;li&gt;GRE と同じくトンネル終端が必要なのでそのためのセグメント 10.0.2.0/24 を用意&lt;/li&gt;
-&lt;li&gt;各 eth1 は IP reachable である必要があるので予め IP アドレスの設定と疎通を確認&lt;/li&gt;
-&lt;li&gt;VXLAN を喋れる Ubuntu 14.04 LTS x 1 台と VyOS 1.1.1 x 2 台で相互に疎通確認&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;pre&gt;&lt;code&gt;+-------------+-------------+------------ Management 10.0.1.0/24
-|10.0.0.254   |10.0.0.253   |10.0.0.1
-|eth0         |eth0         |eth0
-+----------+  +----------+  +----------+ 
-|  vyos01  |  |  vyos02  |  |  ubuntu  |
-+-+--------+  +----------+  +----------+ 
-| |eth1       | |eth1       | |eth1
-| |10.0.2.254 | |10.0.2.253 | |10.0.2.1
-| +-----------)-+-----------)-+---------- Tunneling 10.0.2.0/24
-|             |             |
-+-------------+-------------+------------ VXLAN(eth1にlink) 10.0.1.0/24
-10.0.1.254     10.0.1.253    10.0.1.1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;設定を投入&#34;&gt;設定を投入&lt;/h2&gt;
-
-&lt;p&gt;vyos01 の設定を行う。VXLAN の設定に必要なものは&amp;hellip;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;VNI (VXLAN Network Ideintity)という識別子&lt;/li&gt;
-&lt;li&gt;Multicast Group Address&lt;/li&gt;
-&lt;li&gt;互いに IP reachable なトンネルを張るためのインターフェース&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;です。これらを意識して下記の設定を vyos01 に投入します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ configure
-% set interfaces vxlan vxlan0
-% set interfaces vxlan vxlan0 group 239.1.1.1
-% set interfaces vxlan vxlan0 vni 42
-% set interfaces vxlan vxlan0 address &#39;10.0.1.254/24&#39;
-% set interfaces vxlan vxlan0 link eth1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;設定を確認します&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% exit
-$ show int
-...&amp;lt;省略&amp;gt;...
-    vxlan vxlan0 {
-     address 10.0.1.254/24
-     group 239.1.1.1
-     link eth1
-     vni 42
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;VyOS の CLI を介さず直 Linux の設定を iproute2 で確認してみましょう。
-VNI, Multicast Group Address と共に &amp;lsquo;link eth1&amp;rsquo; で設定したトンネルを終端するための物理 NIC が確認できます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;vyos@vyos01# ip -d link show vxlan0
-5: vxlan0: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
-    link/ether 86:24:26:b2:11:5c brd ff:ff:ff:ff:ff:ff promiscuity 0
-    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ttl 16 ageing 300
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;vyos02 の設定を同様に行います。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ congigure
-% set interfaces vxlan vxlan0 address &#39;10.0.1.253/24&#39;
-% set interfaces vxlan vxlan0 vni 42
-% set interfaces vxlan vxlan0 group 239.1.1.1
-% set interfaces vxlan vxlan0 link eth1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;設定の確認を行います。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;... 省略 ...
-vxlan vxlan0 {
-     address 10.0.1.254/24
-     group 239.1.1.1
-     link eth1
-     vni 42
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;同じく Linux の iproute2 で確認します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;vyos@vyos01# ip -d link show vxlan0
-5: vxlan0: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
-    link/ether 86:24:26:b2:11:5c brd ff:ff:ff:ff:ff:ff promiscuity 0
-    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ttl 16 ageing 300
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ubuntu ホストの設定を行っていきます。&lt;/p&gt;
-
-&lt;p&gt;Ubuntu Server 14.04 LTS であればパッチを当てること無く Linux Kernel の VXLAN 機能を使うことができます。
-設定内容は VyOS と同等です。VyOS がこの Linux の実装を使っているのがよく分かります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo modprobe vxlan
-sudo ip link add vxlan0 type vxlan id 42 group 239.1.1.1 dev eth1
-sudo ip link set up vxlan0
-sudo ip a add 10.0.1.1/24 dev vxlan0
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;同じく Linux iproute2 で確認を行います。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt; ip -d link show vxlan0
-5: vxlan0: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1450 qdisc noqueue state UNKNOWN mode DEFAULT group default
-    link/ether d6:ff:c1:27:69:a0 brd ff:ff:ff:ff:ff:ff promiscuity 0
-    vxlan id 42 group 239.1.1.1 dev eth1 port 32768 61000 ageing 300
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;疎通確認&#34;&gt;疎通確認&lt;/h2&gt;
-
-&lt;p&gt;疎通確認を行います。&lt;/p&gt;
-
-&lt;p&gt;ubuntu -&amp;gt; vyos01 の疎通確認です。ICMP で疎通が取れることを確認できます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;thirai@ubuntu:~$ ping 10.0.1.254 -c 3
-PING 10.0.1.254 (10.0.1.254) 56(84) bytes of data.
-64 bytes from 10.0.1.254: icmp_seq=1 ttl=64 time=0.272 ms
-64 bytes from 10.0.1.254: icmp_seq=2 ttl=64 time=0.336 ms
-64 bytes from 10.0.1.254: icmp_seq=3 ttl=64 time=0.490 ms
-
---- 10.0.1.254 ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss, time 1999ms
-rtt min/avg/max/mdev = 0.272/0.366/0.490/0.091 ms
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に ubuntu -&amp;gt; vyos02 の疎通確認です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;thirai@ubuntu:~$ ping 10.0.1.253 -c 3
-PING 10.0.1.253 (10.0.1.253) 56(84) bytes of data.
-64 bytes from 10.0.1.253: icmp_seq=1 ttl=64 time=0.272 ms
-64 bytes from 10.0.1.253: icmp_seq=2 ttl=64 time=0.418 ms
-64 bytes from 10.0.1.253: icmp_seq=3 ttl=64 time=0.451 ms
-
---- 10.0.1.253 ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss, time 1998ms
-rtt min/avg/max/mdev = 0.272/0.380/0.451/0.079 ms
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;この時点で ubuntu ホストの fdb (forwarding db) の内容を確認します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ bridge fdb show dev vxlan0
-00:00:00:00:00:00 dst 239.1.1.1 via eth1 self permanent
-4e:69:a4:a7:ef:1c dst 10.0.2.253 self
-86:24:26:b2:11:5c dst 10.0.2.254 self
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;vyos01, vyos02 のトンネル終端 IP アドレスと Mac アドレスが確認できます。ubuntu ホストから見ると
-送信先は vyos0[12] の VXLAN インターフェースではなく、あくまでもトンネル終端を行っているインターフェース
-になることがわかります。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;VyOS ver 1.1.0 には VXLAN を物理インターフェースに link する機能に不具合がありそうなので今ら ver 1.1.1 を使うしか
-なさそう。とは言え、ver 1.1.1 なら普通に動作しました。&lt;/p&gt;
-
-&lt;p&gt;VyOS は仮想ルータという位置付けなので今回紹介したようにインターフェースを VXLAN ネットワークに所属させる
-機能があるのみです。VXLAN Trunk を行うような設定はありません。これはハイパーバイザ上で動作させることを前提
-に設計されているので仕方ないです..というかスイッチで行うべき機能ですよね..。VM を接続して云々するには OVS
-のようなソフトウェアスイッチを使えばできます。&lt;/p&gt;
-
-&lt;p&gt;また fdb は時間が経つと情報が消えます。これは VXLAN のメッシュ構造なトンネルがその都度張られているのかどうか
-気になるところです。ICMP の送信で一発目のみマルチキャストでその後ユニキャストになることを確認しましたが、その
-一発目のマルチキャストでトンネリングがされるものなのでしょうか&amp;hellip;。あとで調べてみます。OVS のように CLI で
-トンネルがどのように張られているか確認する手段があれば良いのですが。&lt;/p&gt;
 
 &lt;p&gt;以上です。&lt;/p&gt;
 </description>

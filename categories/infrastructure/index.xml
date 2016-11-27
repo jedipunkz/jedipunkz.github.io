@@ -9,6 +9,244 @@
     <atom:link href="http://jedipunkz.github.io/categories/infrastructure/index.xml" rel="self" type="application/rss+xml" />
     
     <item>
+      <title>coreos の etcd operator を触ってみた</title>
+      <link>http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/</link>
+      <pubDate>Sun, 27 Nov 2016 21:00:45 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/</guid>
+      <description>
+
+&lt;p&gt;こんにちは @jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;今日は某アドベントカレンダーに参加していて記事を書いています。
+記事だけ先出ししちゃいます..。&lt;/p&gt;
+
+&lt;p&gt;今日は最近 coreos がリリースした &amp;lsquo;etcd-operator&amp;rsquo; を触ってみようかと思います。ほぼ、README に書かれている手順通りに実施するのですが、所感を交えながら作業して記事にしてみたいと思います。&lt;/p&gt;
+
+&lt;p&gt;coreos が提供している etcd についてご存知ない方もいらっしゃると思いますが etcd は KVS ストレージでありながら Configuration Management Store として利用できる分散型ストレージです。Docker 等の環境を提供する coreos という軽量 OS 内でも etcd が起動していてクラスタで管理された情報をクラスタ内の各 OS が読み書きできる、といった機能を etcd が提供しています。
+詳細については公式サイトを御覧ください。&lt;/p&gt;
+
+&lt;p&gt;etcd 公式サイト : &lt;a href=&#34;https://coreos.com/etcd/docs/latest/&#34;&gt;https://coreos.com/etcd/docs/latest/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;etcd-operator はこの etcd クラスタを kubernetes 上でクラスタ管理するための簡単に運用管理するためのソフトウェアになります。&lt;/p&gt;
+
+&lt;p&gt;etcd-operator 公式アナウンス : &lt;a href=&#34;https://coreos.com/blog/introducing-the-etcd-operator.html&#34;&gt;https://coreos.com/blog/introducing-the-etcd-operator.html&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;後に実際に触れていきますが下記のような管理が可能になります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;etcd クラスタの構築&lt;/li&gt;
+&lt;li&gt;etcd クラスタのスケールアップ・ダウン&lt;/li&gt;
+&lt;li&gt;etcd Pod の障害時自動復旧&lt;/li&gt;
+&lt;li&gt;etcd イメージをオンラインで最新のモノにアップグレード&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;では早速利用してみたいと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;必要な環境&#34;&gt;必要な環境&lt;/h2&gt;
+
+&lt;p&gt;下記の環境が事前に用意されている必要があります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;Docker&lt;/li&gt;
+&lt;li&gt;Kubernetes or minikube+kubernetes (&lt;a href=&#34;https://github.com/kubernetes/minikube&#34;&gt;https://github.com/kubernetes/minikube&lt;/a&gt;)&lt;/li&gt;
+&lt;li&gt;etcdctl : &lt;a href=&#34;https://github.com/coreos/etcd/tree/master/etcdctl&#34;&gt;https://github.com/coreos/etcd/tree/master/etcdctl&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;作業準備&#34;&gt;作業準備&lt;/h2&gt;
+
+&lt;p&gt;下記のレポジトリをクローンします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ git clone https://github.com/coreos/etcd-operator.git
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;operator-のデプロイ&#34;&gt;Operator のデプロイ&lt;/h2&gt;
+
+&lt;p&gt;下記のような内容のファイルが記さているファイルを利用します。中身を確認しましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ cat  example/deployment.yaml
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: etcd-operator
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: etcd-operator
+    spec:
+      containers:
+      - name: etcd-operator
+        image: quay.io/coreos/etcd-operator
+        env:
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;kind: Deployment で etcd-operator のイメージを使ってレプリカ数1のポッドを起動しているのが分かると思います。実際にデプロイします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f example/deployment.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;どんなポッドが起動したか確認します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-operator-217127005-futo0            1/1       Running   0          1m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;あと、これは自分も知りませんでしたがサードパーティリソースという枠があるらしく下記のように確認することができます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get thirdpartyresources
+NAME                      DESCRIPTION             VERSION(S)
+etcd-cluster.coreos.com   Managed etcd clusters   v1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;replica数1 ですが、ポッドなのでポッド内のプロセスに問題があれば kubernetes が自動で修復 (場合によってポッドの再構築) されます。また replica 数を増やす運用も考えられそうです。&lt;/p&gt;
+
+&lt;h2 id=&#34;etcd-クラスタの構築&#34;&gt;etcd クラスタの構築&lt;/h2&gt;
+
+&lt;p&gt;下記の内容のファイルで etcd をデプロイします。中身を確認しましょう。
+API は coreos.com/v1 で kind: EtcdCluster という情報が記されています。また version でイメージバージョンが記されているのかなということが後に確認できます。また size でレプリカ数が記されているようです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ cat example/example-etcd-cluster.yaml
+apiVersion: &amp;quot;coreos.com/v1&amp;quot;
+kind: &amp;quot;EtcdCluster&amp;quot;
+metadata:
+  name: &amp;quot;etcd-cluster&amp;quot;
+spec:
+  size: 3
+  version: &amp;quot;v3.1.0-alpha.1&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;デプロイをしてみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f example/example-etcd-cluster.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;クラスタがデプロイされたか見てみます。3つのポッドが確認できます。やはりファイル中 size: 3 はレプリカ数だったようです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get pods --show-all
+NAME                                     READY     STATUS      RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running     0          1m
+etcd-cluster-0001                        1/1       Running     0          36s
+etcd-cluster-0002                        1/1       Running     0          21s
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;同様に Service について確認します。etcd-cluster-000[012] の3つが今回作った etcd クラスタです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get svc
+NAME                    CLUSTER-IP   EXTERNAL-IP   PORT(S)             AGE
+etcd-cluster            10.0.0.80    &amp;lt;none&amp;gt;        2379/TCP            1m
+etcd-cluster-0000       10.0.0.13    &amp;lt;none&amp;gt;        2380/TCP,2379/TCP   1m
+etcd-cluster-0001       10.0.0.111   &amp;lt;none&amp;gt;        2380/TCP,2379/TCP   1m
+etcd-cluster-0002       10.0.0.183   &amp;lt;none&amp;gt;        2380/TCP,2379/TCP   50s
+kubernetes              10.0.0.1     &amp;lt;none&amp;gt;        443/TCP             5d
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;etcd-クラスタをスケールアウト&#34;&gt;etcd クラスタをスケールアウト&lt;/h2&gt;
+
+&lt;p&gt;では etcd クラスタのレプリカ数を増やすことでスケールアウトしてみます。が、今現在 (&lt;sup&gt;2016&lt;/sup&gt;&amp;frasl;&lt;sub&gt;12&lt;/sub&gt;) 時点では一部不具合があるらしく回避策として下記の通り curl を用いてスケールアウトすることが可能なようです。&lt;/p&gt;
+
+&lt;p&gt;下記の内容で body.json ファイルを用意します。size: 5 になっていることが確認できて、レプリカ数5になるのだなと判断できます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ cat body.json
+{
+  &amp;quot;apiVersion&amp;quot;: &amp;quot;coreos.com/v1&amp;quot;,
+  &amp;quot;kind&amp;quot;: &amp;quot;EtcdCluster&amp;quot;,
+  &amp;quot;metadata&amp;quot;: {
+    &amp;quot;name&amp;quot;: &amp;quot;etcd-cluster&amp;quot;,
+    &amp;quot;namespace&amp;quot;: &amp;quot;default&amp;quot;
+  },
+  &amp;quot;spec&amp;quot;: {
+    &amp;quot;size&amp;quot;: 5
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで curl で実行するためプロキシを稼働します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl proxy --port=8080
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;curl で先程作った body.json を PUT してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;curl -H &#39;Content-Type: application/json&#39; -X PUT --data @body.json http://127.0.0.1:8080/apis/coreos.com/v1/namespaces/default/etcdclusters/etcd-cluster
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;クラスタがスケールアウトされたか確認しましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get pods --show-all
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          5m
+etcd-cluster-0001                        1/1       Running   0          4m
+etcd-cluster-0002                        1/1       Running   0          4m
+etcd-cluster-0003                        1/1       Running   0          32s
+etcd-cluster-0004                        1/1       Running   0          17s
+etcd-operator-217127005-futo0            1/1       Running   0          9m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;5台構成のクラスタにスケールアウトしたことが確認できます。&lt;/p&gt;
+
+&lt;h2 id=&#34;etcd-にアクセス&#34;&gt;etcd にアクセス&lt;/h2&gt;
+
+&lt;p&gt;5台構成の etcd クラスタがデプロイできたので etcd に etcdctl を使ってアクセスしてみましょう。事前に etcdctl をインストールする必要があります。また私の環境もそうだったのですがローカルの Mac に minikube を使って kubernetes 環境を構築しているので下記のように nodePort を作るため作業が必要です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f example/example-etcd-cluster-nodeport-service.json
+$ export ETCDCTL_API=3
+$ export ETCDCTL_ENDPOINTS=$(minikube service etcd-cluster-client-service --url)
+$ etcdctl put foo bar
+$ etcdctl get foo
+foo
+bar
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;etcdctl でキー・値を入力・読み込みが可能であることが分かりました！&lt;/p&gt;
+
+&lt;h2 id=&#34;ポッドの自動復旧&#34;&gt;ポッドの自動復旧&lt;/h2&gt;
+
+&lt;p&gt;kubernetes を普段使っている方は分かると思うのですがポッドを落としても kubernetes が自動復旧してくれます。ここで一つポッドを削除してみようと思います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          11m
+etcd-cluster-0001                        1/1       Running   0          11m
+etcd-cluster-0002                        1/1       Running   0          11m
+etcd-cluster-0003                        1/1       Running   0          6m
+etcd-cluster-0004                        1/1       Running   0          6m
+etcd-operator-217127005-futo0            1/1       Running   0          16m
+
+$kubect delete pod etcd-cluster-0004
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;しばらくすると下記の通り etcd-cluster-0004 に代わり etcd-cluster-0005 が稼働していることが確認できると思います。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          12m
+etcd-cluster-0001                        1/1       Running   0          12m
+etcd-cluster-0002                        1/1       Running   0          11m
+etcd-cluster-0003                        1/1       Running   0          7m
+etcd-cluster-0005                        1/1       Running   0          3s
+etcd-operator-217127005-futo0            1/1       Running   0          17m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;kubernetes の上で構成することでうまく kubernetes のメリットを活かしつつ etcd クラスタを構成できていると言えると思います。記事執筆時ではまだ不具合が幾つかありました (上記の curl で実施した箇所や、イメージのアップグレード) が、etcd を手動で構築するより kubernetes で構成するほうがメリットが多いことは明らかです。また kubernetes のポッドから kubernetes dns を介してサービスネームに直接アクセスできるのでポッドから etcd に情報を読み書きすることも容易になりそうです。&lt;/p&gt;
+
+&lt;p&gt;ですが etcd に収めるデータの性質によっては運用面で厳しくなることも想定できます。coreos 内で etcd クラスタを介して互いのコンテナ間でコンフィグを共有し合う使い方は非常に意味があると思うのですが、coreos 外の独自のソフトウェアがいろんな種別のデータを etcd クラスタに外から入出力することの意味はそれほど無いように思えます。であれば高耐久性で運用のし易い軽量な KVS ソフトウェアを使うべきだからです。&lt;/p&gt;
+
+&lt;p&gt;また今回紹介した etcd-operator とは別に coreos が同時にアナウンスした(&lt;a href=&#34;https://coreos.com/blog/the-prometheus-operator.html&#34;&gt;https://coreos.com/blog/the-prometheus-operator.html&lt;/a&gt;) に関しても興味を持っているので後に触ってみたいと思います。&lt;/p&gt;
+
+&lt;p&gt;何と言うか所感として最後に述べるとサーバレスが叫ばれている中でわざわざクラスタソフトウェアを自前で管理するのか？と疑問も確かに残ります。それこそクラウドプラットフォームが提供すべき機能だと思うからです..。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
       <title>Helm を使って Kubernetes を管理する</title>
       <link>http://jedipunkz.github.io/blog/2016/11/20/helm/</link>
       <pubDate>Sun, 20 Nov 2016 11:27:00 +0900</pubDate>
@@ -3625,157 +3863,6 @@ rtt min/avg/max/mdev = 0.272/0.380/0.451/0.079 ms
 トンネルがどのように張られているか確認する手段があれば良いのですが。&lt;/p&gt;
 
 &lt;p&gt;以上です。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>Aviator でモダンに OpenStack を操作する</title>
-      <link>http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/</link>
-      <pubDate>Sat, 13 Dec 2014 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;自分は Ruby を普段使うのでいつも Fog というライブラリを使って OpenStack, AWS
-を操作していました。Fog を使うとクラウドの操作が Ruby のネイティブコードで行え
-るのでシステムコマンド打つよりミス無く済みます。&lt;/p&gt;
-
-&lt;p&gt;Fog より後発で Aviator というライブラリが登場してきたので少し使ってみたのです
-がまだ未完成なところがあるものの便利な点もあって今後に期待だったので紹介します。&lt;/p&gt;
-
-&lt;h2 id=&#34;認証情報を-yaml-ファイルに記す&#34;&gt;認証情報を yaml ファイルに記す&lt;/h2&gt;
-
-&lt;p&gt;接続に必要な認証情報を yaml ファイルで記述します。名前を &amp;lsquo;aviator.yml&amp;rsquo; として
-保存。この時に下記のように環境毎に認証情報を別けて書くことができます。こうする
-ことでコードの中で開発用・サービス用等と使い分けられます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-yaml&#34;&gt;production:
-  provider: openstack
-  auth_service:
-    name: identity
-    host_uri: &amp;lt;Auth URL&amp;gt;
-    request: create_token
-    validator: list_tenants
-  auth_credentials:
-    username: &amp;lt;User Name&amp;gt;
-    password: &amp;lt;Password&amp;gt;
-    tenant_name: &amp;lt;Tenant Name&amp;gt;
-
-development:
-  provider: openstack
-  auth_service:
-    name: identity
-    host_uri: &amp;lt;Auth URL&amp;gt;
-    request: create_token
-    validator: list_tenants
-  auth_credentials:
-    username: &amp;lt;User Name&amp;gt;
-    password: &amp;lt;Password&amp;gt;
-    tenant_name: &amp;lt;Tenant Name&amp;gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;シンタックス確認
-+++&lt;/p&gt;
-
-&lt;p&gt;次に aviator のシンタックスを確認します。Fog に無い機能で、コマンドラインでシ
-ンタックスを確認できてしかも指定可能はパラメータと必須なパラメータと共にサンプ
-ルコードまで提供してくれます。公式サイトに&amp;rsquo;サーバ作成&amp;rsquo;のメソッドが掲載されてい
-るので、ここでは仮想ディスクを作るシンタックスを確認してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;% gem install aviator
-% aviator describe openstack volume # &amp;lt;-- 利用可能な機能を確認
-Available requests for openstack volume_service:
-v1 public list_volume_types
-v1 public list_volumes
-v1 public delete_volume
-v1 public create_volume
-v1 public get_volume
-v1 public update_volume
-  v1 public root
-% aviator describe openstack volume v1 public create_volume # &amp;lt;-- シンタックスを確認
-:Request =&amp;gt; create_volume
-
-Parameters:
- +---------------------+-----------+
- | NAME                | REQUIRED? |
- +---------------------+-----------+
- | availability_zone   |     N     |
- | display_description |     Y     |
- | display_name        |     Y     |
- | metadata            |     N     |
- | size                |     Y     |
- | snapshot_id         |     N     |
- | volume_type         |     N     |
- +---------------------+-----------+
-
-Sample Code:
-  session.volume_service.request(:create_volume) do |params|
-    params.volume_type = value
-    params.availability_zone = value
-    params.snapshot_id = value
-    params.metadata = value
-    params.display_name = value
-    params.display_description = value
-    params.size = value
-  end
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;このように create_volume というメソッドが用意されていて、指定出来るパラメータ・
-必須なパラメータが確認できます。必須なモノには &amp;ldquo;Y&amp;rdquo; が REQUIRED に付いています。
-またサンプルコードが出力されるので、めちゃ便利です。&lt;/p&gt;
-
-&lt;p&gt;では create_volume のシンタックスがわかったので、コードを書いてみましょう。&lt;/p&gt;
-
-&lt;p&gt;コードを書いてみる
-+++&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;#!/usr/bin/env ruby
-
-require &#39;aviator&#39;
-require &#39;json&#39;
-
-volume_session = Aviator::Session.new(
-              :config_file =&amp;gt; &#39;/home/thirai/aviator/aviator.yml&#39;,
-              :environment =&amp;gt; :production,
-              :log_file    =&amp;gt; &#39;/home/thirai/aviator/aviator.log&#39;
-            )
-
-volume_session.authenticate
-
-volume_session.volume_service.request(:create_volume) do |params|
-  params.display_description = &#39;testvol&#39;
-  params.display_name = &#39;testvol01&#39;
-  params.size = 1
-end
-puts volume_session.volume_service.request(:list_volumes).body
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;6行目で先ほど作成した認証情報ファイル aviator.yml とログ出力ファイル
-aviator.log を指定します。12行目で実際に OpenStack にログインしています。&lt;/p&gt;
-
-&lt;p&gt;14-18行目はサンプルコードそのままです。必須パラメータの display_description,
-display_name, size のみを指定し仮想ディスクを作成しました。最後の puts &amp;hellip; は
-実際に作成した仮想ディスク一覧を出力しています。&lt;/p&gt;
-
-&lt;p&gt;結果は下記のとおりです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{ volumes: [{ status: &#39;available&#39;, display_name: &#39;testvol01&#39;, attachments: [],
-availability_zone: &#39;az3&#39;, bootable: &#39;false&#39;, created_at:
-description = &#39;testvol&#39;, volume_type:
-&#39;standard&#39;, snapshot_id: nil, source_volid: nil, metadata:  }, id:
-&#39;3a5f616e-a732-4442-a419-10369111bd4c&#39;, size: 1 }] }
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;まとめ
-+++&lt;/p&gt;
-
-&lt;p&gt;サンプルコードやパラメータ一覧等がひと目でわかる aviator はとても便利です。ま
-だ利用できるクラウドプラットフォームが OpenStack しかないのと、Neutron の機能
-がスッポリ抜けているので、まだ利用するには早いかもです&amp;hellip;。逆に言えばコントリ
-ビューションするチャンスなので、もし気になった方がいたら開発に参加してみるのも
-いいかもしれません。&lt;/p&gt;
 </description>
     </item>
     
