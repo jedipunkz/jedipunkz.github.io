@@ -16,7 +16,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.17" />
+        <meta name="generator" content="Hugo 0.18" />
         
 
 
@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2013-11-26T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-12-05T00:00:00&#43;00:00"/>
 
 
 
@@ -196,19 +196,19 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
                     </li>
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,539 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/12/05/ironic-openstack-beremetal/">Ironic でベアメタル OpenStack ！..の一歩手前</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-12-05'>
+            December 5, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>アドベントカレンダーの季節がやって参りました。</p>
+
+<p>Ironic を使って OpenStack でベアメタルサーバを扱いたい！ということで色々とやっ
+ている最中 (今週から始めました..) なのですが、まだまだ incubator プロジェクト
+ということもあって実装が追い付いていなかったりドキュメントも揃っていなかったり
+とシンドい状況ｗ ここ2日程で集めた情報を整理するためにも 2013年 OpenStack アド
+ベントカレンダーに参加させてもらいますー。</p>
+
+<h2 id="参考資料のまとめ">参考資料のまとめ</h2>
+
+<p>まずは公式 wiki ページ。逆に言うとここに記されている以上の情報は無いんじゃ？あ
+とはコード読め！の世界かも..。</p>
+
+<p><a href="https://wiki.openstack.org/wiki/Ironic">https://wiki.openstack.org/wiki/Ironic</a></p>
+
+<p>devtest_undercloud です。上の資料の中でも手順の中で度々こちらにジャンプしている。
+同じく incubator プロジェクトの TrippleO のデベロッパ用ドキュメントになっている。
+上記の公式 wiki の情報を合わせ読むことで Ironic を使ったデプロイの手順に仕上がります。</p>
+
+<p><a href="http://docs.openstack.org/developer/tripleo-incubator/devtest_undercloud.html">http://docs.openstack.org/developer/tripleo-incubator/devtest_undercloud.html</a></p>
+
+<p>ソースコードとドキュメント。あとでドキュメント作成方法を記しますが、こちらを取
+得して作成します。</p>
+
+<p><a href="https://github.com/openstack/ironic">https://github.com/openstack/ironic</a></p>
+
+<p>ドキュメントサイト。まだ情報が揃っていません。よって上の github から取得したモ
+ノからドキュメントを作る方法を後で書きます。</p>
+
+<p><a href="http://docs.openstack.org/developer/ironic/">http://docs.openstack.org/developer/ironic/</a></p>
+
+<p>launchpad サイト。全てのバグ情報やブループリント等が閲覧出来ます。まだ絶賛開発
+中なので読む必要があると思います。</p>
+
+<p><a href="https://launchpad.net/ironic">https://launchpad.net/ironic</a></p>
+
+<p>ドキュメントを作る
++++</p>
+
+<p>公式 ドキュメントサイトは一応、上記の通りあるのですが、ドキュメントも絶賛執筆
+中ということで所々抜けがあります。また公式ドキュメントサイトがどのスパンで更新
+されているか分からないので、いち早く情報をゲットしたい場合ドキュメントを作る必
+要があると思います。ということで、その作り方を記していきます。尚、公式 wiki サ
+イトにも手順が載っていますが Vagrant と Apache を用いた方法になっているので、
+普通に Ubuntu サーバが手元にある環境を想定して読み替えながら説明していきます。</p>
+
+<p>必要なパッケージのインストールを行います。</p>
+
+<pre><code class="language-bash">% sudo apt-get update
+% sudo apt-get install -y git python-dev swig libssl-dev python-pip \
+  libmysqlclient-dev libxml2-dev libxslt-dev libxslt1-dev python-mysqldb \
+  libpq-dev
+% sudo pip install virtualenv setuptools-git flake8 tox
+% sudo easy_install nose
+</code></pre>
+
+<p>ソースコード・ドキュメントを取得します。</p>
+
+<pre><code class="language-bash">% git clone git://github.com/openstack/ironic.git
+</code></pre>
+
+<p>Sphinx で構成されているのでビルドします。</p>
+
+<pre><code class="language-bash">% cd ironic
+% tox -evenv -- echo 'done'
+% source .tox/venv/bin/activate
+&gt; python setup.ph build_sphinx
+&gt; deactivate
+</code></pre>
+
+<p>ironic/doc/build/html ディレクトリ配下に HTML のドキュメントが生成されたはずで
+す。これを手元の端末に持ってきて開けばブラウザで最新のドキュメントが閲覧出来ま
+す。</p>
+
+<h2 id="ironic-を有効にした-devstack-による構築">ironic を有効にした devstack による構築</h2>
+
+<p>devstack を使って ironic を機能させていきます。私は下記の localrc を用いて
+ironic の試験をしていました。またブランチは &lsquo;master&rsquo; を使います。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/openstack-dev/devstack.git
+% cd devstack
+% ${EDITOR} localrc # 下記の通り
+
+HOST_IP=&lt;your_machine_ip_addr&gt;
+
+LOGFILE=stack.sh.log
+
+ADMIN_PASSWORD=nomoresecrete
+MYSQL_PASSWORD=$ADMIN_PASSWORD
+RABBIT_PASSWORD=$ADMIN_PASSWORD
+SERVICE_PASSWORD=$ADMIN_PASSWORD
+SERVICE_TOKEN=admintoken
+
+disable_service n-obj
+
+# ironic
+enable_service ir-api
+enable_service ir-cond
+
+# use neutron
+disable_service n-net
+enable_service q-svc
+enable_service q-agt
+enable_service q-dhcp
+enable_service q-l3
+enable_service q-meta
+enable_service q-lbaas
+enable_service neutron
+
+ENABLE_TENANT_TUNNELS=True
+
+# heat
+ENABLED_SERVICES+=,heat,h-api,h-api-cfn,h-api-cw,h-eng
+## It would also be useful to automatically download and register VM images that Heat can launch.
+# 64bit image (~660MB)
+IMAGE_URLS+=&quot;,http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-x86_64-cfntools.qcow2&quot;
+# 32bit image (~640MB)
+IMAGE_URLS+=&quot;,http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-i386-cfntools.qcow2&quot;
+
+# syslog
+SYSLOG=True
+SYSLOG_HOST=$HOST_IP
+SYSLOG_PORT=514
+</code></pre>
+
+<p>stack.sh を実行します。</p>
+
+<pre><code class="language-bash">% ./stack.sh
+</code></pre>
+
+<p>Ironic を有効にした OpenStack 環境が出来上がったはずです。</p>
+
+<h2 id="diskimage-builder-を使ったイメージ作成">diskimage-builder を使ったイメージ作成</h2>
+
+<p>ベアメタルサーバをデプロイするためのイメージを作成します。元々は TrippleO のプ
+ロジェクト内に存在していましたが、現在は git レポジトリが別れています。</p>
+
+<p>先ほど devstack を導入したホストでイメージを作ります。作成には結構時間が掛かります。</p>
+
+<pre><code class="language-bash">% cd ~     
+% git clone https://github.com/openstack/diskimage-builder.git
+% git clone https://github.com/openstack/tripleo-incubator.git
+% git clone https://github.com/openstack/tripleo-image-elements.git
+% git clone https://github.com/openstack/tripleo-heat-templates.git
+% export UNDERCLOUD_DIB_EXTRA_ARGS='ironic-api ironic-conductor'
+% export ELEMENTS_PATH=/home/thirai/tripleo-image-elements/elements
+% ./diskimage-builder/bin/disk-image-create -a amd64 -o ~/undercloud boot-stack \
+  nova-baremetal os-collect-config stackuser dhcp-all-interfaces \
+  neutron-dhcp-agent ${UNDERCLOUD_DIB_EXTRA_ARGS:-} ubuntu 2&gt;&amp;1 | tee /tmp/undercloud.log 
+</code></pre>
+
+<p>イメージが ~/undercloud.qcow2 が生成されたはずです。作成したイメージを Glance に登録します。</p>
+
+<pre><code class="language-bash">% ~/tripleo-incubator/scripts/load-image undercloud.qcow2
+</code></pre>
+
+<p>undercloud.yaml と ironic.yaml をマージします。</p>
+
+<pre><code class="language-bash">% cd ~/tripleo-heat-templates
+% make undercloud-vm-ironic.yaml
+</code></pre>
+
+<p>パスワードの生成と環境変数への読み込みを行います。</p>
+
+<pre><code class="language-bash">% cd ~/tripleo-incubator/scripts/
+% export PATH=$PATH:.
+% ./setup-undercloud-passwords
+% source tripleo-undercloud-passwords
+</code></pre>
+
+<p>UNDERCLOUD_IRONIC_PASSWORD 環境変数にも読み込みます。</p>
+
+<pre><code class="language-bash">% export UNDERCLOUD_IRONIC_PASSWORD=$(~/tripleo-incubator/scripts/os-make-password)
+</code></pre>
+
+<p>さて、イメージを利用したベアメタルへの稼働ですが、&hellip;</p>
+
+<pre><code class="language-bash">if [ &quot;$DHCP_DRIVER&quot; = &quot;bm-dnsmasq&quot; ]; then
+    UNDERCLOUD_NATIVE_PXE=&quot;&quot;
+else
+    UNDERCLOUD_NATIVE_PXE=&quot;;NeutronNativePXE=True&quot;
+fi
+
+heat stack-create -f ./tripleo-heat-templates/undercloud-vm-ironic.yaml \
+-P &quot;PowerUserName=$(whoami);\
+AdminToken=${UNDERCLOUD_ADMIN_TOKEN};\
+AdminPassword=${UNDERCLOUD_ADMIN_PASSWORD};\
+GlancePassword=${UNDERCLOUD_GLANCE_PASSWORD};\
+HeatPassword=${UNDERCLOUD_HEAT_PASSWORD};\
+NeutronPassword=${UNDERCLOUD_NEUTRON_PASSWORD};\
+NovaPassword=${UNDERCLOUD_NOVA_PASSWORD};\
+BaremetalArch=${NODE_ARCH}$UNDERCLOUD_NATIVE_PXE&quot; \
+IronicPassword=${UNDERCLOUD_IRONIC_PASSWORD}&quot; \
+undercloud
+</code></pre>
+
+<p>コケました。&hellip;エラーは下記の通り。</p>
+
+<pre><code>TRACE heat.engine.resource Error: Creation of server teststack01-WikiDatabase-5nyiqluilnxn failed: No valid host was found. Exceeded max
+scheduling attempts 3 for instance 733b69df-2b54-44ae-9d61-de766746f21a (500)#0122013-12-03 16:04:14.513 10022 TRACE heat.engine.resource
+</code></pre>
+
+<p>No Valid Host とな&hellip;。うーん。確かに IPMI を積んだベアメタルマシンの情報って
+どこにも記していないんだよなぁ。しかも heat のテンプレート
+(underclound-vm-ironic.yaml) 見てもよく理解していない自分がいる&hellip;(´・ω・`)</p>
+
+<p>というか手順にはその周りのこと何も書いていないのでぇすがぁ！&hellip;</p>
+
+<p>ということで、まだまだコントリビュートするチャンス満載の状態なので、よかったら
+皆さん参加されませんか !?!?</p>
+
+<p><a href="https://wiki.openstack.org/wiki/HowToContribute">https://wiki.openstack.org/wiki/HowToContribute</a></p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/12/05/ironic-openstack-beremetal/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/11/27/sensu-chef-deploy-2/">sensu-chef で監視システム Sensu を管理 #2</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-11-27'>
+            November 27, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>以前、Sensu を Chef で管理する方法について書きました。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/">http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/</a></p>
+
+<p>これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef
+Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも
+公式とは別の Cookbooks を改修して再利用する形でした。この作業は結構しんどかっ
+た記憶があるのですが、最近 GlideNote さんのブログを読んで( ﾟдﾟ)ﾊｯ!と思い、
+sensu-chef を再確認したのですが、だいぶ更新されていました。</p>
+
+<p>下記が sensu-chef です。</p>
+
+<p><a href="https://github.com/sensu/sensu-chef">https://github.com/sensu/sensu-chef</a></p>
+
+<p>この Chef Cookbook 単体で利用できる形に更新されていて、plugins, checks 等は
+Recipe に追記することで対応可能になっていました。早速利用してみたので簡単に使
+い方を書いていきます。</p>
+
+<p>下記が Sensu の管理画面です。最終的にこの画面に監視対象のアラートが上がってきます。</p>
+
+<p>{% img /pix/sensu.png %}</p>
+
+<h2 id="使い方">使い方</h2>
+
+<p>sensu-chef を取得する。chef-repo になっています。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/sensu/sensu-chef.git ~/chef-repo-sensu
+</code></pre>
+
+<p>bundle にて Gemfile に記述の在る gem パッケージをインストールします。</p>
+
+<pre><code class="language-bash">% cd ~/chef-repo-sensu
+% bundle install
+</code></pre>
+
+<p>.chef/ 配下の設定は割愛します。chef サーバの情報に合わせて設定します。</p>
+
+<p>ssl 鍵を生成して data bags に投入します。</p>
+
+<pre><code class="language-bash">% cd examples/ssl
+% ./ssl_certs.sh generate
+% cd ../../
+% knife data bag create sensu
+% knife data bag from file sensu examples/ssl/ssl.json
+% ./examples/ssl/ssl_certs.sh clean
+</code></pre>
+
+<p>Roles を作成します。chef-repo なのに何も入っていませんでした&hellip;汗
+ここで面白いのは &lsquo;sensu-client&rsquo; は sensu で言う subscribers の名前にそのまま利
+用されるところです。つまり &lsquo;sensu-client&rsquo; の名前が記された sensu サーバ上の監
+視項目 (checks) がこの sensu クライアントに割り当てられます。</p>
+
+<pre><code class="language-ruby">% mkdir roles
+% ${EDITOR} roles/sensu-server.rb
+name &quot;sensu-server&quot;
+description &quot;role applied to sensu server.&quot;
+run_list 'recipe[sensu::default]',
+         'recipe[sensu::rabbitmq]',
+         'recipe[sensu::redis]',
+         'recipe[sensu::server_service]',
+         'recipe[sensu::api_service]',
+         'recipe[sensu::dashboard_service]',
+         'recipe[chef-client::service]'
+
+% ${EDITOR} roles/sensu-client.rb
+name &quot;sensu-client&quot;
+description &quot;role applied to sensu client.&quot;
+run_list 'recipe[sensu::default]',
+         'recipe[sensu::client_service]',
+         'recipe[chef-client::service]'
+</code></pre>
+
+<p>Cheffile に &lsquo;chef-client&rsquo; の Cookbook 名を追記します。</p>
+
+<pre><code class="language-ruby">site 'http://community.opscode.com/api/v1'
+
+cookbook 'sensu', path: './'
+cookbook 'sensu-test', path: './test/cookbooks/sensu-test'
+cookbook 'chef-client' # &lt;---- 追記
+</code></pre>
+
+<p>librarian-chef を実行して Cookbooks を取得します。</p>
+
+<pre><code class="language-bash">% librarian-chef install
+</code></pre>
+
+<p>Rabbitmq, Redis, API の IP アドレスを設定します。IP アドレスは例です。</p>
+
+<pre><code class="language-bash">% ${EDITOR} cookbooks/sensu/attributes/default.rb
+default.sensu.rabbitmq.host = &quot;172.24.19.11&quot;
+default.sensu.redis.host = &quot;172.24.19.11&quot;
+default.sensu.api.host = &quot;172.24.19.11&quot;
+</code></pre>
+
+<p>sensu-server 用の Recipe に監視項目を追記します。ここでは cron デーモンの稼働
+状況を監視してみました。</p>
+
+<pre><code class="language-bash">% ${EDITOR} cookbooks/sensu/recipes/server_service.rb # 下記を追記
+</code></pre>
+
+<pre><code class="language-ruby">sensu_check &quot;cron_process&quot; do
+  command &quot;check-procs.rb -p cron -C 1&quot;
+  handlers [&quot;default&quot;]
+  subscribers [&quot;sensu-client&quot;]
+  interval 30
+  additional(:notification =&gt; &quot;Cron is not running&quot;, :occurrences =&gt; 5)
+end
+</code></pre>
+
+<p>sensu-client 用の Recipe に client.json (クライアント用設定ファイル) の記述と
+上記監視項目に合った plugins 設定の追記を行います。</p>
+
+<pre><code class="language-bash">% ${EDITOR} cookbooks/sensu/recipes/client_service.rb # 下記を追記
+</code></pre>
+
+<pre><code class="language-ruby">sensu_client node.name do
+  address node.ipaddress
+  subscriptions node.roles + [&quot;all&quot;]
+end
+
+cookbook_file 'check-procs.rb' do
+  source 'check-procs.rb'
+  mode 0755
+  path '/etc/sensu/plugins/check-procs.rb'
+end
+</code></pre>
+
+<p>上記 check-procs.rb は community サイトからダウンロードする必要があるのですが
+cookbook_file で対応したので files/ ディレクトリ配下に置いておきます。</p>
+
+<pre><code class="language-bash">% mkdir -p cookbooks/sensu/files/default
+% wget -o cookbooks/sensu/files/default/check-procs.rb \
+  https://github.com/sensu/sensu-community-plugins/raw/master/plugins/processes/check-procs.rb
+</code></pre>
+
+<p>上記の check-procs.rb は行頭に &lsquo;#!/usr/bin/env ruby&rsquo; が記されているのですが
+Sensu インストール時に入る ruby は /opt/sensu/embedded/bin/ruby にあるので行頭
+の1行を書き換えます。</p>
+
+<pre><code class="language-diff">% diff cookbooks/sensu/files/default/check-procs.rb.org cookbooks/sensu/files/default/check-procs.rb
+- #!/usr/bin/env ruby
++ #!/opt/sensu/embedded/bin/ruby
+</code></pre>
+
+<p>Roles, Cookbooks を Chef サーバにアップロードします。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o ./cookbooks -a
+% knife role from file roles/*.rb
+</code></pre>
+
+<p>いよいよブートストラップします!</p>
+
+<p>まずは sensu-server を。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;server_ip_addr&gt; -N sensu-server -r 'role[sensu-server]' \
+  -x ubuntu --sudo
+</code></pre>
+
+<p>次に監視対象である sensu-client を。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;client_ip_addr&gt; -N sensu-client01 -r 'role[sensu-client]' \
+  -x ubuntu --sudo
+</code></pre>
+
+<p>http://<sensu-server の IP アドレス>:8080/ にアクセスすると Sensu の管理画面が
+表示されます。認証アカウントは cookbooks/sensu/attributes/default.rb に記述が
+ありますので確認して下さい。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>インフラリソースのフルオートメーション化について情報リサーチしていますが監視も
+重要なインフラリソースの一部です。Sensu サーバ・クライアントの自動デプロイが出
+来たのでこれで一つパーツが揃ったことに。Sensu は API を持っていますのでアプリ
+から検知することも簡単に出来ますよ。API については下記を参照してください。</p>
+
+<p><a href="http://sensuapp.org/docs/0.12/api">http://sensuapp.org/docs/0.12/api</a></p>
+
+<p>また以前抱えていた問題もスッキリクリアになって、これでまた前進できた感があります。</p>
+
+<h2 id="参考サイト">参考サイト</h2>
+
+<ul>
+<li><a href="http://sensuapp.org/docs/0.12">http://sensuapp.org/docs/0.12</a></li>
+<li><a href="http://blog.glidenote.com/blog/2013/11/26/sensu/">http://blog.glidenote.com/blog/2013/11/26/sensu/</a></li>
+<li><a href="https://github.com/sensu/sensu-chef">https://github.com/sensu/sensu-chef</a></li>
+</ul>
+</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/11/27/sensu-chef-deploy-2/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -389,709 +922,6 @@ ga('send', 'pageview');
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/">OpenStack Havana を Chef でデプロイ</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-11-17'>
-            November 17, 2013</time>
-        <span class="author"></span>
-        
-            <p>4 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>毎度お馴染みになった OpenStack の Chef によるデプロイですが、今回は OpenStack
-Havana 構成を Chef でデプロイする方法についてです。使用するのは今回も
-rcbops/chef-cookbooks です。ブランチは &lsquo;havana&rsquo; を用います。</p>
-
-<p>早速ですが構成について。4.1.2 辺りからだと思うのですが構成の前提が物理ネットワー
-ク4つを前提にし始めました。public, external (VM) を別ける必要が出てきました。
-通信の特性も異なるので (public は public API を。external は VM 用) 、別けるの
-が得策かもしれません。</p>
-
-<h2 id="構成">構成</h2>
-
-<pre><code>                  +--------------+------------------------------------------------------- external
-                  |              |
-+--------------+--(-----------+--(-----------+--------------+---------------------------- public
-|              |  |           |  |           |              |
-+------------+ +------------+ +------------+ +------------+ +------------+ +------------+
-| controller | |  network   | |  network   | |  compute   | |  compute   | | workstation|
-+------------+ +------------+ +------------+ +------------+ +------------+ +------------+
-|              |  |           |  |           |  |           |  |           |
-+--------------+--(-----------+--(-----------+--(-----------+--(-----------+------------- management
-                  |              |              |              |
-                  +--------------+--------------+--------------+------------------------- guest
-</code></pre>
-
-<h4 id="上記の構成の特徴">上記の構成の特徴</h4>
-
-<ul>
-<li>4つの物理ネットワークを前提</li>
-<li>public ネットワーク : 外部 API 用ネットワーク</li>
-<li>external ネットワーク : インスタンス外部接続用ネットワーク</li>
-<li>guest ネットワーク : インスタンス内部用ネットワーク</li>
-<li>management ネットワーク : 各コンポーネント接続用ネットワーク</li>
-<li>public, external のみグローバルネットワーク</li>
-<li>controller : 2 nics, network : 4 nics, compute : 3nics の構成</li>
-<li>controller はシングル構成</li>
-<li>network ノードは台数拡張可能, agent 単位でノード間移動可能</li>
-<li>compute ノードも台数拡張可能</li>
-<li>workstation は chef-repo の所在地, management ネットワークに所属</li>
-</ul>
-
-<h2 id="各ノードの準備">各ノードの準備</h2>
-
-<p>OS インストール後、各ノードのネットワークインターフェースの設定を下記の通り行っ
-てください。また LVM を使うのであれば cinder ボリュームの設定も必要になってきます。</p>
-
-<h4 id="controller-ノード">controller ノード</h4>
-
-<p>2 nics を下記の通り設定します。</p>
-
-<ul>
-<li>eth0 を public ネットワークに。gateway をこのインターフェースに設定</li>
-<li>eth1 を guest ネットワークに。gateway はなし</li>
-</ul>
-
-<p>/etc/network/interfaces の例</p>
-
-<pre><code>auto eth0
-iface eth0 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    gateway &lt;gateway&gt;
-    dns-nameservers &lt;dns_cache_server&gt;
-    dns-search &lt;domain&gt;
-
-auto eth1
-iface eth1 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-</code></pre>
-
-<p>/dev/sdb を cinder 用ディスクデバイスとします。</p>
-
-<pre><code class="language-bash">% sudo pvcreate /dev/sdb
-% sudo vgcreate cinder-volumes /dev/sdb
-</code></pre>
-
-<h4 id="network-ノード">network ノード</h4>
-
-<p>4 nics を下記の通り設定します。up route で仮想ネットワークへのルーティングを書
-いてあげると、network ノードから直接仮想ネットワーク上のインスタンスへ通信する
-ことが可能です。最初は書かなくても OK です。</p>
-
-<pre><code>auto eth0
-iface eth0 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    dns-nameservers &lt;dns_cache_server&gt;
-    dns-search &lt;domain&gt;
-
-auto eth1
-iface eth1 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-
-auto eth2
-iface eth2 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    gateway 10.200.10.1
-    dns-nameservers 8.8.8.8 8.8.4.4
-    dns-search cpi.ad.jp
-
-auto eth3
-iface eth3 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    # 仮想ネットワークへのルーティング
-    # up route add -net &lt;virtual_net_cidr&gt; gw &lt;neutron_gw&gt;
-    # up route add -net &lt;virtual_net_cidr&gt; gw &lt;neutron_gw&gt;
-</code></pre>
-
-<h4 id="compute-ノード">compute ノード</h4>
-
-<p>3 nics を下記の通り設定します。</p>
-
-<pre><code>auto eth0
-iface eth0 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    dns-nameservers &lt;dns_cache_server&gt;
-    dns-search &lt;domain&gt;
-
-auto eth1
-iface eth1 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    
-auto eth2
-iface eth2 inet static
-    address &lt;ip_addr&gt;
-    netmask &lt;netmask&gt;
-    gateway &lt;gateway&gt;
-    dns-nameservers &lt;dns_cache_server&gt;
-    dns-search &lt;domain&gt;
-</code></pre>
-
-<h2 id="cookbooks-roles-environments-等の準備">Cookbooks, Roles, Environments 等の準備</h2>
-
-<p>下記の操作は全て workstation ノードからの操作です。
-また chef のインストールや chef サーバの構築方法については割愛します。</p>
-
-<p>rcbops/chef-cookbooks を取得します。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git
-% cd chef-cookbooks
-% git checkout -b havana remotes/origin/havana
-% # .chef 配下の準備割愛。各 Chef サーバ環境に合わせる
-% git submodule init
-% git submodule sync
-% git submodule update
-% knife cookbook upload -o cookbooks -a
-% knife role from file roles/*.rb
-</code></pre>
-
-<p>今回の構成用の environment を生成します。それぞれの環境に合わせて作成してくだ
-さい。生成のコツは各 Cookbooks の attributes を見ながら設定することです。
-生成した json ファイルを environments ディレクトリ配下に配置します。</p>
-
-<pre><code class="language-json">{
-  &quot;name&quot;: &quot;havana-neutron&quot;,
-  &quot;description&quot;: &quot;&quot;,
-  &quot;cookbook_versions&quot;: {
-  },
-  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
-  &quot;chef_type&quot;: &quot;environment&quot;,
-  &quot;default_attributes&quot;: {
-  },
-  &quot;override_attributes&quot;: {
-    &quot;package_component&quot;: &quot;havana&quot;,
-    &quot;osops_networks&quot;: {
-      &quot;management&quot;: &quot;10.200.10.0/24&quot;,
-      &quot;public&quot;: &quot;10.200.9.0/24&quot;,
-      &quot;nova&quot;: &quot;10.200.10.0/24&quot;
-    },
-    &quot;nova&quot;: {
-      &quot;config&quot;: {
-        &quot;use_single_default_gateway&quot;: false,
-        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
-        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
-      },
-      &quot;network&quot;: {
-        &quot;provider&quot;: &quot;neutron&quot;,
-        &quot;network_type&quot;: &quot;vlan&quot;
-      },
-      &quot;apply_patches&quot;: true,
-      &quot;libvirt&quot;: {
-        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
-        &quot;virt_type&quot;: &quot;kvm&quot;
-      },
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;nova&quot;
-      },
-      &quot;services&quot;: {
-        &quot;novnc-proxy&quot;: {
-          &quot;network&quot;: &quot;public&quot;
-        },
-        &quot;ec2-admin&quot;: {
-          &quot;network&quot;: &quot;management&quot;
-        }
-      }
-    },
-    &quot;cinder&quot;: {
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;cinder&quot;
-      }
-    },
-    &quot;keystone&quot;: {
-      &quot;admin_user&quot;: &quot;admin&quot;,
-      &quot;tenants&quot;: [
-        &quot;admin&quot;,
-        &quot;service&quot;
-      ],
-      &quot;users&quot;: {
-        &quot;admin&quot;: {
-          &quot;password&quot;: &quot;secrete&quot;,
-          &quot;roles&quot;: {
-            &quot;admin&quot;: [
-              &quot;admin&quot;
-            ]
-          }
-        },
-        &quot;demo&quot;: {
-          &quot;password&quot;: &quot;demo&quot;,
-          &quot;default_tenant&quot; : &quot;service&quot;,
-          &quot;roles&quot;: {
-            &quot;service&quot;: [ &quot;service&quot; ]
-          }
-        }
-      },
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;keystone&quot;
-      }
-    },
-    &quot;horizon&quot;: {
-      &quot;theme&quot;: &quot;Rackspace&quot;,
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;horizon&quot;
-      },
-      &quot;endpoint_type&quot; : &quot;publicURL&quot;,
-      &quot;endpoint_scheme&quot; : &quot;http&quot;
-    },
-    &quot;mysql&quot;: {
-      &quot;root_network_acl&quot;: &quot;%&quot;,
-      &quot;allow_remote_root&quot;: true,
-      &quot;server_root_password&quot;: &quot;secrete&quot;,
-      &quot;server_repl_password&quot;: &quot;secrete&quot;,
-      &quot;server_debian_password&quot;: &quot;secrete&quot;
-    },
-    &quot;monitoring&quot;: {
-      &quot;procmon_provider&quot;: &quot;monit&quot;,
-      &quot;metric_provider&quot;: &quot;collectd&quot;
-    },
-    &quot;glance&quot;: {
-      &quot;images&quot;: [
-        &quot;precise&quot;, &quot;cirros&quot;
-      ],
-      &quot;image&quot;: {
-      },
-      &quot;image_upload&quot;: false,
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;glance&quot;
-      }
-    },
-    &quot;neutron&quot;: {
-      &quot;service_pass&quot;: &quot;neutron&quot;,
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;neutron&quot;
-      }
-    },
-    &quot;developer_mode&quot;: false
-  }
-}
-</code></pre>
-
-<p>environment ファイルの chef サーバへのアップロード。</p>
-
-<pre><code class="language-bash">% knife environment from file environments/havana-neutron.json
-</code></pre>
-
-<h2 id="knife-bootstrap-によるデプロイ">knife bootstrap によるデプロイ</h2>
-
-<p>下記の通り knife bootstrap することで各ノードをデプロイします。</p>
-
-<p>controller ノードのデプロイ。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;controller_ipaddr&gt; -N &lt;controller_name&gt; \
-  -r 'role[single-controller]','role[cinder-volume]' \
-  -E havana-neutron -x &lt;username&gt; --sudo
-</code></pre>
-
-<p>network ノードのデプロイ。台数分デプロイしてください。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;network_ipaddr&gt; -N &lt;network_name&gt; \
-  -r 'role[single-network-node]','recipe[nova-network::neutron-l3-agent]' \
-  -E neutron-havana -x &lt;username&gt; --sudo
-</code></pre>
-
-<p>compute ノードのデプロイ。台数分デプロイしてください。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;compute_ipaddr&gt; -N &lt;compute_name&gt; \
-  -r 'role[single-compute]' \
-  -E havana-neutron -x &lt;username&gt; --sudo
-</code></pre>
-
-<h2 id="openvswitch-の物理-nic-とブリッジインタフェースマッピング作業">openvswitch の物理 NIC とブリッジインタフェースマッピング作業</h2>
-
-<p>各ノードで下記の通り物理 NIC とブリッジのマッピング作業を行ってください。操作
-は必ず management ネットワークを介して行うようにしましょう。その他のネットワー
-クから操作すると通信が途絶える可能性があります。</p>
-
-<p>network ノード</p>
-
-<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
-% sudo ovs-vsctl add-port br-ex eth3
-</code></pre>
-
-<p>compute ノード</p>
-
-<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
-</code></pre>
-
-<h2 id="まとめと考察">まとめと考察</h2>
-
-<p>havana の roles にはコアプロジェクトのコンポーネントが入っています。つまり
-ceilometer と heat も上記のデプロイで入ってきます。ceilometer に関して公式のド
-キュメントではデータ格納用 DB として mongodb が記されていますが、ここでは
-mysqld 上に格納する構成になっていました。これは個人的には非常に助かります。
-また、compute ノードから controller ノードの public api を叩く必要が出てきて、
-compute ノードにも public ネットワーク用の NIC を足しましたが、こうするべきな
-のかどうかは今後考えてみます。理想は management ネットワークを介することですが
-attributes の調整でけではうまくいきませんでした。&rsquo;havana&rsquo; ブランチはまだ開発が
-進んでいるので改善されるかもしれません。コントリビュートするのも手だと思います。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/">第2回 Elasticsearch 勉強会参加レポート</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-11-13'>
-            November 13, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>第2回 Elasticsearch 勉強会に参加してきました。箇条書きですが参加レポートを記し
-ておきます。</p>
-
-<pre><code>開催日 : 2013/11/12
-場所 : 東京駅 グラントウキョウサウスタワー リクルートテクノロジーズさま
-URL : http://elasticsearch.doorkeeper.jp/events/6532
-</code></pre>
-
-<h2 id="routing-周りの話">Routing 周りの話</h2>
-
-<pre><code>株式会社シーマーク　大谷純さん (@johtani)
-</code></pre>
-
-<h4 id="index-構成">Index 構成</h4>
-
-<ul>
-<li>cluster の中に index -&gt; type が作成される</li>
-<li>index は shard という部分的な index の集まり</li>
-<li>shard 数は生成時のみ指定可能</li>
-<li>node ごとに replica, primary を別ける</li>
-<li>replica 数は後に変えられる</li>
-<li>doc -&gt; hash 値を shard 数で割って replica, primary に登録</li>
-<li>doc の id の ハッシュ値を利用</li>
-<li>type も含める場合はかの設定を true に</li>
-<li>クライアントはどのノードに対してクエリを投げても OK</li>
-</ul>
-
-<h4 id="routing">routing</h4>
-
-<ul>
-<li>id の代わりに routing (URL パラメータ) で登録</li>
-<li>url リクエストパラメータとして登録時にルーティングパラメータを登録</li>
-<li>id の代わりにパラメータで指定された値のハッシュ値を計算して利用</li>
-<li>検索時 routing 指定で関係のある shard のみを指定出来る</li>
-</ul>
-
-<h4 id="スケールアウト">スケールアウト</h4>
-
-<ul>
-<li>sharding によるスケールアウト数 = インデックス作成時に指定</li>
-<li>shard によるインデックスの分割以外にインデックス自体を複数持つことによるスケール</li>
-<li>複数のドキュメントをエイリアス書けることが可能</li>
-</ul>
-
-<h4 id="所感">所感</h4>
-
-<p>個人的には非常に興味のあるところでした。mongodb のような sharding をイメージし
-てよいのか？そうでないのか？すら理解出来ていなかったので。sharding を理解する
-前提知識の話もあって非常に参考になりました。</p>
-
-<h2 id="elasticsearchを使ったbaas基盤の開発">ElasticSearchを使ったBaaS基盤の開発</h2>
-
-<pre><code>株式会社富士通ソフトウェアテクノロジーズ 滝田聖己さん（@pisatoshi）
-</code></pre>
-
-<p>運用の話。これは貴重&hellip;。</p>
-
-<ul>
-<li>shard 数 : 10 , replica : 1 で運用している</li>
-<li>データは業務データ , トラッキングデータ</li>
-<li>マルチテナント, 更新の即時反映, ルーティングによる性能向上 が要件</li>
-<li>登録更新 -&gt; 検索結果反映までタイムラグがある -&gt; replica 完了まで待つので高コスト</li>
-<li>replica 数を減らすことで性能向上</li>
-</ul>
-
-<h4 id="routing-id-を指定することで">routing id を指定することで&hellip;</h4>
-
-<ul>
-<li>doc id の has から shard 自動選択がデフォルト</li>
-<li>-&gt; hash key を指定して格納シャードを制御出来る</li>
-<li>-&gt; doc 登録性能向上</li>
-<li>-&gt; 検索対象の shard を絞りこみえる</li>
-<li>-&gt; 不可を軽減</li>
-</ul>
-
-<h4 id="バックアップ-リストア">バックアップ/リストア</h4>
-
-<ul>
-<li>mysql にもデータ格納 -&gt; backup</li>
-<li>elasticsearch の index はバックアップ取らず -&gt; bug を踏みたくないのが理由</li>
-</ul>
-
-<h4 id="dynamic-mapping-の問題">dynamic mapping の問題</h4>
-
-<ul>
-<li>入力データから型を推測 -&gt; 自動マッピング登録</li>
-<li>-&gt; マッピング定義が肥大化</li>
-<li>-&gt; データ型のコンフリクト</li>
-</ul>
-
-<h4 id="mapping-の肥大化">mapping の肥大化</h4>
-
-<ul>
-<li>mapping 定義は type, field の数に応じてサイズが増加</li>
-<li>-&gt; index 性能低下</li>
-<li>-&gt; mapping を伴う doc 登録 3sec (mapping size 80MB)</li>
-<li>-&gt; 各 node への mapping 定義の同期</li>
-<li>大量のデータを一気に登録するときは 1 node が速い</li>
-<li>-&gt; その後シャード再配置したことがある</li>
-</ul>
-
-<p>=&gt; dynamic mapping を使うのをやめた -&gt; app で指定</p>
-
-<h4 id="よく利用するツール">よく利用するツール</h4>
-
-<ul>
-<li>bigdesk</li>
-<li>elasticsearch-head</li>
-<li>sense (chrome extention)</li>
-</ul>
-
-<h4 id="unit-test">unit test</h4>
-
-<p>unit test はどうする？</p>
-
-<ul>
-<li>nodeClient テスト開始時に起動</li>
-<li>テストデータを配置して起動, 終了時に削除</li>
-<li>memoryIndex で高速に実行</li>
-<li>elasticsearch-test が便利</li>
-</ul>
-
-<h4 id="所感-1">所感</h4>
-
-<p>運用の話はどの技術でも重要!!! 実際に困った話、トラブル等聞けて貴重な時間でした。
-よく使うツールの話も意外と参考になるので聞けてよかった。</p>
-
-<h2 id="kibana">Kibana</h2>
-
-<pre><code>Cookpad 水戸祐介さん (@y_310)
-</code></pre>
-
-<ul>
-<li>作った dashboard は elasticsearch に保存される</li>
-<li>db 要らず , web サーバのみ, クライアントサイドの技術のみで実装されている</li>
-<li>term, trends, map, table, column&hellip; それぞれ図形式がある
-title = &ldquo;test&rdquo;, -title</li>
-<li>1つの index に異なるスキーマを持つデータを入れられる</li>
-<li>1つの index に入れることでグラフを重ねて比較出来る</li>
-<li>やはり dynamic mapping は使わないほうが良い</li>
-<li>m1.large x 1 : 1日のインデックスサイズが10GB 超えるあたりで ES が詰まる</li>
-</ul>
-
-<p>下記が当日の資料です。</p>
-
-<script async class="speakerdeck-embed"
-data-id="3d0776802ddb0131fdd042970ce72c15" data-ratio="1.33333333333333" src="//speakerdeck.com/assets/embed.js"></script>
-
-<h4 id="所感-2">所感</h4>
-
-<p>Cookpad さんで実際に利用されているとか。運用の話と同じくやはり dynamic routing
-でのトラブルの話があった。また Cookpad さんでのトラブル例の話もあってよかった。</p>
-
-<h2 id="elasticsearch-kibana-v3を利用する際の運用ノウハウ">ElasticSearch＋Kibana v3を利用する際の運用ノウハウ</h2>
-
-<pre><code>株式会社リブセンス Y.Kentaro さん (@yoshi_ken)
-</code></pre>
-
-<p>下記が発表資料。</p>
-
-<p><iframe src="http://www.slideshare.net/slideshow/embed_code/28165189"
-width="597" height="486" frameborder="0" marginwidth="0" marginheight="0"
-scrolling="no" style="border:1px solid #CCC;border-width:1px 1px
-0;margin-bottom:5px" allowfullscreen> </iframe> <div
-style="margin-bottom:5px"> <strong> <a
-href="https://www.slideshare.net/y-ken/elasticsearch-kibnana-fluentd-management-tips"
-title="ElasticSearch+Kibanaでログデータの検索と視覚化を実現するテクニックと運
-用ノウハウ" target="_blank">ElasticSearch+Kibanaでログデータの検索と視覚化を実
-現するテクニックと運用ノウハウ</a> </strong> from <strong><a
-href="http://www.slideshare.net/y-ken" target="_blank">Kentaro
-Yoshida</a></strong> </div></p>
-
-<ul>
-<li>nginx の basic 認証等でアクセス制限を掛ける例</li>
-</ul>
-
-<p>等など&hellip; ごめんなさい！メモが取れてなかった！&hellip;汗</p>
-
-<h2 id="fluentd-as-a-kibana">Fluentd as a Kibana</h2>
-
-<pre><code>@repeatedly さん
-</code></pre>
-
-<p>fluentd-plugin-kibana-server  というkibana をダウンロードしてくるのがめんどい
-ので fluentd の中で kibana を動かすプラグインを作った話。下記が発表資料。</p>
-
-<p><a href="https://gist.github.com/repeatedly/7427856">https://gist.github.com/repeatedly/7427856</a></p>
-
-<ul>
-<li>fluentd input plugin として実装</li>
-<li>logstash 版もあるらしい</li>
-</ul>
-
-<h4 id="所感-3">所感</h4>
-
-<p>さすが&hellip;。確かにサーバをいちいち作るのめんどいです。fluentd plugin の中で
-kibana を動かすって発想が&hellip;。</p>
-
-<h2 id="auth-プラグインでアクセスコントロール">auth プラグインでアクセスコントロール</h2>
-
-<pre><code>株式会社エヌツーエスエム 菅谷信介さん (@shinsuke_sugaya)
-</code></pre>
-
-<ul>
-<li>elasticsearch のアクセス制御をしたい</li>
-<li>rest api をアクセス制御する</li>
-<li>ユーザ管理, REST API のアクセス管理, ログイン・ログアウト・トーケン</li>
-<li>ユーザ管理は elasticsearch 内に格納</li>
-<li>path, http method, role の組み合わせで制御</li>
-</ul>
-
-<p>インストールは下記の通り elasticsearch plugin コマンドで。</p>
-
-<pre><code>% ./bin/plugin --install org.codelibs/elasticsearch-auth/1.0.0
-</code></pre>
-
-<ul>
-<li>ユーザ作成は POST で可能</li>
-</ul>
-
-<h2 id="所感とまとめ">所感とまとめ</h2>
-
-<p>箇条書きのざっくりしたまとめでしたが&hellip;。個人的には sharding の話はとても聞き
-たかったので貴重な時間でした。また、運用の話もとてもおもしろかったし plugin 作っ
-てみた話も「すごい..」って感じでした。僕はこれからアプリも書くけどインフラエン
-ジニアなのでアーキテクチャをまず知りたいかなぁという印象。と言うかスケールさせ
-るときにも横に並べて shard するだけの様な話に聞こえましたが、まだぼんやり感が
-あります。特に shard 周り。mongo の sharding と同じ様なものを想像していますが。
-またモチベーション上がったので週末やってみますー！</p>
-
-<p>kibana3 は一回使いました。javascript, html で実装されているのでクライアントか
-ら elasticsearch まで直接アクセス出来なければならないとなって、構成的にどうな
-のかな？と思っていたら菅谷さんの &lsquo;auth プラグイン&rsquo; の話があったりしたので、良
-かったです。使ってみます！</p>
-
-<p>主催の方々、発表者の方々、当日はありがとうございましたー。また参加させてもらい
-ます。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1208,6 +1038,34 @@ kibana を動かすって発想が&hellip;。</p>
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/">Google Cloud CDN を使ってみた</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
                                 
                                     
@@ -1229,34 +1087,6 @@ kibana を動かすって発想が&hellip;。</p>
                                 <time class="published" datetime=
                                     '2016-11-20'>
                                     November 20, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-03'>
-                                    November 3, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-25'>
-                                    July 25, 2016</time>
                             </header>
                         </article>
                     </li>
@@ -1295,7 +1125,7 @@ kibana を動かすって発想が&hellip;。</p>
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">104</span>
+                                <span style="float:right;">105</span>
                             </header>
                         </article>
                     </li>
