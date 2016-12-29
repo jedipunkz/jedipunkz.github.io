@@ -18,7 +18,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.17" />
+        <meta name="generator" content="Hugo 0.18" />
         
 
 
@@ -198,19 +198,19 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
                     </li>
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,172 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/04/06/chef-11-private-network/">Chef 11 サーバのローカルネットワーク上構築</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-04-06'>
+            April 6, 2013</time>
+        <span class="author"></span>
+        
+            <p>1 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>chef-solo を使うの？Chef サーバを使うの？という議論は結構前からあるし、答えは
+「それぞれの環境次第」だと思うのだが、僕は個人的に Chef サーバを使ってます。ホ
+ステッド Chef を使いたいけどお金ないし。会社で導入する時はホステッド Chef を契
+約してもらうことを企んでます。(・∀・) 何故なら cookbooks を開発することがエン
+ジニアの仕事の本質であって Chef サーバを運用管理することは本質ではないから。そ
+れこそクラウド使えという話だと思う。</p>
+
+<p>でも！Chef に慣れるには無料で使いたいし、継続的に Cookbooks をターゲットノード
+で実行したい。ということで Chef サーバを構築して使っています。</p>
+
+<p>Chef 10 の時代は Chef サーバの構築方法は下記の通り3つありました。</p>
+
+<ul>
+<li>手作業！</li>
+<li>Bootstrap 構築</li>
+<li>Opscode レポジトリの Debian, Ubuntu, CentOS パッケージ構築</li>
+</ul>
+
+<p>それが Chef 11 では</p>
+
+<ul>
+<li>Ubuntu, RHEL のパッケージ (パッケージインストールですべて環境が揃う)</li>
+</ul>
+
+<p><a href="http://www.opscode.com/chef/install/">http://www.opscode.com/chef/install/</a></p>
+
+<p>この方法1つだけ。でも簡単になりました。</p>
+
+<p>&lsquo;Chef Server&rsquo; タブを選択するとダウンロード出来る。じっくりは deb ファイルの中
+身を見たことがないけど、チラ見した時に chef を deb の中で実行しているように見
+えた。徹底してるｗ</p>
+
+<p>Chef 10 時代のパッケージと違って行う操作は下記の2つのコマンドだけ。</p>
+
+<pre><code>% sudo dpkg -i chef-server_11.0.6-1.ubuntu.12.04_amd64.deb # ダウンロードしたもの
+% sudo chef-server-ctl reconfigure
+</code></pre>
+
+<p>簡単。でも&hellip; この状態だと https://&lt;サーバの FQDN&gt; でサーバが Listen している。
+IP アドレスでアクセスしてもリダイレクトされる。つまり、ローカルネットワーク上
+に構築することが出来ない。安易に hosts で解決も出来ない。何故ならターゲットノー
+ドは通常まっさらな状態なので bootstrap するたびに hosts を書くなんてアホらしい
+しやってはいけない。</p>
+
+<p>今日の本題。ローカルネットワーク上に Chef 11 サーバを構築する方法を調べました。</p>
+
+<h2 id="修正箇所">修正箇所</h2>
+
+<ul>
+<li>/var/opt/chef-server/chef-pedant/etc/pedant_config.rb</li>
+</ul>
+
+<p>URL を IP アドレスに変更する。</p>
+
+<pre><code>chef_server &quot;https://chef.example.com&quot;
+</code></pre>
+
+<ul>
+<li>/var/opt/chef-server/erchef/etc/app.config</li>
+</ul>
+
+<p>URL を IP アドレスに変更する。</p>
+
+<pre><code>{s3_url, &quot;https://chef.example.com&quot;},
+</code></pre>
+
+<ul>
+<li>/var/opt/chef-server/nginx/etc/nginx.conf</li>
+</ul>
+
+<p>URL を IP アドレスに変更する。2箇所あるので注意。鍵ファイルにも FQDN が記され
+ているがそれらは変更しない。</p>
+
+<pre><code>server_name chef.example.com;
+</code></pre>
+
+<ul>
+<li>/etc/chef-server/chef-server-running.json</li>
+</ul>
+
+<p>URL を IP アドレスに変更する。鍵ファイルにも FQDN が記されているがそれらは変更
+しない。</p>
+
+<pre><code>&quot;vip&quot;: &quot;chef.example.com&quot;,
+&quot;api_fqdn&quot;: &quot;chef.example.com&quot;,
+&quot;web_ui_fqdn&quot;: &quot;chef.example.com&quot;,
+&quot;server_name&quot;: &quot;chef.example.com&quot;,
+&quot;url&quot;: &quot;https://chef.example.com&quot;,
+</code></pre>
+
+<p>最後に Chef サーバを再起動する。</p>
+
+<pre><code>% sudo chef-server-ctl restart
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>会社で、この環境を使って色々試しています。今のところ不具合なく動作している。強
+引ワザなのでもっと綺麗な方法を知っている方がいましたら教えて下さい。
+m ( _ _ ) m</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/04/06/chef-11-private-network/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -702,180 +868,6 @@ PermitRootLogin yes
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/03/17/berkshelf-chef-cookbook-manage/">Berkshelf で Chef Cookbook の管理</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-03-17'>
-            March 17, 2013</time>
-        <span class="author"></span>
-        
-            <p>1 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>今日は Chef Cookbook の管理をしてくれる Berkshelf について。</p>
-
-<p>Berkshelf は Librarian-Chef と同じく Cookbook の管理をしてくれるツールです。依
-存関係のクリアもしてくれます。Opscode の中の人 @someara さんにこんなこと言われ
-て、</p>
-
-<p><blockquote class="twitter-tweet" lang="ja"><p>@<a
-href="https://twitter.com/jedipunkz">jedipunkz</a> berkshelf &gt;
-librarian-chef</p>&mdash; somearaさん (@someara) <a
-href="https://twitter.com/someara/status/298664663976120321">2013年2月5日
-</a></blockquote>
-<script async src="//platform.twitter.com/widgets.js" charset="utf-8"></script></p>
-
-<p>Librarian-chef じゃなくて Berkshelf 使えってことだろうなぁと思ったので僕は
-Bekshelf を使うようにしてます。先日ブログ記事にした openstack-chef-repo も以前
-は Librarian-chef を使っていたのですが最近 Berkshelf に置き換わりました。
-openstack-chef-repo は Opscode の中の人の @mattray さん達が管理しています。</p>
-
-<p>では早速。</p>
-
-<h2 id="インストール">インストール</h2>
-
-<p>インストールは簡単。gem install するだけです。</p>
-
-<pre><code>% gem install berkshelf
-</code></pre>
-
-<h2 id="使い方">使い方</h2>
-
-<p>chef-repo 配下で Berksfile を下記のように書きます。</p>
-
-<pre><code>site :opscode
-
-cookbook 'chef-client'
-cookbook 'nginx', '= 0.101.2'
-</code></pre>
-
-<p>berks コマンドを実行して Cookbooks をダウンロードします。</p>
-
-<pre><code>% export BERKSHELF_PATH=/Users/jedipunkz/chef-repo
-% berks install
-</code></pre>
-
-<p>それぞれ依存関係のある Cookbook 達もダウンロードされます。これでいちいち依存を
-解決しつつダウンロードなんてこともしなくて済む。</p>
-
-<p>ここで言えるのは chef-repo とこの Berksfile だけ git 等で管理すれば良いという
-こと。Cookbooks 達はそれぞれ別のレポジトリに git で管理する形が良いと思う。
-プロジェクトで chef を使っていて chef-repo ごと管理しがちだと思うけど、この方
-が Cookbook を他のプロジェクトでも使いまわせるメリットがある。</p>
-
-<h2 id="opscode-コミュニティ管理外の-cookbooks">opscode コミュニティ管理外の Cookbooks</h2>
-
-<p>自分で管理している cookbook 等も Berkshelf で管理出来ます。下記のように書くと、</p>
-
-<pre><code>site : opscode
-
-cookbook 'chef-client'
-cookbook 'nginx', '= 0.101.2'
-cookbook &quot;pxe_install_server&quot;, git: 'https://github.com/jedipunkz/pxe_install_server'
-</code></pre>
-
-<p>github から直接 git clone をしてくれます。</p>
-
-<h2 id="cookbooks-のアップデート">Cookbooks のアップデート</h2>
-
-<p>Cookbook は独立した git レポジトリで管理すると良いと書きましたが、それぞれの
-Cookbooks は自分が若しくは他人が開発が進むので berks を使って最新の Cookbooks
-にアップデートすることも出来る。</p>
-
-<pre><code>% berks update
-</code></pre>
-
-<h2 id="バージョン指定">バージョン指定</h2>
-
-<p>Cookbook のバージョン指定ももちろん出来る。先の例では</p>
-
-<pre><code>cookbook 'nginx', '= 0.101.2'
-</code></pre>
-
-<p>では 0.101.2 と言うバージョンを指定した。その他</p>
-
-<ul>
-<li>Equal to (=)</li>
-<li>Greater than (&gt;)</li>
-<li>Greater than equal to (&lt;)</li>
-<li>Less than (&lt;)</li>
-<li>Less than equal to (&lt;=)</li>
-<li>Pessimistic (~&gt;)</li>
-</ul>
-
-<p>が指定出来るようだ。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>Cookbooks の管理は今のところ Berkshelf だけで OK。紹介したもの以外にも幾つか機
-能があるので公式のサイトで確認してみて欲しい。個人的には path: 指定が
-Berksfile で出来ないのが不便。公式のサイトには一応記述あるのだが動かなかった。
-そのうち改善されるだろう。また Chef サーバに Cookbooks をアップロードする機能
-もあるが、まぁこれは knife でも出来るしいいか。一番欲しかったのは &lsquo;依存関係の
-クリア&rsquo; だったので。また Berksfile, Berksfile.lock のファイルさえプロジェクト
-で管理すれば良いと言うのが個人的には綺麗になるなぁという印象。</p>
-
-<p>昔、Linux の rpm コマンドでパッケージを入れてて依存関係にあるパッケージをコマ
-ンド打つたびにダウンロードして&hellip;と言う問題を yum が解決してくれて。それに似て
-るなぁと見ていて思った。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/03/17/berkshelf-chef-cookbook-manage/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -992,6 +984,34 @@ Berksfile で出来ないのが不便。公式のサイトには一応記述あ�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/">Google Cloud CDN を使ってみた</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
                                 
                                     
@@ -1013,34 +1033,6 @@ Berksfile で出来ないのが不便。公式のサイトには一応記述あ�
                                 <time class="published" datetime=
                                     '2016-11-20'>
                                     November 20, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-03'>
-                                    November 3, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-25'>
-                                    July 25, 2016</time>
                             </header>
                         </article>
                     </li>
@@ -1079,7 +1071,7 @@ Berksfile で出来ないのが不便。公式のサイトには一応記述あ�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">104</span>
+                                <span style="float:right;">105</span>
                             </header>
                         </article>
                     </li>

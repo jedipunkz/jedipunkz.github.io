@@ -16,7 +16,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.17" />
+        <meta name="generator" content="Hugo 0.18" />
         
 
 
@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2013-08-16T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-08-24T00:00:00&#43;00:00"/>
 
 
 
@@ -196,19 +196,19 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
                     </li>
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,315 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/08/24/vyatta-l2tp-ipsec-vpn/">Vyatta で L2TP over IPsec による VPN 構築</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-08-24'>
+            August 24, 2013</time>
+        <span class="author"></span>
+        
+            <p>1 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>以前、こんな記事をブログに記しました。2012/06 の記事です。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2012/06/13/vyatta-vpn/">http://jedipunkz.github.io/blog/2012/06/13/vyatta-vpn/</a></p>
+
+<p>その後、PPTP で保護されたネットワークの VPN パスワードを奪取出来るツールが公開
+されました。2012/07 のことです。よって今では VPN に PPTP を用いることが推奨さ
+れていません。</p>
+
+<p>ということで L2TP over IPsec による VPN 構築を Vyatta で行う方法を記します。</p>
+
+<h2 id="fig-1-home-lan-と-vyatta-のアドレス">fig.1 : home lan と vyatta のアドレス</h2>
+
+<pre><code>                +--------+                      +-----+
+    home lan ---| vyatta | --- the internet --- | CPE |
+                +--------+                      +-----+
+    X.X.X.X/X(NAT)     pppoe0
+                       Y.Y.Y.Y
+</code></pre>
+
+<p>この様に X.X.X.X/X と Y.Y.Y.Y/Y が関係しているとします。CPE は VPN により
+X.X.X.X/X に接続することが出来ます。</p>
+
+<h2 id="手順-ipsec">手順 : IPsec</h2>
+
+<p>下記の操作で IPsec を待ち受けるインターフェースの設定します。</p>
+
+<pre><code class="language-bash">% configure
+# edit vpn ipsec
+# set ipsec-interface interface pppoe0
+</code></pre>
+
+<p>インターフェース名は環境に合わせて設定してください。私の環境では pppoe0 です。</p>
+
+<p>IPsec パケットが NAT を超えるように設定します。</p>
+
+<pre><code class="language-bash"># set nat-traversal enable
+</code></pre>
+
+<p>CPE がどの環境にいるか、IPsec 接続を許可するネットワークアドレスを入力します。
+渡しの場合はどこからでも接続できるよう 0.0.0.0/0 を入力しました。</p>
+
+<pre><code class="language-bash"># set nat-networks allowed-network 0.0.0.0/0
+# exit
+</code></pre>
+
+<h2 id="手順-l2tp">手順 : L2TP</h2>
+
+<p>入力を省くために edit します。</p>
+
+<pre><code class="language-bash"># edit vpn l2tp remote-access
+</code></pre>
+
+<p>IPsec 認証モードに pre-shared-secret を選択し pre-shared-secret (パスワード)
+を設定します。このパスワードは接続するユーザ全員が知るものです。また認証モード
+を local に設定します。</p>
+
+<pre><code class="language-bash"># set ipsec-settings authentication mode pre-shared-secret
+# set ipsec-settings authentication pre-shared-secret &lt;パスワード&gt;
+# set authentication mode local
+</code></pre>
+
+<p>接続ユーザを作成します。パスワードはユーザに合わせたパスワードを入力します。先
+ほど設定した pre-shared-secret とは別のパスワードを設定するべきです。</p>
+
+<pre><code class="language-bash"># set authentication local-users username &lt;ユーザ名&gt; password &lt;パスワード&gt;
+</code></pre>
+
+<p>接続するネットワーク情報を記します。pool のアドレス範囲は環境に合わせて設定し
+てください。渡しの場合は第4オクテット 100 - 120 を設定しました。</p>
+
+<pre><code class="language-bash"># set outside-address Y.Y.Y.Y
+# set client-ip-pool start X.X.X.100
+# set client-ip-pool stop X.X.X.120
+</code></pre>
+
+<p>最後に commit &amp; save を忘れずに。</p>
+
+<pre><code class="language-bash"># commit
+# save
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>iPhone で接続を確認しました。iOS の場合は L2TP, PPTP, IPsec と3つのタブがあり、
+どれかを選択するようになっていますが、L2TP over IPsec の場合には L2TP タブの項
+目に情報を入力すれば OK です。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/08/24/vyatta-l2tp-ipsec-vpn/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/08/18/openstack-nova-network-ipv6/">OpenStack nova-network IPv6 対応</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-08-18'>
+            August 18, 2013</time>
+        <span class="author"></span>
+        
+            <p>1 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です</p>
+
+<p>今更なのかもしれませんが、OpenStack の nova-network を IPv6 対応する方法を調べ
+てみました。何故 nova-network なのか? 自宅の構成が nova-network だからです..。
+以前は Quantum (現 Neutron) 構成で使っていましたが、ノードをコントローラとコン
+ピュートに別けた時に NIC が足らなくなり&hellip;。</p>
+
+<p>さて本題です。下記のサイトを参考にしました。ほぼそのままの手順ですが、自分のた
+めにもメモです。</p>
+
+<h2 id="参考-url">参考 URL</h2>
+
+<p><a href="http://docs.openstack.org/grizzly/openstack-compute/admin/content/configuring-compute-to-use-ipv6-addresses.html">http://docs.openstack.org/grizzly/openstack-compute/admin/content/configuring-compute-to-use-ipv6-addresses.html</a></p>
+
+<h2 id="前提">前提</h2>
+
+<ul>
+<li>OpenStack の構成は予め構築されている</li>
+<li>nova-network を用いている</li>
+<li>構成はオールインワンでも複数台構成でも可能</li>
+</ul>
+
+<h2 id="手順">手順</h2>
+
+<p>nova がインストールされているすべてのノードで python-netaddr をインストールし
+ます。私の場合は rcbops の chef cookbooks で構築したのですが、既にインストール
+されていました。</p>
+
+<pre><code class="language-bash">% sudo apt-get install python-netaddr
+</code></pre>
+
+<p>nova-network が稼働しているノードで radvd をインストールします。これは
+IPv6 を Advertise しているルータ等が予め備わっている環境であっても、インストー
+ルする必要があります。また /etc/radvd.conf が初め無いので radvd 単体では稼働し
+ませんが、問題ありません。OpenStack の場合 /var/lib/nova 配下のコンフィギュレー
+ションファイルを読み込んでくれます。</p>
+
+<pre><code class="language-bash">% sudo apt-get install radvd
+</code></pre>
+
+<p>/etc/sysctl.conf に下記の記述を追記します。RA の受信とフォワーディングを許可し
+ています。</p>
+
+<pre><code class="language-bash">% ${EDITOR} /etc/sysctl.conf
+net.ipv6.conf.default.forwarding=1
+net.ipv6.conf.all.forwarding = 1
+net.ipv6.conf.all.accept_ra = 1
+% sudo sysctl -p
+</code></pre>
+
+<p>nova がインストールされている全てのノードで /etc/nova.conf に下記の行を追記し
+ます。</p>
+
+<pre><code class="language-bash">% sudo ${EDITOR} /etc/nova/nova.conf
+use_ipv6=true # &lt;- 追記
+</code></pre>
+
+<p>nova プロセスを再起動します。</p>
+
+<pre><code class="language-bash">% cd /etc/init.d/; for i in $( ls nova-* ); do sudo service $i restart; done
+</code></pre>
+
+<p>次に IPv6 のレンジの仮想ネットワークを nova-manage コマンドで生成します。環境にあったレンジを
+追加してください。</p>
+
+<pre><code class="language-bash"> % sudo nova-manage network create public --fixed_range_v4 x.x.x.x/24 \
+   --fixed_range_v6 xxxx:xxx:xx:xxx::/64 --bridge=br300 --bridge_interface=eth0 \
+   --dns1=8.8.8.8 --dns2=8.8.4.4 --multi_host=T
+</code></pre>
+
+<p>ここで IPv4 のレンジも追加しなくてはならないようです。IPv6 オンリーで生成したところ、
+nova-network が下記のエラーを吐いてハングアップしました。</p>
+
+<pre><code>TRACE nova Stderr: 'Error: an inet prefix is expected rather than &quot;None&quot;.\n'
+</code></pre>
+
+<p>また仮想ネットワーク生成時に指定した物理ネットワークインターフェース名は IPv6 が通信出来る
+セグメントのものを利用してください。(環境に合わせてください)</p>
+
+<p>あとは nova boot で仮想マシンを生成すると IPv4, IPv6 のデュアルスタックで起動してきます。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>OpenStack 外の構成についても IPv6 にもちろん対応している必要があります。上記の例だと
+OpenStack の eth0 側の IPv6 ネットワークを適切にルーティングしてくれるルータが必要です。
+自分の場合は自宅で Vyatta を使って行いました。(今度その方法も記そうと思います) また
+floating ip は IPv6 には対応していないそうです。はじめこの方法を取ろうと思ったのですがダメでした。
+上記のように public ネットワーク側のネットワークインターフェースをブリッジインターフェースにして
+public ネットワークを生成する方法で対応出来ますので問題ないかと。</p>
+
+<p>また、Neutron 構成でも今度 IPv6 対応してみないと。:D</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/08/18/openstack-nova-network-ipv6/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -601,309 +910,6 @@ controller02% sudo chef-client
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/08/12/emacs-mew-gmail/">Emacs &#43; Mew で Gmail を読み書きする</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-08-12'>
-            August 12, 2013</time>
-        <span class="author"></span>
-        
-            <p>1 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>今日も軽めの話題を。</p>
-
-<p>Gmail を Emacs + Mew で読み書きする方法を何故かいつも忘れてしまうので自分のた
-めにもメモしておきます。Gmail はブラウザで読み書き出来るのに！と思われるかもし
-れませんが、Emacs で文章が書けるのは重要なことです。:D</p>
-
-<h2 id="対象-os">対象 OS</h2>
-
-<p>比較的新しい&hellip;</p>
-
-<ul>
-<li>Debian Gnu/Linux</li>
-<li>Ubuntu</li>
-</ul>
-
-<p>を使います。</p>
-
-<h2 id="手順">手順</h2>
-
-<p>Emacs, Mew, stunnel4 をインストールします。Emacs は好きな物を入れてください。</p>
-
-<pre><code class="language-bash">% sudo apt-get install emacs24-nox stunnel4 mew mew-bin ca-certificates
-</code></pre>
-
-<p>openssl コマンドで mail.pem を生成します。生成したものを /etc/stunnel 配下に設
-置します。</p>
-
-<pre><code class="language-bash">% openssl req -new -out mail.pem -keyout mail.pem -nodes -x509 -days 365
-% sudo cp mail.pem /etc/stunnel/
-</code></pre>
-
-<p>stunnel はインストール直後、起動してくれないので ENABLE=1 に修正します。</p>
-
-<pre><code class="language-bash">% sudo ${EDITOR} /etc/default/stunnel4
-ENABLE=1 # 0 -&gt; 1 へ変更
-</code></pre>
-
-<p>stunenl.conf のサンプルを /etc/stunnel 配下に設置します。</p>
-
-<pre><code class="language-bash">% sudo cp /usr/share/doc/stunnel4/examples/stunnel.conf-sample /etc/stunnel/stunnel.conf
-</code></pre>
-
-<p>$HOME/.mew.el ファイルを生成します。自分のアカウント情報などを入力します。</p>
-
-<pre><code class="language-lisp">; Stunnel
-(setq mew-prog-ssl &quot;/usr/bin/stunnel4&quot;)
-; IMAP for Gmail
-(setq mew-proto &quot;%&quot;)
-(setq mew-imap-server &quot;imap.gmail.com&quot;)
-(setq mew-imap-user &quot;example@gmail.com&quot;)
-(setq mew-imap-auth  t)
-(setq mew-imap-ssl t)
-(setq mew-imap-ssl-port &quot;993&quot;)
-(setq mew-smtp-auth t)
-(setq mew-smtp-ssl t)
-(setq mew-smtp-ssl-port &quot;465&quot;)
-(setq mew-smtp-user &quot;example@gmail.com&quot;)
-(setq mew-smtp-server &quot;smtp.gmail.com&quot;)
-(setq mew-fcc &quot;%Sent&quot;) ; 送信メイルを保存する
-(setq mew-imap-trash-folder &quot;%[Gmail]/ゴミ箱&quot;)
-(setq mew-use-cached-passwd t)
-(setq mew-ssl-verify-level 0)
-</code></pre>
-
-<p>$HOME/.emacs.d/init.el に Mew の記述を追記します。</p>
-
-<pre><code class="language-lisp">(autoload 'mew &quot;mew&quot; nil t)
-(autoload 'mew-send &quot;mew&quot; nil t)
-(setq mew-fcc &quot;+outbox&quot;) ; 送信メールを保存
-(setq exec-path (cons &quot;/usr/bin&quot; exec-path))
-</code></pre>
-
-<p>Emacs + Mew を起動します。</p>
-
-<pre><code class="language-bash">% emacs -e mew
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>以上です。他の distro だと ca-certificate とか無いので、大変だなぁといつも思っ
-てしまいます。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/08/12/emacs-mew-gmail/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriestools'>tools</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/08/09/debian-unstable-stumpwm/">Debian Unstable で stumpwm</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-08-09'>
-            August 9, 2013</time>
-        <span class="author"></span>
-        
-            <p>1 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>Linux のウィンドウマネージャは使い続けて長いのですが、既に1周半しました。twm -&gt; gnome -&gt;
-enlightenment -&gt; OpenBox -&gt;  .. 忘れた .. -&gt; twm -&gt; vtwm -&gt; awesome -&gt; kde -&gt;
-gnome -&gt; enligtenment &hellip;</p>
-
-<p>巷では Linux のデスクトップ環境は死んだとか言われているらしいですが、stumpwm
-というウィンドウマネージャは結構いいなと思いました。タイル型のウィンドウマネー
-ジャで Emacs 好きの人が開発したらしいです。設定は lisp で書けます。</p>
-
-<p>見た目は派手では無いのですが、</p>
-
-<ul>
-<li>グルーピング機能</li>
-<li>すべての操作がキーボードで出来る</li>
-<li>タイル型であるので煩わしいマウスでのウィンドウ操作が不要</li>
-</ul>
-
-<p>という点に惹かれました。</p>
-
-<p>Linux を使う時、私の場合 Debian Gnu/Linux Unstalble をいつも使うのですが、
-Unstable だと apt-get install stumpwm したバイナリがコケる&hellip;ということでビル
-ドしてあげました。普段慣れないビルド方法だったので、その時の手順を自分のために
-もメモしておきます。</p>
-
-<h2 id="前提環境">前提環境</h2>
-
-<ul>
-<li>Debian Gnu/Linux unstable 利用</li>
-<li>X の環境は揃っている</li>
-</ul>
-
-<h2 id="ビルド手順">ビルド手順</h2>
-
-<h4 id="clisp-をインストール">clisp をインストール</h4>
-
-<p>clisp をインストールします。</p>
-
-<pre><code class="language-bash">% sudo apt-get install clisp-dev
-</code></pre>
-
-<p>lisp.run というファイルを stumpwm が見つけられないので symlink 張ってあげます。
-ちょっと泥臭い。</p>
-
-<pre><code class="language-bash">% sudo ln -s /usr/lib/clisp-2.49/base /usr/lib/clisp-2.49/full
-</code></pre>
-
-<h4 id="sbcl-をインストール">sbcl をインストール</h4>
-
-<p>sbcl をインストールします。</p>
-
-<pre><code class="language-bash">% sudo apt-get  install sbcl
-</code></pre>
-
-<h4 id="quicklisp-をインストール">quicklisp をインストール</h4>
-
-<p>quicklisp をインストールします。また lisp init file に諸々追加します。</p>
-
-<pre><code class="language-bash">% wget http://beta.quicklisp.org/quicklisp.lisp
-% sbcl --load quicklisp.lisp
-* (quicklisp-quickstart:install)
-* (ql:system-apropos &quot;vecto&quot;)
-* (ql:quickload &quot;vecto&quot;)
-* (ql:add-to-init-file)
-* (ql:quickload &quot;clx&quot;)
-* (ql:quickload &quot;cl-ppcre&quot;)
-* quit
-</code></pre>
-
-<h4 id="stumpwm-のビルド">stumpwm のビルド</h4>
-
-<p>stumpwm をビルドします。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/sabetts/stumpwm.git
-% cd stumpwm
-% ./configure
-% make
-% sudo make install
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>$HOME/.stumpwmrc を配置して、いろいろカスタマイズ出来ます。ウェブを検索すると
-皆さんの rc ファイルが見つかるので参考にすると良いかも。prefix キーは C-t なの
-ですが、tmux と被りますよね&hellip;。tmux 側は変えたくないので stumpwm 側を C-z 等
-に変更して使っています。</p>
-
-<pre><code>(set-prefix-key (kbd &quot;C-z&quot;))
-</code></pre>
-</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/08/09/debian-unstable-stumpwm/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1020,6 +1026,34 @@ Unstable だと apt-get install stumpwm したバイナリがコケる&hellip;�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/">Google Cloud CDN を使ってみた</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
                                 
                                     
@@ -1041,34 +1075,6 @@ Unstable だと apt-get install stumpwm したバイナリがコケる&hellip;�
                                 <time class="published" datetime=
                                     '2016-11-20'>
                                     November 20, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-03'>
-                                    November 3, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-25'>
-                                    July 25, 2016</time>
                             </header>
                         </article>
                     </li>
@@ -1107,7 +1113,7 @@ Unstable だと apt-get install stumpwm したバイナリがコケる&hellip;�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">104</span>
+                                <span style="float:right;">105</span>
                             </header>
                         </article>
                     </li>

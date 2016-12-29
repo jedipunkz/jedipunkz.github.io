@@ -18,7 +18,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.17" />
+        <meta name="generator" content="Hugo 0.18" />
         
 
 
@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-10-27T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-11-10T00:00:00&#43;00:00"/>
 
 
 
@@ -198,19 +198,19 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
+                    </li>
+                
+                    <li>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
                     </li>
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,280 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/11/10/serf/">Serf を使ってみた</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-11-10'>
+            November 10, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>僕は Chef 使いなのですが、Chef はオーケストレーションまで踏み込んだツールでは
+ないように思います。せいぜいインテグレーションが出来る程度なのかなぁと。
+しかもインテグレーションするにも Cookbooks の工夫が必要です。以前聞いたことの
+ある話ですが Opscode 社のエンジニア曰く「オーケストレーション等へのアプローチ
+はそれぞれ好きにやってね」だそうです。</p>
+
+<p>個人的にオーケストレーションをテーマに色々調べようかと考えているのですが、
+Serf という面白いツールが出てきました。&rsquo;Serf&rsquo; はオーケストレーションを手助けし
+てくれるシンプルなツールになっています。</p>
+
+<p>もう既にいろんな方が Serf について調べていますが、どのような動きをするのかを自
+分なりに理解した点を記しておこうと思います。</p>
+
+<h2 id="参考にしたサイト">参考にしたサイト</h2>
+
+<ul>
+<li>公式サイト <a href="http://www.serfdom.io/">http://www.serfdom.io/</a></li>
+<li>クラスメソッド開発者ブログ <a href="http://dev.classmethod.jp/cloud/aws/serf_on_ec2/">http://dev.classmethod.jp/cloud/aws/serf_on_ec2/</a></li>
+<li>Glidenote さん <a href="http://blog.glidenote.com/blog/2013/10/30/serf-haproxy/">http://blog.glidenote.com/blog/2013/10/30/serf-haproxy/</a></li>
+</ul>
+
+<h2 id="serf-とは">Serf とは</h2>
+
+<p>Serf は gossip protocol をクラスタにブロードキャストする。gossip protocol は
+SWIM : Scalable Weakly-consistent Infecton-style process Group Membership
+Protocol” をベースとして形成されている。</p>
+
+<h2 id="swim-protocol-概略">SWIM Protocol 概略</h2>
+
+<p>serf は新しいクラスタとして稼働するか、既存のクラスタに ‘join’ する形で稼働
+するかのどちらかで起動する。</p>
+
+<p>新しいメンバは TCP で状態を &lsquo;full state sync&rsquo; され既存のクラスタ内にて
+‘gossipin (噂)される。この ’gosiping’ は UDP で通信されこれはネットワーク使
+用量はノード数に比例することになる。</p>
+
+<p>ランダムなノードとの &lsquo;full state sync&rsquo; は TCP で行われるけどこれは
+‘gossiping’ に比べて少い</p>
+
+<p>ある一定期間、あるノードが fails 状態の場合、迂回経路を使ってそのノードに対し
+てチェックを行う。両方の経路にて fails な場合ノードが ‘suspiciou&rsquo; (容疑者)
+状態になる。もし迂回経路のチェックが fails しなかった場合ネットワーク障害として
+判断される。</p>
+
+<h2 id="serf-の-swim-protocol-からの改修点">Serf の SWIM Protocol からの改修点</h2>
+
+<p>Serf は SWIM Protocol をベースにしていると記しましたが、どのような点を改修した
+のかまとめました。</p>
+
+<ul>
+<li>&lsquo;full state sync&rsquo; の TCP 化</li>
+</ul>
+
+<p>serf は ‘full state sync’ を TCP にて行う。これにより serf はネットワーセグ
+メントが分離されている状態でも通信出来る。</p>
+
+<ul>
+<li>gossip レイヤの分離</li>
+</ul>
+
+<p>serf は failure detection protocol から完全に gossip レイヤを分離。これでより
+高速にデータ増殖が行える。</p>
+
+<ul>
+<li>dead node の扱い
+<br /></li>
+</ul>
+
+<p>serf は デッドノードに対して回数を記憶している。これにより full state sync が
+実施された場合、逆に死んだノードの情報を受取る。SWIM では full state sync を行
+わないので死んだノードにを削除してしまう。これはクラスタに対する情報一点集中化
+に役立つ。</p>
+
+<h2 id="使ってみる">使ってみる</h2>
+
+<p>早速使ってみます。下記の URL にある demo 用スクリプトを少し改修して使ってみま
+した。</p>
+
+<p><a href="https://github.com/hashicorp/serf/tree/master/demo/web-load-balancer">https://github.com/hashicorp/serf/tree/master/demo/web-load-balancer</a></p>
+
+<ul>
+<li>2つノードを立ち上げる</li>
+</ul>
+
+<p>AWS でも OpenStack でもベアメタルでも何でも良いのでノードを2台用意する。</p>
+
+<ul>
+<li>下記のスクリプトを置いて両ノードで実行する。</li>
+</ul>
+
+<pre><code class="language-bash">#!/bin/sh
+set -e
+
+export SERF_ROLE=role01
+
+sudo apt-get install -y unzip
+
+# Download and install Serf
+cd /tmp
+until wget -O serf.zip https://dl.bintray.com/mitchellh/serf/0.2.1_linux_amd64.zip; do
+sleep 1
+done
+unzip serf.zip
+sudo mv serf /usr/local/bin/serf
+
+# The member join script is invoked when a member joins the Serf cluster.
+# Our join script simply adds the node to the load balancer.
+cat &lt;&lt;EOF &gt;/tmp/join.sh
+#!/bin/sh
+echo 'member joined' &gt;&gt; /tmp/serf_join.log
+EOF
+sudo mv /tmp/join.sh /usr/local/bin/serf_member_join.sh
+chmod +x /usr/local/bin/serf_member_join.sh
+
+# Configure the agent
+cat &lt;&lt;EOF &gt;/tmp/agent.conf
+description &quot;Serf agent&quot;
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+exec /usr/local/bin/serf agent \\
+-event-handler &quot;member-join=/usr/local/bin/serf_member_join.sh&quot; \\
+-role=${SERF_ROLE} &gt;&gt;/var/log/serf.log 2&gt;&amp;1
+EOF
+sudo mv /tmp/agent.conf /etc/init/serf.conf
+
+# Start the agent!
+sudo start serf
+</code></pre>
+
+<p>実行すると &lsquo;role01&rsquo; という Role 名で serf agent が稼働しているはず。またスクリ
+プトを見てわかると思うが &ndash;event-handler &ldquo;member-join=&lt;スクリプト&gt;&rdquo; としている。
+これでクラスタに新しいメンバが join すると /tmp/serf_join.log に &lsquo;member
+joined&rsquo; というメッセージが出力されるはずだ。実際に実行してみる。</p>
+
+<pre><code class="language-bash">% sudo serf join &lt;もう片系ノードの IP&gt;
+% sudo serf members
+  vm01    10.0.2.1    alive    role01
+  vm02    10.0.2.3    alive    role01
+% tail /tmp/serf_join.log
+  ‘member joined
+  ‘member joined
+</code></pre>
+
+<p>イベントハンドラにはユーザ指定のものも扱える。</p>
+
+<pre><code>user:deploy=foo.sh
+</code></pre>
+
+<p>この場合のハンドラは下記のコマンドで発生出来る。</p>
+
+<pre><code class="language-bash">% serf event deploy
+</code></pre>
+
+<h2 id="コンフィギュレーションファイル">コンフィギュレーションファイル</h2>
+
+<p>今回は init 起動スクリプト内でイベントハンドラ発生時のスクリプト指定等を行った
+が、json 形式のコンフィギュレーションファイルにて記述することも可能。</p>
+
+<pre><code class="language-json">{
+  &quot;role&quot;: &quot;load-balancer&quot;,
+
+  &quot;event_handlers&quot;: [
+    &quot;member_join.sh&quot;,
+    &quot;user:deploy=foo.sh&quot;
+  ]
+}
+</code></pre>
+
+<p>上記ファイルを serf.conf とした場合、このコンフィグの指定は
+&ndash;config-file=serf.conf で行える。</p>
+
+<h2 id="ロードマップ">ロードマップ</h2>
+
+<p>最後に Serf の今後のロードマップについて記してあったので、まとめてみた。</p>
+
+<ul>
+<li>コンフィギュレーションファイル</li>
+</ul>
+
+<p>よりカスタマイズ可能なコンフィギュレーションファイルを扱えるようにする。</p>
+
+<ul>
+<li>SIGHUP</li>
+</ul>
+
+<p>SIGHUP 信号でリロード出来ないので、これに対応する。</p>
+
+<ul>
+<li>イベントハンドラライブラリ</li>
+</ul>
+
+<p>イベントハンドラを自作・シェアを容易に行えるようプラグイン化を進める。</p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>冒頭にオーケストレーションについて触れましたが、このツールを使うだけでは自分の
+考えているオーケストレーションにはならないと思いました。当たり前ですね。。複数
+ノードを束ねて構成を形成する、またそれをトリガするのが人間であればそれはインテ
+グレーションの範囲かなぁと。その先にオーケストレーションがあるとすればトリガ自
+身もソフトウェアにさせる必要があるのでそのアルゴリズムを人間が書く必要があるの
+かなぁと。もちろんそのためにこのSerf は貴重なパーツとなってくれそう。</p>
+
+<p>あと、ロードマップにも記しましたが開発が盛んにされているようなので今後が楽しみ
+です。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/11/10/serf/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -1176,298 +1450,6 @@ Using bundler (1.3.5)
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/">test-kitchen と OpenStack で Chef Cookbooks テスト(前篇)</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-10-13'>
-            October 13, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>test-kitchen + Vagrant を利用して複数環境で Chef Cookbooks のテストを行う方法は
-結構皆さん利用されていると思うのですが Vagrant だと手元のマシンに仮想マシンが
-バシバシ立ち上げるので僕はあまり好きではないです。そこで、OpenStack のインスタ
-ンスをその代替で使えればいいなぁと結構前から思っていたのですが、今回うまくいっ
-たのでその方法を記します。</p>
-
-<h2 id="用意するモノ">用意するモノ</h2>
-
-<ul>
-<li>OpenStack 環境一式</li>
-<li>Chef がインストールされた OS イメージとその ID</li>
-<li>test-kitchen を実行するワークステーション (お手持ちの Macbook 等)</li>
-</ul>
-
-<p>OS イメージの作成ですが Veewee などで自動構築できますし、インスタンス上で Chef
-のインストールを行った後にスナップショットを作成してそれを利用しても構いません。</p>
-
-<h2 id="test-kitchen-のインストール">test-kitchen のインストール</h2>
-
-<p>test-kitchen をインストールします。versoin 1.0.0 はまだリリースされていないの
-で github から master ブランチを取得してビルドします。直近で OpenStack に関連
-する不具合の修正等が入っているのでこの方法を取ります。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/opscode/test-kitchen.git
-% cd test-kitchen
-% bundle install
-% rake build # &lt;--- gem をビルド
-% gen install ./pkg/test-kitchen-1.0.0.dev.gem
-</code></pre>
-
-<p>現時点 (2013/10/13) で berkshelf の利用しているソフトウェアと衝突を起こす問題
-があるので bundle で解決します。下記のように Gemfile に gem
-&lsquo;kitchen-openstack&rsquo; と記述します。</p>
-
-<pre><code class="language-ruby">source 'https://rubygems.org'
-gemspec
-
-gem 'kitchen-openstack' # &lt;--- 追記
-
-group :guard do
-  gem 'rb-inotify', :require =&gt; false
-  gem 'rb-fsevent', :require =&gt; false
-  gem 'rb-fchange', :require =&gt; false
-  gem 'guard-minitest', '~&gt; 1.3'
-  gem 'guard-cucumber', '~&gt; 1.4'
-end
-</code></pre>
-
-<h2 id="kitchen-openstack-のインストール">kitchen-openstack のインストール</h2>
-
-<p>kitchen-openstack をインストールします。こちらも gem をビルドしてインストール
-します。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/RoboticCheese/kitchen-openstack.git
-% cd kitchen-openstack
-% bundle insatll #&lt;---- 関連ソフトウェアインストール
-% rake build     #&lt;---- gem をビルド
-% gem install ./pkg/kitchen-openstack-0.5.1.gem
-</code></pre>
-
-<h2 id="kitchen-yml-の作成">.kitchen.yml の作成</h2>
-
-<p>.kitchen.yml を用意します。test-kitchen のディレクトリに移動し .kitchen.yml を
-下記の例に従って作成します。今回は Ubuntu OS, CentOS にてテストを実行します。</p>
-
-<pre><code class="language-bash">% cd /path/to/test-kitchen
-% ${EDITOR} .kitchen.yml
-</code></pre>
-
-<pre><code class="language-ruby">+++
-driver_plugin: openstack
-
-suites:
-- name: default
-  run_list:
-  - recipe[ntp::default]
-  attributes: {}
-
-platforms:
-- name: ubuntu-12.04
-  driver_config:
-    openstack_username: &lt;openstac_username&gt;
-    openstack_api_key: &lt;openstack_password&gt;
-    openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens
-    image_ref: &lt;image_id&gt;
-    flavor_ref: 1
-    key_name: &lt;key_name&gt;
-    openstack_tenant: service
-    username: ubuntu
-    private_key_path: &lt;path_to_secretkey&gt;
-
-- name: centos-64
-  driver_config:
-    openstack_username: &lt;openstac_username&gt;
-    openstack_api_key: &lt;openstack_password&gt;
-    openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens
-    image_ref: &lt;image_id&gt;
-    flavor_ref: 1
-    key_name: &lt;key_name&gt;
-    openstack_tenant: service
-    username: root
-    private_key_path: &lt;path_to_secretkey&gt;
-</code></pre>
-
-<p>ファイルの内容について解説します。</p>
-
-<ul>
-<li>suites:</li>
-</ul>
-
-<p>実行したい Chef Cookbooks のレシピ名を指定します。attriutes などをここで上書き
-することも出来ます。</p>
-
-<ul>
-<li>platforms:</li>
-</ul>
-
-<p>テストに用いたい OS を列挙していけます。ここでは例として Ubuntu, CentOS を記し
-ました。</p>
-
-<ul>
-<li>openstack_username, openstack_api_key</li>
-</ul>
-
-<p>OpenStack にログインするためのユーザ名とパスワードです。keystone で作成します。</p>
-
-<ul>
-<li>openstack_auth_url</li>
-</ul>
-
-<p>Keystone の URL です。最後に /tokens と付けるのを忘れずに。</p>
-
-<ul>
-<li>image_ref</li>
-</ul>
-
-<p>それぞれの OS イメージの ID を記します。前述したとおりインスタンスでオペレーショ
-ン後にスナップショットを作成しそれを記すことも可能です。</p>
-
-<ul>
-<li>flavor_ref</li>
-</ul>
-
-<p>Flavor ID を記します。ここでは一番小さい Flavor である m1.tiny を記しました。</p>
-
-<ul>
-<li>key_name</li>
-</ul>
-
-<p>インスタンス作成時に選択する Nova のキーペア名です。OpenStack コマンドラインで
-言う &ndash;key_name です。</p>
-
-<ul>
-<li>openstack_tenant</li>
-</ul>
-
-<p>どのテナントにインスタンスを作成するか？を記します。</p>
-
-<ul>
-<li>username</li>
-</ul>
-
-<p>インスタンスにログインする際のユーザ名を記します。</p>
-
-<ul>
-<li>private_key_path</li>
-</ul>
-
-<p>インスタンスにログインするための SSH 秘密鍵のパスを記します。ここではノンパス
-ワードでログイン出来るよう鍵を生成してあげる必要があります。</p>
-
-<h2 id="cookbooks-の配置">Cookbooks の配置</h2>
-
-<p>カレントディレクトリ配下に &lsquo;cookbooks&rsquo; という名前のディレクトリを用意し
-テストで用いたい Cookbooks を配置します。Berkshelf を用いれば簡単です。が、
-現時点で Berkshelf の用いているソフトウェア test-kitchen のそれが衝突を起こす
-のでテスト実行前には Berkshelf ファイルを退避してください。</p>
-
-<pre><code class="language-bash">% ${EDITOR} Berksfile
-site :opscode
-    
-cookbook 'ntp;
-% berks install --path=./cookbooks
-% mv Berksfile Berksfile.old
-</code></pre>
-
-<h2 id="テスト実行">テスト実行</h2>
-
-<p>いよいよテストを実行します。上記の例では Ubuntu OS, Debian OS に対して ntp の
-Chef Cookbooks を実際にデプロイしテストを行います。</p>
-
-<pre><code class="language-bash">% bundle exec kitchen test
-</code></pre>
-
-<p>&lsquo;test&rsquo; を引数で渡すと</p>
-
-<ul>
-<li>インスタンス作成</li>
-<li>Chef のインストール</li>
-<li>Cookbooks のアップロード</li>
-<li>chef-solo の実行</li>
-<li>Cookbooks 中に &lsquo;test&rsquo; ディレクトリがある場合はテスト実行</li>
-</ul>
-
-<p>を行ってくれます。それぞれ別々に実行したい場合は</p>
-
-<pre><code class="language-bash">% bundle exec kitchen create   # &lt;---- インスタンスの作成
-% bundle exec kitchen setup    # &lt;---- chef のインストールと初回の converge
-% bundle exec kitchen converge # &lt;---- chef-solo を再度実行
-% bundle exec kitchen verify   # &lt;---- 'test' ディレクトリに従いテスト実行
-% bundle exec kitchen destroy  # &lt;---- インスタンスの削除
-</code></pre>
-
-<p>と行えば良いです。converge, verify は何度でも繰り返し実行が可能。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>前述したとおり Vagrant を使うと手元のマシンのリソースを大量に消費してしまうの
-で OpenStack を利用する価値は結構あるのかなぁと思っています。バージョン 1.0.0
-がリリースされる時期も近いと思うので今のうちに知っておくと良いかと思います。</p>
-
-<p>また、テストと言っても test-kitchen の場合2つの意味があると思います。実際に
-Cookbooks をインスタンスにインストールするテスト、と Cookbooks 自体のテストと
-いう意味です。後者についてはまた後ほど記したいと思います。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1584,6 +1566,34 @@ Cookbooks をインスタンスにインストールするテスト、と Cookbo
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/">Google Cloud CDN を使ってみた</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
                                 
                                     
@@ -1605,34 +1615,6 @@ Cookbooks をインスタンスにインストールするテスト、と Cookbo
                                 <time class="published" datetime=
                                     '2016-11-20'>
                                     November 20, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-03'>
-                                    November 3, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-07-25'>
-                                    July 25, 2016</time>
                             </header>
                         </article>
                     </li>
@@ -1671,7 +1653,7 @@ Cookbooks をインスタンスにインストールするテスト、と Cookbo
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">104</span>
+                                <span style="float:right;">105</span>
                             </header>
                         </article>
                     </li>

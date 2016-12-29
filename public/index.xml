@@ -6,8 +6,205 @@
     <description>Recent content on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sun, 27 Nov 2016 21:00:45 +0900</lastBuildDate>
+    <lastBuildDate>Thu, 29 Dec 2016 09:43:18 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</title>
+      <link>http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/</link>
+      <pubDate>Thu, 29 Dec 2016 09:43:18 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/</guid>
+      <description>
+
+&lt;p&gt;こんにちは @jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;今回は Kubernetes を使った構成で Google-Fluentd をどのコンテナに載せるか？ってことを考えてみたので書きたいと思います。&lt;/p&gt;
+
+&lt;p&gt;Kubernetes は Docker を利用したソフトウェアなので Docker と同じく &amp;ldquo;1コンテナ, 1プロセス&amp;rdquo; というポリシがあります。つまり、コンテナ上のプロセスが停止したら Kubernetes がそれを検知してコンテナを起動しなおしてくれます。ですが、複数プロセスを1コンテナに稼働させると、それが出来ません。そうは言っても中には複数のプロセスを稼働させたい場面があります。その場面として考えられる具体的な例として HTTPD サーバのログを Google-Fluentd を使って GCP Cloud Logging に転送したい場合があります。&lt;/p&gt;
+
+&lt;p&gt;今回は上記の例を fluentd-sidecar-gcp と kubernetes volumes を使って解決する方法を記したいと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;構成のシナリオ&#34;&gt;構成のシナリオ&lt;/h2&gt;
+
+&lt;p&gt;シナリオとしては下記のとおりです。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;マルチコンテナポッドを扱う&lt;/li&gt;
+&lt;li&gt;1つの Kubernetes Volumes を複数コンテナで共有する&lt;/li&gt;
+&lt;li&gt;HTTPD ログをその Volume に出力&lt;/li&gt;
+&lt;li&gt;隣接する Google-Fluentd コンテナでその Volume に出力されたログを読み込みログ転送&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;fluentd-sidecar-gcp-とは&#34;&gt;fluentd-sidecar-gcp とは&lt;/h2&gt;
+
+&lt;p&gt;次に説明するのは fluentd-sidecar-gcp の概略です。これは Kubernetes が contrib で扱っているコンテナです。下記の URL にあります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/kubernetes/contrib/tree/master/logging/fluentd-sidecar-gcp&#34;&gt;https://github.com/kubernetes/contrib/tree/master/logging/fluentd-sidecar-gcp&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;Google-Fluentd を稼働させる Dockerfile が用意されているのですが、下記の記述を確認するとこのコンテナに環境変数 $FILES_TO_COLLECT を渡すと Google Fluentd でログを取得してくれることが分かります。&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&#34;https://github.com/kubernetes/contrib/blob/master/logging/fluentd-sidecar-gcp/config_generator.sh#L22-L37&#34;&gt;https://github.com/kubernetes/contrib/blob/master/logging/fluentd-sidecar-gcp/config_generator.sh#L22-L37&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;つまり、fluentd-sidecar-gcp コンテナに隣接する HTTPD コンテナのログが出力される Kubernetes Volumes 上のファイルパスを指定すれば HTTPD のログが取得でき、Google Cloud Logging へログが転送できます。&lt;/p&gt;
+
+&lt;h2 id=&#34;サンプルの-kubernetes-yaml&#34;&gt;サンプルの Kubernetes YAML&lt;/h2&gt;
+
+&lt;p&gt;下記にサンプルとして Kubernetes YAML を記します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    run:  my-nginx
+  name: nginx-fluentd-logging-example
+spec:
+  containers:
+  - name: nginx-container
+    image: nginx
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: log-storage
+      mountPath: /var/log/nginx
+  - name: sidecar-log-collector
+    image: gcr.io/google_containers/fluentd-sidecar-gcp:1.4
+    resources:
+      limits:
+        cpu: 100m
+        memory: 200Mi
+    env:
+    - name: FILES_TO_COLLECT
+      value: &amp;quot;/mnt/log/nginx/access.log /mnt/log/nginx/error.log&amp;quot;
+    volumeMounts:
+    - name: log-storage
+      readOnly: true
+      mountPath: /mnt/log/nginx
+  volumes:
+  - name: log-storage
+    emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-nginx
+  labels:
+    run: my-nginx
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+  selector:
+    run: my-nginx
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;特徴を下記に解説します。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;nginx-container, sidecar-log-collector のマルチコンテナポッドです。&lt;/li&gt;
+&lt;li&gt;sidecar-log-collector の image: としては gcr.io/google_containers/fluentd-sidecar-gcp:1.4 が指定されています&lt;/li&gt;
+&lt;li&gt;&amp;lsquo;log-storage&amp;rsquo; として nginx-container の /var/log/nginx が sidecar-log-collector の /mnt/log/nginx として共有されています&lt;/li&gt;
+&lt;li&gt;FILES_TO_COLLECT として共有 Volume 上の access.log, error.log が指定されています&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;結果、Nginx コンテナのログが Kubernetes Volume で Google-Fluentd コンテナに読み込み専用で共有され (readOnly 行) 、この Google-Fluentd は環境変数で渡された /mnt/log/nginx/access.log と /mnt/log/nginx/error.log を読み込み開始し、内容を Google Cloud Logging へ転送します。&lt;/p&gt;
+
+&lt;h2 id=&#34;デプロイ方法&#34;&gt;デプロイ方法&lt;/h2&gt;
+
+&lt;p&gt;デプロイは下記の通り実施します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f &amp;lt;上記のファイル名&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;結果とまとめ&#34;&gt;結果とまとめ&lt;/h2&gt;
+
+&lt;p&gt;それぞれのログファイルを Tag を Google-Fluentd で付けた形で Google Cloud Logging へ転送出来ました。ログ毎に結果を Cloud Logging UI 上で確認できます。
+本来、Docker なので標準出力にログを出力し Kubernetes がその標準出力を Cloud Logging へ転送してくれるのですが、それだと Tag が付けられないため、ログを分離するのが一苦労だと思います。ですが、今回紹介した方法では Google-Fluentd で Tag を付けてログ転送出来たため、その心配はありません。&lt;/p&gt;
+
+&lt;p&gt;この Kubernetes Volumes は他にも利用方法がありそうです。&lt;/p&gt;
+
+&lt;p&gt;本来、GKE や Kubernetes を利用される方は Microservice Architecture が採用出来ている方々だと思うのですが、fluentd をアプリコンテナから分離するのは結構悩むところじゃないかと思うので、今回紹介した方法はそう言った場合に有用かと思います。&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>Google Cloud CDN を使ってみた</title>
+      <link>http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/</link>
+      <pubDate>Thu, 29 Dec 2016 09:32:49 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;今回は Google Cloud Platform の Google CloudCDN について調べてみたので記したいと思います。&lt;/p&gt;
+
+&lt;p&gt;CloudCDN は GCP のロードバランサのバックエンドサービスに紐付けられるサービスです。このバックエンドサービスで CloudCDN を有効にしていると CDN サービスを機能させることが出来ます。先に書いておくとこの CloudCDN はとてもシンプルで扱いやすいサービスだと判りました。高機能な他の CDN サービスと比べると機能が足らない感ありますが、必要最低限なところを抑えているのと、価格がとても安いです。(価格は下記の URL 参照)&lt;/p&gt;
+
+&lt;p&gt;価格表 : &lt;a href=&#34;https://cloud.google.com/cdn/pricing&#34;&gt;https://cloud.google.com/cdn/pricing&lt;/a&gt;&lt;/p&gt;
+
+&lt;h2 id=&#34;構成&#34;&gt;構成&lt;/h2&gt;
+
+&lt;p&gt;構成と構成の特徴です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;+----------+                                    +---------+
+| instance |--+                               +-| EndUser |
++----------+  |  +------------+  +----------+ | +---------+
+              +--|LoadBalancer|--| CloudCDN |-+-| EndUser |
++----------+  |  +------------+  +----------+ | +---------+
+| instance |--+                               +-| EndUser |
++----------+                                    +---------+
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;ul&gt;
+&lt;li&gt;コンテンツが初めてリクエストされた場合キャッシュミスする&lt;/li&gt;
+&lt;li&gt;キャッシュミスした際に近くにあるキャッシュからコンテンツを取得しようと試みる&lt;/li&gt;
+&lt;li&gt;近くのキャッシュがコンテンツがある場合、最初のキャッシュにコンテンツが送信される&lt;/li&gt;
+&lt;li&gt;近くのキャッシュにコンテンツがない場合、HTTP ロードバランサにリクエストが転送される&lt;/li&gt;
+&lt;li&gt;その後のリクエストはキャッシュが応答する(キャッシュヒット)&lt;/li&gt;
+&lt;li&gt;キャッシュ間のフィルは EndUser のリクエストに応じて実行される&lt;/li&gt;
+&lt;li&gt;キャッシュを事前に読み込むことできない&lt;/li&gt;
+&lt;li&gt;キャッシュは世界各地に配置されている&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;cloudcdn-を導入する方法&#34;&gt;CloudCDN を導入する方法&lt;/h2&gt;
+
+&lt;p&gt;導入する方法は簡単で下記のとおりです。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;新規 LB を WebUI で作成&lt;/li&gt;
+&lt;li&gt;バックエンドサービスを作成&lt;/li&gt;
+&lt;li&gt;右パネルの下にある [Cloud CDN を有効にする] チェックボックスをオンに&lt;/li&gt;
+&lt;li&gt;作成ボタンを押下&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;HTTPD サーバ側 (今回は Apache を使います) でキャッシュに関する設定を行います。
+下記は例です。3600秒、キャッシュさせる設定になります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;Header set Cache-control &amp;quot;public, max-age=3600&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;キャッシュされる条件は RFC7324 に規定されているとおりです。&lt;/p&gt;
+
+&lt;h2 id=&#34;特定のキャッシュを削除する方法&#34;&gt;特定のキャッシュを削除する方法&lt;/h2&gt;
+
+&lt;p&gt;Google Cloud SDK &lt;a href=&#34;https://cloud.google.com/sdk/&#34;&gt;https://cloud.google.com/sdk/&lt;/a&gt; を使うと CLI でコンテンツを指定してキャッシュのクリアが出来ます。また WebUI でもクリアは可能です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ gcloud compute url-maps invalidate-cdn-cache &amp;lt;url-map の名前&amp;gt; --path &amp;quot;コンテンツのパス&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;このときに &amp;ndash;path で指定できるコンテンツの記し方は下記のように指定することも可能です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;--path &amp;quot;/cat.png # &amp;lt;--- 1つのコンテンツキャッシュを削除
+--path &amp;quot;/*&amp;quot;      # &amp;lt;--- 全てのコンテンツキャッシュを削除
+--path &amp;quot;/pix/*&amp;quot;  # &amp;lt;--- ディレクトリ指定で削除
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;価格が低価格で必要最低限な機能に絞られている印象です。シンプルな分、理解し易いですしキャッシュクリアについても Hubot 化などすれば開発者の方に実行してもらいやすいのではないでしょうか。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>coreos の etcd operator を触ってみた</title>
@@ -2673,1102 +2870,6 @@ influxDB の 0.9.x 系では動作しませんでした。よって latest で�
 &lt;li&gt;&lt;a href=&#34;http://qiita.com/atskimura/items/4c4aaaaa554e2814e938&#34;&gt;http://qiita.com/atskimura/items/4c4aaaaa554e2814e938&lt;/a&gt;&lt;/li&gt;
 &lt;li&gt;&lt;a href=&#34;https://www.brianchristner.io/how-to-setup-docker-monitoring/&#34;&gt;https://www.brianchristner.io/how-to-setup-docker-monitoring/&lt;/a&gt;&lt;/li&gt;
 &lt;/ul&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>Knife-ZeroでOpenStack Kiloデプロイ(複数台編)</title>
-      <link>http://jedipunkz.github.io/blog/2015/07/20/knife-zero-openstack-kilo/</link>
-      <pubDate>Mon, 20 Jul 2015 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2015/07/20/knife-zero-openstack-kilo/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;前回 OpenStack Kilo のオールインワン構成を Chef-Zero を使ってデプロイする方法
-を書きましたが、複数台構成についても調べたので結果をまとめていきます。&lt;/p&gt;
-
-&lt;p&gt;使うのは openstack/openstack-chef-repo です。下記の URL にあります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/openstack/openstack-chef-repo&#34;&gt;https://github.com/openstack/openstack-chef-repo&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;この中に Vagrant を使ったファイルが存在しますが、実機でのデプロイには全く役に
-立ちません。自分で Environment ファイルを作成する必要があります。今回は前提の
-構成を作って、それに合わせた Environment ファイルを記します。ほぼスタンダード
-な構成にしましたので、自分の環境に合わせて修正するのも比較的簡単だと想います。
-参考にしてください。&lt;/p&gt;
-
-&lt;p&gt;今回は knife-zero を使ってデプロイします。Chef サーバが必要なく、knife-zero を
-使うホスト上のオンメモリで Chef サーバが稼働するので準備がほとんど必要ありません。&lt;/p&gt;
-
-&lt;p&gt;早速ですが、構成と準備・そしてデプロイ作業を記していきます。&lt;/p&gt;
-
-&lt;h2 id=&#34;前提の構成&#34;&gt;前提の構成&lt;/h2&gt;
-
-&lt;pre&gt;&lt;code&gt;   +------------+
-   | GW Router  |
-+--+------------+
-|  |
-|  +--------------+--------------+---------------------------- public network
-|  | eth0         | eth0
-|  +------------+ +------------+ +------------+ +------------+
-|  | Controller | |  Network   | |  Compute   | | Knife-Zero | 
-|  +------------+ +-------+----+ +------+-----+ +------------+
-|  | eth1         | eth1  |      | eth1 |       | eth1 
-+--+--------------+-------)------+------)-------+------------- api/management network
-                          | eth2        | eth2
-                          +-------------+--------------------- guest network
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;特徴としては&amp;hellip;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;public, api/management, guest の3つのネットワークに接続された OpenStack ホスト&lt;/li&gt;
-&lt;li&gt;Controller, Network, Compute の最小複数台構成&lt;/li&gt;
-&lt;li&gt;knife-zero を実行する &amp;lsquo;Knife-Zero&amp;rsquo; ホスト&lt;/li&gt;
-&lt;li&gt;Knife-zero ホストは api/management network のみに接続で可&lt;/li&gt;
-&lt;li&gt;デプロイは api/management network を介して行う&lt;/li&gt;
-&lt;li&gt;public, api/management network はインターネットへの疎通が必須&lt;/li&gt;
-&lt;li&gt;OS は Ubuntu 14.04 amd64&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;とくに api/management network がインターネットへの疎通が必要なところに注意して
-ください。デプロイは knife-zero ホストで実行しますが、各ノードへログインしデプ
-ロイする際にインターネット上からパッケージの取得を試みます。&lt;/p&gt;
-
-&lt;p&gt;また api/management network を2つに分離するのも一般的ですが、ここでは一本にま
-とめています。&lt;/p&gt;
-
-&lt;h2 id=&#34;ip-アドレス&#34;&gt;IP アドレス&lt;/h2&gt;
-
-&lt;p&gt;IP アドレスは下記を前提にします。&lt;/p&gt;
-
-&lt;table&gt;
-&lt;thead&gt;
-&lt;tr&gt;
-&lt;th align=&#34;left&#34;&gt;interface&lt;/th&gt;
-&lt;th align=&#34;left&#34;&gt;IP addr&lt;/th&gt;
-&lt;/tr&gt;
-&lt;/thead&gt;
-
-&lt;tbody&gt;
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Controller eth0&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.1.10&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Controller eth1&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.2.10&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Network eth0&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.1.11&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Network eth1&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.2.11&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Network eth2&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.3.11&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Compute eth1&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.2.12&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Compute eth2&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.3.12&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Knife-Zero eth1&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.2.13&lt;/td&gt;
-&lt;/tr&gt;
-&lt;/tbody&gt;
-&lt;/table&gt;
-
-&lt;h2 id=&#34;ネットワークインターフェース設定&#34;&gt;ネットワークインターフェース設定&lt;/h2&gt;
-
-&lt;p&gt;それぞれのホストで下記のようにネットワークインターフェースを設定します。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Controller ホスト&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;eth0, 1 を使用します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;auto eth0
-iface eth0 inet static
-    address 10.0.1.10
-    netmask 255.255.255.0
-    gateway 10.0.1.254
-    dns-nameservers 8.8.8.8
-    dns-search jedihub.com
-
-auto eth1
-iface eth1 inet static
-    address 10.0.2.10
-    netmask 255.255.255.0
-
-auto eth2
-iface eth2 inet manual
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Network ホスト&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;eth0, 1, 2 全てを使用します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;auto eth0
-iface eth0 inet static
-        up ifconfig $IFACE 0.0.0.0 up
-        up ip link set $IFACE promisc on
-        down ip link set $IFACE promisc off
-        down ifconfig $IFACE down
-        address 10.0.1.11
-        netmask 255.255.255.0
-
-auto eth1
-iface eth1 inet static
-        address 10.0.2.11
-        netmask 255.255.255.0
-        gateway 10.0.2.248
-        dns-nameservers 8.8.8.8
-        dns-search jedihub.com
-
-auto eth2
-iface eth2 inet static
-        address 10.0.3.11
-        netmask 255.255.255.0
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Compute ホスト&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;eth1, 2 を使用します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;auto eth0
-iface eth0 inet manual
-
-auto eth1
-iface eth1 inet static
-        address 10.0.2.12
-        netmask 255.255.255.0
-        gateway 10.0.2.248
-        dns-nameservers 8.8.8.8
-        dns-search jedihub.com
-
-auto eth2
-iface eth2 inet static
-        address 10.0.3.12
-        netmask 255.255.255.0
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;これらの作業は knife-zero からログインし eth1 を介して行ってください。でないと
-接続が切断される可能性があります。&lt;/p&gt;
-
-&lt;h2 id=&#34;準備&#34;&gt;準備&lt;/h2&gt;
-
-&lt;p&gt;knife-zero ホストに chef, knife-zero, berkshelf が入っている必要があるので、こ
-こでインストールしていきます。&lt;/p&gt;
-
-&lt;p&gt;knife-zero ホストに chef をインストールします。Omnibus パッケージを使って手っ
-取り早く環境を整えます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo -i
-curl -L https://www.opscode.com/chef/install.sh | bash
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Berkshelf をインストールするのに必要なソフトウェアをインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev ruby-dev libxml2-dev libxslt-dev g++
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Berkshelf をインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;/opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;最後に knife-zero をインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;/opt/chef/embedded/bin/gem install knife-zero --no-ri --no-rdoc
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;デプロイ作業&#34;&gt;デプロイ作業&lt;/h2&gt;
-
-&lt;p&gt;それでは openstack-chef-repo を取得してデプロイの準備を行います。
-ブランチの指定は行わず master ブランチを取得します。Kilo は master ブランチで
-管理されています。次のバージョンの開発が始まるタイミングで &amp;lsquo;stable/kilo&amp;rsquo; ブラ
-ンチに管理が移されます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo -i
-cd ~/
-git clone https://github.com/openstack/openstack-chef-repo.git
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に Berkshelf を使って必要な Cookbooks をダウンロードします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;cd ~/openstack-chef-repo
-/opt/chef/embedded/bin/berks vendor ./cookbooks
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Environment を作成します。これは各環境に合わせた設定ファイルのようなもので、各
-Cookbooks の Attributes を上書きする仕組みになっています。下記の内容を&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;openstack-chef-repo/environments/multi-neutron-kilo.json
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;というファイル名で保存してください。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
-  &amp;quot;name&amp;quot;: &amp;quot;multi-neutron-kilo&amp;quot;,
-  &amp;quot;description&amp;quot;: &amp;quot;test&amp;quot;,
-  &amp;quot;cookbook_versions&amp;quot;: {
-  },
-  &amp;quot;json_class&amp;quot;: &amp;quot;Chef::Environment&amp;quot;,
-  &amp;quot;chef_type&amp;quot;: &amp;quot;environment&amp;quot;,
-  &amp;quot;default_attributes&amp;quot;: {
-  },
-  &amp;quot;override_attributes&amp;quot;: {
-    &amp;quot;mysql&amp;quot;: {
-      &amp;quot;bind_address&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-      &amp;quot;server_root_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
-      &amp;quot;server_debian_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
-      &amp;quot;server_repl_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
-      &amp;quot;allow_remote_root&amp;quot;: true,
-      &amp;quot;root_network_acl&amp;quot;: [&amp;quot;10.0.0.0/8&amp;quot;]
-    },
-    &amp;quot;rabbitmq&amp;quot;: {
-      &amp;quot;address&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-      &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;,
-      &amp;quot;loopback_users&amp;quot;: []
-    },
-    &amp;quot;openstack&amp;quot;: {
-      &amp;quot;auth&amp;quot;: {
-        &amp;quot;validate_certs&amp;quot;: false
-      },
-      &amp;quot;dashboard&amp;quot;: {
-        &amp;quot;session_backend&amp;quot;: &amp;quot;file&amp;quot;
-      },
-      &amp;quot;block-storage&amp;quot;: {
-        &amp;quot;syslog&amp;quot;: {
-          &amp;quot;use&amp;quot;: false
-        },
-        &amp;quot;api&amp;quot;: {
-          &amp;quot;ratelimit&amp;quot;: &amp;quot;False&amp;quot;
-        },
-        &amp;quot;debug&amp;quot;: true,
-        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
-        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
-        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;
-      },
-      &amp;quot;compute&amp;quot;: {
-        &amp;quot;rabbit&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;novnc_proxy&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;libvirt&amp;quot;: {
-          &amp;quot;virt_type&amp;quot;: &amp;quot;qemu&amp;quot;,
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;novnc_proxy&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;xvpvnc_proxy&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
-        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
-        &amp;quot;nova_setup_chef_role&amp;quot;: &amp;quot;os-compute-api&amp;quot;,
-        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
-        &amp;quot;network&amp;quot;: {
-          &amp;quot;public_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
-          &amp;quot;service_type&amp;quot;: &amp;quot;neutron&amp;quot;
-        }
-      },
-      &amp;quot;network&amp;quot;: {
-        &amp;quot;debug&amp;quot;: &amp;quot;True&amp;quot;,
-        &amp;quot;dhcp&amp;quot;: {
-          &amp;quot;enable_isolated_metadata&amp;quot;: &amp;quot;True&amp;quot;
-        },
-        &amp;quot;metadata&amp;quot;: {
-          &amp;quot;nova_metadata_ip&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;openvswitch&amp;quot;: {
-          &amp;quot;tunnel_id_ranges&amp;quot;: &amp;quot;1:1000&amp;quot;,
-          &amp;quot;enable_tunneling&amp;quot;: &amp;quot;True&amp;quot;,
-          &amp;quot;tenant_network_type&amp;quot;: &amp;quot;gre&amp;quot;,
-          &amp;quot;tunnel_types&amp;quot;: &amp;quot;gre&amp;quot;,
-          &amp;quot;tunnel_type&amp;quot;: &amp;quot;gre&amp;quot;,
-          &amp;quot;bridge_mappings&amp;quot;: &amp;quot;physnet1:br-eth2&amp;quot;,
-          &amp;quot;bridge_mapping_interface&amp;quot;: &amp;quot;br-eth2:eth2&amp;quot;
-        },
-        &amp;quot;ml2&amp;quot;: {
-          &amp;quot;tenant_network_types&amp;quot;: &amp;quot;gre&amp;quot;,
-          &amp;quot;mechanism_drivers&amp;quot;: &amp;quot;openvswitch&amp;quot;,
-          &amp;quot;tunnel_id_ranges&amp;quot;: &amp;quot;1:1000&amp;quot;,
-          &amp;quot;enable_security_group&amp;quot;: &amp;quot;True&amp;quot;
-        },
-        &amp;quot;api&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;l3&amp;quot;: {
-          &amp;quot;external_network_bridge_interface&amp;quot;: &amp;quot;eth0&amp;quot;
-        },
-        &amp;quot;service_plugins&amp;quot;: [&amp;quot;neutron.services.l3_router.l3_router_plugin.L3RouterPlugin&amp;quot;]
-      },
-      &amp;quot;db&amp;quot;: {
-        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
-        &amp;quot;compute&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;identity&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;image&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;network&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;volume&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;dashboard&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;telemetry&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;orchestration&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        }
-      },
-      &amp;quot;developer_mode&amp;quot;: true,
-      &amp;quot;endpoints&amp;quot;: {
-        &amp;quot;network-openvswitch&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;compute-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
-        },
-        &amp;quot;compute-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
-        },
-        &amp;quot;compute-ec2-admin-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-        &amp;quot;compute-ec2-admin&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-       &amp;quot;compute-ec2-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-        &amp;quot;compute-ec2-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-        &amp;quot;compute-xvpvnc&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6081&amp;quot;
-        },
-        &amp;quot;compute-novnc-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
-        },
-        &amp;quot;compute-novnc&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
-        },
-        &amp;quot;compute-vnc&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
-        },
-        &amp;quot;image-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
-        },
-        &amp;quot;image-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
-        },
-        &amp;quot;image-registry&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
-        },
-        &amp;quot;image-registry-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
-        },
-        &amp;quot;identity-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
-        },
-        &amp;quot;identity-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
-        },
-        &amp;quot;identity-admin&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;35357&amp;quot;
-        },
-        &amp;quot;identity-internal&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;35357&amp;quot;
-        },
-        &amp;quot;volume-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
-        },
-        &amp;quot;volume-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
-        },
-        &amp;quot;telemetry-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8777&amp;quot;
-        },
-        &amp;quot;network-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.11&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
-        },
-        &amp;quot;network-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.11,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
-        },
-        &amp;quot;block-storage-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;,
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;block-storage-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
-        },
-        &amp;quot;orchestration-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8004&amp;quot;
-        },
-        &amp;quot;orchestration-api-cfn&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8000&amp;quot;
-        },
-        &amp;quot;db&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;3306&amp;quot;
-        },
-        &amp;quot;bind-host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;
-      },
-      &amp;quot;identity&amp;quot;: {
-        &amp;quot;admin_user&amp;quot;: &amp;quot;admin&amp;quot;,
-        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
-        &amp;quot;debug&amp;quot;: true
-      },
-      &amp;quot;image&amp;quot;: {
-        &amp;quot;api&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;debug&amp;quot;: true,
-        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
-        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
-        &amp;quot;registry&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;syslog&amp;quot;: {
-          &amp;quot;use&amp;quot;: false
-        }
-      },
-      &amp;quot;mq&amp;quot;: {
-        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
-        &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-        &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
-        &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;,
-        &amp;quot;network&amp;quot;: {
-          &amp;quot;rabbit&amp;quot;: {
-             &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-             &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-          }
-        },
-        &amp;quot;compute&amp;quot;: {
-           &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
-          &amp;quot;rabbit&amp;quot;: {
-            &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-          }
-        },
-        &amp;quot;block-storage&amp;quot;: {
-          &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
-          &amp;quot;rabbit&amp;quot;: {
-            &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-          }
-        }
-      }
-    },
-    &amp;quot;queue&amp;quot;: {
-      &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-      &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
-      &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;
-    }
-  }
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;上記ファイルでは virt_type : qemu に設定していますが、KVM リソースを利用出来る
-環境であればここを削除してください。デフォルトの &amp;lsquo;kvm&amp;rsquo; が適用されます。また気
-をつけることは IP アドレスとネットワークインターフェース名です。環境に合わせて
-設定していきましょう。今回は前提構成に合わせて environemnt ファイルを作ってい
-ます。&lt;/p&gt;
-
-&lt;p&gt;次に openstack-chef-repo/.chef/encrypted_data_bag_secret というファイルが
-knife-zero ホストにあるはずです。これをデプロイ対象の3ノードに事前に転送してお
-く必要があります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.10:/tmp/
-scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.11:/tmp/
-scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.12:/tmp/
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;対象ホストにて&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;mkdir /etc/chef
-mv /tmp/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ではいよいよデプロイです。&lt;/p&gt;
-
-&lt;p&gt;Controller ホストへのデプロイ&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;knife zero bootstrap 10.0.2.10 -N kilo01 -r &#39;role[os-compute-single-controller-no-network]&#39; -E multi-neutron-kilo -x &amp;lt;USERNAME&amp;gt; --sudo
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Network ホストへのデプロイ&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;knife zero bootstrap 10.0.2.11 -N kilo02 -r &#39;role[os-client]&#39;,&#39;role[os-network]&#39; -E multi-neutron-kilo -x &amp;lt;USERNAME&amp;gt; --sudo
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Compute ノードへのデプロイ&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;knife zero bootstrap 10.0.2.12 -N kilo03 -r &#39;role[os-compute-worker]&#39; -E multi-neutron-kilo -x &amp;lt;USERNAME&amp;gt; --sudo
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;これで完了です。admin/mypass というユーザ・パスワードでログインが可能です。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;openstack-chef-repo を使って OpenStack Kilo の複数台構成をデプロイ出来ました。重要なのは Environment をどうやって作るか？ですが、
-私は 作成 -&amp;gt; デプロイ -&amp;gt; 修正 -&amp;gt; デプロイ -&amp;gt;&amp;hellip;. を繰り返して作成しています。何度実行しても不具合は発生しない設計なクックブックに
-なっていますので、このような作業が可能になります。また、「ここの設定を追加したい」という時は&amp;hellip;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;該当の template を探す&lt;/li&gt;
-&lt;li&gt;該当のパラメータを確認する&lt;/li&gt;
-&lt;li&gt;recipe 内で template にどうパラメータを渡しているか確認する&lt;/li&gt;
-&lt;li&gt;attribute なり、変数なりを修正するための方法を探す&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;と行います。比較的難しい作業になるのですが、自らの環境に合わせた Environment を作成するにはこれらの作業が必須となってきます。&lt;/p&gt;
-
-&lt;p&gt;以上、複数台構成のデプロイ方法についてでした。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>Chef-ZeroでOpenStack Kiloデプロイ(オールインワン編)</title>
-      <link>http://jedipunkz.github.io/blog/2015/07/16/chef-zero-openstack-allinone/</link>
-      <pubDate>Thu, 16 Jul 2015 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2015/07/16/chef-zero-openstack-allinone/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;久々に openstack-chef-repo を覗いてみたら &amp;lsquo;openstack/openstack-chef-repo&amp;rsquo; とし
-て公開されていました。今まで stackforge 側で管理されていましたが &amp;lsquo;openstack&amp;rsquo;
-の方に移動したようです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/openstack/openstack-chef-repo&#34;&gt;https://github.com/openstack/openstack-chef-repo&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;結構安定してきているのかな？と想い、ちらっと試したのですが案の定、簡単に動作さ
-せることが出来ました。&lt;/p&gt;
-
-&lt;p&gt;今回はこのレポジトリを使ってオールインワン構成の OpenStack Kilo を作る方法をま
-とめていきます。&lt;/p&gt;
-
-&lt;h2 id=&#34;前提の構成&#34;&gt;前提の構成&lt;/h2&gt;
-
-&lt;p&gt;このレポジトリは Vagrant で OpenStack を作るための環境一式が最初から用意されて
-いますが、Vagrant では本番環境を作ることは出来ないため、Ubuntu ホストを前提と
-した記述に差し替えて説明していきます。前提にする構成は下記のとおりです。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Uuntu Linux 14.04 x 1 台&lt;/li&gt;
-&lt;li&gt;ネットワークインターフェース x 3 つ&lt;/li&gt;
-&lt;li&gt;eth0 : External ネットワーク用&lt;/li&gt;
-&lt;li&gt;eth1 : Internal (API, Manage) ネットワーク用&lt;/li&gt;
-&lt;li&gt;eth2 : Guest ネットワーク用&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;特徴としては上記なのですが、eth2 に関してはオールインワンなので必ずしも必要と
-いうわけではありません。複数台構成を考慮した設定になっています。&lt;/p&gt;
-
-&lt;h2 id=&#34;前提のip-アドレス&#34;&gt;前提のIP アドレス&lt;/h2&gt;
-
-&lt;p&gt;この記事では下記の IP アドレスを前提にします。お手持ちの環境の IP アドレスが違
-い場合はそれに合わせて後に示す json ファイルを変更してください。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;10.0.1.10 (eth0) : external ネットワーク&lt;/li&gt;
-&lt;li&gt;10.0.2.10 (eth1) : api/management ネットワーク&lt;/li&gt;
-&lt;li&gt;10.0.3.10 (eth2) : Guest ネットワーク&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h2 id=&#34;事前の準備&#34;&gt;事前の準備&lt;/h2&gt;
-
-&lt;p&gt;事前に対象ホスト (OpenStack ホスト) に chef, berkshelf をインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo -i
-curl -L https://www.opscode.com/chef/install.sh | bash
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Berkshelf をインストールするのに必要なソフトウェアをインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev ruby-dev libxml2-dev libxslt-dev g++
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Berkshelf をインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;/opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;デプロイ作業&#34;&gt;デプロイ作業&lt;/h2&gt;
-
-&lt;p&gt;それでは openstack-chef-repo を取得してデプロイの準備を行います。
-ブランチの指定は行わず master ブランチを取得します。Kilo は master ブランチで
-管理されています。次のバージョンの開発が始まるタイミングで &amp;lsquo;stable/kilo&amp;rsquo; ブラ
-ンチに管理が移されます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo -i
-cd ~/
-git clone https://github.com/openstack/openstack-chef-repo.git
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に Berkshelf を使って必要な Cookbooks をダウンロードします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;cd ~/openstack-chef-repo
-/opt/chef/embedded/bin/berks vendor ./cookbooks
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Environment を作成します。これは各環境に合わせた設定ファイルのようなもので、各
-Cookbooks の Attributes を上書きする仕組みになっています。下記の内容を&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;openstack-chef-repo/environments/aio-neutron-kilo.json
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;というファイル名で保存してください。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
-  &amp;quot;name&amp;quot;: &amp;quot;aio-neutron-kilo&amp;quot;,
-  &amp;quot;description&amp;quot;: &amp;quot;test&amp;quot;,
-  &amp;quot;cookbook_versions&amp;quot;: {
-  },
-  &amp;quot;json_class&amp;quot;: &amp;quot;Chef::Environment&amp;quot;,
-  &amp;quot;chef_type&amp;quot;: &amp;quot;environment&amp;quot;,
-  &amp;quot;default_attributes&amp;quot;: {
-  },
-  &amp;quot;override_attributes&amp;quot;: {
-    &amp;quot;mysql&amp;quot;: {
-      &amp;quot;bind_address&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-      &amp;quot;server_root_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
-      &amp;quot;server_debian_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
-      &amp;quot;server_repl_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
-      &amp;quot;allow_remote_root&amp;quot;: true,
-      &amp;quot;root_network_acl&amp;quot;: [&amp;quot;10.0.0.0/8&amp;quot;]
-    },
-    &amp;quot;rabbitmq&amp;quot;: {
-      &amp;quot;address&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-      &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;,
-      &amp;quot;loopback_users&amp;quot;: []
-    },
-    &amp;quot;openstack&amp;quot;: {
-      &amp;quot;auth&amp;quot;: {
-        &amp;quot;validate_certs&amp;quot;: false
-      },
-      &amp;quot;dashboard&amp;quot;: {
-        &amp;quot;session_backend&amp;quot;: &amp;quot;file&amp;quot;
-      },
-      &amp;quot;block-storage&amp;quot;: {
-        &amp;quot;syslog&amp;quot;: {
-          &amp;quot;use&amp;quot;: false
-        },
-        &amp;quot;api&amp;quot;: {
-          &amp;quot;ratelimit&amp;quot;: &amp;quot;False&amp;quot;
-        },
-        &amp;quot;debug&amp;quot;: true,
-        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
-        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
-        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;
-      },
-      &amp;quot;compute&amp;quot;: {
-        &amp;quot;rabbit&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;novnc_proxy&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;libvirt&amp;quot;: {
-          &amp;quot;virt_type&amp;quot;: &amp;quot;qemu&amp;quot;,
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;novnc_proxy&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;xvpvnc_proxy&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
-        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
-        &amp;quot;nova_setup_chef_role&amp;quot;: &amp;quot;os-compute-api&amp;quot;,
-        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
-        &amp;quot;network&amp;quot;: {
-          &amp;quot;public_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
-          &amp;quot;service_type&amp;quot;: &amp;quot;neutron&amp;quot;
-        }
-      },
-      &amp;quot;network&amp;quot;: {
-        &amp;quot;debug&amp;quot;: &amp;quot;True&amp;quot;,
-        &amp;quot;dhcp&amp;quot;: {
-          &amp;quot;enable_isolated_metadata&amp;quot;: &amp;quot;True&amp;quot;
-        },
-        &amp;quot;metadata&amp;quot;: {
-          &amp;quot;nova_metadata_ip&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;openvswitch&amp;quot;: {
-          &amp;quot;tunnel_id_ranges&amp;quot;: &amp;quot;1:1000&amp;quot;,
-          &amp;quot;enable_tunneling&amp;quot;: &amp;quot;True&amp;quot;,
-          &amp;quot;tenant_network_type&amp;quot;: &amp;quot;gre&amp;quot;,
-          &amp;quot;local_ip_interface&amp;quot;: &amp;quot;eth2&amp;quot;
-        },
-        &amp;quot;api&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;l3&amp;quot;: {
-          &amp;quot;external_network_bridge_interface&amp;quot;: &amp;quot;eth0&amp;quot;
-        },
-        &amp;quot;service_plugins&amp;quot;: [&amp;quot;neutron.services.l3_router.l3_router_plugin.L3RouterPlugin&amp;quot;]
-      },
-      &amp;quot;db&amp;quot;: {
-        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
-        &amp;quot;compute&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;identity&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;image&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;network&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;volume&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;dashboard&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;telemetry&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;orchestration&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        }
-      },
-      &amp;quot;developer_mode&amp;quot;: true,
-      &amp;quot;endpoints&amp;quot;: {
-        &amp;quot;compute-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
-        },
-        &amp;quot;compute-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
-        },
-        &amp;quot;compute-ec2-admin-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-        &amp;quot;compute-ec2-admin&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-       &amp;quot;compute-ec2-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-        &amp;quot;compute-ec2-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-        &amp;quot;compute-xvpvnc&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6081&amp;quot;
-        },
-        &amp;quot;compute-novnc-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
-        },
-        &amp;quot;compute-novnc&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
-        },
-        &amp;quot;compute-vnc&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
-        },
-        &amp;quot;image-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
-        },
-        &amp;quot;image-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
-        },
-        &amp;quot;image-registry&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
-        },
-        &amp;quot;image-registry-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
-        },
-        &amp;quot;identity-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
-        },
-        &amp;quot;identity-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
-        },
-        &amp;quot;identity-admin&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;35357&amp;quot;
-        },
-        &amp;quot;identity-internal&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;35357&amp;quot;
-        },
-        &amp;quot;volume-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
-        },
-        &amp;quot;volume-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
-        },
-        &amp;quot;telemetry-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8777&amp;quot;
-        },
-        &amp;quot;network-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
-        },
-        &amp;quot;network-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
-        },
-        &amp;quot;orchestration-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8004&amp;quot;
-        },
-        &amp;quot;orchestration-api-cfn&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8000&amp;quot;
-        },
-        &amp;quot;db&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;3306&amp;quot;
-        },
-        &amp;quot;bind-host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;
-      },
-      &amp;quot;identity&amp;quot;: {
-        &amp;quot;admin_user&amp;quot;: &amp;quot;admin&amp;quot;,
-        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
-        &amp;quot;debug&amp;quot;: true
-      },
-      &amp;quot;image&amp;quot;: {
-        &amp;quot;api&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;debug&amp;quot;: true,
-        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
-        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
-        &amp;quot;registry&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;syslog&amp;quot;: {
-          &amp;quot;use&amp;quot;: false
-        }
-      },
-      &amp;quot;mq&amp;quot;: {
-        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
-        &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-        &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
-        &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;,
-        &amp;quot;network&amp;quot;: {
-          &amp;quot;rabbit&amp;quot;: {
-             &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-             &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-          }
-        },
-        &amp;quot;compute&amp;quot;: {
-           &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
-          &amp;quot;rabbit&amp;quot;: {
-            &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-          }
-        },
-        &amp;quot;block-storage&amp;quot;: {
-          &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
-          &amp;quot;rabbit&amp;quot;: {
-            &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-          }
-        }
-      }
-    },
-    &amp;quot;queue&amp;quot;: {
-      &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-      &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
-      &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;
-    }
-  }
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;上記ファイルは KVM が使えない環境用に virt_type : qemu にしていますが、KVM が
-利用できる環境をご利用であれば該当行を削除してください。デフォルト値の &amp;lsquo;kvm&amp;rsquo;
-が入るはずです。&lt;/p&gt;
-
-&lt;p&gt;次にデプロイ前に databag 関連の事前操作を行います。Vagrant 用に作成されたファ
-イルを除くと&amp;hellip;&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-ruby&#34;&gt;machine &#39;controller&#39; do
-  add_machine_options vagrant_config: controller_config
-  role &#39;allinone-compute&#39;
-  role &#39;os-image-upload&#39;
-  chef_environment env
-  file(&#39;/etc/chef/openstack_data_bag_secret&#39;,
-       &amp;quot;#{File.dirname(__FILE__)}/.chef/encrypted_data_bag_secret&amp;quot;)
-  converge true
-end
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;となっていて /etc/chef/openstack_data_bag_secret というファイルを事前にコピー
-する必要がありそうです。下記のように操作します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;cp .chef/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;デプロイを実行します。&lt;/p&gt;
-
-&lt;p&gt;この openstack-chef-repo には .chef ディレクトリが存在していてノード名が記され
-ています。&amp;rsquo;nodienode&amp;rsquo; というノード名です。これを利用してそのままデプロイを実行
-します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;chef-client -z
-knife node -z run_list add nodienode &#39;role[allinone-compute]&#39;
-chef-client -z -E aio-neutron-kilo
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;上記の説明を行います。
-１行目 chef-client -z で Chef-Zero サーバをメモリ上に起動し、2行目で自ノードへ
-run_list を追加しています。最後、3行目でデプロイ実行、となります。&lt;/p&gt;
-
-&lt;p&gt;数分待つと OpenStack Kilo が構成されているはずです。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;Chef-Zero を用いることで Chef サーバを利用せずに楽に構築が行えました。ですが、
-OpenStack の複数台構成となるとそれぞれのノードのパラメータを連携させる必要が出
-てくるので Chef サーバを用いたほうが良さそうです。今度、時間を見つけて Kilo の
-複数台構成についても調べておきます。&lt;/p&gt;
-
-&lt;p&gt;また、master ブランチを使用していますので、まだ openstack-chef-repo 自体が流動
-的な状態とも言えます。が launchpad で管理されている Bug リストを見ると、ステー
-タス Critical, High の Bug が見つからなかったので Kilo に関しては、大きな問題
-無く安定してきている感があります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://bugs.launchpad.net/openstack-chef&#34;&gt;https://bugs.launchpad.net/openstack-chef&lt;/a&gt;&lt;/p&gt;
 </description>
     </item>
     
