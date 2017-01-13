@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2013-10-12T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-10-13T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,297 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/">test-kitchen と OpenStack で Chef Cookbooks テスト(前篇)</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-10-13'>
+            October 13, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>test-kitchen + Vagrant を利用して複数環境で Chef Cookbooks のテストを行う方法は
+結構皆さん利用されていると思うのですが Vagrant だと手元のマシンに仮想マシンが
+バシバシ立ち上げるので僕はあまり好きではないです。そこで、OpenStack のインスタ
+ンスをその代替で使えればいいなぁと結構前から思っていたのですが、今回うまくいっ
+たのでその方法を記します。</p>
+
+<h2 id="用意するモノ">用意するモノ</h2>
+
+<ul>
+<li>OpenStack 環境一式</li>
+<li>Chef がインストールされた OS イメージとその ID</li>
+<li>test-kitchen を実行するワークステーション (お手持ちの Macbook 等)</li>
+</ul>
+
+<p>OS イメージの作成ですが Veewee などで自動構築できますし、インスタンス上で Chef
+のインストールを行った後にスナップショットを作成してそれを利用しても構いません。</p>
+
+<h2 id="test-kitchen-のインストール">test-kitchen のインストール</h2>
+
+<p>test-kitchen をインストールします。versoin 1.0.0 はまだリリースされていないの
+で github から master ブランチを取得してビルドします。直近で OpenStack に関連
+する不具合の修正等が入っているのでこの方法を取ります。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/opscode/test-kitchen.git
+% cd test-kitchen
+% bundle install
+% rake build # &lt;--- gem をビルド
+% gen install ./pkg/test-kitchen-1.0.0.dev.gem
+</code></pre>
+
+<p>現時点 (2013/10/13) で berkshelf の利用しているソフトウェアと衝突を起こす問題
+があるので bundle で解決します。下記のように Gemfile に gem
+&lsquo;kitchen-openstack&rsquo; と記述します。</p>
+
+<pre><code class="language-ruby">source 'https://rubygems.org'
+gemspec
+
+gem 'kitchen-openstack' # &lt;--- 追記
+
+group :guard do
+  gem 'rb-inotify', :require =&gt; false
+  gem 'rb-fsevent', :require =&gt; false
+  gem 'rb-fchange', :require =&gt; false
+  gem 'guard-minitest', '~&gt; 1.3'
+  gem 'guard-cucumber', '~&gt; 1.4'
+end
+</code></pre>
+
+<h2 id="kitchen-openstack-のインストール">kitchen-openstack のインストール</h2>
+
+<p>kitchen-openstack をインストールします。こちらも gem をビルドしてインストール
+します。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/RoboticCheese/kitchen-openstack.git
+% cd kitchen-openstack
+% bundle insatll #&lt;---- 関連ソフトウェアインストール
+% rake build     #&lt;---- gem をビルド
+% gem install ./pkg/kitchen-openstack-0.5.1.gem
+</code></pre>
+
+<h2 id="kitchen-yml-の作成">.kitchen.yml の作成</h2>
+
+<p>.kitchen.yml を用意します。test-kitchen のディレクトリに移動し .kitchen.yml を
+下記の例に従って作成します。今回は Ubuntu OS, CentOS にてテストを実行します。</p>
+
+<pre><code class="language-bash">% cd /path/to/test-kitchen
+% ${EDITOR} .kitchen.yml
+</code></pre>
+
+<pre><code class="language-ruby">+++
+driver_plugin: openstack
+
+suites:
+- name: default
+  run_list:
+  - recipe[ntp::default]
+  attributes: {}
+
+platforms:
+- name: ubuntu-12.04
+  driver_config:
+    openstack_username: &lt;openstac_username&gt;
+    openstack_api_key: &lt;openstack_password&gt;
+    openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens
+    image_ref: &lt;image_id&gt;
+    flavor_ref: 1
+    key_name: &lt;key_name&gt;
+    openstack_tenant: service
+    username: ubuntu
+    private_key_path: &lt;path_to_secretkey&gt;
+
+- name: centos-64
+  driver_config:
+    openstack_username: &lt;openstac_username&gt;
+    openstack_api_key: &lt;openstack_password&gt;
+    openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens
+    image_ref: &lt;image_id&gt;
+    flavor_ref: 1
+    key_name: &lt;key_name&gt;
+    openstack_tenant: service
+    username: root
+    private_key_path: &lt;path_to_secretkey&gt;
+</code></pre>
+
+<p>ファイルの内容について解説します。</p>
+
+<ul>
+<li>suites:</li>
+</ul>
+
+<p>実行したい Chef Cookbooks のレシピ名を指定します。attriutes などをここで上書き
+することも出来ます。</p>
+
+<ul>
+<li>platforms:</li>
+</ul>
+
+<p>テストに用いたい OS を列挙していけます。ここでは例として Ubuntu, CentOS を記し
+ました。</p>
+
+<ul>
+<li>openstack_username, openstack_api_key</li>
+</ul>
+
+<p>OpenStack にログインするためのユーザ名とパスワードです。keystone で作成します。</p>
+
+<ul>
+<li>openstack_auth_url</li>
+</ul>
+
+<p>Keystone の URL です。最後に /tokens と付けるのを忘れずに。</p>
+
+<ul>
+<li>image_ref</li>
+</ul>
+
+<p>それぞれの OS イメージの ID を記します。前述したとおりインスタンスでオペレーショ
+ン後にスナップショットを作成しそれを記すことも可能です。</p>
+
+<ul>
+<li>flavor_ref</li>
+</ul>
+
+<p>Flavor ID を記します。ここでは一番小さい Flavor である m1.tiny を記しました。</p>
+
+<ul>
+<li>key_name</li>
+</ul>
+
+<p>インスタンス作成時に選択する Nova のキーペア名です。OpenStack コマンドラインで
+言う &ndash;key_name です。</p>
+
+<ul>
+<li>openstack_tenant</li>
+</ul>
+
+<p>どのテナントにインスタンスを作成するか？を記します。</p>
+
+<ul>
+<li>username</li>
+</ul>
+
+<p>インスタンスにログインする際のユーザ名を記します。</p>
+
+<ul>
+<li>private_key_path</li>
+</ul>
+
+<p>インスタンスにログインするための SSH 秘密鍵のパスを記します。ここではノンパス
+ワードでログイン出来るよう鍵を生成してあげる必要があります。</p>
+
+<h2 id="cookbooks-の配置">Cookbooks の配置</h2>
+
+<p>カレントディレクトリ配下に &lsquo;cookbooks&rsquo; という名前のディレクトリを用意し
+テストで用いたい Cookbooks を配置します。Berkshelf を用いれば簡単です。が、
+現時点で Berkshelf の用いているソフトウェア test-kitchen のそれが衝突を起こす
+のでテスト実行前には Berkshelf ファイルを退避してください。</p>
+
+<pre><code class="language-bash">% ${EDITOR} Berksfile
+site :opscode
+    
+cookbook 'ntp;
+% berks install --path=./cookbooks
+% mv Berksfile Berksfile.old
+</code></pre>
+
+<h2 id="テスト実行">テスト実行</h2>
+
+<p>いよいよテストを実行します。上記の例では Ubuntu OS, Debian OS に対して ntp の
+Chef Cookbooks を実際にデプロイしテストを行います。</p>
+
+<pre><code class="language-bash">% bundle exec kitchen test
+</code></pre>
+
+<p>&lsquo;test&rsquo; を引数で渡すと</p>
+
+<ul>
+<li>インスタンス作成</li>
+<li>Chef のインストール</li>
+<li>Cookbooks のアップロード</li>
+<li>chef-solo の実行</li>
+<li>Cookbooks 中に &lsquo;test&rsquo; ディレクトリがある場合はテスト実行</li>
+</ul>
+
+<p>を行ってくれます。それぞれ別々に実行したい場合は</p>
+
+<pre><code class="language-bash">% bundle exec kitchen create   # &lt;---- インスタンスの作成
+% bundle exec kitchen setup    # &lt;---- chef のインストールと初回の converge
+% bundle exec kitchen converge # &lt;---- chef-solo を再度実行
+% bundle exec kitchen verify   # &lt;---- 'test' ディレクトリに従いテスト実行
+% bundle exec kitchen destroy  # &lt;---- インスタンスの削除
+</code></pre>
+
+<p>と行えば良いです。converge, verify は何度でも繰り返し実行が可能。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>前述したとおり Vagrant を使うと手元のマシンのリソースを大量に消費してしまうの
+で OpenStack を利用する価値は結構あるのかなぁと思っています。バージョン 1.0.0
+がリリースされる時期も近いと思うので今のうちに知っておくと良いかと思います。</p>
+
+<p>また、テストと言っても test-kitchen の場合2つの意味があると思います。実際に
+Cookbooks をインスタンスにインストールするテスト、と Cookbooks 自体のテストと
+いう意味です。後者についてはまた後ほど記したいと思います。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -690,366 +981,6 @@ service と docker をノード間で移動させる処置を行う。</p>
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/09/29/devops-day-tokyo-2013-report/">DevOps Day Tokyo 2013 参加レポート</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-09-29'>
-            September 29, 2013</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>DevOps Day Tokyo 2013 に参加してきました。たくさんの刺激を受けたのでレポート書
-いておきます。</p>
-
-<pre><code>開催日 : 2013年09月28日
-場所   : 東京六本木ミッドタウン Yahoo! Japan さま
-URL    : http://www.devopsdays.org/events/2013-tokyo/
-</code></pre>
-
-<h1 id="making-operation-visible">Making Operation Visible</h1>
-
-<pre><code>Nick Galbreath (@ngalbreath) さん
-</code></pre>
-
-<p>DevOps の拠点 Etsy に努めた経緯のある DevOps リーダ Galbreath さん。DevOps の
-概略から何が必要でありどう行動に起こせばよいか説明してくださいました。</p>
-
-<p><iframe src="http://www.slideshare.net/slideshow/embed_code/26632342"
-width="427" height="356" frameborder="0" marginwidth="0" marginheight="0"
-scrolling="no" style="border:1px solid #CCC;border-width:1px 1px
-0;margin-bottom:5px" allowfullscreen> </iframe> <div
-style="margin-bottom:5px"> <strong> <a
-href="https://www.slideshare.net/nickgsuperstar/making-operations-visible-dev-opsdays-tokyo-2013key"
-title="Making operations visible - devopsdays tokyo 2013"
-target="_blank">Making operations visible - devopsdays tokyo 2013</a>
-</strong> from <strong><a href="http://www.slideshare.net/nickgsuperstar"
-target="_blank">Nick Galbreath</a></strong> </div></p>
-
-<p>こちら、Galbreath さんの当日の資料。</p>
-
-<h2 id="devops-が実行出来ない理由">DevOps が実行出来ない理由</h2>
-
-<ul>
-<li>Tool が足りない</li>
-<li>社風の影響</li>
-<li>見えないモノが価値がないと事業から考えられている</li>
-</ul>
-
-<p>出来る事は、価値があるモノの社内への説明と、Tool を使った可視化。データの可視
-化が重要。Ops の人は結構「データをどこそこの部署に見せても理解してもらえない」
-だとか「データを閲覧させると万が一の時にシステムが破損する」等と考えがち。が、
-ビジネス寄りの人にとって重要なグラフが含まれていたり、アカウント担当の人に役立
-つものも含まれている。ましてシステムが破損することなど決して無い。</p>
-
-<p>重要なのは &ldquo;運用のメトリクスを公開する&rdquo; こと！</p>
-
-<h2 id="graphite">Graphite</h2>
-
-<ul>
-<li>グラフ描画ツール</li>
-<li>まず完成度が高いわけではない</li>
-<li>同類のソフトウェアでは行えないクエリが発行出来る</li>
-<li>REST API</li>
-<li>Flexible Input &amp; Output</li>
-<li>Simple UI &amp; Dashboard</li>
-<li>3rd Party Custom Client Side Dashboard あり</li>
-<li>URL 型なので Dashboard 開発が楽ちん</li>
-<li>稼働させるための物理インフラリソースは結構必要</li>
-<li>apt-get install graphite できるよ</li>
-</ul>
-
-<h2 id="statd">statd</h2>
-
-<ul>
-<li>UDP 使ってる</li>
-<li>Event Data を Application から statd へ</li>
-</ul>
-
-<p>下記は例。ログイン情報を送るためのコードはこれだけ。</p>
-
-<pre><code>StatD::increment('logins')
-</code></pre>
-
-<p>国別にも出来る。</p>
-
-<pre><code>StatD::increment('logins');
-$kuni = geoip2country($ipv4);
-StatD::increment('logins.$kuni')
-</code></pre>
-
-<p>後に DataDog の方から詳しく説明がある。</p>
-
-<h1 id="sensu">Sensu</h1>
-
-<pre><code>Sean Porter さん
-</code></pre>
-
-<p>メモとりにくいプレゼンだったので思い出しながら&hellip;.</p>
-
-<p>Sensu は Nagios のプラグイン等がそのまま再利用できる監視ツール。API を介してア
-ラートの具合やクライアントのリスト・監視項目のリスト等が取得できます。Nagios
-を使った場合、ターゲットノードの追加のたびにコンフィギュレーションを生成しなく
-てはならなかったり不便だったのが Sensu を開発しようとした動機だとか。Chef との
-親和性が高く、Chef Cookbook の公開もしている。私も実際に使っていますが、</p>
-
-<ul>
-<li>Sensu サーバの構築</li>
-<li>監視項目の追加</li>
-<li>ターゲットノードへのアージェントの追加</li>
-</ul>
-
-<p>等はすべて Chef の Knife コマンドで出来ます。特に Chef からの影響だと思われる
-が Omnibus 形式のパッケージを採用していることもあり、エージェントのインストー
-ルは簡単です。パッケージの中に動作に必要な Ruby 一式も含まれています。</p>
-
-<p>ドキュメントは下記のところにあります。</p>
-
-<p><a href="http://docs.sensuapp.org/0.10/index.html">http://docs.sensuapp.org/0.10/index.html</a></p>
-
-<h1 id="puppet">puppet</h1>
-
-<pre><code>max martin
-</code></pre>
-
-<p>for next level
-+++</p>
-
-<ul>
-<li>Puppet 3.x</li>
-<li>Hiera integration</li>
-<li>PuppetDB</li>
-<li>Mcollective 2.x</li>
-<li>Geppetto : IDE</li>
-<li>Puppet Forge : web site</li>
-</ul>
-
-<p>Puppet が提供するソフトウェアやサービス達。DevOps の次のステップへの必要な技術
-要素。</p>
-
-<h2 id="puppet-3-x">puppet 3.x</h2>
-
-<ul>
-<li>pupput2 に比較して speedup x 3</li>
-<li>agents/server : 100% up</li>
-<li>これらは理論値ではなく実効値！</li>
-</ul>
-
-<p>Puppet2 と比較してかなりの性能アップらしい。処理速度3倍は実効値だそうです。</p>
-
-<h2 id="puppet3-0-hiera-functions-data-bindings">puppet3.0 = hiera functions + data bindings</h2>
-
-<ul>
-<li>hiera : hierarchical key value store with pluggable backend (json, yaml..)</li>
-<li>keep site specific data out of puppet code</li>
-<li>parameter values are now automatically looked up in hiera</li>
-<li>data bind でコードがシンプルに : include ntp -&gt; yaml, json..</li>
-</ul>
-
-<p>json や yaml でパラメータを記述出来るのでコードがシンプルで綺麗になるよ、との
-こと。Chef でいう Attributes だと思われる。</p>
-
-<h2 id="puppetdb">puppetdb</h2>
-
-<ul>
-<li>puppet データすべてを格納 (facts, catalogs, reports,..)</li>
-<li>replaces existing library is much faster and more faster</li>
-<li>postgreSQL, Clojure, JVM -&gt; JAR ファイルで展開</li>
-<li>クエリシンタックスを自ら定義可能</li>
-<li>API がシンプルなので dashboard などの開発も簡単</li>
-</ul>
-
-<p>PostgreSQL が最近あちらの国ではイケてるっていう話はよく聞いていたけど Puppet3
-は PostgreSQL, Clojur, JVM の組み合わせで構成されているらしい。Chef も Erlang
-に置き換わったあたりを見ての反応かなぁ？と想像。</p>
-
-<h2 id="mcollective">MCollective</h2>
-
-<ul>
-<li>orchestration engine</li>
-<li>ruby を使って独自のエージェント開発可能</li>
-<li>mco rpc service restart service=httpd &ndash;nodes=hosts.txt # query a file</li>
-<li>mco rpc service restart service=httpd -W country=uk -dm=puppetdb # discover</li>
-<li>mco rpc rpcutil ping -I example.com # direct addressing</li>
-<li>ruby のライブラリとして利用可能</li>
-</ul>
-
-<p>query a file のサンプル</p>
-
-<pre><code>c = rpcclient(&quot;service&quot;)
-c.discover :nodes =&gt; File.readline(&quot;host.txt&quot;).map {|i| i.chomp}
-printrpc c.restart(:service =&gt; &quot;httpd&quot;)
-</code></pre>
-
-<p>これはオーケストレーションツール。ホスト名の記述されたファイルから、それらのホ
-ストに対して一斉に指示を送ったり検索を行ったりコマンドの実行が出来る。これは
-Ruby ライブラリとして再利用出来るらしい。これは便利。</p>
-
-<h2 id="geppetto">Geppetto</h2>
-
-<ul>
-<li>IDE for developing puppet modules and code</li>
-<li>git &amp; svn</li>
-<li>Linux, Mac OSX, Windows</li>
-</ul>
-
-<p>Linux, Mac, Windows 用の IDE まで提供してるんですね。驚き。Puppet ものすごい勢
-い。</p>
-
-<h2 id="puppet-forge">Puppet Forge</h2>
-
-<ul>
-<li>module repository</li>
-<li>1,500+ modules</li>
-<li>puppet module install foo/foo</li>
-<li>module のためのチームが内部にある</li>
-</ul>
-
-<p>コミュニティの作ったモジュールを公開しているレポジトリ WEB サービス。1,500 以
-上のモジュールが公開されているらしい。このためのチームも Puppet 社内にいるとか。</p>
-
-<h1 id="迷ったら健全な方を">迷ったら健全な方を</h1>
-
-<pre><code>Cookpad Naruta Issei さん
-</code></pre>
-
-<script async class="speakerdeck-embed"
-data-id="bd487ad00a49013116811a94ecd7685c" data-ratio="1.33333333333333"
-src="//speakerdeck.com/assets/embed.js"></script>
-
-<p>印象的なプレゼンでした。</p>
-
-<p>現実に起こった問題を切り口に Devops について語っていました。リリース日当日 Ops
-が「今日リリースだと初めて知る」という事件。繰り返さないためにどうするか？</p>
-
-<ul>
-<li>リリース日の決定に Ops の承認が必要なルールにする？</li>
-<li>Ops 「ソースコードが fix してからリリース日まで3営業日必要？」</li>
-</ul>
-
-<p>このようなルールを作りがちだけど、これでは Ops が権威になってしまう。Ops の立
-場からしてこの「権威」になりやすいという特徴があるが、Ops はそう振る舞ってはい
-けない！という話。DevOps に必要なコミュニケーションで回避出来ると。DevOps であ
-る限り仕事は楽しくなくてはならない。承認を取るテクニック・政治が発生するのもこ
-れまた問題。</p>
-
-<p>Cookpad はこれからもコミュニケーションでこういった問題をクリアしていく！と宣言
-がありました。最後は若干 Ops 避難のようなプレゼンを Ops の前でするかのような状
-況に Issei さんも声を震わせながらのプレゼンでしたが、逆にそれが僕には響きまし
-た。ぼくも Ops 出身だし、こういった問題は嫌になる程見てきているので、この訴え
-かけはガツンときた。プレゼン最高でした！</p>
-
-<h1 id="datadog">DataDog</h1>
-
-<pre><code>Alexis Lê-Quôc さん
-</code></pre>
-
-<p>監視ツールにとっての重要な要素</p>
-
-<ul>
-<li>Timely</li>
-<li>Correct</li>
-<li>Comprehensive (包括的)
-<br /></li>
-</ul>
-
-<p>これらを満たせなければ全く無駄。</p>
-
-<ul>
-<li>前提条件を元にメトリクスを決めている -&gt; 不完全なメトリクスが多い</li>
-<li>-&gt; 最低限の条件でメトリクスに要素を追加できることが重要だと考える
-<br /></li>
-</ul>
-
-<h2 id="statd-types">statd types</h2>
-
-<ul>
-<li>gauges</li>
-<li>counters</li>
-<li>histgrams</li>
-<li>timers</li>
-<li>sets</li>
-</ul>
-
-<h2 id="参考資料">参考資料</h2>
-
-<p>statd と graphite の連携</p>
-
-<p><a href="https://github.com/etsy/statsd/blob/master/docs/graphite.md">https://github.com/etsy/statsd/blob/master/docs/graphite.md</a></p>
-
-<p>サポートされているバックエンド一覧</p>
-
-<p><a href="https://github.com/etsy/statsd/blob/master/docs/backend.md">https://github.com/etsy/statsd/blob/master/docs/backend.md</a></p>
-
-<h1 id="まとめ">まとめ</h1>
-
-<p>とても有意義だった。丸一日、最後まで聞いているのも辛かったけど、運営されている
-側の方々はもっと大変だったでしょう。ありがとうございました。日本ではなかなか話
-を聞けないめちゃホットな方々の話を直に聞けるなんて無いのでホント貴重でした。ま
-たディスカッションには参加出来なかったけど、久しぶりに会えた方がいてめちゃ良かっ
-たです。同じ方向向いている方々がこれだけ社外には居るんだという気付きもあったり。</p>
-
-<p>皆さん、ありがとうございました！</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/09/29/devops-day-tokyo-2013-report/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Categories
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-        <li><a href='/categoriesreport'>report</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1166,6 +1097,20 @@ src="//speakerdeck.com/assets/embed.js"></script>
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
@@ -1205,20 +1150,6 @@ src="//speakerdeck.com/assets/embed.js"></script>
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1253,7 +1184,7 @@ src="//speakerdeck.com/assets/embed.js"></script>
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">105</span>
+                                <span style="float:right;">106</span>
                             </header>
                         </article>
                     </li>

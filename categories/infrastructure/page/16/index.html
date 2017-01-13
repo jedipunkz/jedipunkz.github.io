@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-09-29T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-10-01T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,204 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/">Methos アーキテクチャ #2 (Docker on Mesos)</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-10-01'>
+            October 1, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>Mesos アーキテクチャについて2つめの記事です。</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/">http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/</a></p>
+
+<p>上記の前回の記事で Mesos 自体のアーキテクチャについて触れましたが、今回は
+Mesos + Marathon + Docker の構成について理解したことを書いていこうと思います。</p>
+
+<p>mesos クラスタは 幾つかの mesos masters と沢山の mesos slaves から成っており、
+mesos slaves の上では docker を操作する executor が稼働している。marathon は
+mesos master の上で稼働する mesos framework である。init や upstart の様な存在
+であることが言え、REST API を持ち container の動作を制御する。marathon には
+ruby の client 等も存在する。下記がそれ。</p>
+
+<p><a href="https://github.com/mesosphere/marathon_client">https://github.com/mesosphere/marathon_client</a></p>
+
+<h2 id="構成">構成</h2>
+
+<pre><code>+-----------------+
+| docker registry | index.docker.io (もしくは local registry)
++-----------------+
+|
++----------------+
+|                |
++--------------+ +--------------+
+| mesos master | | mesos master |
++--------------+ +--------------+
+|                |
+|----------------+-----------------------------------|
+
++--------------+ +--------------+     +--------------+
+| mesos slave  | | mesos slave  | ... | mesos slave  | 
++--------------+ +--------------+     +--------------+
+|                |                    |
++--------------+ +--------------+     +--------------+
+| mesos slave  | | mesos slave  | ... | mesos slave  | 
++--------------+ +--------------+     +--------------+
+.                .                    .
+.                .                    .
+.                .                    .
++--------------+ +--------------+     +--------------+
+| mesos slave  | | mesos slave  | ... | mesos slave  |
++--------------+ +--------------+     +--------------+
+</code></pre>
+
+<h2 id="オファから-docker-が稼働するまでの流れ">オファから docker が稼働するまでの流れ</h2>
+
+<p>上記の構成の図を見ながら理解していきましょう。</p>
+
+<ul>
+<li>HTTP API もしくは web UI で marathon がリクエストを受ける</li>
+<li>marathon はリソースリクエストを作成しオファが受け付けられるのを待つ</li>
+<li>オファが受け付けられた後、mesos master は slave に task の仕様を送信する</li>
+<li>slave では docker コマンドラインツールを実行する mesos docker を mesos slave デーモンが呼び出す</li>
+<li>docker コマンドラインツールはローカルの docker デーモンと image cache, lxc ツールにより通信する</li>
+<li>もし image cache が存在すればそれを、無ければ docker registry から pull する。</li>
+<li>その時、index.docker.io の代わりにローカルの docker registry を稼働させることも可能</li>
+<li>docker デーモンが container を稼働させる</li>
+</ul>
+
+<h2 id="marathon-のクラスタとしての動作">marathon のクラスタとしての動作</h2>
+
+<p>marathon は init や upstart のようなモノだと上記で説明しましたが、図を交えて説明して
+いきましょう。</p>
+
+<p>marathon が &lsquo;serarch service&rsquo; と &lsquo;docker&rsquo; を稼働させている状態だとする。</p>
+
+<pre><code>+----------+ +----------+ +----------+
+|          | |          | |          | 
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+
++----------+ +----------+ +----------+
+|          | |          | |          | 
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+
++----------+ +----------+ +----------+
+|          | |          | |          | 
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+</code></pre>
+
+<p>サービスの状況によりオファが立て込んでくると下記のように docker をスケールアウ
+トが発生する。</p>
+
+<pre><code>+----------+ +----------+ +----------+
+| |docker| | | |docker| | |          | 
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+
++----------+ +----------+ +----------+
+|          | | |docker  | | |docker| | 
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+
++----------+ +----------+ +----------+
+| |docker| | | |docker| | | |docker| |
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+</code></pre>
+
+<p>システムに異常がありノードが落ちた場合、下記のように marathon は serach
+service と docker をノード間で移動させる処置を行う。</p>
+
+<pre><code>             +----------+ +----------+
+             | |docker| | | |search| | 
+             | |docker| | | |docker| |
+             +----------+ +----------+
+
++----------+ +----------+ +----------+
+| |docker|   | |docker| | | |docker| | 
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+
++----------+ +----------+ +----------+
+| |docker| | | |docker| | | |docker| |
+| |search| | | |docker| | | |docker| |
++----------+ +----------+ +----------+
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>mesos と docker, marathon の関係について記していきました。今度、実際にこの構成
+を組んでみて障害系のテストしてみたいです。あとは framework について理解してい
+く必要がありそう。あとは chronos についても。chronos については下記の URL が公
+式らしい。これは cron 代替な仕組みらしいです。</p>
+
+<p><a href="https://github.com/airbnb/chronos">https://github.com/airbnb/chronos</a></p>
+
+<p>まだまだ理解できていないことだらけだ&hellip;。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -791,224 +989,6 @@ slave に分配した task を LOST とします。</p>
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/09/13/chef-kibana-elasticsearch-fluentd/">Chef で kibana &#43; elasticsearch &#43; fluentd デプロイしてみた</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-09-13'>
-            September 13, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>前回 kibana + elasticsearch + fluentd を構築する方法を載せたのだけど手動で構築
-したので格好悪いなぁと思っていました。いうことで！ Chef でデプロイする方法を調
-べてみました。</p>
-
-<p>意外と簡単に出来たし、スッキリした形でデプロイ出来たのでオススメです。</p>
-
-<h2 id="前提の環境は">前提の環境は&hellip;</h2>
-
-<ul>
-<li>Ubuntu 12.04 LTS precise</li>
-<li>Chef サーバ構成</li>
-<li>入力するログは nginx (例)</li>
-<li>オールインワン構成</li>
-</ul>
-
-<p>Cookbook が他の OS に対応しているか確認していないので Ubuntu を前提にしていま
-す。Chef サーバのデプロイや knife の設定は済んでいるものとして説明していきます。
-例で nginx のログを入力します。なので nginx も Chef でデプロイします。ここは他
-のものに置き換えてもらっても大丈夫です。手順を省略化するためオールインワン構成
-で説明します。nginx, fluentd は複数のノードに配置することも手順を読み替えれば
-もちろん可能です。</p>
-
-<h2 id="cookbook-の準備">Cookbook の準備</h2>
-
-<p>お決まり。Cookbooks の取得に Berkshelf を用いる。</p>
-
-<pre><code class="language-bash">% cd chef-repo
-% gem install berkshelf
-% ${EDITOR} Berksfile
-cookbook 'elasticsearch', git: 'https://github.com/elasticsearch/cookbook-elasticsearch.git'
-cookbook 'td-agent', git: 'https://github.com/treasure-data/chef-td-agent.git'
-cookbook 'kibana', git: 'https://github.com/realityforge/chef-kibana.git'
-cookbook 'nginx', git: 'https://github.com/opscode-cookbooks/nginx.git'
-</code></pre>
-
-<p>Cookbooks を取得します。</p>
-
-<pre><code class="language-bash">% berks install --path=./cookbooks
-</code></pre>
-
-<h2 id="elasticsearch-デプロイ準備">elasticsearch デプロイ準備</h2>
-
-<p>elasticsearch の Role を作成する。java, elasticsearch レシピを指定。また Java
-に openjdk7 を override_attributes にて指定する。openjdk6 だと elasticsearch が起動し
-なかった。尚、デフォルトは 6 です。Environment で override_attributes を指定し
-てもらっても構わないです。</p>
-
-<pre><code class="language-bash">% ${EDITOR} roles/elasticsearch.rb
-name &quot;elasticsearch&quot;
-description &quot;Base role applied to elasticsearch nodes.&quot;
-run_list(
-  &quot;recipe[java]&quot;,
-  &quot;recipe[elasticsearch]&quot;
-)
-override_attributes &quot;java&quot; =&gt; { &quot;install_flavor&quot; =&gt; &quot;openjdk&quot;, &quot;jdk_version&quot; =&gt; &quot;7&quot; }
-</code></pre>
-
-<h2 id="fluentd-デプロイの準備">fluentd デプロイの準備</h2>
-
-<p>td-agent (fluentd) の Role を作成する。override_attributes にて td-agent のプ
-ラグインを指定。配列で複数指定可能。こちらも同じく Role で override_attributes
-を指定したが Environments で指定しても構わないです。あと公式の README には
-attributes に直接 plugins を指定するよう書いてありましたが、構成毎に plugins
-は変えたいと思うので、この様に Roles, Environments で指定するのが良いと思います。</p>
-
-<pre><code class="language-ruby">% ${EDITOR} roles/td-agent.rb
-name &quot;td-agent&quot;
-description &quot;Base role applied to td-agent nodes.&quot;
-run_list(
-  &quot;recipe[td-agent]&quot;
-)
-override_attributes &quot;td_agent&quot; =&gt; {
-                      &quot;plugins&quot; =&gt; [ &quot;elasticsearch&quot; ]
-                    }
-</code></pre>
-
-<p>td-agent.conf の template を作成。今回は nginx の
-/var/log/nginx/localhost.access.log を入力する。これは例なので好きなログを指定
-可能。</p>
-
-<pre><code class="language-ruby">% ${EDITOR} cookbooks/td-agent/templates/default/td-agent.conf.erb
-&lt;source&gt;
-  type tail
-  format nginx
-  path /var/log/nginx/localhost.access.log
-  tag foo01.nginx.access
-&lt;/source&gt;
-
-&lt;match *.nginx.*&gt;
-  index_name adminpack
-  type_name nginx
-  type elasticsearch
-  include_tag_key true
-  tag_key @log_name
-  host localhost
-  port 9200
-  logstash_format true
-  flush_interval 10s
-&lt;/match&gt;    
-</code></pre>
-
-<h2 id="デプロイ">デプロイ</h2>
-
-<p>Cookbooks, Roles を Chef サーバにアップロード。</p>
-
-<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
-% knife role from file roles/*.rb
-</code></pre>
-
-<p>knife bootstrap しデプロイ！</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;ip_addr&gt; -N &lt;hostname&gt; -r \
-  'role[td-agent]','role[elasticsearch]','recipe[kibana]','recipe[nginx]' \
-  --sudo -x &lt;username&gt;
-</code></pre>
-
-<p>下記の URL にブラウザでアクセスし nginx のログを生成。</p>
-
-<pre><code>http://&lt;ip_addr&gt;/
-</code></pre>
-
-<p>下記の URL にて Kibana の UI 越しにログ解析結果を確認出来る。</p>
-
-<pre><code>http://&lt;ip_addr&gt;:5601
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>fluentd plugins は複数指定可能。環境毎に td-agent.conf を変更したいという要望
-があると思うけど fluentd の Recipe を修正する必要がありそう。それとも
-td-agent.conf 自体でうまくさばけるのかな？調べてない。オールインワン構成で説明
-しましたが、elasticsearch + kibana のノードに対して、複数の nginx(なんでも良い)
-+ td-agent ノードの構成が一般的だと思います。手順を読み替えてやってみてくださ
-い。その場合 kibana の Cookbook の attributes 中に elasticsearch の IP アドレ
-ス・ポートを記す箇所があるので Role, Environments で上書きしてあげてください。</p>
-
-<pre><code class="language-ruby">default['kibana']['elasticsearch']['hosts'] = ['127.0.0.1']
-default['kibana']['elasticsearch']['port'] = 9200
-````
-
-あと td-agent/templates/default/td-agent.conf.erb の中に記した host, port の指
-定も elasticsearch のホスト情報に書き換えてあげてください。
-
-</code></pre>
-
-<p>host localhost
-port 9200
-```</p>
-
-<p>以上です。意外と簡単に出来ました。スッキリ。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/09/13/chef-kibana-elasticsearch-fluentd/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1125,6 +1105,20 @@ port 9200
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
@@ -1164,20 +1158,6 @@ port 9200
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1212,7 +1192,7 @@ port 9200
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">105</span>
+                                <span style="float:right;">106</span>
                             </header>
                         </article>
                     </li>

@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2016-12-29T09:32:49&#43;09:00"/>
+<meta property="og:updated_time" content="2017-01-13T20:29:07&#43;09:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,353 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h2>
+        
+        
+            <p>Kubernetes Replication Controller の次世代版 Deployments を使ってみました</p>
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2017-01-13'>
+            January 13, 2017</time>
+        <span class="author">jedipunkz</span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。 @jedipunkz です。</p>
+
+<p>いま僕らは職場では GKE 上に Replication Controller と Services を使って Pod を起動しているのですが最近の Kubernetes 関連のドキュメントを拝見すると Deployments を使っている記事をよく見掛けます。Kubernetes 1.2 から実装されたようです。今回は Kubernetes の Replication Controller の次世代版と言われている Deployments について調べてみましたので理解したことを書いていこうかと思います。</p>
+
+<h2 id="参考資料">参考資料</h2>
+
+<p>今回は Kubernetes 公式の下記のドキュメントに記されているコマンドを一通り実行していきます。追加の情報もあります。</p>
+
+<ul>
+<li><a href="https://kubernetes.io/docs/user-guide/deployments/">https://kubernetes.io/docs/user-guide/deployments/</a></li>
+</ul>
+
+<h2 id="deployments-を使って-nginx-pod-を起動">Deployments を使って nginx Pod を起動</h2>
+
+<p>nginx をデプロイするための Yaml ファイルを用意します。</p>
+
+<pre><code>apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.7.9
+        ports:
+        - containerPort: 80
+</code></pre>
+
+<p>作成した yaml ファイルを指定して Pod を作ります。
+下記の通りここで &ldquo;&ndash;record&rdquo; と記しているのは、後に Deployments の履歴を表示する際に &ldquo;何を行ったか&rdquo; を出力するためです。このオプションを指定しないと &ldquo;何を行ったか&rdquo; の出力が &ldquo;NONE&rdquo; となります。</p>
+
+<pre><code>$ kubectl create -f nginx.yaml --record
+</code></pre>
+
+<p>ここで</p>
+
+<ul>
+<li>deployments</li>
+<li>replica set</li>
+<li>pod</li>
+<li>rollout</li>
+</ul>
+
+<p>の状態をそれぞれ確認してみます。</p>
+
+<pre><code>$ kubectl get deployments
+NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+nginx-deployment   2         2         2            2           8s
+
+$ kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-4087004473   2         2         2         10s
+
+$ kubectl get pods --show-labels
+NAME                                READY     STATUS    RESTARTS   AGE       LABELS
+nginx-deployment-4087004473-6csa7   1/1       Running   0          21s       app=nginx,pod-template-hash=4087004473
+nginx-deployment-4087004473-teyzc   1/1       Running   0          21s       app=nginx,pod-template-hash=4087004473
+
+$ kubectl rollout status deployment/nginx-deployment
+deployment nginx-deployment successfully rolled out
+</code></pre>
+
+<p>結果から、下記の事が分かります。</p>
+
+<ul>
+<li>yaml に記した通り &ldquo;nginx-deployment&rdquo; という名前で deployment が生成された</li>
+<li>&ldquo;nginx-deployment-4087004473&rdquo; という名前の rs (レプリカセット) が生成された</li>
+<li>yaml に記した通り2つの Pod が起動した</li>
+<li>&ldquo;nginx-deployment&rdquo; が正常に Rollout された</li>
+</ul>
+
+<p>Replication Controller でデプロイした際には作られない replica set, rollout というモノが出てきました。後に Deployments を使うメリットに繋がっていきます。</p>
+
+<h2 id="nginx-イメージの-tag-を更新してみる">nginx イメージの Tag を更新してみる</h2>
+
+<p>ここで yaml ファイル内で指定していた &ldquo;image: nginx:1.7.9&rdquo; を &ldquo;image: nginx:1.9.1&rdquo; と更新してみます。
+Replication Controller で言う Rolling-Update になります。後に述べますが他にも更新方法があります。</p>
+
+<pre><code>$ kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+</code></pre>
+
+<p>ここで先ほどと同様に状態を確認してみます。</p>
+
+<pre><code>$ kubectl get deployments
+NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+nginx-deployment   2         2         2            2           2m
+
+$ kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-3599678771   2         2         2         39s
+nginx-deployment-4087004473   0         0         0         2m
+
+$ kubectl get pods
+NAME                                READY     STATUS    RESTARTS   AGE
+nginx-deployment-3599678771-0vj9m   1/1       Running   0          53s
+nginx-deployment-3599678771-t1y62   1/1       Running   0          53s
+</code></pre>
+
+<p>ここで&hellip;</p>
+
+<ul>
+<li>新しい Replica Set &ldquo;nginx-deployment-3599678771&rdquo; が作成された</li>
+<li>古い Replica Set &ldquo;nginx-deployment-4087004473&rdquo; の Pod は 0 個になった</li>
+<li>Pod 内コンテナが更新された (NAME より判断)</li>
+</ul>
+
+<p>となったことが分かります。
+Replication Controller と異なり、Deployments では以前の状態が Replica Set として保存されていて状態の履歴が追えるようになっています。</p>
+
+<p>ここで Rollout の履歴を確認してみます。</p>
+
+<pre><code>$ kubectl rollout history deployment/nginx-deployment
+deployments &quot;nginx-deployment&quot;
+REVISION        CHANGE-CAUSE
+1               kubectl create -f nginx.yaml --record
+2               kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+</code></pre>
+
+<p>REVISION という名前で履歴番号が付き、どの様な作業を行ったか CHANGE-CAUSE という項目で記されていることがわかります。作業の履歴がリビジョン管理されています。</p>
+
+<p>下記のように REVSION 番号を付与して履歴内容を表示することも可能です。</p>
+
+<pre><code>$ kubectl rollout history deployment/nginx-deployment --revision=2
+deployments &quot;nginx-deployment&quot; with revision #2
+  Labels:       app=nginx
+        pod-template-hash=3599678771
+  Annotations:  kubernetes.io/change-cause=kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+  Containers:
+   nginx:
+    Image:      nginx:1.9.1
+    Port:       80/TCP
+    Volume Mounts:      &lt;none&gt;
+    Environment Variables:      &lt;none&gt;
+  No volumes.
+</code></pre>
+
+<h2 id="作業を切り戻してみる">作業を切り戻してみる</h2>
+
+<p>先程 nginx の Image Tag を更新しましたが、ここで Deployments の機能を使って作業を切り戻してみます。下記の様に実行します。</p>
+
+<pre><code>$ kubectl rollout undo deployment/nginx-deployment
+</code></pre>
+
+<p>状態を確認します。</p>
+
+<pre><code>$ kubectl get deployments
+NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+nginx-deployment   2         2         2            2           5m
+
+$ kubectl rollout history deployment/nginx-deployment
+deployments &quot;nginx-deployment&quot;
+REVISION        CHANGE-CAUSE
+2               kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+3               kubectl create -f nginx.yaml --record
+</code></pre>
+
+<p>ここでは&hellip;</p>
+
+<ul>
+<li>コンテナが2個、正常に起動した</li>
+<li>REVISION 番号 3 として初期構築の状態 (kubectl create ..) が新たに保存</li>
+</ul>
+
+<p>ということが分かります。注意したいのは REVSION 番号 1 が削除され 3 が生成されたことです。1 と 3 は同じ作業ということと推測します。</p>
+
+<p>念のため &lsquo;nginx&rsquo; コンテナの Image Tag が切り戻っているか確認してみます。</p>
+
+<pre><code>$ kubectl describe pod nginx-deployment-4087004473-nq35u | grep &quot;Image:&quot;
+    Image:              nginx:1.7.9
+</code></pre>
+
+<p>最初の Yaml ファイルに記した &lsquo;nginx&rsquo; イメージ Tag &ldquo;1.7.9&rdquo; となっていることが確認できました。set image &hellip; でイメージ更新をした作業が正常に切り戻ったことになります。</p>
+
+<h2 id="レプリカ数を-2-3-へスケールしてみる">レプリカ数を 2-&gt;3 へスケールしてみる</h2>
+
+<p>更に replicas の数値を 2 から 3 へスケールしてみます。</p>
+
+<pre><code>$ kubectl scale deployment nginx-deployment --replicas 3
+</code></pre>
+
+<p>同様に状態を確認してみます。</p>
+
+<pre><code>kubectl get pods
+NAME                                READY     STATUS    RESTARTS   AGE
+nginx-deployment-4087004473-esj5l   1/1       Running   0          6s
+nginx-deployment-4087004473-nq35u   1/1       Running   0          4m
+nginx-deployment-4087004473-tyibo   1/1       Running   0          4m
+
+kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-3599678771   0         0         0         9m
+nginx-deployment-4087004473   3         3         3         11m
+
+kubectl rollout history deployment/nginx-deployment
+deployments &quot;nginx-deployment&quot;
+REVISION        CHANGE-CAUSE
+2               kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+3               kubectl scale deployment nginx-deployment --replicas 3
+</code></pre>
+
+<p>ここで気になるのは REVISION 3 が上書きされたことです。REVSION 番号 4 が新たに作成されると思っていたからです。先程 REVISION 番号 3 として保存されていた下記の履歴が消えてしまいました。この点については引き続き検証してみます。今の自分には理解できませんでした。ご存知の方いましたら、コメントお願いします！</p>
+
+<pre><code>3               kubectl create -f nginx.yaml --record
+</code></pre>
+
+<h2 id="puase-resume-機能を使ってみる">Puase, Resume 機能を使ってみる</h2>
+
+<p>次は deployments の機能を使って Image Tag を更に 1.9.1 へ変更し、その処理をポーズしてみます。</p>
+
+<pre><code>kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1; kubectl
+</code></pre>
+
+<p>同様に状態を確認してみます。</p>
+
+<pre><code>$ kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-3599678771   2         2         2         10m
+nginx-deployment-4087004473   2         2         2         12m
+
+$ kubectl rollout status deployment/nginx-deployment
+Waiting for rollout to finish: 2 out of 3 new replicas have been updated...
+Ctrl-C #&lt;--- キー入力
+</code></pre>
+
+<p>rollout status で deployment &ldquo;deployment/nginx-deployment&rdquo; を確認すると &ldquo;waiting for rollout to finish&rdquo; と表示され処理がポーズされていることが確認できました。また古い Deployment &ldquo;nginx-deployment-4087004473&rdquo; 上に未だコンテナが残り、新しい Deployment もコンテナが生成中であることが分かります。</p>
+
+<p>では Resume します。</p>
+
+<pre><code>$ kubectl rollout resume deployment/nginx-deployment
+deployment &quot;nginx-deployment&quot; resumed
+</code></pre>
+
+<p>この時点の状態を確認しましょう。</p>
+
+<pre><code>$ kubectl rollout status deployment/nginx-deployment
+deployment nginx-deployment successfully rolled out
+
+$ kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-3599678771   3         3         3         11m
+nginx-deployment-4087004473   0         0         0         14m
+</code></pre>
+
+<p>ここからは&hellip;</p>
+
+<ul>
+<li>正常に Deployment &ldquo;nginx-deployment&rdquo; が Rollout されたこと</li>
+<li>古い Deployment 上のコンテナ数が 0 に、新しい Deployment 上のコンテナ数が 3 になった</li>
+</ul>
+
+<p>ということが分かります。</p>
+
+<h2 id="rolling-update-相当の作業を行う方法">Rolling-Update 相当の作業を行う方法</h2>
+
+<p>前述した通り、Replication Controller 時代にあった Rolling-Update 作業 (イメージタグ・レプリカ数等の更新) ですが、Deployments では下記の方法をとることが出来ます。</p>
+
+<h4 id="set-オプションを付与する場合">set オプションを付与する場合</h4>
+
+<p>set オプションを付与して Key 項目に対して新しい Value を渡します。</p>
+
+<pre><code>$ kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+</code></pre>
+
+<h4 id="yaml-ファイルを修正する場合">yaml ファイルを修正する場合</h4>
+
+<p>yaml ファイルの内容を更新して適用したい場合、下記のように apply オプションを付与します。</p>
+
+<pre><code>$ kubectl apply -f &lt;新しいYamlファイル&gt;
+</code></pre>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>REVISION の履歴が上書きされる点など、まだ未完成な感が否めませんでしたが(自分の勘違いかもしれません！)、Replication Controller と比べると作業の切り戻しや、履歴が保存され履歴内容も確認できる点など機能が追加されていることが分かりました。公式ドキュメントを読んでいてもコマンド結果等怪しい点があって流石に API バージョンが &ldquo;v1beta1&rdquo; だなぁという感じではありますが、機能が整理されていて利便性が上がっているので Replication Controller を使っているユーザは自然と今後、Deployments に移行していくのではないかと感じました。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -654,254 +1001,6 @@ etcd-operator-217127005-futo0            1/1       Running   0          17m
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2016-11-20'>
-            November 20, 2016</time>
-        <span class="author">jedipunkz</span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>今回は Helm という kubernetes のパッケージマネージャ的なソフトウェアを使ってみたので記事にしたいと思います。</p>
-
-<ul>
-<li>公式サイト : <a href="https://helm.sh/">https://helm.sh/</a></li>
-</ul>
-
-<p>Kubernetes を仕事で使っているのですが &ldquo;レプリケーションコントローラ&rdquo; や &ldquo;サービス&rdquo; といった単位を使って Pod, Service を管理しています。Helm を使うことでこれらの管理方法が変わるのか調べたいと思います。</p>
-
-<h2 id="依存するソフトウェア">依存するソフトウェア</h2>
-
-<p>今回は MacOS を使って環境を整えます。</p>
-
-<ul>
-<li>virtualbox</li>
-<li>minikube</li>
-<li>kubectl</li>
-</ul>
-
-<p>これらのソフトウェアをインストールしていきます。</p>
-
-<pre><code>$ brew cask install virtualbo
-$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.12.2/minikube-darwin-amd64 &amp;&amp; chmod +x minikube &amp;&amp; sudo mv minikube /usr/local/bin/
-$ brew install kubectl
-</code></pre>
-
-<p>minikube を使って簡易的な kubernetes 環境を起動します。</p>
-
-<pre><code>$ minikube start
-$ eval $(minikube docker-env)
-</code></pre>
-
-<h2 id="helm-を使ってみる">Helm を使ってみる</h2>
-
-<p>Helm は Charts という単位で Kubernetes をパッケージングします。Charts の一覧を見てみましょう。</p>
-
-<pre><code>$ helm search
-NAME                    VERSION         DESCRIPTION
-stable/drupal           0.3.7           One of the most versatile open source content m...
-stable/factorio         0.1.1           Factorio dedicated server.
-stable/ghost            0.4.0           A simple, powerful publishing platform that all...
-stable/jenkins          0.1.1           A Jenkins Helm chart for Kubernetes.
-stable/joomla           0.4.0           PHP content management system (CMS) for publish...
-stable/mariadb          0.5.3           Chart for MariaDB
-stable/mediawiki        0.4.0           Extremely powerful, scalable software and a fea...
-stable/memcached        0.4.0           Chart for Memcached
-stable/minecraft        0.1.0           Minecraft server
-stable/mysql            0.2.1           Chart for MySQL
-stable/phpbb            0.4.0           Community forum that supports the notion of use...
-stable/postgresql       0.2.0           Chart for PostgreSQL
-stable/prometheus       1.3.1           A Prometheus Helm chart for Kubernetes. Prometh...
-stable/redis            0.4.1           Chart for Redis
-stable/redmine          0.3.5           A flexible project management web application.
-stable/spark            0.1.1           A Apache Spark Helm chart for Kubernetes. Apach...
-stable/spartakus        1.0.0           A Spartakus Helm chart for Kubernetes. Spartaku...
-stable/testlink         0.4.0           Web-based test management system that facilitat...
-stable/traefik          1.1.0-rc3-a     A Traefik based Kubernetes ingress controller w...
-stable/uchiwa           0.1.0           Dashboard for the Sensu monitoring framework
-stable/wordpress        0.3.2           Web publishing platform for building blogs and ...
-</code></pre>
-
-<p>各アプリケーションの名前で Charts が管理されていることが分かります。
-ここでは stable/mysql を使って kubernetes の中に MySQL 環境を作ってみます。まず stable/mysql に設定できるパラメータ一覧を取得します。</p>
-
-<pre><code>$ helm inspect stable/mysql
-Fetched stable/mysql to mysql-0.2.1.tgz
-description: Chart for MySQL
-engine: gotpl
-home: https://www.mysql.com/
-keywords:
-- mysql
-- database
-- sql
-maintainers:
-- email: viglesias@google.com
-  name: Vic Iglesias
-name: mysql
-sources:
-- https://github.com/kubernetes/charts
-- https://github.com/docker-library/mysql
-version: 0.2.1
-
----
-## mysql image version
-## ref: https://hub.docker.com/r/library/mysql/tags/
-##
-imageTag: &quot;5.7.14&quot;
-
-## Specify password for root user
-##
-## Default: random 10 character string
-# mysqlRootPassword: testing
-
-## Create a database user
-##
-# mysqlUser:
-# mysqlPassword:
-
-## Allow unauthenticated access, uncomment to enable
-##
-# mysqlAllowEmptyPassword: true
-
-## Create a database
-##
-# mysqlDatabase:
-
-## Specify a imagePullPolicy
-## 'Always' if imageTag is 'latest', else set to 'IfNotPresent'
-## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
-##
-# imagePullPolicy:
-
-## Persist data to a persitent volume
-persistence:
-  enabled: true
-  storageClass: generic
-  accessMode: ReadWriteOnce
-  size: 8Gi
-
-## Configure resource requests and limits
-## ref: http://kubernetes.io/docs/user-guide/compute-resources/
-##
-resources:
-  requests:
-    memory: 256Mi
-    cpu: 100m
-</code></pre>
-
-<p>stable/mysql という Charts を構成するパラメータ一覧が取得できました。今回は DB 上のユーザを作ってパスワードを設定してみようと思います。上記のパラメータの中から &lsquo;mysqlUser&rsquo;, &lsquo;mysqlPasswword&rsquo; を編集してみます。下記の内容を config.yaml というファイル名で保存します。</p>
-
-<pre><code>mysqlUser: user1
-mysqlPassword: password1
-</code></pre>
-
-<p>この config.yaml を使って stable/mysql を起動してみます。</p>
-
-<pre><code>$ helm install -f config.yaml stable/mysql
-$ helm ls # &lt;--- 起動した環境を確認する
-NAME            REVISION        UPDATED                         STATUS          CHART
-dealing-ladybug 1               Sun Nov 20 10:44:00 2016        DEPLOYED        mysql-0.2.1
-</code></pre>
-
-<p>&lsquo;dealing-ladybug&rsquo; という名前で mysql が起動したことが分かります。</p>
-
-<p>kubectl をつかって Services を確認してみます。</p>
-
-<pre><code>$ kubectl get svc
-NAME                    CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
-dealing-ladybug-mysql   10.0.0.24    &lt;none&gt;        3306/TCP   33m
-</code></pre>
-
-<p>&lsquo;dealing-ladybug-mysql&rsquo; という Service が kubernetes 環境に作られました。この名前は Kubernetes 内のコンテナから DNS 名前解決できるアドレスとなります。</p>
-
-<p>ここで mysql-client 環境を作るために下記のようなコンテナを起動して mysql-client をインストール、config.yaml で作成したユーザ・パスワードで mysql サーバにアクセス確認します。</p>
-
-<pre><code>$ kubectl run -i --tty ubuntu02 --image=ubuntu:16.04 --restart=Never -- bash -il
-# apt-get update; apt-get install -y mysql-client
-# mysql -h dealing-ladybug-mysql -u user1 -ppassword1
-&lt;省略&gt;
-mysql&gt;
-</code></pre>
-
-<p>config.yaml に記したユーザ情報で MySQL にアクセスできることを確認できました。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>Helm を使うことでレプリケーションコントローラやサービスを直接 yaml で作らなくても MySQL 環境構築と設定が行えました。Helm の Charts は自分で開発することも可能です。(参考 URL)</p>
-
-<p><a href="https://github.com/kubernetes/helm/blob/master/docs/charts.md">https://github.com/kubernetes/helm/blob/master/docs/charts.md</a></p>
-
-<p>パッケージングすることで他人の作った資源を有用に活用することもできるため、こういった何かを抽象化する技術を採用することにはとても意味があると思います。自動化を考える上でも抽象化できる技術は有用だと思います。</p>
-
-<p>ですがレプリケーションコントローラを使っても Helm でも Yaml で管理することに変わりはなく、またレプリケーションコントローラで指定できる詳細なパラメータ (replicas や command, image など) を指定できないためすぐに実用するというわけにはいかないなぁと感じました。</p>
-
-<h2 id="参考-url">参考 URL</h2>
-
-<ul>
-<li><a href="https://github.com/kubernetes/helm/blob/master/docs/charts.md">https://github.com/kubernetes/helm/blob/master/docs/charts.md</a></li>
-<li><a href="https://github.com/kubernetes/helm/blob/master/docs/quickstart.md">https://github.com/kubernetes/helm/blob/master/docs/quickstart.md</a></li>
-</ul>
-</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1017,6 +1116,20 @@ mysql&gt;
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
@@ -1056,20 +1169,6 @@ mysql&gt;
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1104,7 +1203,7 @@ mysql&gt;
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">105</span>
+                                <span style="float:right;">106</span>
                             </header>
                         </article>
                     </li>

@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2014-03-16T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2014-04-04T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,342 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2014/04/04/openstack-havana-cinder-glance-ceph/">OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-04-04'>
+            April 4, 2014</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは！<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ
+る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。</p>
+
+<p><a href="https://ceph.com/docs/master/rbd/rbd-openstack/">https://ceph.com/docs/master/rbd/rbd-openstack/</a></p>
+
+<p>この手順から下記の変更を行って、ここでは記していきます。</p>
+
+<ul>
+<li>Nova + Ceph 連携させない</li>
+<li>cinder-backup は今のところ動作確認出来ていないので省く</li>
+<li>諸々の手順がそのままでは実施出来ないので補足を入れていく。</li>
+</ul>
+
+<p>cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ
+上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ
+クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ
+の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の
+Ceph 連携は意味が大きくなってくると思います。</p>
+
+<h2 id="構成">構成</h2>
+
+<p>下記の通りの物理ネットワーク6つの構成です。
+OpenStack, Ceph 共に最小構成を前提にします。</p>
+
+<pre><code>                  +--------------------------------------------------------------------- external
+                  |
++--------------+--(-----------+--------------+------------------------------------------ public
+|              |  |           |              |
++------------+ +------------+ +------------+ +------------+ +------------+ +------------+
+| controller | |  network   | |  compute   | |   ceph01   | |   ceph02   | |   ceph03   |
++------------+ +------------+ +------------+ +------------+ +------------+ +------------+
+|  |           |  |           |  |  |        |  |  |        |  |  |        |  |  |
++--------------+--(-----------+--(-----------+--(--(--------+--(--(--------+--(--(------- management
+   |              |              |  |           |  |           |  |           |  |
+   |              +--------------+--(-----------(--(-----------(--(-----------(--(------- guest
+   |                                |           |  |           |  |           |  |
+   +--------------------------------+-----------+--(-----------+--(-----------+--(------- storage
+                                                   |              |              |
+                                                   +--------------+--------------+------- cluster
+</code></pre>
+
+<p>特徴</p>
+
+<ul>
+<li>最小構成 controller x 1 + network x 1 + compute x 1 + ceph x 3</li>
+<li>OpenStack API の相互通信は management ネットワーク</li>
+<li>OpenStack VM 間通信は guest ネットワーク</li>
+<li>OpenStack 外部通信は public ネットワーク</li>
+<li>OpenStack VM の floating-ip (グローバル) 通信は external ネットワーク</li>
+<li>Ceph と OpenStack 間の通信は storage ネットワーク</li>
+<li>Ceph の OSD 間通信は cluster ネットワーク</li>
+<li>ここには記されていないホスト &lsquo;workstation&rsquo; から OpenStack, Ceph をデプロイ</li>
+</ul>
+
+<h2 id="前提の構成">前提の構成</h2>
+
+<p>前提構成の OpenStack と Ceph ですが、ここでは構築方法は割愛します。OpenStack
+は rcbops/chef-cookbooks を。Ceph は ceph-deploy を使って自分は構築しました。
+下記の自分のブログに構築手順が載っているので参考にしてみてください。</p>
+
+<p>OpenStack 構築方法</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/">http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/</a></p>
+
+<p>Ceph 構築方法</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/">http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/</a></p>
+
+<h2 id="openstack-ceph-連携手順">OpenStack + Ceph 連携手順</h2>
+
+<p>では実際に連携するための手順を記していきます。</p>
+
+<h4 id="rbd-pool-の作成">rbd pool の作成</h4>
+
+<p>Ceph ノードの何れかで下記の手順を実施し rbd pool を作成する。</p>
+
+<pre><code class="language-bash">ceph01% sudo ceph osd pool create volumes 128
+ceph01% sudo ceph osd pool create images 128
+ceph01% sudo ceph osd pool create backups 128
+</code></pre>
+
+<h4 id="ssh-鍵の配置">ssh 鍵の配置</h4>
+
+<p>Ceph ノードから OpenStack の controller, compute ノードへ接続出来るよう鍵を配
+布します。</p>
+
+<pre><code class="language-bash">ceph01% ssh-copy-id &lt;username&gt;@&lt;controller_ip&gt;
+ceph01% ssh-copy-id &lt;username&gt;@&lt;compute_ip&gt;
+</code></pre>
+
+<h4 id="sudoers-の設定">sudoers の設定</h4>
+
+<p>controller, compute ノード上で sudoers の設定を予め実施する。
+/etc/sudoers.d/<username> として保存する。</p>
+
+<pre><code class="language-bash">&lt;username&gt; ALL = (root) NOPASSWD:ALL
+</code></pre>
+
+<h4 id="ceph-パッケージのインストール">ceph パッケージのインストール</h4>
+
+<p>controller ノード, compute ノード上で Ceph パッケージをインストールする。</p>
+
+<pre><code class="language-bash">controller% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add -
+controller% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list
+controller% sudo apt-get update &amp;&amp; sudo apt-get install -y python-ceph ceph-common
+
+compute% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add -
+compute% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list
+compute% sudo apt-get update &amp;&amp; sudo apt-get install -y python-ceph ceph-common
+</code></pre>
+
+<p>controller ノード, compute ノード上でディレクトリを作成する。</p>
+
+<pre><code class="language-bash">controller% sudo mkdir /etc/ceph
+compute   % sudo mkdir /etc/ceph
+</code></pre>
+
+<p>ceph.conf を controller, compute ノードへ配布する。</p>
+
+<pre><code class="language-bash">ceph01% sudo -i
+ceph01# ssh &lt;controller_ip&gt; sudo tee /etc/ceph/ceph.conf &lt;/etc/ceph/ceph.conf
+ceph01# ssh &lt;compute_ip&gt; sudo tee /etc/ceph/ceph.conf &lt;/etc/ceph/ceph.conf
+</code></pre>
+
+<h4 id="ceph-上にユーザを作成">ceph 上にユーザを作成</h4>
+
+<p>Ceph 上に cinder, glance 用の新しいユーザを作成する。</p>
+
+<pre><code class="language-bash">ceph auth get-or-create client.cinder mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=volumes, allow rx pool=images'
+ceph auth get-or-create client.glance mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=images'
+ceph auth get-or-create client.cinder-backup mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=backups'
+</code></pre>
+
+<h4 id="キーリングの作成と配置">キーリングの作成と配置</h4>
+
+<p>client.cinder, client.glance, client.cinder-backup のキーリングを作成する。また作成したキーリングを
+controller ノードに配布する。</p>
+
+<pre><code class="language-bash">ceph01% sudo ceph auth get-or-create client.glance | ssh {your-glance-api-server} sudo tee /etc/ceph/ceph.client.glance.keyring
+ceph01% ssh {your-glance-api-server} sudo chown glance:glance /etc/ceph/ceph.client.glance.keyring
+ceph01% sudo ceph auth get-or-create client.cinder | ssh {your-volume-server} sudo tee /etc/ceph/ceph.client.cinder.keyring
+ceph01% ssh {your-cinder-volume-server} sudo chown cinder:cinder /etc/ceph/ceph.client.cinder.keyring
+ceph01% sudo ceph auth get-or-create client.cinder-backup | ssh {your-cinder-backup-server} sudo tee /etc/ceph/ceph.client.cinder-backup.keyring
+ceph01% ssh {your-cinder-backup-server} sudo chown cinder:cinder /etc/ceph/ceph.client.cinder-backup.keyring
+</code></pre>
+
+<p>client.cinder のキーリングを compute ノードに配置する。</p>
+
+<pre><code class="language-bash">ceph01% sudo ceph auth get-key client.cinder | ssh {your-compute-node} tee client.cinder.key
+</code></pre>
+
+<h4 id="libvirt-への-secret-キー追加">libvirt への secret キー追加</h4>
+
+<p>compute ノード上で secret キーを libvirt に追加する。</p>
+
+<pre><code class="language-bash">compute% uuidgen
+457eb676-33da-42ec-9a8c-9293d545c337
+
+cat &gt; secret.xml &lt;&lt;EOF
+&lt;secret ephemeral='no' private='no'&gt;
+  &lt;uuid&gt;457eb676-33da-42ec-9a8c-9293d545c337&lt;/uuid&gt;
+  &lt;usage type='ceph'&gt;
+    &lt;name&gt;client.cinder secret&lt;/name&gt;
+  &lt;/usage&gt;
+&lt;/secret&gt;
+EOF
+compute % sudo virsh secret-define --file secret.xml
+Secret 457eb676-33da-42ec-9a8c-9293d545c337 created
+compute% sudo virsh secret-set-value --secret 457eb676-33da-42ec-9a8c-9293d545c337 --base64 $(cat client.cinder.key) &amp;&amp; rm client.cinder.key secret.xml
+</code></pre>
+
+<h4 id="glance-連携手順">glance 連携手順</h4>
+
+<p>controller ノードの /etc/glance/glance-api.conf に下記を追記。
+default_store=file と標準ではなっているので下記の通り rbd に書き換える。</p>
+
+<pre><code>default_store=rbd
+rbd_store_user=glance
+rbd_store_pool=images
+</code></pre>
+
+<h4 id="cinder-連携手順">cinder 連携手順</h4>
+
+<p>controller ノードの /etc/cinder/cinder.conf に下記を追記。
+volume_driver は予め LVM の設定が入っていると思われるので書き換える。
+また rbd_secret_uuid は先ほど生成した uuid を記す。</p>
+
+<pre><code>volume_driver=cinder.volume.drivers.rbd.RBDDriver
+rbd_pool=volumes
+rbd_ceph_conf=/etc/ceph/ceph.conf
+rbd_flatten_volume_from_snapshot=false
+rbd_max_clone_depth=5
+glance_api_version=2
+rbd_user=cinder
+rbd_secret_uuid=457eb676-33da-42ec-9a8c-9293d545c337
+</code></pre>
+
+<h4 id="ceph-conf-への追記">ceph.conf への追記</h4>
+
+<p>上記で配布した ceph.conf にはキーリングのパスが記されていない。controller ノー
+ド上の /etc/ceph/ceph.conf に下記の通り追記する。</p>
+
+<p>ここは公式サイトには印されていないのでハマりました。ポイントです。</p>
+
+<pre><code>[client.keyring]
+  keyring = /etc/ceph/ceph.client.cinder.keyring
+</code></pre>
+
+<h4 id="openstack-のそれぞれのコンポーネントを再起動かける">OpenStack のそれぞれのコンポーネントを再起動かける</h4>
+
+<pre><code class="language-bash">controller% sudo glance-control api restart
+compute   % sudo service nova-compute restart
+controller% sudo service cinder-volume restart
+controller% sudo service cinder-backup restart
+</code></pre>
+
+<h2 id="動作確認">動作確認</h2>
+
+<p>では動作確認を。Glance に OS イメージを登録。その後そのイメージを元にインスタ
+ンスを作成。Cinder 上に仮想ディスクを作成。その後先ほど作成したインスタンスに
+接続しマウント。そのマウントした仮想ディスク上で書き込みが行えるか確認をします。</p>
+
+<p>テストで Ubuntu Precise 12.04 のイメージを glance を用いて登録する。</p>
+
+<pre><code class="language-bash">controller% wget http://cloud-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64-disk1.img
+controller% glance image-create --name precise-image --is-public true --container-format bare --disk-format qcow2 &lt; precise-server-cloudimg-amd64-disk1.img
+</code></pre>
+
+<p>テスト VM を稼働する。</p>
+
+<pre><code class="language-bash">controller% nova boot --nic net-id=&lt;net_id&gt; --flavor 2 --image precise-image --key_name novakey01 vm01
+controller% cinder create --display-name vol01 1
+controller% nova volume-attach &lt;instance_id&gt; &lt;volume_id&gt; auto
+</code></pre>
+
+<p>テスト VM へログインしファイルシステムを作成後、マウントする。</p>
+
+<pre><code class="language-bash">controller% ssh -i &lt;key_file_path&gt; -l ubuntu &lt;instance_ip&gt;
+vm01% sudo mkfs -t ext4 /dev/vdb
+vm01% sudo mount -t ext4 /dev/vdb /mnt
+</code></pre>
+
+<p>マウントした仮想ディスク上でデータを書き込んでみる。</p>
+
+<pre><code class="language-bash">vm01% sudo dd if=/dev/zero of=/mnt/500M bs=1M count=5000
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>Ceph, Cinder の Ceph 連携が出来ました！</p>
+
+<p>OpenStack Grizzly 版時代に Ceph 連携は取っていたのですが Havana では</p>
+
+<ul>
+<li>cinder-bacup の Ceph 連携</li>
+<li>nova の Ceph 連携</li>
+</ul>
+
+<p>が追加されていました。Nova 連携をとるとインスタンスを稼働させる際に通常は
+controller ノードの /var/lib/nova 配下にファイルとしてインスタンスイメージが作
+成されますが、これが Ceph 上に作成されるとのことです。Nova 連携は是非とってみ
+たいのですが、今のところ動いていません。引き続き調査を行います。</p>
+
+<p>cinder-backup も少し連携取ってみましたが backup_driver に Ceph ドライバの指定
+をしているにも関わらず Swift に接続しにいってしまう有り様でした..。こちらも引
+き続き調査します。またステートが &lsquo;in-use&rsquo; の場合バックアップが取れず
+&lsquo;available&rsquo; なステートでないといけないようです。確かに書き込み中に操作が行われ
+てしまってもバックアップの整合性が取れないですし、ここは仕方ないところですね。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2014/04/04/openstack-havana-cinder-glance-ceph/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -841,322 +1177,6 @@ Web ミドルウェアと同時に sensu クライアントを VM に放り込�
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/">Journal 用 SSD を用いた Ceph 構成の構築</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2014-02-27'>
-            February 27, 2014</time>
-        <span class="author"></span>
-        
-            <p>4 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは、@jedipunkz です。</p>
-
-<p>前回、&rsquo;Ceph のプロセス配置ベストプラクティス&rsquo; というタイトルで記事を書きました。</p>
-
-<p><a href="http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/">http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/</a></p>
-
-<p>今回はこの記事にあるポリシに従って下記のような特徴を持った構成を作る手順を具体
-的に書いていきたいと思います。</p>
-
-<ul>
-<li>ceph01 - ceph04 の4台構成</li>
-<li>ノードに HDD 2台搭載されていることを前提 (/dev/sdb, /dev/sdc)</li>
-<li>ノードに Journal 用 SSD 1台搭載されていることを前提 (/dev/ssd)</li>
-<li>ceph04 は mds サービス稼働</li>
-<li>ceph05 は ceph-deploy を実行するためのワークステーション</li>
-<li>最終的に ceph04 から Ceph をマウントする</li>
-<li>mon は ノード単位で稼働</li>
-<li>osd は HDD 単位で稼働</li>
-<li>mds は ceph04 に稼働</li>
-</ul>
-
-<h2 id="構成-ハードウェアとノードとネットワークの関係">構成 : ハードウェアとノードとネットワークの関係</h2>
-
-<pre><code>                                                                                      public network
-         +-------------------+-------------------+-------------------+-------------------+---------
-         |                   |                   |                   |                   |
-+--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+
-|      ceph01     | |      ceph02     | |      ceph03     | |      ceph04     | |      ceph05     |
-| +-----+ +-----+ | | +-----+ +-----+ | | +-----+ +-----+ | |                 | |                 |
-| | sdb | | sdc | | | | sdb | | sdc | | | | sdb | | sdc | | |                 | |                 |
-| +-----+-+-----+ | | +-----+-+-----+ | | +-----+-+-----+ | |                 | |                 |
-| |     ssd     | | | |     ssd     | | | |     ssd     | | |                 | |                 |
-| +-------------+ | | +-------------+ | | +-------------+ | |                 | |                 |
-+--------+--------+ +--------+--------+ +--------+--------+ +-----------------+ +-----------------+
-         |                   |                   |                                    cluster network
-         +-------------------+-------------------+-------------------------------------------------
-</code></pre>
-
-<h2 id="構成-プロセスとノードとネットワークの関係">構成 : プロセスとノードとネットワークの関係</h2>
-
-<pre><code>                                                                                      public network
-         +-------------------+-------------------+-------------------+-------------------+---------
-         |                   |                   |                   |                   |
-+--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+
-|      ceph01     | |      ceph02     | |      ceph03     | |      ceph04     | |      ceph05     |
-| +-----+ +-----+ | | +-----+ +-----+ | | +-----+ +-----+ | | +-------------+ | |                 |
-| | osd | | osd | | | | osd | | osd | | | | osd | | osd | | | |     mds     | | |                 |
-| +-----+-+-----+ | | +-----+-+-----+ | | +-----+-+-----+ | | +-------------+ | |                 |
-| |     mon     | | | |     mon     | | | |     mon     | | |                 | |                 |
-| +-------------+ | | +-------------+ | | +-------------+ | |                 | |                 |
-+--------+--------+ +--------+--------+ +--------+--------+ +-----------------+ +-----------------+
-         |                   |                   |                                    cluster network
-         +-------------------+-------------------+-------------------------------------------------
-</code></pre>
-
-<p>注意 : 上記の図だと ssd : mon が対に見えますが、そうではありません。</p>
-
-<p>では構築方法について書いていきます。</p>
-
-<h2 id="作業用ホストの準備">作業用ホストの準備</h2>
-
-<p>ノンパスフレーズの SSH 公開鍵・秘密鍵を生成する。</p>
-
-<pre><code class="language-bash">% ssh-keygen
-</code></pre>
-
-<p>公開鍵をターゲットホスト (ceph01-03) に配置</p>
-
-<pre><code class="language-bash">% ssh-copy-id ceph@ceph01
-% ssh-copy-id ceph@ceph02
-% ssh-copy-id ceph@ceph03
-</code></pre>
-
-<p>ceph-deploy の取得を行う。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/ceph/ceph-deploy.git ~/ceph-deploy
-</code></pre>
-
-<p>&lsquo;python-virtualenv&rsquo; パッケージをインストールする。</p>
-
-<pre><code class="language-bash">% sudo apt-get update ; sudo apt-get -y install python-virtualenv
-</code></pre>
-
-<p>ceph-deploy をブートストラップする</p>
-
-<pre><code class="language-bash">% cd ~/ceph-deploy
-% ./bootstrap
-</code></pre>
-
-<p>PATH を通す。下記は例。</p>
-
-<pre><code class="language-bash">% ${EDITOR} ~/.zshrc
-export PATH=$HOME/ceph-deploy:$PATH
-</code></pre>
-
-<p>ホスト名の解決を行う。IP アドレスは例。</p>
-
-<pre><code class="language-bash">% sudo ${EDITOR} /etc/hosts
-10.200.10.11    ceph01
-10.200.10.12    ceph02
-10.200.10.13    ceph03
-10.200.10.14    ceph04
-10.200.10.15    ceph05
-</code></pre>
-
-<h2 id="上記の構成の構築方法">上記の構成の構築方法</h2>
-
-<p>以前の記事同様に ceph-deploy をデプロイツールとして用いる。</p>
-
-<p>ceph-deploy に関しては下記の URL を参照のこと。</p>
-
-<p><a href="https://github.com/ceph/ceph-deploy">https://github.com/ceph/ceph-deploy</a></p>
-
-<p>下記の手順でコンフィギュレーションと鍵の生成を行う。またこれからの操作はすべて public network
-上の ceph-deploy 専用 node からの操作とする。</p>
-
-<pre><code class="language-bash">% mkdir ~/ceph-work
-% cd ~/ceph-work
-% ceph-deploy --cluster cluster01 new ceph01 ceph02 ceph03 ceph04
-</code></pre>
-
-<p>~/ceph-work ディレクトリ上に cluster01.conf が生成されているので下記の通り
-cluster network を扱う形へと追記を行う。</p>
-
-<pre><code class="language-bash">public network = &lt;public_network_addr&gt;/&lt;netmask&gt;
-cluster network = &lt;cluster_network_addr&gt;/&lt;netmask&gt;
-
-[mon.a]
-    host = ceph01
-    mon addr = &lt;ceph01_ip_addr&gt;:6789
-
-[mon.b]
-    host = ceph02
-    mon addr = &lt;ceph02_ip_addr&gt;:6789
-
-[mon.c]
-    host = ceph03
-    mon addr = &lt;ceph03_ip_addr&gt;:6789
-
-[osd.0]
-    public addr = &lt;ceph01_public_ip_addr&gt;
-    cluster addr = &lt;ceph01_cluster_ip_addr&gt;
-
-[osd.1]
-    public addr = &lt;ceph01_public_ip_addr&gt;
-    cluster addr = &lt;ceph01_cluster_ip_addr&gt;
-
-[osd.2]
-    public addr = &lt;ceph01_public_ip_addr&gt;
-    cluster addr = &lt;ceph01_cluster_ip_addr&gt;
-
-[mds.a]
-    host = ceph04
-</code></pre>
-
-<p>ceph の各 nodes へのインストールを行う。ceph はワークステーションである ceph05 にも
-インストールしておきます。後に Ceph ストレージをマウントするためです。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 install ceph01 ceph02 ceph03 ceph04 ceph04
-</code></pre>
-
-<p>mon プロセスを各 nodes で稼働する。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 mon create ceph01 ceph02 ceph03
-</code></pre>
-
-<p>鍵の配布を各 nodes に行う。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 gatherkeys ceph01 ceph02 ceph03 ceph04 ceph05
-</code></pre>
-
-<p>disk のリストを確認。</p>
-
-<p>各 node 毎に用いることが可能は disk の一覧を確認する。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 disk list ceph01
-% ceph-deploy --cluster cluster01 disk list ceph02
-% ceph-deploy --cluster cluster01 disk list ceph03
-</code></pre>
-
-<p>disk の初期化を行う。この作業を行うと指定ディスク上のデータは消去される。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 disk zap ceph01:/dev/sdb ceph01:/dev/sdc
-% ceph-deploy --cluster cluster01 disk zap ceph02:/dev/sdb ceph02:/dev/sdc
-% ceph-deploy --cluster cluster01 disk zap ceph03:/dev/sdb ceph03:/dev/sdc
-</code></pre>
-
-<p>journal 用の ssd のパーティションを切る。ここでは 10GB 毎に切った
-/dev/ssd1, /dev/ssd2 が存在することを前提に記す。ceph と同時にインストールされた
-gdisk を用いる。</p>
-
-<pre><code class="language-bash">% sudo gdisk /dev/ssd
-</code></pre>
-
-<p>(注意) 下記の公式ドキュメントでは osd prepare, osc activate の手順が掲載されて
-いるがその後の osd create のコマンドにて prepare が実行されるようでこれら2つの
-手順を行うと正常に osd create コマンドが実行できなかった。よってこのタイミング
-にて osd create を行うものとする。</p>
-
-<ul>
-<li><a href="http://ceph.com/docs/master/rados/deployment/ceph-deploy-osd/#prepare-osds">http://ceph.com/docs/master/rados/deployment/ceph-deploy-osd/#prepare-osds</a></li>
-<li><a href="http://ceph.com/docs/dumpling/start/quick-ceph-deploy/">http://ceph.com/docs/dumpling/start/quick-ceph-deploy/</a></li>
-</ul>
-
-<p>2 つの disk に対してそれぞれ osd を稼働させる。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 osd create ceph01:sdb:/dev/ssd1 ceph02:sdb:/dev/ssd1 ceph03:sdb:/dev/ssd1
-% ceph-deploy --cluster cluster01 osd create ceph01:sdc:/dev/ssd2 ceph02:sdc:/dev/ssd2 ceph03:sdc:/dev/ssd2
-</code></pre>
-
-<p>mds の稼働を行う。ここでは1号機にのみ稼働を行う。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 mds create ceph04
-</code></pre>
-
-<h2 id="クライアントからのマウント方法各種">クライアントからのマウント方法各種</h2>
-
-<p>上記で構築した Ceph ストレージを利用する方法を3つ説明する。先に述べたように
-POSIX 互換 filesystem として利用が可能。それぞれ mds が稼働しているホストに対
-して接続を行う。</p>
-
-<h4 id="block-device-としてマウントする方法">Block Device としてマウントする方法</h4>
-
-<p>ストレージ上に block device を生成しそれをマウントする</p>
-
-<pre><code class="language-bash">cephclient% rbd create foo --size 4096
-cephclient% sudo modprobe rbd
-cephclient% sudo rbd map foo --pool rbd --name client.admin
-cephclient% sudo mkfs.ext4 -m0 /dev/rbd/rbd/foo
-cephclient% sudo mkdir /mnt/myrbd
-cephclinet% sudo mount /dev/rbd/rbd/foo /mnt/myrbd
-</code></pre>
-
-<h4 id="kernel-driver-を用いてマウントする方法">Kernel Driver を用いてマウントする方法</h4>
-
-<p>kernel Driver を用いてストレージをマウントする</p>
-
-<pre><code class="language-bash">cephclient% sudo mkdir /mnt/mycephfs
-cephclient% sudo mount -t ceph 10.200.10.26:6789:/ /mnt/mycephfs -o \
-            name=admin,secret=`sudo ceph-authtool -p /etc/ceph/cluster01.client.admin.keyring`
-</code></pre>
-
-<h4 id="fuse-driver-ユーザランド-を用いてマウントする方法">Fuse Driver (ユーザランド) を用いてマウントする方法</h4>
-
-<p>ユーザランドソフトウェア FUSE を用いてマウントする方法</p>
-
-<pre><code class="language-bash">cephclient% sudo mkdir /home/&lt;username&gt;/cephfs
-cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
-</code></pre>
-</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1273,6 +1293,20 @@ cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
@@ -1312,20 +1346,6 @@ cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1360,7 +1380,7 @@ cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">105</span>
+                                <span style="float:right;">106</span>
                             </header>
                         </article>
                     </li>

@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2013-08-24T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-09-01T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,184 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/09/01/hurricane-electric-vyatta-ipv6/">Hurricane Electric &#43; Vyatta で宅内 IPv6 化</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-09-01'>
+            September 1, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>自宅の IPv6 化、したいなぁとぼんやり考えていたのですが、Hurricane Electric
+Internet Services を見つけました。IPv4 の固定グローバル IP を持っていれば誰で
+も IPv6 のトンネルサービスを無料で受けられるサービスです。</p>
+
+<p>1つのユーザで5アカウントまで取得でき (5 エンドポイント)、1アカウントで /64 の
+アドレスがもらえます。また申請さえすれば (クリックするだけ) /48 も1アカウント
+毎にもらえます。つまり /48 x 5 + /64 x 5 &hellip; でか！</p>
+
+<p>私の宅内は Vyatta で PPPOE してるのですが、各種 OS (Debian, NetBSD&hellip;) や機器
+(Cisco, JunOS..)のコンフィギュレーションを自動生成してくれるので、接続するだけ
+であればそれをターミナルに貼り付けるだけ！です。</p>
+
+<h2 id="サービス-url">サービス URL</h2>
+
+<p>Hurricane Electric は下記の URL です。アカウントもここで作成出来ます。</p>
+
+<p><a href="http://tunnelbroker.net">http://tunnelbroker.net</a></p>
+
+<h2 id="ipv6-接続性を確保する方法">IPv6 接続性を確保する方法</h2>
+
+<p>Vyatta が IPv6 のアドレスを持ち接続性を確保するだけであれば、上に記したように
+コピペで出来ます。上記の URL でアカウントを作成しログインします。左メニューの
+&ldquo;Create Regular Tunnel&rdquo; を押して、自分の情報 (IPv4 のエンドポイントアドレス等)
+を入力します。その後、取得した IPv6 のレンジのリンクをクリックし上記メニュー
+&ldquo;Example Configuration&rdquo; を選択します。プルダウンメニューが現れるので、自宅の
+OS や機器に合った名前を選択します。</p>
+
+<p>すると下記のようなコマンドがテキストエリアに出力されるのでこれをコピペする&hellip;だ
+けです。</p>
+
+<pre><code class="language-bash">configure
+edit interfaces tunnel tun0
+set encapsulation sit
+set local-ip xxx.xxx.xxx.xxx
+set remote-ip xxx.xxx.xxx.xxx
+set address 2001:470:xx:xxx:2/64
+set description &quot;HE.NET IPv6 Tunnel&quot;
+exit
+set protocols static interface-route6 ::/0 next-hop-interface tun0
+commit
+</code></pre>
+
+<p>コピペしたら接続できたか確認しましょう。</p>
+
+<pre><code class="language-bash">% ping6 ipv6.google.com -c 3
+PING ipv6.google.com(2404:6800:4004:803::1010) 56 data bytes
+64 bytes from 2404:6800:4004:803::1010: icmp_seq=1 ttl=59 time=32.6 ms
+64 bytes from 2404:6800:4004:803::1010: icmp_seq=2 ttl=59 time=27.4 ms
+64 bytes from 2404:6800:4004:803::1010: icmp_seq=3 ttl=59 time=20.5 ms
+
+--- ipv6.google.com ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2002ms
+rtt min/avg/max/mdev = 20.542/26.901/32.677/4.971 ms
+</code></pre>
+
+<h2 id="vyatta-配下の宅内-lan-の端末を-ipv6-化する">Vyatta 配下の宅内 LAN の端末を IPv6 化する</h2>
+
+<p>ここまでの操作だと Vyatta は IPv6 トンネル接続出来ましたが、その配下の機器はま
+だ接続できていません。そこで IPv6 RA (Router Advertise) します。</p>
+
+<pre><code class="language-bash">configure
+edit interfaces ethernet eth0 
+set ipv6 router-advert send-advert true
+set ipv6 router-advert cur-hop-limit 64
+set ipv6 router-advert max-interval 10
+set ipv6 router-advert other-config-flag true
+set ipv6 router-advert default-preference high
+set ipv6 router-advert managed-flag true
+set ipv6 router-advert prefix 2001:470:xx:xxx::/64
+set ipv6 router-advert prefix 2001:470:xx:xxx::/64 autonomous-flag true
+commit
+</code></pre>
+
+<p>ここで RA のみの起動をしていますが、LAN 内に Windows 端末がある場合、IPv6 ネー
+ムサーバの情報が取得できないため DHCPv6 サーバを別途起動する必要があります。が、
+私の LAN 内には Mac, Linux, *BSD しかありませんでしたので起動しませんでした。
+必要に応じて起動してください。</p>
+
+<h2 id="ipv6-ファイアーウォール設定">IPv6 ファイアーウォール設定</h2>
+
+<p>これで端末も IPv6 トンネル接続できるようになった！のですが、外部から端末に直接
+接続が出来てしまいます。ファイアーウォールを設定しましょう。</p>
+
+<pre><code class="language-bash">configure
+set firewall ipv6-name tun-in description &quot;IPv6 Traffice to Internal&quot;
+set firewall ipv6-name tun-in default-action drop
+set firewall ipv6-name tun-in rule 10 action accept
+set firewall ipv6-name tun-in rule 10 description &quot;Accept Established-Related&quot;
+set firewall ipv6-name tun-in rule 10 state established enable
+set firewall ipv6-name tun-in rule 10 state related enable
+set firewall ipv6-name tun-local default-action drop
+set firewall ipv6-name tun-local description &quot;IPv6 Traffic to Router&quot;
+set firewall ipv6-name tun-local rule 10 action accept
+set firewall ipv6-name tun-local rule 10 description &quot;Accept Established-Related&quot;
+set firewall ipv6-name tun-local rule 10 state established enable
+set firewall ipv6-name tun-local rule 10 state related enable
+
+set interface tunnel tun0 firewall in ipv6-name tun-in
+set interface tunnel tun0 firewall local ipv6-name tun-local
+commit
+save
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>ルータ配下のサービスを IPv6 で外部に公開したい場合は tun-in のファイアーウォールに
+ルールを追加すれば OK です。</p>
+
+<p>また自動生成出来るサンプルコンフィギュレーションに対応したOS, 機器の種類が豊富です。
+pfSense や Solaris, Windows, ScreenOS, Fortigate 等など、多岐にわたっているの
+で、大抵の方は問題ないのではないでしょうか。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/09/01/hurricane-electric-vyatta-ipv6/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -535,381 +713,6 @@ public ネットワークを生成する方法で対応出来ますので問題�
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/08/16/rcbops-cookbooks-neutron-openstack/">rcbops Cookbooks で Neutron 構成 OpenStack</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-08-16'>
-            August 16, 2013</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>rcbops Cookbooks で Neutron 構成の OpenStack をデプロイする方法を書きたいと思
-います。先日紹介した openstack-chef-repo にも Neutron のレシピが含まれているの
-ですが、まだまだ未完成で手作業をおりまぜながらのデプロイになっていまうので、今
-現在のところ Neutron 構成を組みたいのであればこの rcbops の Cookbooks を用いる
-しかないと思います。</p>
-
-<p>今回は VLAN モードの構築を紹介します。GRE モードも少し手順を修正すれば構成可能
-です。最後のまとめに GRE モードの構築について少し触れています。</p>
-
-<h2 id="構成">構成</h2>
-
-<pre><code>                                                                                 public network
-+----------------+----------------+----------------+----------------+----------------
-|                |                |                                  
-+--------------+ +--------------+ +--------------+ +--------------+ +--------------+
-| controller01 | |  network01   | |  network02   | |  compute01   | |  compute02   |
-+--------------+ +-------+------+ +-------+------+ +-------+------+ +-------+------+
-|                |       |        |       |        |       |        |       |    management network
-+----------------+-------o--------+-------o--------+-------o--------+-------o--------
-                         |                |                |                |    vm network
-                         +----------------+----------------+----------------+--------
-</code></pre>
-
-<p>特徴は&hellip;</p>
-
-<ul>
-<li>network ノード 2台 (何台でも可)</li>
-<li>compute ノード 2台 (何台でも可)</li>
-<li>api ネットワークは management ネットワーク上に展開 (別けても可)</li>
-<li>controller ノードは1台 (ha な cookbooks を使うので2台構成も可)</li>
-<li>図には表現されていませんが management ネットワーク上に Chef ワークステーションと Chef サーバが必要</li>
-</ul>
-
-<h2 id="物理-nic-のマッピング情報">物理 NIC のマッピング情報</h2>
-
-<ul>
-<li>controller : management(eth0), public(eth1)</li>
-<li>network : management(eth0), vm(eth1), public(eth2)</li>
-<li>compute : management(eth0), vm(eth1)</li>
-</ul>
-
-<h2 id="前提のネットワークセグメント情報">前提のネットワークセグメント情報</h2>
-
-<p>ここでは仮に下記のネットワークセグメントを前提として手順を記します。</p>
-
-<ul>
-<li>public ネットワーク : 10.0.0.0/24</li>
-<li>vm ネットワーク : 10.0.1.0/24</li>
-<li>management(api) ネットワーク : 10.0.2.0/24</li>
-</ul>
-
-<h2 id="デプロイの準備">デプロイの準備</h2>
-
-<p>Chef 的なワークステーション端末から操作を行います。皆さんの使っているノート PC 等で OK です。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ~/chef-repo
-% cd ~/chef-repo
-</code></pre>
-
-<p>v4.0.0 (安定した最新版) を利用します。</p>
-
-<pre><code class="language-bash">% git checkout v4.0.0
-% git submodule init
-% git submodule sync
-% git submodule update
-</code></pre>
-
-<p>Chef サーバに Cookbooks をアップロードします。</p>
-
-<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
-</code></pre>
-
-<p>Chef サーバに Roles をアップロードします。</p>
-
-<pre><code class="language-bash">% knife role from file roles/*rb
-</code></pre>
-
-<p>environment を json 形式で生成します。これは各 Cookbooks の attributes を上書きし、一つの構成
-を作るために用いられます。</p>
-
-<pre><code class="language-json">% ${EDITOR} environments/env-neutron.json
-{
-  &quot;name&quot;: &quot;env-neutron&quot;,
-  &quot;description&quot;: &quot;&quot;,
-  &quot;cookbook_versions&quot;: {
-  },
-  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
-  &quot;chef_type&quot;: &quot;environment&quot;,
-  &quot;default_attributes&quot;: {
-  },
-  &quot;override_attributes&quot;: {
-    &quot;package_component&quot;: &quot;grizzly&quot;,
-    &quot;osops_networks&quot;: {
-      &quot;management&quot;: &quot;10.0.2.0/24&quot;,
-      &quot;public&quot;: &quot;10.0.0.0/24&quot;,
-      &quot;nova&quot;: &quot;10.0.2.0/24&quot;
-    },
-    &quot;nova&quot;: {
-      &quot;config&quot;: {
-        &quot;use_single_default_gateway&quot;: false,
-        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
-        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
-      },
-      &quot;network&quot;: {
-        &quot;provider&quot;: &quot;quantum&quot;,
-        &quot;network_type&quot;: &quot;vlan&quot;
-      },
-      &quot;apply_patches&quot;: true,
-      &quot;libvirt&quot;: {
-        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
-        &quot;virt_type&quot;: &quot;kvm&quot;
-      },
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;nova&quot;
-      },
-      &quot;services&quot;: {
-        &quot;novnc-proxy&quot;: {
-          &quot;network&quot;: &quot;public&quot;
-        }
-      }
-    },
-    &quot;cinder&quot;: {
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;cinder&quot;
-      }
-    },
-    &quot;keystone&quot;: {
-      &quot;admin_user&quot;: &quot;admin&quot;,
-      &quot;tenants&quot;: [
-        &quot;admin&quot;,
-        &quot;service&quot;
-      ],
-      &quot;users&quot;: {
-        &quot;admin&quot;: {
-          &quot;password&quot;: &quot;secrete&quot;,
-          &quot;roles&quot;: {
-            &quot;admin&quot;: [
-              &quot;admin&quot;
-            ]
-          }
-        },
-        &quot;demo&quot;: {
-          &quot;password&quot;: &quot;demo&quot;,
-          &quot;default_tenant&quot; : &quot;service&quot;,
-          &quot;roles&quot;: {
-            &quot;service&quot;: [ &quot;service&quot; ]
-          }
-        }
-      },
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;keystone&quot;
-      }
-    },
-    &quot;horizon&quot;: {
-      &quot;theme&quot;: &quot;Default&quot;,
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;horizon&quot;
-      }
-    },
-    &quot;mysql&quot;: {
-      &quot;root_network_acl&quot;: &quot;%&quot;,
-      &quot;allow_remote_root&quot;: true,
-      &quot;server_root_password&quot;: &quot;secrete&quot;,
-      &quot;server_repl_password&quot;: &quot;secrete&quot;,
-      &quot;server_debian_password&quot;: &quot;secrete&quot;
-    },
-    &quot;monitoring&quot;: {
-      &quot;procmon_provider&quot;: &quot;monit&quot;,
-      &quot;metric_provider&quot;: &quot;collectd&quot;
-    },
-    &quot;glance&quot;: {
-      &quot;images&quot;: [
-        &quot;precise&quot;, &quot;cirros&quot;
-      ],
-      &quot;image&quot;: {
-      },
-      &quot;image_upload&quot;: false,
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;glance&quot;
-      }
-    },
-    &quot;quantum&quot;: {
-      &quot;service_pass&quot;: &quot;quantum&quot;,
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;quantum&quot;
-      }
-    },
-    &quot;developer_mode&quot;: false
-  }
-}
-</code></pre>
-
-<p>生成した environment ファイルを Chef サーバにアップロードします。</p>
-
-<pre><code class="language-bash">% knife environment from file environments/env-neutron.json
-</code></pre>
-
-<h2 id="デプロイ">デプロイ</h2>
-
-<p>各ノード、下記の通りデプロイします。</p>
-
-<h4 id="controller-ノード">controller ノード</h4>
-
-<pre><code class="language-bash">% knife bootstrap &lt;ip_of_controller01&gt; -N controller01 -r \
-  'role[ha-controller1]','role[cinder-volume]' -E env-neutron --sudo -x &lt;your_accout&gt;
-</code></pre>
-
-<p>cinder-volumes 用のディスクがある場合は下記の手順で Cinder が利用できるように
-なります。</p>
-
-<pre><code class="language-bash">% sudo pvcreate /dev/sdb #デバイス名は仮
-% sudo vgcreate cinder-volumes /dev/sdb
-% sudo service cinder-volume restart
-</code></pre>
-
-<h4 id="network-ノード">network ノード</h4>
-
-<pre><code class="language-bash">% knife bootstrap &lt;ip_of_network01&gt; -N network01 -r \
-  'role[single-network-node]','recipe[nova-network::quantum-l3-agent]' \
-  -E env-neutron --sudo -x &lt;your_account&gt;
-</code></pre>
-
-<pre><code class="language-bash">% knife bootstrap &lt;ip_of_network02&gt; -N network02 -r \
-  'role[single-network-node]','recipe[nova-network::quantum-l3-agent]' \
-  -E env-neutron --sudo -x &lt;your_account&gt;
-</code></pre>
-
-<h4 id="compute-ノード">compute ノード</h4>
-
-<pre><code class="language-bash">% knife bootstrap &lt;ip_of_compute01&gt; -N compute01 -r 'role[single-compute]' \
-  -E env-neutron --sudo -x &lt;your_account&gt;
-</code></pre>
-
-<pre><code class="language-bash">% knife bootstrap &lt;ip_of_compute02&gt; -N compute02 -r 'role[single-compute]' \
-  -E env-neutron --sudo -x &lt;your_account&gt;
-</code></pre>
-
-<h2 id="物理-nic-のブリッジインターフェースへのマッピング操作">物理 NIC のブリッジインターフェースへのマッピング操作</h2>
-
-<p>Open vSwitch が管理しているブリッジインターフェースと物理インターフェースをマッ
-ピングしてあげます。</p>
-
-<p>network ノードの2台にて下記の操作を行います。</p>
-
-<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
-% sudo ovs-vsctl add-port br-ex eth2
-</code></pre>
-
-<p>compute ノードの2台にて下記の操作を行います。</p>
-
-<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
-</code></pre>
-
-<h2 id="仮想ネットワークと仮想マシンの生成">仮想ネットワークと仮想マシンの生成</h2>
-
-<p>環境によって仮想ネットワークの構成が異なりますので手順は割愛しますが、Horizon
-かコマンドライン・API を使って仮想ネットワークを生成し仮想マシンを接続すれば完
-了です。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>network ノードを2台構成にしましたが何が嬉しいかと言うと、l3-agent, dhcp-agent
-を冗長取ることが可能になります。障害時、手作業になりますが切り替えが可能です。
-l3-agent は仮想ルータ毎に、dhcp-agent は仮想ネットワーク毎に切り替えが可能です。
-詳しくは私の以前の記事を参考にしてください。</p>
-
-<p><a href="http://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/">http://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/</a></p>
-
-<p>また、compute ノードを更に増やせば仮想マシンの数を増やすことが出来ます。</p>
-
-<p>今回は controller ノードを1台構成にしましたが、更に下記の手順で controller02
-ノードを増やし controller ノードの HA 化を行うことも出来ます。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;ip_of_controller02&gt; -N controller02 -r \
-  'role[ha-controller1]' -E env-neutron --sudo -x &lt;your_accout&gt;
-</code></pre>
-
-<p>HA 構成を各々のノードに構成させるため各ノードで chef-client を1回ずつ実行しま
-す。</p>
-
-<pre><code class="language-bash">controller01% sudo chef-client
-controller02% sudo chef-client
-</code></pre>
-
-<p>HA 構成は haproxy, keepalived で形成されています。</p>
-
-<p>また、environment ファイルを下記のように修正すると VLAN の代わりに GRE トンネ
-ルが扱えます。</p>
-
-<pre><code class="language-json">&quot;nova&quot;: {
-  &quot;network&quot;: {
-    &quot;provider&quot;: &quot;quantum&quot;,
-    &quot;network_type&quot;: &quot;gre&quot;
-  }
-},
-
-&lt;snip&gt;...
-
-&quot;quantum&quot;: {
-  &quot;ovs&quot;: {
-    &quot;network_type&quot; : &quot;gre&quot;,
-    &quot;tunnnel_range&quot; : &quot;1:1000&quot;
-  }
-},
-</code></pre>
-
-<p>以上です。roles ディレクトリ配下に様々な Roles があるので、各コンポーネント毎
-にノードを別けるなどの構成も可能そうです。皆さん試してみてください。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/08/16/rcbops-cookbooks-neutron-openstack/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1026,6 +829,20 @@ controller02% sudo chef-client
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
@@ -1065,20 +882,6 @@ controller02% sudo chef-client
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1113,7 +916,7 @@ controller02% sudo chef-client
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">105</span>
+                                <span style="float:right;">106</span>
                             </header>
                         </article>
                     </li>

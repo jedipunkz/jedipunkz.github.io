@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-09-09T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-09-13T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,224 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/09/13/chef-kibana-elasticsearch-fluentd/">Chef で kibana &#43; elasticsearch &#43; fluentd デプロイしてみた</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-09-13'>
+            September 13, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>前回 kibana + elasticsearch + fluentd を構築する方法を載せたのだけど手動で構築
+したので格好悪いなぁと思っていました。いうことで！ Chef でデプロイする方法を調
+べてみました。</p>
+
+<p>意外と簡単に出来たし、スッキリした形でデプロイ出来たのでオススメです。</p>
+
+<h2 id="前提の環境は">前提の環境は&hellip;</h2>
+
+<ul>
+<li>Ubuntu 12.04 LTS precise</li>
+<li>Chef サーバ構成</li>
+<li>入力するログは nginx (例)</li>
+<li>オールインワン構成</li>
+</ul>
+
+<p>Cookbook が他の OS に対応しているか確認していないので Ubuntu を前提にしていま
+す。Chef サーバのデプロイや knife の設定は済んでいるものとして説明していきます。
+例で nginx のログを入力します。なので nginx も Chef でデプロイします。ここは他
+のものに置き換えてもらっても大丈夫です。手順を省略化するためオールインワン構成
+で説明します。nginx, fluentd は複数のノードに配置することも手順を読み替えれば
+もちろん可能です。</p>
+
+<h2 id="cookbook-の準備">Cookbook の準備</h2>
+
+<p>お決まり。Cookbooks の取得に Berkshelf を用いる。</p>
+
+<pre><code class="language-bash">% cd chef-repo
+% gem install berkshelf
+% ${EDITOR} Berksfile
+cookbook 'elasticsearch', git: 'https://github.com/elasticsearch/cookbook-elasticsearch.git'
+cookbook 'td-agent', git: 'https://github.com/treasure-data/chef-td-agent.git'
+cookbook 'kibana', git: 'https://github.com/realityforge/chef-kibana.git'
+cookbook 'nginx', git: 'https://github.com/opscode-cookbooks/nginx.git'
+</code></pre>
+
+<p>Cookbooks を取得します。</p>
+
+<pre><code class="language-bash">% berks install --path=./cookbooks
+</code></pre>
+
+<h2 id="elasticsearch-デプロイ準備">elasticsearch デプロイ準備</h2>
+
+<p>elasticsearch の Role を作成する。java, elasticsearch レシピを指定。また Java
+に openjdk7 を override_attributes にて指定する。openjdk6 だと elasticsearch が起動し
+なかった。尚、デフォルトは 6 です。Environment で override_attributes を指定し
+てもらっても構わないです。</p>
+
+<pre><code class="language-bash">% ${EDITOR} roles/elasticsearch.rb
+name &quot;elasticsearch&quot;
+description &quot;Base role applied to elasticsearch nodes.&quot;
+run_list(
+  &quot;recipe[java]&quot;,
+  &quot;recipe[elasticsearch]&quot;
+)
+override_attributes &quot;java&quot; =&gt; { &quot;install_flavor&quot; =&gt; &quot;openjdk&quot;, &quot;jdk_version&quot; =&gt; &quot;7&quot; }
+</code></pre>
+
+<h2 id="fluentd-デプロイの準備">fluentd デプロイの準備</h2>
+
+<p>td-agent (fluentd) の Role を作成する。override_attributes にて td-agent のプ
+ラグインを指定。配列で複数指定可能。こちらも同じく Role で override_attributes
+を指定したが Environments で指定しても構わないです。あと公式の README には
+attributes に直接 plugins を指定するよう書いてありましたが、構成毎に plugins
+は変えたいと思うので、この様に Roles, Environments で指定するのが良いと思います。</p>
+
+<pre><code class="language-ruby">% ${EDITOR} roles/td-agent.rb
+name &quot;td-agent&quot;
+description &quot;Base role applied to td-agent nodes.&quot;
+run_list(
+  &quot;recipe[td-agent]&quot;
+)
+override_attributes &quot;td_agent&quot; =&gt; {
+                      &quot;plugins&quot; =&gt; [ &quot;elasticsearch&quot; ]
+                    }
+</code></pre>
+
+<p>td-agent.conf の template を作成。今回は nginx の
+/var/log/nginx/localhost.access.log を入力する。これは例なので好きなログを指定
+可能。</p>
+
+<pre><code class="language-ruby">% ${EDITOR} cookbooks/td-agent/templates/default/td-agent.conf.erb
+&lt;source&gt;
+  type tail
+  format nginx
+  path /var/log/nginx/localhost.access.log
+  tag foo01.nginx.access
+&lt;/source&gt;
+
+&lt;match *.nginx.*&gt;
+  index_name adminpack
+  type_name nginx
+  type elasticsearch
+  include_tag_key true
+  tag_key @log_name
+  host localhost
+  port 9200
+  logstash_format true
+  flush_interval 10s
+&lt;/match&gt;    
+</code></pre>
+
+<h2 id="デプロイ">デプロイ</h2>
+
+<p>Cookbooks, Roles を Chef サーバにアップロード。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
+% knife role from file roles/*.rb
+</code></pre>
+
+<p>knife bootstrap しデプロイ！</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_addr&gt; -N &lt;hostname&gt; -r \
+  'role[td-agent]','role[elasticsearch]','recipe[kibana]','recipe[nginx]' \
+  --sudo -x &lt;username&gt;
+</code></pre>
+
+<p>下記の URL にブラウザでアクセスし nginx のログを生成。</p>
+
+<pre><code>http://&lt;ip_addr&gt;/
+</code></pre>
+
+<p>下記の URL にて Kibana の UI 越しにログ解析結果を確認出来る。</p>
+
+<pre><code>http://&lt;ip_addr&gt;:5601
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>fluentd plugins は複数指定可能。環境毎に td-agent.conf を変更したいという要望
+があると思うけど fluentd の Recipe を修正する必要がありそう。それとも
+td-agent.conf 自体でうまくさばけるのかな？調べてない。オールインワン構成で説明
+しましたが、elasticsearch + kibana のノードに対して、複数の nginx(なんでも良い)
++ td-agent ノードの構成が一般的だと思います。手順を読み替えてやってみてくださ
+い。その場合 kibana の Cookbook の attributes 中に elasticsearch の IP アドレ
+ス・ポートを記す箇所があるので Role, Environments で上書きしてあげてください。</p>
+
+<pre><code class="language-ruby">default['kibana']['elasticsearch']['hosts'] = ['127.0.0.1']
+default['kibana']['elasticsearch']['port'] = 9200
+````
+
+あと td-agent/templates/default/td-agent.conf.erb の中に記した host, port の指
+定も elasticsearch のホスト情報に書き換えてあげてください。
+
+</code></pre>
+
+<p>host localhost
+port 9200
+```</p>
+
+<p>以上です。意外と簡単に出来ました。スッキリ。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/09/13/chef-kibana-elasticsearch-fluentd/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -693,214 +911,6 @@ elasticsearch:    &quot;http://&lt;ElasticSearch IP addr&gt;:9200&quot;,
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/">Kibana &#43; ElasticSearch &#43; fluentd を試してみた</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-09-07'>
-            September 7, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch
-を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目
-に止まるようになってきました。</p>
-
-<p>ElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。バックエ
-ンドに Logstash を使って&hellip; と思ってたのですが最近よく聞くようになった fluentd
-をそろそろ真面目に使いたい！ということで、今回は Kibana + ElasticSearch +
-fluentd の組み合わせでログ解析システムを組む方法をメモしておきます。</p>
-
-<h2 id="参考にさせて頂いた-url">参考にさせて頂いた URL</h2>
-
-<p><a href="http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html">http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html</a></p>
-
-<h2 id="前提の環境">前提の環境</h2>
-
-<ul>
-<li>OS : Ubuntu 12.04 Precise (同じ方法で 13.04 Raring でも出来ました)</li>
-</ul>
-
-<h2 id="必要なパッケージインストール">必要なパッケージインストール</h2>
-
-<p>下記のパッケージを事前にインストールします。</p>
-
-<pre><code class="language-bash">% sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk
-</code></pre>
-
-<p>手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても
-構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。</p>
-
-<h2 id="elasticsearch-のインストール">ElasticSearch のインストール</h2>
-
-<p>下記のサイトより ElasticSearch をダウンロードします。</p>
-
-<p><a href="http://www.elasticsearch.org/download/">http://www.elasticsearch.org/download/</a></p>
-
-<p>現時点 (2013/09/07) で最新のバージョンは 0.90.3 でした。</p>
-
-<pre><code class="language-bash">% wget https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-0.90.3.deb
-% sudo dpkg -i elasticsearch-0.90.3.deb
-% sudo service elasticsearch start
-</code></pre>
-
-<h2 id="kibana-のインストール">Kibana のインストール</h2>
-
-<p>Kibana をダウンロードして Gemfile にしたがって必要なモノをインストールします。</p>
-
-<pre><code class="language-bash">% git clone --branch=kibana-ruby https://github.com/rashidkpc/Kibana.git
-% sudo gem install bundler
-% cd Kibana
-% sudo bundle install
-% sudo gem install tzinfo-data
-</code></pre>
-
-<p>KibanaConfig.rb の KibanaHost はリスンアドレスになるので 0.0.0.0 に修正sます。</p>
-
-<pre><code class="language-bash">KibanaHost = '0.0.0.0'
-</code></pre>
-
-<p>Kibana を起動します。</p>
-
-<pre><code class="language-bash">% ruby kibana.rb
-== Sinatra/1.4.3 has taken the stage on 5601 for development with backup from Thin
-&gt;&gt; Thin web server (v1.5.1 codename Straight Razor)
-&gt;&gt; Maximum connections set to 1024
-&gt;&gt; Listening on 0.0.0.0:5601, CTRL+C to stop
-</code></pre>
-
-<h2 id="fluentd-のインストール">fluentd のインストール</h2>
-
-<p>fluentd を下記の通りインストールします。</p>
-
-<pre><code class="language-bash">% sudo -i
-% curl -L http://toolbelt.treasure-data.com/sh/install-ubuntu-precise.sh | sh
-</code></pre>
-
-<p>/etc/td-agent/td-agent.conf を下記の通りに修正します。サンプルで Apache のログ
-を ElasticSearch に飛ばす設定にします。</p>
-
-<pre><code class="language-xml">&lt;source&gt;
-  type tail
-  format apache
-  path /var/log/apache2/access.log
-  tag kibana01.apache.access
-&lt;/source&gt;
-
-&lt;match *.apache.*&gt;
-  index_name adminpack
-  type_name apache
-  type elasticsearch
-  include_tag_key true
-  tag_key @log_name
-  host 10.0.1.8
-  port 9200
-  logstash_format true
-  flush_interval 3s
-&lt;/match&gt;
-</code></pre>
-
-<p>host パラメータは環境に合わせて設定します。</p>
-
-<p>fluentd を起動します。</p>
-
-<pre><code class="language-bash">% sudo service td-agent start
-</code></pre>
-
-<h2 id="apache-のインストール">Apache のインストール</h2>
-
-<p>システムに必要なわけではありませんが、サンプルで Apache のログを fluentd 経由
-で飛ばして Kibana で確認したいのでインストールします。</p>
-
-<pre><code class="language-bash">% sudo apt-get install apache2
-% sudo chown -R td-agent /var/log/apache2
-</code></pre>
-
-<p>ファイルのオーナを td-agent にする必要がありました。</p>
-
-<h2 id="ブラウザでアクセス">ブラウザでアクセス</h2>
-
-<p>Apache2 のポート 80 にブラウザでアクセスし、その後 ポート 5601 にアクセスする
-と Kibana の画面が表示されます。ポート 80 のアクセスに応じて結果が出力されます。</p>
-
-<p>{% img /pix/kibana-cap.png %}</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>LogStash でも今度試してみたい。
-あと API をどう叩くかは..</p>
-
-<p><a href="http://www.elasticsearch.org/guide/reference/api/">http://www.elasticsearch.org/guide/reference/api/</a></p>
-
-<p>にリファレンスがあるので、時間を見つけてやってみる。Apache 以外のログ転送につ
-いては fluentd を詳細に知る必要があるので、そちらも時間を見つけてやってみる。
-kibana.rb を起動するもっと良い方法がないかも調べないと。</p>
-
-<p>2013.09.08追記</p>
-
-<p>@nora96o さんに「Kibana3 使うと幸せになれますよ！」と教えて頂いて早速 Kibana3
-も試してみました。</p>
-
-<p><a href="http://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/">http://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/</a></p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1017,6 +1027,20 @@ kibana.rb を起動するもっと良い方法がないかも調べないと。<
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
@@ -1056,20 +1080,6 @@ kibana.rb を起動するもっと良い方法がないかも調べないと。<
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1104,7 +1114,7 @@ kibana.rb を起動するもっと良い方法がないかも調べないと。<
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">105</span>
+                                <span style="float:right;">106</span>
                             </header>
                         </article>
                     </li>
