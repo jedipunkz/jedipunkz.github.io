@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2012-03-07T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2012-04-07T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,199 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2012/04/07/debian-sid-on-thinkpad-first-setup/">debian sid on thinkpad</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-04-07'>
+            April 7, 2012</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>ノート PC を購入するといつも Debian Gnu/Linux sid をインストールするのだけれど
+も、X Window System や InputMethod をインストールして利用し始められるところま
+での手順っていつも忘れる。メモとしてブログに載せておきます。</p>
+
+<h2 id="console-上での-ctrl-caps-swap-設定">console 上での ctrl:caps swap 設定</h2>
+
+<p>取りあえずこの設定をしないと、何も操作出来ない。Caps Lock と Control キーを入
+れ替える設定です。</p>
+
+<p>/etc/default/keyboard を下記のように修正</p>
+
+<pre><code>XKBOPTIONS=&quot;ctrl:swapcaps&quot;
+</code></pre>
+
+<p>下記のコマンドで設定を反映。</p>
+
+<pre><code>% sudo /etc/init.d/console-setup restart
+</code></pre>
+
+<h2 id="sid-の-sources-list-設定">sid の sources.list 設定</h2>
+
+<p>Debian Gnu/Linux をノート PC にインストールする時は必ず sid を入れます。新し目
+のソフトウェアを使いたいから。</p>
+
+<pre><code>deb http://ftp.riken.jp/Linux/debian/debian/ unstable main contrib non-free
+deb-src http://ftp.riken.jp/Linux/debian/debian/ unstable main contrib non-free
+</code></pre>
+
+<p>下記のコマンドで dist-upgrade</p>
+
+<pre><code>% sudo apt-get update
+% sudo apt-get dist-upgrade
+</code></pre>
+
+<h2 id="iwlwifi-のインストールとネットワーク設定">iwlwifi のインストールとネットワーク設定</h2>
+
+<p>買うノート PC はいつも ThinkPad。大体 intel チップな Wi-Fi モジュールが搭載さ
+れているので、iwlwifi を使う。</p>
+
+<pre><code>% sudo apt-get install firmware-iwlwifi
+% sudo modprobe iwl4965 # 各々の端末に合わせる。lspci コマンドで確認
+% sudo modprobe iwlagn
+% sudo iwconfig
+% sudo ifconfig wlan0 up
+</code></pre>
+
+<p>次に /etc/network/interfaces の設定</p>
+
+<pre><code>auto wlan0
+iface wlan0 inet dhcp
+     pre-up /sbin/wpa_supplicant -B -Dwext -c/etc/wpa_supplicant/wpa_supplicant.conf -iwlan0
+     pre-up iwconfig wlan0 essid ${SSID}
+     pre-up ip link set wlan0 up
+     pre-up iwconfig wlan0 ap any
+</code></pre>
+
+<p>/etc/wpa_supplicant/wpa_supplicant.conf の設定</p>
+
+<pre><code>% sudo wpa_passphrase ${SSID} ${PASSPHRASE} &gt; /etc/wpa_supplicant/wpa_supplicant.conf
+</code></pre>
+
+<p>生成した上記のファイルを修正・加筆</p>
+
+<pre><code>network={
+    proto=WPA WPA2
+    key_mgmt=WPA-PSK
+    pairwise=CCMP TKIP
+    ssid=&quot;${SSD}&quot;
+    psk=.....
+}
+</code></pre>
+
+<p>ネットワークインターフェースの再起動で接続</p>
+
+<pre><code>% sudo service networking restart
+</code></pre>
+
+<h2 id="x-window-周りの設定">X Window 周りの設定</h2>
+
+<p>必要なパッケージをインストールする。ビデオカードドライバは端末に合わせてインス
+トールする。thinkpad は Intel なビデオカードの場合が多いので下記のように指定。</p>
+
+<p>また、昔はよく enlightenment を使っていたのだけど、e17 が何時まで経っても完成
+度上がらないので諦めて openbox を使うことに。</p>
+
+<pre><code>% sudo apt-get insatll openbox obmenu xorg xserver-xorg-video-intel
+</code></pre>
+
+<p>console 同様に ctrl:caps を swap する。xorg.conf が無い(2012/04時点)ので、sid
+では /etc/X11/Xsession.d/10setxkbmap を下記のように生成して対応。</p>
+
+<pre><code>#!/bin/sh
+setxkbmap -option ctl:nocaps
+</code></pre>
+
+<h2 id="日本語入力-input-method-のインストール">日本語入力 input method のインストール</h2>
+
+<p>日本語入力に uim-mozc を利用することに。今のところこれが一番快適。</p>
+
+<pre><code>% sudo apt-get install uim-mozc uim-xim uim-utils mozc-utils-gui mozc-server uim-qt
+</code></pre>
+
+<p>/etc/X11/openbox/autostart に下記の行を追記</p>
+
+<pre><code>if type uim-xim &amp;&gt; /dev/null ; then
+    uim-xim &amp;
+    uim-toolbar-qt4 &amp;
+fi
+</code></pre>
+
+<p>uim-toolbar-qt4 の preference で &ldquo;オン・オフキー&rdquo; 等もろもろを好みに設定。</p>
+
+<h2 id="alsa-によるサウンドの出力">alsa によるサウンドの出力</h2>
+
+<p>昔は苦労したサウンド出力も、今ではこんなに簡単な操作で出来るようになりましたｗ</p>
+
+<pre><code>% sudo apt-get install alsa-utils alsa-base
+% sudo modprobe snd-pcm-oss
+% sudo alsactl init
+% sudo alsactl store
+</code></pre>
+
+<p>以上です。ここまで来れば、あとは好みで設定していけばいい。もちろん Ubuntu 等の
+dist を使えば、こんな操作は必要無いのだけど、自分でやらないとどうも気持ちが悪
+いし、万が一トラブルが起きても自分で設定していれば治せるし。</p>
+
+<p>まぁ、最近では MacBook を使うことがほとんどなのですが..。or2</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2012/04/07/debian-sid-on-thinkpad-first-setup/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -424,96 +617,6 @@ ga('send', 'pageview');
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2012/03/07/cocoa-na-emacs-insutoru/">cocoa な emacs インストール</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2012-03-07'>
-            March 7, 2012</time>
-        <span class="author"></span>
-        
-            <p>1 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>Carbon な API は排除していくべきと Apple も言っているようですし、自宅も会社も Cocoa な emacs を使うようになりました。</p>
-
-<p>その手順を書いていきます。</p>
-
-<p>ソースとパッチでビルドも出来るのですが、<a href="http://mxcl.github.com/homebrew/" target="_blank">homebrew</a> 使うとメチャ楽なので今回はそれを使います。
-homebrew は公式サイトに詳しいことが書いてありますけどインストールがワンラインで済みます。
-あと、事前に AppStore で Xcode を入れてください。</p>
-
-<pre><code>% /usr/bin/ruby -e &quot;$(curl -fsSL https://raw.github.com/gist/323731)&quot;                                                     
-</code></pre>
-
-<p>だけです。</p>
-
-<p>そして Cocoa な emacs インストール。</p>
-
-<pre><code>% brew install --cocoa emacs 
-% sudo mv /usr/local/Cellar/emacs/24.1/Emacs.app /Applications/
-</code></pre>
-
-<p>以上です..。簡単すぎる。先人たちのおかげですね。</p>
-
-<p>次は時間見つけて anything.el のことを書こうかなぁと思ってます。</p>
-
-<p>参考 URL : <a href="http://mxcl.github.com/homebrew/" title="homebrew" target="_blank"><a href="http://mxcl.github.com/homebrew/">http://mxcl.github.com/homebrew/</a></a></p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/03/07/cocoa-na-emacs-insutoru/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -523,7 +626,8 @@ homebrew は公式サイトに詳しいことが書いてありますけどイ�
     
 
     
-        <li><a href="#" class="disabled button big next">Next Page</a></li>
+        <li><a href="/categories/infrastructure/page/36/"
+                class="button big next">Next Page</a></li>
     
 </ul>
 
@@ -629,6 +733,20 @@ homebrew は公式サイトに詳しいことが書いてありますけどイ�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
@@ -668,20 +786,6 @@ homebrew は公式サイトに詳しいことが書いてありますけどイ�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -716,7 +820,7 @@ homebrew は公式サイトに詳しいことが書いてありますけどイ�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">105</span>
+                                <span style="float:right;">106</span>
                             </header>
                         </article>
                     </li>

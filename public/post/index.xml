@@ -6,8 +6,298 @@
     <description>Recent content in Posts on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Thu, 29 Dec 2016 09:43:18 +0900</lastBuildDate>
+    <lastBuildDate>Fri, 13 Jan 2017 20:29:07 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/post/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Kubernetes Deployments を使ってみた！</title>
+      <link>http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/</link>
+      <pubDate>Fri, 13 Jan 2017 20:29:07 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。 @jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;いま僕らは職場では GKE 上に Replication Controller と Services を使って Pod を起動しているのですが最近の Kubernetes 関連のドキュメントを拝見すると Deployments を使っている記事をよく見掛けます。Kubernetes 1.2 から実装されたようです。今回は Kubernetes の Replication Controller の次世代版と言われている Deployments について調べてみましたので理解したことを書いていこうかと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;参考資料&#34;&gt;参考資料&lt;/h2&gt;
+
+&lt;p&gt;今回は Kubernetes 公式の下記のドキュメントに記されているコマンドを一通り実行していきます。追加の情報もあります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://kubernetes.io/docs/user-guide/deployments/&#34;&gt;https://kubernetes.io/docs/user-guide/deployments/&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;deployments-を使って-nginx-pod-を起動&#34;&gt;Deployments を使って nginx Pod を起動&lt;/h2&gt;
+
+&lt;p&gt;nginx をデプロイするための Yaml ファイルを用意します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.7.9
+        ports:
+        - containerPort: 80
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;作成した yaml ファイルを指定して Pod を作ります。
+下記の通りここで &amp;ldquo;&amp;ndash;record&amp;rdquo; と記しているのは、後に Deployments の履歴を表示する際に &amp;ldquo;何を行ったか&amp;rdquo; を出力するためです。このオプションを指定しないと &amp;ldquo;何を行ったか&amp;rdquo; の出力が &amp;ldquo;NONE&amp;rdquo; となります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f nginx.yaml --record
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;deployments&lt;/li&gt;
+&lt;li&gt;replica set&lt;/li&gt;
+&lt;li&gt;pod&lt;/li&gt;
+&lt;li&gt;rollout&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;の状態をそれぞれ確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get deployments
+NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+nginx-deployment   2         2         2            2           8s
+
+$ kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-4087004473   2         2         2         10s
+
+$ kubectl get pods --show-labels
+NAME                                READY     STATUS    RESTARTS   AGE       LABELS
+nginx-deployment-4087004473-6csa7   1/1       Running   0          21s       app=nginx,pod-template-hash=4087004473
+nginx-deployment-4087004473-teyzc   1/1       Running   0          21s       app=nginx,pod-template-hash=4087004473
+
+$ kubectl rollout status deployment/nginx-deployment
+deployment nginx-deployment successfully rolled out
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;結果から、下記の事が分かります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;yaml に記した通り &amp;ldquo;nginx-deployment&amp;rdquo; という名前で deployment が生成された&lt;/li&gt;
+&lt;li&gt;&amp;ldquo;nginx-deployment-4087004473&amp;rdquo; という名前の rs (レプリカセット) が生成された&lt;/li&gt;
+&lt;li&gt;yaml に記した通り2つの Pod が起動した&lt;/li&gt;
+&lt;li&gt;&amp;ldquo;nginx-deployment&amp;rdquo; が正常に Rollout された&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Replication Controller でデプロイした際には作られない replica set, rollout というモノが出てきました。後に Deployments を使うメリットに繋がっていきます。&lt;/p&gt;
+
+&lt;h2 id=&#34;nginx-イメージの-tag-を更新してみる&#34;&gt;nginx イメージの Tag を更新してみる&lt;/h2&gt;
+
+&lt;p&gt;ここで yaml ファイル内で指定していた &amp;ldquo;image: nginx:1.7.9&amp;rdquo; を &amp;ldquo;image: nginx:1.9.1&amp;rdquo; と更新してみます。
+Replication Controller で言う Rolling-Update になります。後に述べますが他にも更新方法があります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで先ほどと同様に状態を確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get deployments
+NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+nginx-deployment   2         2         2            2           2m
+
+$ kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-3599678771   2         2         2         39s
+nginx-deployment-4087004473   0         0         0         2m
+
+$ kubectl get pods
+NAME                                READY     STATUS    RESTARTS   AGE
+nginx-deployment-3599678771-0vj9m   1/1       Running   0          53s
+nginx-deployment-3599678771-t1y62   1/1       Running   0          53s
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;新しい Replica Set &amp;ldquo;nginx-deployment-3599678771&amp;rdquo; が作成された&lt;/li&gt;
+&lt;li&gt;古い Replica Set &amp;ldquo;nginx-deployment-4087004473&amp;rdquo; の Pod は 0 個になった&lt;/li&gt;
+&lt;li&gt;Pod 内コンテナが更新された (NAME より判断)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;となったことが分かります。
+Replication Controller と異なり、Deployments では以前の状態が Replica Set として保存されていて状態の履歴が追えるようになっています。&lt;/p&gt;
+
+&lt;p&gt;ここで Rollout の履歴を確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl rollout history deployment/nginx-deployment
+deployments &amp;quot;nginx-deployment&amp;quot;
+REVISION        CHANGE-CAUSE
+1               kubectl create -f nginx.yaml --record
+2               kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;REVISION という名前で履歴番号が付き、どの様な作業を行ったか CHANGE-CAUSE という項目で記されていることがわかります。作業の履歴がリビジョン管理されています。&lt;/p&gt;
+
+&lt;p&gt;下記のように REVSION 番号を付与して履歴内容を表示することも可能です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl rollout history deployment/nginx-deployment --revision=2
+deployments &amp;quot;nginx-deployment&amp;quot; with revision #2
+  Labels:       app=nginx
+        pod-template-hash=3599678771
+  Annotations:  kubernetes.io/change-cause=kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+  Containers:
+   nginx:
+    Image:      nginx:1.9.1
+    Port:       80/TCP
+    Volume Mounts:      &amp;lt;none&amp;gt;
+    Environment Variables:      &amp;lt;none&amp;gt;
+  No volumes.
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;作業を切り戻してみる&#34;&gt;作業を切り戻してみる&lt;/h2&gt;
+
+&lt;p&gt;先程 nginx の Image Tag を更新しましたが、ここで Deployments の機能を使って作業を切り戻してみます。下記の様に実行します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl rollout undo deployment/nginx-deployment
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;状態を確認します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get deployments
+NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+nginx-deployment   2         2         2            2           5m
+
+$ kubectl rollout history deployment/nginx-deployment
+deployments &amp;quot;nginx-deployment&amp;quot;
+REVISION        CHANGE-CAUSE
+2               kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+3               kubectl create -f nginx.yaml --record
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここでは&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;コンテナが2個、正常に起動した&lt;/li&gt;
+&lt;li&gt;REVISION 番号 3 として初期構築の状態 (kubectl create ..) が新たに保存&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;ということが分かります。注意したいのは REVSION 番号 1 が削除され 3 が生成されたことです。1 と 3 は同じ作業ということと推測します。&lt;/p&gt;
+
+&lt;p&gt;念のため &amp;lsquo;nginx&amp;rsquo; コンテナの Image Tag が切り戻っているか確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl describe pod nginx-deployment-4087004473-nq35u | grep &amp;quot;Image:&amp;quot;
+    Image:              nginx:1.7.9
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;最初の Yaml ファイルに記した &amp;lsquo;nginx&amp;rsquo; イメージ Tag &amp;ldquo;1.7.9&amp;rdquo; となっていることが確認できました。set image &amp;hellip; でイメージ更新をした作業が正常に切り戻ったことになります。&lt;/p&gt;
+
+&lt;h2 id=&#34;レプリカ数を-2-3-へスケールしてみる&#34;&gt;レプリカ数を 2-&amp;gt;3 へスケールしてみる&lt;/h2&gt;
+
+&lt;p&gt;更に replicas の数値を 2 から 3 へスケールしてみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl scale deployment nginx-deployment --replicas 3
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;同様に状態を確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get pods
+NAME                                READY     STATUS    RESTARTS   AGE
+nginx-deployment-4087004473-esj5l   1/1       Running   0          6s
+nginx-deployment-4087004473-nq35u   1/1       Running   0          4m
+nginx-deployment-4087004473-tyibo   1/1       Running   0          4m
+
+kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-3599678771   0         0         0         9m
+nginx-deployment-4087004473   3         3         3         11m
+
+kubectl rollout history deployment/nginx-deployment
+deployments &amp;quot;nginx-deployment&amp;quot;
+REVISION        CHANGE-CAUSE
+2               kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+3               kubectl scale deployment nginx-deployment --replicas 3
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで気になるのは REVISION 3 が上書きされたことです。REVSION 番号 4 が新たに作成されると思っていたからです。先程 REVISION 番号 3 として保存されていた下記の履歴が消えてしまいました。この点については引き続き検証してみます。今の自分には理解できませんでした。ご存知の方いましたら、コメントお願いします！&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;3               kubectl create -f nginx.yaml --record
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;puase-resume-機能を使ってみる&#34;&gt;Puase, Resume 機能を使ってみる&lt;/h2&gt;
+
+&lt;p&gt;次は deployments の機能を使って Image Tag を更に 1.9.1 へ変更し、その処理をポーズしてみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1; kubectl
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;同様に状態を確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-3599678771   2         2         2         10m
+nginx-deployment-4087004473   2         2         2         12m
+
+$ kubectl rollout status deployment/nginx-deployment
+Waiting for rollout to finish: 2 out of 3 new replicas have been updated...
+Ctrl-C #&amp;lt;--- キー入力
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;rollout status で deployment &amp;ldquo;deployment/nginx-deployment&amp;rdquo; を確認すると &amp;ldquo;waiting for rollout to finish&amp;rdquo; と表示され処理がポーズされていることが確認できました。また古い Deployment &amp;ldquo;nginx-deployment-4087004473&amp;rdquo; 上に未だコンテナが残り、新しい Deployment もコンテナが生成中であることが分かります。&lt;/p&gt;
+
+&lt;p&gt;では Resume します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl rollout resume deployment/nginx-deployment
+deployment &amp;quot;nginx-deployment&amp;quot; resumed
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;この時点の状態を確認しましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl rollout status deployment/nginx-deployment
+deployment nginx-deployment successfully rolled out
+
+$ kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-3599678771   3         3         3         11m
+nginx-deployment-4087004473   0         0         0         14m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここからは&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;正常に Deployment &amp;ldquo;nginx-deployment&amp;rdquo; が Rollout されたこと&lt;/li&gt;
+&lt;li&gt;古い Deployment 上のコンテナ数が 0 に、新しい Deployment 上のコンテナ数が 3 になった&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;ということが分かります。&lt;/p&gt;
+
+&lt;h2 id=&#34;rolling-update-相当の作業を行う方法&#34;&gt;Rolling-Update 相当の作業を行う方法&lt;/h2&gt;
+
+&lt;p&gt;前述した通り、Replication Controller 時代にあった Rolling-Update 作業 (イメージタグ・レプリカ数等の更新) ですが、Deployments では下記の方法をとることが出来ます。&lt;/p&gt;
+
+&lt;h4 id=&#34;set-オプションを付与する場合&#34;&gt;set オプションを付与する場合&lt;/h4&gt;
+
+&lt;p&gt;set オプションを付与して Key 項目に対して新しい Value を渡します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;yaml-ファイルを修正する場合&#34;&gt;yaml ファイルを修正する場合&lt;/h4&gt;
+
+&lt;p&gt;yaml ファイルの内容を更新して適用したい場合、下記のように apply オプションを付与します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl apply -f &amp;lt;新しいYamlファイル&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
+
+&lt;p&gt;REVISION の履歴が上書きされる点など、まだ未完成な感が否めませんでしたが(自分の勘違いかもしれません！)、Replication Controller と比べると作業の切り戻しや、履歴が保存され履歴内容も確認できる点など機能が追加されていることが分かりました。公式ドキュメントを読んでいてもコマンド結果等怪しい点があって流石に API バージョンが &amp;ldquo;v1beta1&amp;rdquo; だなぁという感じではありますが、機能が整理されていて利便性が上がっているので Replication Controller を使っているユーザは自然と今後、Deployments に移行していくのではないかと感じました。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</title>
@@ -2856,646 +3146,6 @@ influxDB の 0.9.x 系では動作しませんでした。よって latest で�
 &lt;li&gt;&lt;a href=&#34;http://qiita.com/atskimura/items/4c4aaaaa554e2814e938&#34;&gt;http://qiita.com/atskimura/items/4c4aaaaa554e2814e938&lt;/a&gt;&lt;/li&gt;
 &lt;li&gt;&lt;a href=&#34;https://www.brianchristner.io/how-to-setup-docker-monitoring/&#34;&gt;https://www.brianchristner.io/how-to-setup-docker-monitoring/&lt;/a&gt;&lt;/li&gt;
 &lt;/ul&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>Knife-ZeroでOpenStack Kiloデプロイ(複数台編)</title>
-      <link>http://jedipunkz.github.io/blog/2015/07/20/knife-zero-openstack-kilo/</link>
-      <pubDate>Mon, 20 Jul 2015 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2015/07/20/knife-zero-openstack-kilo/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;前回 OpenStack Kilo のオールインワン構成を Chef-Zero を使ってデプロイする方法
-を書きましたが、複数台構成についても調べたので結果をまとめていきます。&lt;/p&gt;
-
-&lt;p&gt;使うのは openstack/openstack-chef-repo です。下記の URL にあります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/openstack/openstack-chef-repo&#34;&gt;https://github.com/openstack/openstack-chef-repo&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;この中に Vagrant を使ったファイルが存在しますが、実機でのデプロイには全く役に
-立ちません。自分で Environment ファイルを作成する必要があります。今回は前提の
-構成を作って、それに合わせた Environment ファイルを記します。ほぼスタンダード
-な構成にしましたので、自分の環境に合わせて修正するのも比較的簡単だと想います。
-参考にしてください。&lt;/p&gt;
-
-&lt;p&gt;今回は knife-zero を使ってデプロイします。Chef サーバが必要なく、knife-zero を
-使うホスト上のオンメモリで Chef サーバが稼働するので準備がほとんど必要ありません。&lt;/p&gt;
-
-&lt;p&gt;早速ですが、構成と準備・そしてデプロイ作業を記していきます。&lt;/p&gt;
-
-&lt;h2 id=&#34;前提の構成&#34;&gt;前提の構成&lt;/h2&gt;
-
-&lt;pre&gt;&lt;code&gt;   +------------+
-   | GW Router  |
-+--+------------+
-|  |
-|  +--------------+--------------+---------------------------- public network
-|  | eth0         | eth0
-|  +------------+ +------------+ +------------+ +------------+
-|  | Controller | |  Network   | |  Compute   | | Knife-Zero | 
-|  +------------+ +-------+----+ +------+-----+ +------------+
-|  | eth1         | eth1  |      | eth1 |       | eth1 
-+--+--------------+-------)------+------)-------+------------- api/management network
-                          | eth2        | eth2
-                          +-------------+--------------------- guest network
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;特徴としては&amp;hellip;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;public, api/management, guest の3つのネットワークに接続された OpenStack ホスト&lt;/li&gt;
-&lt;li&gt;Controller, Network, Compute の最小複数台構成&lt;/li&gt;
-&lt;li&gt;knife-zero を実行する &amp;lsquo;Knife-Zero&amp;rsquo; ホスト&lt;/li&gt;
-&lt;li&gt;Knife-zero ホストは api/management network のみに接続で可&lt;/li&gt;
-&lt;li&gt;デプロイは api/management network を介して行う&lt;/li&gt;
-&lt;li&gt;public, api/management network はインターネットへの疎通が必須&lt;/li&gt;
-&lt;li&gt;OS は Ubuntu 14.04 amd64&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;とくに api/management network がインターネットへの疎通が必要なところに注意して
-ください。デプロイは knife-zero ホストで実行しますが、各ノードへログインしデプ
-ロイする際にインターネット上からパッケージの取得を試みます。&lt;/p&gt;
-
-&lt;p&gt;また api/management network を2つに分離するのも一般的ですが、ここでは一本にま
-とめています。&lt;/p&gt;
-
-&lt;h2 id=&#34;ip-アドレス&#34;&gt;IP アドレス&lt;/h2&gt;
-
-&lt;p&gt;IP アドレスは下記を前提にします。&lt;/p&gt;
-
-&lt;table&gt;
-&lt;thead&gt;
-&lt;tr&gt;
-&lt;th align=&#34;left&#34;&gt;interface&lt;/th&gt;
-&lt;th align=&#34;left&#34;&gt;IP addr&lt;/th&gt;
-&lt;/tr&gt;
-&lt;/thead&gt;
-
-&lt;tbody&gt;
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Controller eth0&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.1.10&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Controller eth1&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.2.10&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Network eth0&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.1.11&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Network eth1&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.2.11&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Network eth2&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.3.11&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Compute eth1&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.2.12&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Compute eth2&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.3.12&lt;/td&gt;
-&lt;/tr&gt;
-
-&lt;tr&gt;
-&lt;td align=&#34;left&#34;&gt;Knife-Zero eth1&lt;/td&gt;
-&lt;td align=&#34;left&#34;&gt;10.0.2.13&lt;/td&gt;
-&lt;/tr&gt;
-&lt;/tbody&gt;
-&lt;/table&gt;
-
-&lt;h2 id=&#34;ネットワークインターフェース設定&#34;&gt;ネットワークインターフェース設定&lt;/h2&gt;
-
-&lt;p&gt;それぞれのホストで下記のようにネットワークインターフェースを設定します。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Controller ホスト&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;eth0, 1 を使用します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;auto eth0
-iface eth0 inet static
-    address 10.0.1.10
-    netmask 255.255.255.0
-    gateway 10.0.1.254
-    dns-nameservers 8.8.8.8
-    dns-search jedihub.com
-
-auto eth1
-iface eth1 inet static
-    address 10.0.2.10
-    netmask 255.255.255.0
-
-auto eth2
-iface eth2 inet manual
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Network ホスト&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;eth0, 1, 2 全てを使用します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;auto eth0
-iface eth0 inet static
-        up ifconfig $IFACE 0.0.0.0 up
-        up ip link set $IFACE promisc on
-        down ip link set $IFACE promisc off
-        down ifconfig $IFACE down
-        address 10.0.1.11
-        netmask 255.255.255.0
-
-auto eth1
-iface eth1 inet static
-        address 10.0.2.11
-        netmask 255.255.255.0
-        gateway 10.0.2.248
-        dns-nameservers 8.8.8.8
-        dns-search jedihub.com
-
-auto eth2
-iface eth2 inet static
-        address 10.0.3.11
-        netmask 255.255.255.0
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Compute ホスト&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;eth1, 2 を使用します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;auto eth0
-iface eth0 inet manual
-
-auto eth1
-iface eth1 inet static
-        address 10.0.2.12
-        netmask 255.255.255.0
-        gateway 10.0.2.248
-        dns-nameservers 8.8.8.8
-        dns-search jedihub.com
-
-auto eth2
-iface eth2 inet static
-        address 10.0.3.12
-        netmask 255.255.255.0
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;これらの作業は knife-zero からログインし eth1 を介して行ってください。でないと
-接続が切断される可能性があります。&lt;/p&gt;
-
-&lt;h2 id=&#34;準備&#34;&gt;準備&lt;/h2&gt;
-
-&lt;p&gt;knife-zero ホストに chef, knife-zero, berkshelf が入っている必要があるので、こ
-こでインストールしていきます。&lt;/p&gt;
-
-&lt;p&gt;knife-zero ホストに chef をインストールします。Omnibus パッケージを使って手っ
-取り早く環境を整えます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo -i
-curl -L https://www.opscode.com/chef/install.sh | bash
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Berkshelf をインストールするのに必要なソフトウェアをインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev ruby-dev libxml2-dev libxslt-dev g++
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Berkshelf をインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;/opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;最後に knife-zero をインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;/opt/chef/embedded/bin/gem install knife-zero --no-ri --no-rdoc
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;デプロイ作業&#34;&gt;デプロイ作業&lt;/h2&gt;
-
-&lt;p&gt;それでは openstack-chef-repo を取得してデプロイの準備を行います。
-ブランチの指定は行わず master ブランチを取得します。Kilo は master ブランチで
-管理されています。次のバージョンの開発が始まるタイミングで &amp;lsquo;stable/kilo&amp;rsquo; ブラ
-ンチに管理が移されます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;sudo -i
-cd ~/
-git clone https://github.com/openstack/openstack-chef-repo.git
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に Berkshelf を使って必要な Cookbooks をダウンロードします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;cd ~/openstack-chef-repo
-/opt/chef/embedded/bin/berks vendor ./cookbooks
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Environment を作成します。これは各環境に合わせた設定ファイルのようなもので、各
-Cookbooks の Attributes を上書きする仕組みになっています。下記の内容を&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;openstack-chef-repo/environments/multi-neutron-kilo.json
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;というファイル名で保存してください。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
-  &amp;quot;name&amp;quot;: &amp;quot;multi-neutron-kilo&amp;quot;,
-  &amp;quot;description&amp;quot;: &amp;quot;test&amp;quot;,
-  &amp;quot;cookbook_versions&amp;quot;: {
-  },
-  &amp;quot;json_class&amp;quot;: &amp;quot;Chef::Environment&amp;quot;,
-  &amp;quot;chef_type&amp;quot;: &amp;quot;environment&amp;quot;,
-  &amp;quot;default_attributes&amp;quot;: {
-  },
-  &amp;quot;override_attributes&amp;quot;: {
-    &amp;quot;mysql&amp;quot;: {
-      &amp;quot;bind_address&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-      &amp;quot;server_root_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
-      &amp;quot;server_debian_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
-      &amp;quot;server_repl_password&amp;quot;: &amp;quot;mysqlroot&amp;quot;,
-      &amp;quot;allow_remote_root&amp;quot;: true,
-      &amp;quot;root_network_acl&amp;quot;: [&amp;quot;10.0.0.0/8&amp;quot;]
-    },
-    &amp;quot;rabbitmq&amp;quot;: {
-      &amp;quot;address&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-      &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;,
-      &amp;quot;loopback_users&amp;quot;: []
-    },
-    &amp;quot;openstack&amp;quot;: {
-      &amp;quot;auth&amp;quot;: {
-        &amp;quot;validate_certs&amp;quot;: false
-      },
-      &amp;quot;dashboard&amp;quot;: {
-        &amp;quot;session_backend&amp;quot;: &amp;quot;file&amp;quot;
-      },
-      &amp;quot;block-storage&amp;quot;: {
-        &amp;quot;syslog&amp;quot;: {
-          &amp;quot;use&amp;quot;: false
-        },
-        &amp;quot;api&amp;quot;: {
-          &amp;quot;ratelimit&amp;quot;: &amp;quot;False&amp;quot;
-        },
-        &amp;quot;debug&amp;quot;: true,
-        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
-        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
-        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;
-      },
-      &amp;quot;compute&amp;quot;: {
-        &amp;quot;rabbit&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;novnc_proxy&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;libvirt&amp;quot;: {
-          &amp;quot;virt_type&amp;quot;: &amp;quot;qemu&amp;quot;,
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;novnc_proxy&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;xvpvnc_proxy&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;image_api_chef_role&amp;quot;: &amp;quot;os-image&amp;quot;,
-        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
-        &amp;quot;nova_setup_chef_role&amp;quot;: &amp;quot;os-compute-api&amp;quot;,
-        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
-        &amp;quot;network&amp;quot;: {
-          &amp;quot;public_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
-          &amp;quot;service_type&amp;quot;: &amp;quot;neutron&amp;quot;
-        }
-      },
-      &amp;quot;network&amp;quot;: {
-        &amp;quot;debug&amp;quot;: &amp;quot;True&amp;quot;,
-        &amp;quot;dhcp&amp;quot;: {
-          &amp;quot;enable_isolated_metadata&amp;quot;: &amp;quot;True&amp;quot;
-        },
-        &amp;quot;metadata&amp;quot;: {
-          &amp;quot;nova_metadata_ip&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;openvswitch&amp;quot;: {
-          &amp;quot;tunnel_id_ranges&amp;quot;: &amp;quot;1:1000&amp;quot;,
-          &amp;quot;enable_tunneling&amp;quot;: &amp;quot;True&amp;quot;,
-          &amp;quot;tenant_network_type&amp;quot;: &amp;quot;gre&amp;quot;,
-          &amp;quot;tunnel_types&amp;quot;: &amp;quot;gre&amp;quot;,
-          &amp;quot;tunnel_type&amp;quot;: &amp;quot;gre&amp;quot;,
-          &amp;quot;bridge_mappings&amp;quot;: &amp;quot;physnet1:br-eth2&amp;quot;,
-          &amp;quot;bridge_mapping_interface&amp;quot;: &amp;quot;br-eth2:eth2&amp;quot;
-        },
-        &amp;quot;ml2&amp;quot;: {
-          &amp;quot;tenant_network_types&amp;quot;: &amp;quot;gre&amp;quot;,
-          &amp;quot;mechanism_drivers&amp;quot;: &amp;quot;openvswitch&amp;quot;,
-          &amp;quot;tunnel_id_ranges&amp;quot;: &amp;quot;1:1000&amp;quot;,
-          &amp;quot;enable_security_group&amp;quot;: &amp;quot;True&amp;quot;
-        },
-        &amp;quot;api&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;l3&amp;quot;: {
-          &amp;quot;external_network_bridge_interface&amp;quot;: &amp;quot;eth0&amp;quot;
-        },
-        &amp;quot;service_plugins&amp;quot;: [&amp;quot;neutron.services.l3_router.l3_router_plugin.L3RouterPlugin&amp;quot;]
-      },
-      &amp;quot;db&amp;quot;: {
-        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
-        &amp;quot;compute&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;identity&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;image&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;network&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;volume&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;dashboard&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;telemetry&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        },
-        &amp;quot;orchestration&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;
-        }
-      },
-      &amp;quot;developer_mode&amp;quot;: true,
-      &amp;quot;endpoints&amp;quot;: {
-        &amp;quot;network-openvswitch&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;compute-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
-        },
-        &amp;quot;compute-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8774&amp;quot;
-        },
-        &amp;quot;compute-ec2-admin-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-        &amp;quot;compute-ec2-admin&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-       &amp;quot;compute-ec2-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-        &amp;quot;compute-ec2-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8773&amp;quot;
-        },
-        &amp;quot;compute-xvpvnc&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6081&amp;quot;
-        },
-        &amp;quot;compute-novnc-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
-        },
-        &amp;quot;compute-novnc&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
-        },
-        &amp;quot;compute-vnc&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;6080&amp;quot;
-        },
-        &amp;quot;image-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
-        },
-        &amp;quot;image-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9292&amp;quot;
-        },
-        &amp;quot;image-registry&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
-        },
-        &amp;quot;image-registry-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9191&amp;quot;
-        },
-        &amp;quot;identity-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
-        },
-        &amp;quot;identity-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;5000&amp;quot;
-        },
-        &amp;quot;identity-admin&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;35357&amp;quot;
-        },
-        &amp;quot;identity-internal&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;35357&amp;quot;
-        },
-        &amp;quot;volume-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
-        },
-        &amp;quot;volume-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
-        },
-        &amp;quot;telemetry-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8777&amp;quot;
-        },
-        &amp;quot;network-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.11&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
-        },
-        &amp;quot;network-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.11,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;9696&amp;quot;
-        },
-        &amp;quot;block-storage-api-bind&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;,
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;block-storage-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8776&amp;quot;
-        },
-        &amp;quot;orchestration-api&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8004&amp;quot;
-        },
-        &amp;quot;orchestration-api-cfn&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-          &amp;quot;scheme&amp;quot;: &amp;quot;http&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;8000&amp;quot;
-        },
-        &amp;quot;db&amp;quot;: {
-          &amp;quot;host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;,
-          &amp;quot;port&amp;quot;: &amp;quot;3306&amp;quot;
-        },
-        &amp;quot;bind-host&amp;quot;: &amp;quot;0.0.0.0&amp;quot;
-      },
-      &amp;quot;identity&amp;quot;: {
-        &amp;quot;admin_user&amp;quot;: &amp;quot;admin&amp;quot;,
-        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
-        &amp;quot;debug&amp;quot;: true
-      },
-      &amp;quot;image&amp;quot;: {
-        &amp;quot;api&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;debug&amp;quot;: true,
-        &amp;quot;identity_service_chef_role&amp;quot;: &amp;quot;os-identity&amp;quot;,
-        &amp;quot;rabbit_server_chef_role&amp;quot;: &amp;quot;os-ops-messaging&amp;quot;,
-        &amp;quot;registry&amp;quot;: {
-          &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;
-        },
-        &amp;quot;syslog&amp;quot;: {
-          &amp;quot;use&amp;quot;: false
-        }
-      },
-      &amp;quot;mq&amp;quot;: {
-        &amp;quot;bind_interface&amp;quot;: &amp;quot;eth1&amp;quot;,
-        &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-        &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
-        &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;,
-        &amp;quot;network&amp;quot;: {
-          &amp;quot;rabbit&amp;quot;: {
-             &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-             &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-          }
-        },
-        &amp;quot;compute&amp;quot;: {
-           &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
-          &amp;quot;rabbit&amp;quot;: {
-            &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-          }
-        },
-        &amp;quot;block-storage&amp;quot;: {
-          &amp;quot;service_type&amp;quot;: &amp;quot;rabbitmq&amp;quot;,
-          &amp;quot;rabbit&amp;quot;: {
-            &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-            &amp;quot;port&amp;quot;: &amp;quot;5672&amp;quot;
-          }
-        }
-      }
-    },
-    &amp;quot;queue&amp;quot;: {
-      &amp;quot;host&amp;quot;: &amp;quot;10.0.2.10&amp;quot;,
-      &amp;quot;user&amp;quot;: &amp;quot;guest&amp;quot;,
-      &amp;quot;vhost&amp;quot;: &amp;quot;/nova&amp;quot;
-    }
-  }
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;上記ファイルでは virt_type : qemu に設定していますが、KVM リソースを利用出来る
-環境であればここを削除してください。デフォルトの &amp;lsquo;kvm&amp;rsquo; が適用されます。また気
-をつけることは IP アドレスとネットワークインターフェース名です。環境に合わせて
-設定していきましょう。今回は前提構成に合わせて environemnt ファイルを作ってい
-ます。&lt;/p&gt;
-
-&lt;p&gt;次に openstack-chef-repo/.chef/encrypted_data_bag_secret というファイルが
-knife-zero ホストにあるはずです。これをデプロイ対象の3ノードに事前に転送してお
-く必要があります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.10:/tmp/
-scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.11:/tmp/
-scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.12:/tmp/
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;対象ホストにて&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;mkdir /etc/chef
-mv /tmp/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ではいよいよデプロイです。&lt;/p&gt;
-
-&lt;p&gt;Controller ホストへのデプロイ&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;knife zero bootstrap 10.0.2.10 -N kilo01 -r &#39;role[os-compute-single-controller-no-network]&#39; -E multi-neutron-kilo -x &amp;lt;USERNAME&amp;gt; --sudo
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Network ホストへのデプロイ&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;knife zero bootstrap 10.0.2.11 -N kilo02 -r &#39;role[os-client]&#39;,&#39;role[os-network]&#39; -E multi-neutron-kilo -x &amp;lt;USERNAME&amp;gt; --sudo
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Compute ノードへのデプロイ&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;knife zero bootstrap 10.0.2.12 -N kilo03 -r &#39;role[os-compute-worker]&#39; -E multi-neutron-kilo -x &amp;lt;USERNAME&amp;gt; --sudo
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;これで完了です。admin/mypass というユーザ・パスワードでログインが可能です。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;openstack-chef-repo を使って OpenStack Kilo の複数台構成をデプロイ出来ました。重要なのは Environment をどうやって作るか？ですが、
-私は 作成 -&amp;gt; デプロイ -&amp;gt; 修正 -&amp;gt; デプロイ -&amp;gt;&amp;hellip;. を繰り返して作成しています。何度実行しても不具合は発生しない設計なクックブックに
-なっていますので、このような作業が可能になります。また、「ここの設定を追加したい」という時は&amp;hellip;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;該当の template を探す&lt;/li&gt;
-&lt;li&gt;該当のパラメータを確認する&lt;/li&gt;
-&lt;li&gt;recipe 内で template にどうパラメータを渡しているか確認する&lt;/li&gt;
-&lt;li&gt;attribute なり、変数なりを修正するための方法を探す&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;と行います。比較的難しい作業になるのですが、自らの環境に合わせた Environment を作成するにはこれらの作業が必須となってきます。&lt;/p&gt;
-
-&lt;p&gt;以上、複数台構成のデプロイ方法についてでした。&lt;/p&gt;
 </description>
     </item>
     

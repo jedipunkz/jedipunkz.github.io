@@ -6,8 +6,298 @@
     <description>Recent content on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Thu, 29 Dec 2016 09:43:18 +0900</lastBuildDate>
+    <lastBuildDate>Fri, 13 Jan 2017 20:29:07 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Kubernetes Deployments を使ってみた！</title>
+      <link>http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/</link>
+      <pubDate>Fri, 13 Jan 2017 20:29:07 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。 @jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;いま僕らは職場では GKE 上に Replication Controller と Services を使って Pod を起動しているのですが最近の Kubernetes 関連のドキュメントを拝見すると Deployments を使っている記事をよく見掛けます。Kubernetes 1.2 から実装されたようです。今回は Kubernetes の Replication Controller の次世代版と言われている Deployments について調べてみましたので理解したことを書いていこうかと思います。&lt;/p&gt;
+
+&lt;h2 id=&#34;参考資料&#34;&gt;参考資料&lt;/h2&gt;
+
+&lt;p&gt;今回は Kubernetes 公式の下記のドキュメントに記されているコマンドを一通り実行していきます。追加の情報もあります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&#34;https://kubernetes.io/docs/user-guide/deployments/&#34;&gt;https://kubernetes.io/docs/user-guide/deployments/&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;deployments-を使って-nginx-pod-を起動&#34;&gt;Deployments を使って nginx Pod を起動&lt;/h2&gt;
+
+&lt;p&gt;nginx をデプロイするための Yaml ファイルを用意します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.7.9
+        ports:
+        - containerPort: 80
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;作成した yaml ファイルを指定して Pod を作ります。
+下記の通りここで &amp;ldquo;&amp;ndash;record&amp;rdquo; と記しているのは、後に Deployments の履歴を表示する際に &amp;ldquo;何を行ったか&amp;rdquo; を出力するためです。このオプションを指定しないと &amp;ldquo;何を行ったか&amp;rdquo; の出力が &amp;ldquo;NONE&amp;rdquo; となります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f nginx.yaml --record
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;deployments&lt;/li&gt;
+&lt;li&gt;replica set&lt;/li&gt;
+&lt;li&gt;pod&lt;/li&gt;
+&lt;li&gt;rollout&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;の状態をそれぞれ確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get deployments
+NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+nginx-deployment   2         2         2            2           8s
+
+$ kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-4087004473   2         2         2         10s
+
+$ kubectl get pods --show-labels
+NAME                                READY     STATUS    RESTARTS   AGE       LABELS
+nginx-deployment-4087004473-6csa7   1/1       Running   0          21s       app=nginx,pod-template-hash=4087004473
+nginx-deployment-4087004473-teyzc   1/1       Running   0          21s       app=nginx,pod-template-hash=4087004473
+
+$ kubectl rollout status deployment/nginx-deployment
+deployment nginx-deployment successfully rolled out
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;結果から、下記の事が分かります。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;yaml に記した通り &amp;ldquo;nginx-deployment&amp;rdquo; という名前で deployment が生成された&lt;/li&gt;
+&lt;li&gt;&amp;ldquo;nginx-deployment-4087004473&amp;rdquo; という名前の rs (レプリカセット) が生成された&lt;/li&gt;
+&lt;li&gt;yaml に記した通り2つの Pod が起動した&lt;/li&gt;
+&lt;li&gt;&amp;ldquo;nginx-deployment&amp;rdquo; が正常に Rollout された&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Replication Controller でデプロイした際には作られない replica set, rollout というモノが出てきました。後に Deployments を使うメリットに繋がっていきます。&lt;/p&gt;
+
+&lt;h2 id=&#34;nginx-イメージの-tag-を更新してみる&#34;&gt;nginx イメージの Tag を更新してみる&lt;/h2&gt;
+
+&lt;p&gt;ここで yaml ファイル内で指定していた &amp;ldquo;image: nginx:1.7.9&amp;rdquo; を &amp;ldquo;image: nginx:1.9.1&amp;rdquo; と更新してみます。
+Replication Controller で言う Rolling-Update になります。後に述べますが他にも更新方法があります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで先ほどと同様に状態を確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get deployments
+NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+nginx-deployment   2         2         2            2           2m
+
+$ kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-3599678771   2         2         2         39s
+nginx-deployment-4087004473   0         0         0         2m
+
+$ kubectl get pods
+NAME                                READY     STATUS    RESTARTS   AGE
+nginx-deployment-3599678771-0vj9m   1/1       Running   0          53s
+nginx-deployment-3599678771-t1y62   1/1       Running   0          53s
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;新しい Replica Set &amp;ldquo;nginx-deployment-3599678771&amp;rdquo; が作成された&lt;/li&gt;
+&lt;li&gt;古い Replica Set &amp;ldquo;nginx-deployment-4087004473&amp;rdquo; の Pod は 0 個になった&lt;/li&gt;
+&lt;li&gt;Pod 内コンテナが更新された (NAME より判断)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;となったことが分かります。
+Replication Controller と異なり、Deployments では以前の状態が Replica Set として保存されていて状態の履歴が追えるようになっています。&lt;/p&gt;
+
+&lt;p&gt;ここで Rollout の履歴を確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl rollout history deployment/nginx-deployment
+deployments &amp;quot;nginx-deployment&amp;quot;
+REVISION        CHANGE-CAUSE
+1               kubectl create -f nginx.yaml --record
+2               kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;REVISION という名前で履歴番号が付き、どの様な作業を行ったか CHANGE-CAUSE という項目で記されていることがわかります。作業の履歴がリビジョン管理されています。&lt;/p&gt;
+
+&lt;p&gt;下記のように REVSION 番号を付与して履歴内容を表示することも可能です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl rollout history deployment/nginx-deployment --revision=2
+deployments &amp;quot;nginx-deployment&amp;quot; with revision #2
+  Labels:       app=nginx
+        pod-template-hash=3599678771
+  Annotations:  kubernetes.io/change-cause=kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+  Containers:
+   nginx:
+    Image:      nginx:1.9.1
+    Port:       80/TCP
+    Volume Mounts:      &amp;lt;none&amp;gt;
+    Environment Variables:      &amp;lt;none&amp;gt;
+  No volumes.
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;作業を切り戻してみる&#34;&gt;作業を切り戻してみる&lt;/h2&gt;
+
+&lt;p&gt;先程 nginx の Image Tag を更新しましたが、ここで Deployments の機能を使って作業を切り戻してみます。下記の様に実行します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl rollout undo deployment/nginx-deployment
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;状態を確認します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get deployments
+NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+nginx-deployment   2         2         2            2           5m
+
+$ kubectl rollout history deployment/nginx-deployment
+deployments &amp;quot;nginx-deployment&amp;quot;
+REVISION        CHANGE-CAUSE
+2               kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+3               kubectl create -f nginx.yaml --record
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここでは&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;コンテナが2個、正常に起動した&lt;/li&gt;
+&lt;li&gt;REVISION 番号 3 として初期構築の状態 (kubectl create ..) が新たに保存&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;ということが分かります。注意したいのは REVSION 番号 1 が削除され 3 が生成されたことです。1 と 3 は同じ作業ということと推測します。&lt;/p&gt;
+
+&lt;p&gt;念のため &amp;lsquo;nginx&amp;rsquo; コンテナの Image Tag が切り戻っているか確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl describe pod nginx-deployment-4087004473-nq35u | grep &amp;quot;Image:&amp;quot;
+    Image:              nginx:1.7.9
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;最初の Yaml ファイルに記した &amp;lsquo;nginx&amp;rsquo; イメージ Tag &amp;ldquo;1.7.9&amp;rdquo; となっていることが確認できました。set image &amp;hellip; でイメージ更新をした作業が正常に切り戻ったことになります。&lt;/p&gt;
+
+&lt;h2 id=&#34;レプリカ数を-2-3-へスケールしてみる&#34;&gt;レプリカ数を 2-&amp;gt;3 へスケールしてみる&lt;/h2&gt;
+
+&lt;p&gt;更に replicas の数値を 2 から 3 へスケールしてみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl scale deployment nginx-deployment --replicas 3
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;同様に状態を確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl get pods
+NAME                                READY     STATUS    RESTARTS   AGE
+nginx-deployment-4087004473-esj5l   1/1       Running   0          6s
+nginx-deployment-4087004473-nq35u   1/1       Running   0          4m
+nginx-deployment-4087004473-tyibo   1/1       Running   0          4m
+
+kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-3599678771   0         0         0         9m
+nginx-deployment-4087004473   3         3         3         11m
+
+kubectl rollout history deployment/nginx-deployment
+deployments &amp;quot;nginx-deployment&amp;quot;
+REVISION        CHANGE-CAUSE
+2               kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+3               kubectl scale deployment nginx-deployment --replicas 3
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで気になるのは REVISION 3 が上書きされたことです。REVSION 番号 4 が新たに作成されると思っていたからです。先程 REVISION 番号 3 として保存されていた下記の履歴が消えてしまいました。この点については引き続き検証してみます。今の自分には理解できませんでした。ご存知の方いましたら、コメントお願いします！&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;3               kubectl create -f nginx.yaml --record
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;puase-resume-機能を使ってみる&#34;&gt;Puase, Resume 機能を使ってみる&lt;/h2&gt;
+
+&lt;p&gt;次は deployments の機能を使って Image Tag を更に 1.9.1 へ変更し、その処理をポーズしてみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1; kubectl
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;同様に状態を確認してみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-3599678771   2         2         2         10m
+nginx-deployment-4087004473   2         2         2         12m
+
+$ kubectl rollout status deployment/nginx-deployment
+Waiting for rollout to finish: 2 out of 3 new replicas have been updated...
+Ctrl-C #&amp;lt;--- キー入力
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;rollout status で deployment &amp;ldquo;deployment/nginx-deployment&amp;rdquo; を確認すると &amp;ldquo;waiting for rollout to finish&amp;rdquo; と表示され処理がポーズされていることが確認できました。また古い Deployment &amp;ldquo;nginx-deployment-4087004473&amp;rdquo; 上に未だコンテナが残り、新しい Deployment もコンテナが生成中であることが分かります。&lt;/p&gt;
+
+&lt;p&gt;では Resume します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl rollout resume deployment/nginx-deployment
+deployment &amp;quot;nginx-deployment&amp;quot; resumed
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;この時点の状態を確認しましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl rollout status deployment/nginx-deployment
+deployment nginx-deployment successfully rolled out
+
+$ kubectl get rs
+NAME                          DESIRED   CURRENT   READY     AGE
+nginx-deployment-3599678771   3         3         3         11m
+nginx-deployment-4087004473   0         0         0         14m
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここからは&amp;hellip;&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;正常に Deployment &amp;ldquo;nginx-deployment&amp;rdquo; が Rollout されたこと&lt;/li&gt;
+&lt;li&gt;古い Deployment 上のコンテナ数が 0 に、新しい Deployment 上のコンテナ数が 3 になった&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;ということが分かります。&lt;/p&gt;
+
+&lt;h2 id=&#34;rolling-update-相当の作業を行う方法&#34;&gt;Rolling-Update 相当の作業を行う方法&lt;/h2&gt;
+
+&lt;p&gt;前述した通り、Replication Controller 時代にあった Rolling-Update 作業 (イメージタグ・レプリカ数等の更新) ですが、Deployments では下記の方法をとることが出来ます。&lt;/p&gt;
+
+&lt;h4 id=&#34;set-オプションを付与する場合&#34;&gt;set オプションを付与する場合&lt;/h4&gt;
+
+&lt;p&gt;set オプションを付与して Key 項目に対して新しい Value を渡します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;yaml-ファイルを修正する場合&#34;&gt;yaml ファイルを修正する場合&lt;/h4&gt;
+
+&lt;p&gt;yaml ファイルの内容を更新して適用したい場合、下記のように apply オプションを付与します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl apply -f &amp;lt;新しいYamlファイル&amp;gt;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
+
+&lt;p&gt;REVISION の履歴が上書きされる点など、まだ未完成な感が否めませんでしたが(自分の勘違いかもしれません！)、Replication Controller と比べると作業の切り戻しや、履歴が保存され履歴内容も確認できる点など機能が追加されていることが分かりました。公式ドキュメントを読んでいてもコマンド結果等怪しい点があって流石に API バージョンが &amp;ldquo;v1beta1&amp;rdquo; だなぁという感じではありますが、機能が整理されていて利便性が上がっているので Replication Controller を使っているユーザは自然と今後、Deployments に移行していくのではないかと感じました。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</title>
@@ -2640,236 +2930,6 @@ Deployment-Group を作成することで対応できます。ただ、cirlce.ym
 理を記述すれば良さそうです。デプロイが終わったら穴を塞げばいいですね。この辺の
 例については国内でもブログ記事にされている方がいらっしゃいますので参考にしてくだ
 さい。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>cAdvisor/influxDB/GrafanaでDockerリソース監視</title>
-      <link>http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/</link>
-      <pubDate>Sat, 12 Sep 2015 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;今回は Docker ネタです。Docker 導入するにしても監視はどうする？という話になる
-と思うのですが、各 Monitoring as a Service を使うにしてもエージェント入れない
-といけないしお金掛かることもあるし..で、調べていたら cAdvisor というキーワード
-が出てきました。今回は cAdvisor を使ってコンテナの監視が出来ないか、について書
-いていきたいと想います。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;cAdvisor とは ?&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;cAdvisor は Kubernates で用いられているコンポーネントで単体でも利用可能とのこ
-と。Google が開発しています。また Docker コンテナの監視においてこの cAdvisor
-は一般化しつつあるようです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/google/cadvisor&#34;&gt;https://github.com/google/cadvisor&lt;/a&gt;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;収集したメトリクスの保存&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;cAdvisor 自体も Docker で起動して、同ホスト上に起動している Docker コンテナの
-リソースをモニタリングしてくれます。そのメトリクスデータは幾つかの DB に保存出
-来るのですが、そのうちの一つが influxDB です。influxDB は時系列データベースで
-す。システムのメトリクスデータを収めるのにちょうどいいデータベースになります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://influxdb.com/&#34;&gt;https://influxdb.com/&lt;/a&gt;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;DB に収めたメトリクスの可視化&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;influxDB に収めたメトリクスデータを可視化するのが Grafana です。Grafana のデー
-タソースは influxDB の他にも幾つかあり Elasticsearch, KairosDB, Graphite 等が
-それです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://grafana.org/&#34;&gt;http://grafana.org/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;では早速試してみましょう。&lt;/p&gt;
-
-&lt;h2 id=&#34;前提の環境&#34;&gt;前提の環境&lt;/h2&gt;
-
-&lt;p&gt;今回は Vagrant を使います。また Vagrant 上で上記の3つのソフトウェアを Docker
-で稼働します。またどうせなので docker-compose を使って3つのコンテナを一斉に立
-ち上げてみましょう。&lt;/p&gt;
-
-&lt;h2 id=&#34;vagrantfile-の準備&#34;&gt;VagrantFile の準備&lt;/h2&gt;
-
-&lt;p&gt;下記のような VagrantFile を作成します。各ソフトウェアはそれぞれ WebUI を持って
-いて、そこに手元のコンピュータから接続するため forwarded_port しています。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;# -*- mode: ruby -*-
-# vi: set ft=ruby :
-
-Vagrant.configure(2) do |config|
-    config.vm.box = &amp;quot;ubuntu/trusty64&amp;quot;
-    config.vm.network &amp;quot;forwarded_port&amp;quot;, guest: 8080, host: 8080
-    config.vm.network &amp;quot;forwarded_port&amp;quot;, guest: 8083, host: 8083
-    config.vm.network &amp;quot;forwarded_port&amp;quot;, guest: 3000, host: 3000
-    config.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.10&amp;quot;
-end
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;docker-コンテナの起動と-docker-compose-yml-の準備&#34;&gt;Docker コンテナの起動と docker-compose.yml の準備&lt;/h2&gt;
-
-&lt;p&gt;Vagrant を起動し docker, docker-compose のインストールを行います。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ vagrant up
-$ vagrant ssh
-vagrant$ sudo apt-get update ; sudo apt-get -y install curl
-vagrant$ curl -sSL https://get.docker.com/ | sh
-vagrant$ sudo -i
-vagrant# export VERSION_NUM=1.4.0
-vagrant# curl -L https://github.com/docker/compose/releases/download/VERSION_NUM/docker-compose-`uname -s`-`uname -m` &amp;gt; /usr/local/bin/docker-compose
-vagrant# chmod +x /usr/local/bin/docker-compose
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に docker-compose.yml を作成します。上記3つのソフトウェアが稼働するコンテナ
-を起動するため下記のように記述しましょう。カレントディレクトリに作成します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;InfluxSrv:
-    image: &amp;quot;tutum/influxdb:0.8.8&amp;quot;
-    ports:
-        - &amp;quot;8083:8083&amp;quot;
-        - &amp;quot;8086:8086&amp;quot;
-    expose:
-        - &amp;quot;8090&amp;quot;
-        - &amp;quot;8099&amp;quot;
-    environment:
-        - PRE_CREATE_DB=cadvisor
-cadvisor:
-    image: &amp;quot;google/cadvisor:0.16.0&amp;quot;
-    volumes:
-        - &amp;quot;/:/rootfs:ro&amp;quot;
-        - &amp;quot;/var/run:/var/run:rw&amp;quot;
-        - &amp;quot;/sys:/sys:ro&amp;quot;
-        - &amp;quot;/var/lib/docker/:/var/lib/docker:ro&amp;quot;
-    links:
-        - &amp;quot;InfluxSrv:influxsrv&amp;quot;
-    ports:
-        - &amp;quot;8080:8080&amp;quot;
-    command: &amp;quot;-storage_driver=influxdb -storage_driver_db=cadvisor -storage_driver_host=influxsrv:8086 -storage_driver_user=root -storage_driver_password=root -storage_driver_secure=False&amp;quot;
-grafana:
-    image: &amp;quot;grafana/grafana:2.1.3&amp;quot;
-    ports:
-        - &amp;quot;3000:3000&amp;quot;
-    environment:
-        - INFLUXDB_HOST=localhost
-        - INFLUXDB_PORT=8086
-        - INFLUXDB_NAME=cadvisor
-        - INFLUXDB_USER=root
-        - INFLUXDB_PASS=root
-    links:
-        - &amp;quot;InfluxSrv:influxsrv&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;コンテナの起動
-+++&lt;/p&gt;
-
-&lt;p&gt;docker コンテナを立ち上げます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;vagrant$ docker-compose -d
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;influxdb-の-webui-に接続する&#34;&gt;influxDB の WebUI に接続する&lt;/h2&gt;
-
-&lt;p&gt;それでは起動したコンテナのうち一つ influxDB の WebUI に接続していましょう。
-上記の VagrantFile では IP アドレスを 192.168.33.10 と指定しました。&lt;/p&gt;
-
-&lt;p&gt;URL : &lt;a href=&#34;http://192.168.33.10:8083&#34;&gt;http://192.168.33.10:8083&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;データベースに接続します。&lt;/p&gt;
-
-&lt;p&gt;ユーザ名 : root
-パスワード : root&lt;/p&gt;
-
-&lt;p&gt;接続するとデータベース作成画面に飛びますので Database Datails 枠に &amp;ldquo;cadvisor&amp;rdquo;
-と入力、その他の項目はデフォルトのままで &amp;ldquo;Create Database&amp;rdquo; をクリックします。&lt;/p&gt;
-
-&lt;h2 id=&#34;cadvisor-の-webui-に接続する&#34;&gt;cAdvisor の WebUI に接続する&lt;/h2&gt;
-
-&lt;p&gt;続いて cAdvisor の WebUI に接続してみましょう。&lt;/p&gt;
-
-&lt;p&gt;URL : &lt;a href=&#34;http://192.168.33.10:8080&#34;&gt;http://192.168.33.10:8080&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;ここでは特に作業の必要はありません。コンテナの監視が行われグラフが描画されてい
-ることを確認します。&lt;/p&gt;
-
-&lt;h2 id=&#34;grafana-の-webui-に接続する&#34;&gt;Grafana の WebUI に接続する&lt;/h2&gt;
-
-&lt;p&gt;最後に Grafana の WebUI です。&lt;/p&gt;
-
-&lt;p&gt;URL : &lt;a href=&#34;http://192.168.33.10:3000&#34;&gt;http://192.168.33.10:3000&lt;/a&gt;
-ユーザ名 : admin
-パスワード : admin&lt;/p&gt;
-
-&lt;p&gt;まずデータソースの設定を行います。左上のアイコンをクリックし &amp;ldquo;Data Sources&amp;rdquo; を
-選択します。次に &amp;ldquo;Add New Data Source&amp;rdquo; ボタンをクリックします。&lt;/p&gt;
-
-&lt;p&gt;下記の情報を入力しましょう。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Name : influxdb&lt;/li&gt;
-&lt;li&gt;Type : influxDB 0.8.x&lt;/li&gt;
-&lt;li&gt;Url  : &lt;a href=&#34;http://influxsrv:8086&#34;&gt;http://influxsrv:8086&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Access : proxy&lt;/li&gt;
-&lt;li&gt;Basic Auth User admin&lt;/li&gt;
-&lt;li&gt;Basic Auth Password admin&lt;/li&gt;
-&lt;li&gt;Database : cadvisor&lt;/li&gt;
-&lt;li&gt;User : root&lt;/li&gt;
-&lt;li&gt;Password : root&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;さて最後にグラフを作成していきます。左メニューの &amp;ldquo;Dashboard&amp;rdquo; を選択し上部の
-&amp;ldquo;Home&amp;rdquo; ボランを押し &amp;ldquo;+New&amp;rdquo; を押します。&lt;/p&gt;
-
-&lt;p&gt;下記の画面を参考にし値に入力していきます。&lt;/p&gt;
-
-&lt;p&gt;Metrics を選択しネットワークの受信転送量をグラフにしています。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;series : &amp;lsquo;stats&amp;rsquo;&lt;/li&gt;
-&lt;li&gt;alias : RX Bytes&lt;/li&gt;
-&lt;li&gt;select mean(rx_bytes)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;同じく送信転送量もグラフにします。Add Query を押すと追加できます。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;series : &amp;lsquo;stats&amp;rsquo;&lt;/li&gt;
-&lt;li&gt;alias : TX Bytes&lt;/li&gt;
-&lt;li&gt;select mean(tx_bytes)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/grafana_input_data.png&#34; width=&#34;80%&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;時間が経過すると下記のようにグラフが描画されます。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/grafana_graph.png&#34; width=&#34;80%&#34;&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
-
-&lt;p&gt;3つのソフトウェア共に開発が活発であり、cAdvisor は特に Docker コンテナの監視と
-して一般化しつつあるよう。Kubernates の一部ということもありそう簡単には廃れな
-いと想います。コンテナの中にエージェント等を入れることもなく、これで Docker コ
-ンテナのリソース監視が出来そう。ただサービス監視は別途考えなくてはいけないなぁ
-という印象です。また、今回 docker-compose に記した各コンテナのバージョンは
-Docker Hub を確認すると別バージョンもあるので時期が経ってこのブログ記事をご覧
-になった方は修正すると良いと想います。ただこの記事を書いている時点では
-influxDB の 0.9.x 系では動作しませんでした。よって latest ではなくバージョン指
-定で記してあります。&lt;/p&gt;
-
-&lt;h2 id=&#34;参考にしたサイト&#34;&gt;参考にしたサイト&lt;/h2&gt;
-
-&lt;ul&gt;
-&lt;li&gt;&lt;a href=&#34;http://qiita.com/atskimura/items/4c4aaaaa554e2814e938&#34;&gt;http://qiita.com/atskimura/items/4c4aaaaa554e2814e938&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a href=&#34;https://www.brianchristner.io/how-to-setup-docker-monitoring/&#34;&gt;https://www.brianchristner.io/how-to-setup-docker-monitoring/&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
 </description>
     </item>
     
