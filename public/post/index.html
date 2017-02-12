@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2017-01-13T20:29:07&#43;09:00"/>
+<meta property="og:updated_time" content="2017-02-12T14:55:01&#43;09:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,190 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h2>
+        
+        
+            <p>Kubernetes 上で Serverless を実現する Fission を使ってみた</p>
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2017-02-12'>
+            February 12, 2017</time>
+        <span class="author">jedipunkz</span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。 @jedipunkz です。</p>
+
+<p>今日は Kubernetes を使って Serverless を実現するソフトウェア Fission を紹介します。</p>
+
+<p>AWS の Lambda とよく似た動きをします。Lambda も内部では各言語に特化したコンテナが起動してユーザが開発した Lambda Function を実行してくれるのですが、Fission も各言語がインストールされた Docker コンテナを起動しユーザが開発したコードを実行し応答を返してくれます。</p>
+
+<p>それでは早速なのですが、Fission を動かしてみましょう。</p>
+
+<h2 id="動作させるための環境">動作させるための環境</h2>
+
+<p>macOS か Linux を前提として下記の環境を用意する必要があります。また Kubernetes 環境は minikube が手っ取り早いので用いますが、もちろん minikube 以外の kubernetes 環境でも動作します。</p>
+
+<ul>
+<li>macOS or Linux</li>
+<li>minikube or kubernetes</li>
+<li>kubectl</li>
+<li>fission</li>
+</ul>
+
+<h2 id="ソフトウェアのインストール方法">ソフトウェアのインストール方法</h2>
+
+<p>簡単にですが、ソフトウェアのインストール方法を書きます。</p>
+
+<h4 id="os">OS</h4>
+
+<p>私は Linux で動作させましたが筆者の方は macOS を使っている方が多数だと思いますので、この手順では macOS を使った利用方法を書いていきます。</p>
+
+<h4 id="minikube">minikube</h4>
+
+<p>ここでは簡単な手順で kubernetes 環境を構築できる minikube をインストールします。</p>
+
+<pre><code>curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.16.0/minikube-darwin-amd64 &amp;&amp; chmod +x minikube &amp;&amp; sudo mv minikube /usr/local/bin/fission
+</code></pre>
+
+<h4 id="kubectl">kubectl</h4>
+
+<p>直接必要ではありませんが、kubectl があると minikube で構築した kubernetes 環境を操作できますのでインストールしておきます。</p>
+
+<pre><code>curl -Lo kubectl https://storage.googleapis.com/kubernetes-release/release/v1.5.2/bin/linux/amd64/kubectl &amp;&amp; chmod +x kubectl &amp;&amp; sudo mv kubectl /usr/local/bin/
+</code></pre>
+
+<h4 id="fission">Fission</h4>
+
+<p>Fission のインストールです。</p>
+
+<pre><code>curl http://fission.io/linux/fission &gt; fission &amp;&amp; chmod +x fission &amp;&amp; sudo mv fission /usr/local/bin/fission
+</code></pre>
+
+<h2 id="kubernetes-の起動">kubernetes の起動</h2>
+
+<p>ソフトウェアのインストールが完了したら minikube を使って kubernetes を起動します。</p>
+
+<pre><code>$ minikube start
+$ minikube status
+minikubeVM: Running
+localkube: Running
+$ kubectl get nodes
+NAME       STATUS    AGE
+minikube   Ready     1h
+</code></pre>
+
+<h2 id="fission-の起動と環境変数の設定">Fission の起動と環境変数の設定</h2>
+
+<p>Fission を起動します。</p>
+
+<pre><code>$ kubectl create -f http://fission.io/fission.yaml
+$ kubectl create -f http://fission.io/fission-nodeport.yaml
+</code></pre>
+
+<p>次に環境変数を設定します。</p>
+
+<pre><code>$ export FISSION_URL=http://$(minikube ip):31313
+$ export FISSION_ROUTER=$(minikube ip):31314
+</code></pre>
+
+<h2 id="fission-を使って-python-のコードを実行する">Fission を使って Python のコードを実行する</h2>
+
+<p>例として Python の Hello World を用意します。hello.py として保存します。</p>
+
+<pre><code>def main():
+        return &quot;Hello, world!\n&quot;
+</code></pre>
+
+<p>ではいよいよ、kubernetes と Fission を使って上記の Hello World を実行させます。</p>
+
+<p>まず Fission が用意してくれている Docker コンテナを扱うように &lsquo;env&rsquo; を作ります。</p>
+
+<pre><code>$ fission env create --name python-env --image fission/python-env
+</code></pre>
+
+<p>次に Fission で Function を作ります。その際に上記の env と python コードを指定します。つまり、hello.py を fission/python-env という Docker コンテナで稼働する、という意味です。</p>
+
+<pre><code>$ fission function create --name python-hello -env python-env --code ./hello.py
+</code></pre>
+
+<p>次に Router を作ります。クエリの Path に対して Fuction を関連付けることができます。</p>
+
+<pre><code>$ fission route add --function python-hello --url /python-hello
+</code></pre>
+
+<p>Function を実行する環境ができました。実際に curl を使ってアクセスしてみましょう。</p>
+
+<pre><code>$ curl http://$FISSION_ROUTER/python-hello
+Hello, world!
+</code></pre>
+
+<p>hello.py の実行結果が得られました。</p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>結果から Fission は &ldquo;各言語の実行環境として Docker コンテナを用いていて、ユーザが開発したコードをそのコンテナ上で起動し実行結果を得られる。また各コード毎に URL パスが指定することができ、それをルータとして関係性を持たせられる&rdquo; ということが分かりました。AWS の Lambda とほぼ同じことが実現出来ていることが分かると思います。</p>
+
+<p>AWS には Lambda の実行結果を応答するための API Gateway があり、このマネージド HTTP サーバと併用することで API 環境を用意出来るのですが Fission の場合には HTTP サーバも込みで提供されていることも分かります。</p>
+
+<p>あとは、この Fission を提供している元が &ldquo;Platform9&rdquo; という企業なのですが、この企業は OpenStack や kubernetes を使ったホスティングサービスを提供しているようです。開発元が一企業ということと、完全な OSS 開発体制になっていない可能性があって、万が一この企業に何かあった場合にこの Fission を使い続けられるのか問題がしばらくはありそうです。Fission 同等のソフトウェアを kubernetes が取り込むという話題は&hellip;あるのかなぁ？</p>
+
+<p>kubernetes の Job Scheduler が同等の機能を提供してくれるかもしれませんが、まだ Job Scheduler は利用するには枯れていない印象があります。Fission と Job Scheduler 、どちらがいち早く完成度を上げられるのでしょうか。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -729,139 +913,6 @@ spec:
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/">Google Cloud CDN を使ってみた</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2016-12-29'>
-            December 29, 2016</time>
-        <span class="author"></span>
-        
-            <p>1 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>今回は Google Cloud Platform の Google CloudCDN について調べてみたので記したいと思います。</p>
-
-<p>CloudCDN は GCP のロードバランサのバックエンドサービスに紐付けられるサービスです。このバックエンドサービスで CloudCDN を有効にしていると CDN サービスを機能させることが出来ます。先に書いておくとこの CloudCDN はとてもシンプルで扱いやすいサービスだと判りました。高機能な他の CDN サービスと比べると機能が足らない感ありますが、必要最低限なところを抑えているのと、価格がとても安いです。(価格は下記の URL 参照)</p>
-
-<p>価格表 : <a href="https://cloud.google.com/cdn/pricing">https://cloud.google.com/cdn/pricing</a></p>
-
-<h2 id="構成">構成</h2>
-
-<p>構成と構成の特徴です。</p>
-
-<pre><code>+----------+                                    +---------+
-| instance |--+                               +-| EndUser |
-+----------+  |  +------------+  +----------+ | +---------+
-              +--|LoadBalancer|--| CloudCDN |-+-| EndUser |
-+----------+  |  +------------+  +----------+ | +---------+
-| instance |--+                               +-| EndUser |
-+----------+                                    +---------+
-</code></pre>
-
-<ul>
-<li>コンテンツが初めてリクエストされた場合キャッシュミスする</li>
-<li>キャッシュミスした際に近くにあるキャッシュからコンテンツを取得しようと試みる</li>
-<li>近くのキャッシュがコンテンツがある場合、最初のキャッシュにコンテンツが送信される</li>
-<li>近くのキャッシュにコンテンツがない場合、HTTP ロードバランサにリクエストが転送される</li>
-<li>その後のリクエストはキャッシュが応答する(キャッシュヒット)</li>
-<li>キャッシュ間のフィルは EndUser のリクエストに応じて実行される</li>
-<li>キャッシュを事前に読み込むことできない</li>
-<li>キャッシュは世界各地に配置されている</li>
-</ul>
-
-<h2 id="cloudcdn-を導入する方法">CloudCDN を導入する方法</h2>
-
-<p>導入する方法は簡単で下記のとおりです。</p>
-
-<ul>
-<li>新規 LB を WebUI で作成</li>
-<li>バックエンドサービスを作成</li>
-<li>右パネルの下にある [Cloud CDN を有効にする] チェックボックスをオンに</li>
-<li>作成ボタンを押下</li>
-</ul>
-
-<p>HTTPD サーバ側 (今回は Apache を使います) でキャッシュに関する設定を行います。
-下記は例です。3600秒、キャッシュさせる設定になります。</p>
-
-<pre><code>Header set Cache-control &quot;public, max-age=3600&quot;
-</code></pre>
-
-<p>キャッシュされる条件は RFC7324 に規定されているとおりです。</p>
-
-<h2 id="特定のキャッシュを削除する方法">特定のキャッシュを削除する方法</h2>
-
-<p>Google Cloud SDK <a href="https://cloud.google.com/sdk/">https://cloud.google.com/sdk/</a> を使うと CLI でコンテンツを指定してキャッシュのクリアが出来ます。また WebUI でもクリアは可能です。</p>
-
-<pre><code>$ gcloud compute url-maps invalidate-cdn-cache &lt;url-map の名前&gt; --path &quot;コンテンツのパス&quot;
-</code></pre>
-
-<p>このときに &ndash;path で指定できるコンテンツの記し方は下記のように指定することも可能です。</p>
-
-<pre><code>--path &quot;/cat.png # &lt;--- 1つのコンテンツキャッシュを削除
---path &quot;/*&quot;      # &lt;--- 全てのコンテンツキャッシュを削除
---path &quot;/pix/*&quot;  # &lt;--- ディレクトリ指定で削除
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>価格が低価格で必要最低限な機能に絞られている印象です。シンプルな分、理解し易いですしキャッシュクリアについても Hubot 化などすれば開発者の方に実行してもらいやすいのではないでしょうか。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -977,6 +1028,20 @@ spec:
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
@@ -1016,20 +1081,6 @@ spec:
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1064,7 +1115,7 @@ spec:
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">106</span>
+                                <span style="float:right;">107</span>
                             </header>
                         </article>
                     </li>

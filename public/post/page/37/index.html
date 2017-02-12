@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2012-04-01T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2012-04-07T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,198 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2012/04/07/debian-sid-on-thinkpad-first-setup/">debian sid on thinkpad</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-04-07'>
+            April 7, 2012</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>ノート PC を購入するといつも Debian Gnu/Linux sid をインストールするのだけれど
+も、X Window System や InputMethod をインストールして利用し始められるところま
+での手順っていつも忘れる。メモとしてブログに載せておきます。</p>
+
+<h2 id="console-上での-ctrl-caps-swap-設定">console 上での ctrl:caps swap 設定</h2>
+
+<p>取りあえずこの設定をしないと、何も操作出来ない。Caps Lock と Control キーを入
+れ替える設定です。</p>
+
+<p>/etc/default/keyboard を下記のように修正</p>
+
+<pre><code>XKBOPTIONS=&quot;ctrl:swapcaps&quot;
+</code></pre>
+
+<p>下記のコマンドで設定を反映。</p>
+
+<pre><code>% sudo /etc/init.d/console-setup restart
+</code></pre>
+
+<h2 id="sid-の-sources-list-設定">sid の sources.list 設定</h2>
+
+<p>Debian Gnu/Linux をノート PC にインストールする時は必ず sid を入れます。新し目
+のソフトウェアを使いたいから。</p>
+
+<pre><code>deb http://ftp.riken.jp/Linux/debian/debian/ unstable main contrib non-free
+deb-src http://ftp.riken.jp/Linux/debian/debian/ unstable main contrib non-free
+</code></pre>
+
+<p>下記のコマンドで dist-upgrade</p>
+
+<pre><code>% sudo apt-get update
+% sudo apt-get dist-upgrade
+</code></pre>
+
+<h2 id="iwlwifi-のインストールとネットワーク設定">iwlwifi のインストールとネットワーク設定</h2>
+
+<p>買うノート PC はいつも ThinkPad。大体 intel チップな Wi-Fi モジュールが搭載さ
+れているので、iwlwifi を使う。</p>
+
+<pre><code>% sudo apt-get install firmware-iwlwifi
+% sudo modprobe iwl4965 # 各々の端末に合わせる。lspci コマンドで確認
+% sudo modprobe iwlagn
+% sudo iwconfig
+% sudo ifconfig wlan0 up
+</code></pre>
+
+<p>次に /etc/network/interfaces の設定</p>
+
+<pre><code>auto wlan0
+iface wlan0 inet dhcp
+     pre-up /sbin/wpa_supplicant -B -Dwext -c/etc/wpa_supplicant/wpa_supplicant.conf -iwlan0
+     pre-up iwconfig wlan0 essid ${SSID}
+     pre-up ip link set wlan0 up
+     pre-up iwconfig wlan0 ap any
+</code></pre>
+
+<p>/etc/wpa_supplicant/wpa_supplicant.conf の設定</p>
+
+<pre><code>% sudo wpa_passphrase ${SSID} ${PASSPHRASE} &gt; /etc/wpa_supplicant/wpa_supplicant.conf
+</code></pre>
+
+<p>生成した上記のファイルを修正・加筆</p>
+
+<pre><code>network={
+    proto=WPA WPA2
+    key_mgmt=WPA-PSK
+    pairwise=CCMP TKIP
+    ssid=&quot;${SSD}&quot;
+    psk=.....
+}
+</code></pre>
+
+<p>ネットワークインターフェースの再起動で接続</p>
+
+<pre><code>% sudo service networking restart
+</code></pre>
+
+<h2 id="x-window-周りの設定">X Window 周りの設定</h2>
+
+<p>必要なパッケージをインストールする。ビデオカードドライバは端末に合わせてインス
+トールする。thinkpad は Intel なビデオカードの場合が多いので下記のように指定。</p>
+
+<p>また、昔はよく enlightenment を使っていたのだけど、e17 が何時まで経っても完成
+度上がらないので諦めて openbox を使うことに。</p>
+
+<pre><code>% sudo apt-get insatll openbox obmenu xorg xserver-xorg-video-intel
+</code></pre>
+
+<p>console 同様に ctrl:caps を swap する。xorg.conf が無い(2012/04時点)ので、sid
+では /etc/X11/Xsession.d/10setxkbmap を下記のように生成して対応。</p>
+
+<pre><code>#!/bin/sh
+setxkbmap -option ctl:nocaps
+</code></pre>
+
+<h2 id="日本語入力-input-method-のインストール">日本語入力 input method のインストール</h2>
+
+<p>日本語入力に uim-mozc を利用することに。今のところこれが一番快適。</p>
+
+<pre><code>% sudo apt-get install uim-mozc uim-xim uim-utils mozc-utils-gui mozc-server uim-qt
+</code></pre>
+
+<p>/etc/X11/openbox/autostart に下記の行を追記</p>
+
+<pre><code>if type uim-xim &amp;&gt; /dev/null ; then
+    uim-xim &amp;
+    uim-toolbar-qt4 &amp;
+fi
+</code></pre>
+
+<p>uim-toolbar-qt4 の preference で &ldquo;オン・オフキー&rdquo; 等もろもろを好みに設定。</p>
+
+<h2 id="alsa-によるサウンドの出力">alsa によるサウンドの出力</h2>
+
+<p>昔は苦労したサウンド出力も、今ではこんなに簡単な操作で出来るようになりましたｗ</p>
+
+<pre><code>% sudo apt-get install alsa-utils alsa-base
+% sudo modprobe snd-pcm-oss
+% sudo alsactl init
+% sudo alsactl store
+</code></pre>
+
+<p>以上です。ここまで来れば、あとは好みで設定していけばいい。もちろん Ubuntu 等の
+dist を使えば、こんな操作は必要無いのだけど、自分でやらないとどうも気持ちが悪
+いし、万が一トラブルが起きても自分で設定していれば治せるし。</p>
+
+<p>まぁ、最近では MacBook を使うことがほとんどなのですが..。or2</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2012/04/07/debian-sid-on-thinkpad-first-setup/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -559,102 +751,6 @@ description =        # A default meta description for your site
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2012/03/07/heroku-jp-meetup-number-3/">Heroku JP Meetup #3</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2012-03-07'>
-            March 7, 2012</time>
-        <span class="author"></span>
-        
-            <p>1 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>白金台のクックパッドさんで行われた &ldquo;heroku jp meet up #3&rdquo; に参加してきました。</p>
-
-<p>東京マラソン参加のため来日されていた <a href="http://twitter.com/stolt45">Christopher Stolt</a> さんや Ruby コミッタの<a href="http://twitter.com/ayumin">相澤</a>さんなどの話を聞けました。</p>
-
-<p>Christopher さんからは、基本的な使い方や heroku で動作させたアプリケーションをローカル環境で動作させる foreman、また皆が意外と気にするアプリのログを tail する方法などの説明がありました。PaaS での皆の懸念点が結構解決されたんじゃないかなぁ。</p>
-
-<p>相澤さんからは NY マラソンでの実績など、比較的エンタープライズな使われ方もされ初めていると説明がありました。あと、呼び名なのですが heroku は &ldquo;へろく&rdquo; と発音するそうです。確かに about.heroku.com には &ldquo;Heroku (pronounced her-OH-koo) is a cloud application platform&rdquo; と書いてあるのだが、&rdquo;へろく&rdquo; が正しいそうです。w</p>
-
-<p>そのた LT が幾つあって、ちょうど気になっていた <a href="http://lokka.org/">Lokka</a> の話があったので、自宅に帰ってから自分の heroku アカウントで lokka を動かしてみました。lokka の公式サイトに手順が書いてあって、そのままなのですが行ったのは、</p>
-
-<pre><code>% gem install heroku bundler
-% git clone git://github.com/komagata/lokka.git
-% cd lokka
-% heroku create
-% git push heroku master
-% heroku rake db:setup
-% heroku open
-</code></pre>
-
-<p>すれば OK。</p>
-
-<p>私の環境では公開鍵認証がうまくいかなかったので、下記の対処をしました。</p>
-
-<pre><code>% heroku keys:add
-</code></pre>
-
-<p>試しに wordpress のデータを移行してみようと思ったのですが、&rdquo;Application Error&rdquo; が発生。今のところうまくいっていません。コードとブログコンテンツを git で管理出来るので、今時ですよね。初めてみたい。</p>
-
-<p>また、今回会場を提供してくださったクックパッドさんが、バレンタインデーということもあり皆に料理を提供して下さいました。感謝ー。</p>
-
-<p>本当は heroku システムがどう構成されているか？が知りたかったのですが、ユーザ視点で使われ方が分からないと何も出来ないと感じていたため、今回はとても良い機会でした。個人的にも heroku は使い続けたい、と感じたサービスでした。みなさん、当日はありがとうございました。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/03/07/heroku-jp-meetup-number-3/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesreport'>report</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -771,6 +867,20 @@ description =        # A default meta description for your site
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
@@ -810,20 +920,6 @@ description =        # A default meta description for your site
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -858,7 +954,7 @@ description =        # A default meta description for your site
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">106</span>
+                                <span style="float:right;">107</span>
                             </header>
                         </article>
                     </li>

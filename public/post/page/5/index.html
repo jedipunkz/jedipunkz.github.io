@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2015-12-22T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2015-12-28T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,204 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/">Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2015-12-28'>
+            December 28, 2015</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>Influxdb が Influxdata (<a href="https://influxdata.com/">https://influxdata.com/</a>) として生まれ変わり公式の
+メトリクス送信エージェント Telegraf と可視化ツール Chronograf をリリースしたので
+使ってみました。</p>
+
+<p>3つのツールの役割は下記のとおりです。</p>
+
+<ul>
+<li>Chronograf : 可視化ツール, Grafana 相当のソフトウェアです</li>
+<li>Telegraf : メトリクス情報を Influxdb に送信するエージェント</li>
+<li>Influxdb : メトリクス情報を格納する時系列データベース</li>
+</ul>
+
+<p>以前に cAdvisor, influxdb, grafana を使って Docker コンテナのメトリクスを可視
+化する記事を書きましたが telegraf を使うとサーバ情報と合わせて Docker コンテナ
+のメトリクスも influxdb に送信することが出来ます。個人的にはそのコンテナ情報の
+扱いもサーバ情報と同様に扱ってくれる点に期待しつつ、評価してみました。</p>
+
+<h2 id="今回の環境">今回の環境</h2>
+
+<p>今回は Ubuntu 15.04 vivid64 を使ってテストしています。</p>
+
+<h2 id="influxdb-をインストールして起動">influxdb をインストールして起動</h2>
+
+<p>最新リリース版の deb パッケージが用意されていたのでこれを使いました。</p>
+
+<pre><code>wget http://influxdb.s3.amazonaws.com/influxdb_0.9.5.1_amd64.deb
+sudo dpkg -i influxdb_0.9.5.1_amd64.deb
+sudo service influxdb start
+</code></pre>
+
+<h2 id="telegraf-のインストールと起動">telegraf のインストールと起動</h2>
+
+<p>こちらも deb パッケージで。</p>
+
+<pre><code>wget http://get.influxdb.org/telegraf/telegraf_0.2.4_amd64.deb
+sudo dpkg -i telegraf_0.2.4_amd64.deb
+</code></pre>
+
+<p>コンフィギュレーションですが今回は CPU, Disk, Net, Docker のメトリクス情報を送
+信するようにしました。</p>
+
+<pre><code>[agent]
+    interval = &quot;0.1s&quot;
+
+[outputs]
+
+[outputs.influxdb]
+    urls = [&quot;http://localhost:8086&quot;]
+    database = &quot;telegraf-test&quot;
+    user_agent = &quot;telegraf&quot;
+
+[plugins]
+[[plugins.cpu]]
+  percpu = true
+  totalcpu = false
+  drop = [&quot;cpu_time*&quot;]
+
+[[plugins.disk]]
+  [plugins.disk.tagpass]
+    fstype = [ &quot;ext4&quot;, &quot;xfs&quot; ]
+    #path = [ &quot;/home*&quot; ]
+
+[[plugins.disk]]
+  pass = [ &quot;disk_inodes*&quot; ]
+  
+[[plugins.docker]]
+
+[[plugins.net]]
+  interfaces = [&quot;eth0&quot;]
+</code></pre>
+
+<p>他にも色々メトリクス情報を取得できそうです、下記のサイトを参考にしてみてください。
+<a href="https://github.com/influxdb/telegraf/blob/0.3.0/CONFIGURATION.md">https://github.com/influxdb/telegraf/blob/0.3.0/CONFIGURATION.md</a></p>
+
+<p>telegraf を起動します。Docker コンテナのメトリクスを取得するために root ユーザ
+で起動する必要があります。</p>
+
+<pre><code>sudo telegraf -config telegraf.conf
+</code></pre>
+
+<h2 id="chronograf-のインストールと起動">chronograf のインストールと起動</h2>
+
+<p>こちらも deb でインストールします。</p>
+
+<pre><code>wget https://s3.amazonaws.com/get.influxdb.org/chronograf/chronograf_0.4.0_amd64.deb
+sudo dpkg -i chronograf_0.4.0_amd64.deb
+sudo /opt/chronograf/chronograf -sample-config &gt; /opt/chronograf/config.toml
+sudo service chronograf start
+</code></pre>
+
+<h2 id="グラフの描画">グラフの描画</h2>
+
+<p>この状態でブラウザでアクセスしてみましょう。</p>
+
+<p>http://&lt;ホストのIPアドレス&gt;:10000/</p>
+
+<p>アクセスすると簡単なガイドが走りますのでここでは設定方法は省きます。Grafana を使った場合と
+同様に気をつけるポイントは下記のとおりです。</p>
+
+<ul>
+<li>&lsquo;filter by&rsquo;  に描画したいリソース名を選択(CPU,Disk,Net,Dockerの各リソース)</li>
+<li>Database に telegraf.conf に記した &lsquo;telegraf-test&rsquo; を選択</li>
+</ul>
+
+<p>すると下記のようなグラフやダッシュボードが作成されます。下記は CPU 使用率をグ
+ラフ化したものです。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/chronograf_cpu.png" width="70%"></p>
+
+<p>こちらは Docker 関連のグラフ。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/chronograf_docker.png" width="70%"></p>
+
+<p>複数のグラフを1つのダッシュボードにまとめることもできるようです。</p>
+
+<p>まとめ
++++</p>
+
+<p>個人的には Grafana の UI はとてもわかりずらかったので公式の可視化ツールが出てきて良かった
+と思っています。操作もとても理解しやすくなっています。Telegraf についても公式のメトリクス
+情報送信エージェントということで安心感があります。また Grafana は別途 HTTP サー
+バが必要でしたが Chronograf は HTTP サーバも内包しているのでセットアップが簡単
+でした。</p>
+
+<p>ただ configuration guide がまだまだ説明不十分なので凝ったことをしようすとする
+とソースを読まなくてはいけないかもしれません。</p>
+
+<p>いずれにしてもサーバのメトリクス情報と共に cAdvisor 等のソフトウェアを用いなく
+てもサーバ上で稼働しているコンテナ周りの情報も取得できたので個人的にはハッピー。
+cAdvisor でしか取得できない情報もありそうですが今後、導入を検討する上で評価し
+ていきたいと思います。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -929,291 +1127,6 @@ Deployment-Group を作成することで対応できます。ただ、cirlce.ym
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2015-09-12'>
-            September 12, 2015</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>今回は Docker ネタです。Docker 導入するにしても監視はどうする？という話になる
-と思うのですが、各 Monitoring as a Service を使うにしてもエージェント入れない
-といけないしお金掛かることもあるし..で、調べていたら cAdvisor というキーワード
-が出てきました。今回は cAdvisor を使ってコンテナの監視が出来ないか、について書
-いていきたいと想います。</p>
-
-<ul>
-<li>cAdvisor とは ?</li>
-</ul>
-
-<p>cAdvisor は Kubernates で用いられているコンポーネントで単体でも利用可能とのこ
-と。Google が開発しています。また Docker コンテナの監視においてこの cAdvisor
-は一般化しつつあるようです。</p>
-
-<p><a href="https://github.com/google/cadvisor">https://github.com/google/cadvisor</a></p>
-
-<ul>
-<li>収集したメトリクスの保存</li>
-</ul>
-
-<p>cAdvisor 自体も Docker で起動して、同ホスト上に起動している Docker コンテナの
-リソースをモニタリングしてくれます。そのメトリクスデータは幾つかの DB に保存出
-来るのですが、そのうちの一つが influxDB です。influxDB は時系列データベースで
-す。システムのメトリクスデータを収めるのにちょうどいいデータベースになります。</p>
-
-<p><a href="https://influxdb.com/">https://influxdb.com/</a></p>
-
-<ul>
-<li>DB に収めたメトリクスの可視化</li>
-</ul>
-
-<p>influxDB に収めたメトリクスデータを可視化するのが Grafana です。Grafana のデー
-タソースは influxDB の他にも幾つかあり Elasticsearch, KairosDB, Graphite 等が
-それです。</p>
-
-<p><a href="http://grafana.org/">http://grafana.org/</a></p>
-
-<p>では早速試してみましょう。</p>
-
-<h2 id="前提の環境">前提の環境</h2>
-
-<p>今回は Vagrant を使います。また Vagrant 上で上記の3つのソフトウェアを Docker
-で稼働します。またどうせなので docker-compose を使って3つのコンテナを一斉に立
-ち上げてみましょう。</p>
-
-<h2 id="vagrantfile-の準備">VagrantFile の準備</h2>
-
-<p>下記のような VagrantFile を作成します。各ソフトウェアはそれぞれ WebUI を持って
-いて、そこに手元のコンピュータから接続するため forwarded_port しています。</p>
-
-<pre><code># -*- mode: ruby -*-
-# vi: set ft=ruby :
-
-Vagrant.configure(2) do |config|
-    config.vm.box = &quot;ubuntu/trusty64&quot;
-    config.vm.network &quot;forwarded_port&quot;, guest: 8080, host: 8080
-    config.vm.network &quot;forwarded_port&quot;, guest: 8083, host: 8083
-    config.vm.network &quot;forwarded_port&quot;, guest: 3000, host: 3000
-    config.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.10&quot;
-end
-</code></pre>
-
-<h2 id="docker-コンテナの起動と-docker-compose-yml-の準備">Docker コンテナの起動と docker-compose.yml の準備</h2>
-
-<p>Vagrant を起動し docker, docker-compose のインストールを行います。</p>
-
-<pre><code class="language-bash">$ vagrant up
-$ vagrant ssh
-vagrant$ sudo apt-get update ; sudo apt-get -y install curl
-vagrant$ curl -sSL https://get.docker.com/ | sh
-vagrant$ sudo -i
-vagrant# export VERSION_NUM=1.4.0
-vagrant# curl -L https://github.com/docker/compose/releases/download/VERSION_NUM/docker-compose-`uname -s`-`uname -m` &gt; /usr/local/bin/docker-compose
-vagrant# chmod +x /usr/local/bin/docker-compose
-</code></pre>
-
-<p>次に docker-compose.yml を作成します。上記3つのソフトウェアが稼働するコンテナ
-を起動するため下記のように記述しましょう。カレントディレクトリに作成します。</p>
-
-<pre><code>InfluxSrv:
-    image: &quot;tutum/influxdb:0.8.8&quot;
-    ports:
-        - &quot;8083:8083&quot;
-        - &quot;8086:8086&quot;
-    expose:
-        - &quot;8090&quot;
-        - &quot;8099&quot;
-    environment:
-        - PRE_CREATE_DB=cadvisor
-cadvisor:
-    image: &quot;google/cadvisor:0.16.0&quot;
-    volumes:
-        - &quot;/:/rootfs:ro&quot;
-        - &quot;/var/run:/var/run:rw&quot;
-        - &quot;/sys:/sys:ro&quot;
-        - &quot;/var/lib/docker/:/var/lib/docker:ro&quot;
-    links:
-        - &quot;InfluxSrv:influxsrv&quot;
-    ports:
-        - &quot;8080:8080&quot;
-    command: &quot;-storage_driver=influxdb -storage_driver_db=cadvisor -storage_driver_host=influxsrv:8086 -storage_driver_user=root -storage_driver_password=root -storage_driver_secure=False&quot;
-grafana:
-    image: &quot;grafana/grafana:2.1.3&quot;
-    ports:
-        - &quot;3000:3000&quot;
-    environment:
-        - INFLUXDB_HOST=localhost
-        - INFLUXDB_PORT=8086
-        - INFLUXDB_NAME=cadvisor
-        - INFLUXDB_USER=root
-        - INFLUXDB_PASS=root
-    links:
-        - &quot;InfluxSrv:influxsrv&quot;
-</code></pre>
-
-<p>コンテナの起動
-+++</p>
-
-<p>docker コンテナを立ち上げます。</p>
-
-<pre><code>vagrant$ docker-compose -d
-</code></pre>
-
-<h2 id="influxdb-の-webui-に接続する">influxDB の WebUI に接続する</h2>
-
-<p>それでは起動したコンテナのうち一つ influxDB の WebUI に接続していましょう。
-上記の VagrantFile では IP アドレスを 192.168.33.10 と指定しました。</p>
-
-<p>URL : <a href="http://192.168.33.10:8083">http://192.168.33.10:8083</a></p>
-
-<p>データベースに接続します。</p>
-
-<p>ユーザ名 : root
-パスワード : root</p>
-
-<p>接続するとデータベース作成画面に飛びますので Database Datails 枠に &ldquo;cadvisor&rdquo;
-と入力、その他の項目はデフォルトのままで &ldquo;Create Database&rdquo; をクリックします。</p>
-
-<h2 id="cadvisor-の-webui-に接続する">cAdvisor の WebUI に接続する</h2>
-
-<p>続いて cAdvisor の WebUI に接続してみましょう。</p>
-
-<p>URL : <a href="http://192.168.33.10:8080">http://192.168.33.10:8080</a></p>
-
-<p>ここでは特に作業の必要はありません。コンテナの監視が行われグラフが描画されてい
-ることを確認します。</p>
-
-<h2 id="grafana-の-webui-に接続する">Grafana の WebUI に接続する</h2>
-
-<p>最後に Grafana の WebUI です。</p>
-
-<p>URL : <a href="http://192.168.33.10:3000">http://192.168.33.10:3000</a>
-ユーザ名 : admin
-パスワード : admin</p>
-
-<p>まずデータソースの設定を行います。左上のアイコンをクリックし &ldquo;Data Sources&rdquo; を
-選択します。次に &ldquo;Add New Data Source&rdquo; ボタンをクリックします。</p>
-
-<p>下記の情報を入力しましょう。</p>
-
-<ul>
-<li>Name : influxdb</li>
-<li>Type : influxDB 0.8.x</li>
-<li>Url  : <a href="http://influxsrv:8086">http://influxsrv:8086</a></li>
-<li>Access : proxy</li>
-<li>Basic Auth User admin</li>
-<li>Basic Auth Password admin</li>
-<li>Database : cadvisor</li>
-<li>User : root</li>
-<li>Password : root</li>
-</ul>
-
-<p>さて最後にグラフを作成していきます。左メニューの &ldquo;Dashboard&rdquo; を選択し上部の
-&ldquo;Home&rdquo; ボランを押し &ldquo;+New&rdquo; を押します。</p>
-
-<p>下記の画面を参考にし値に入力していきます。</p>
-
-<p>Metrics を選択しネットワークの受信転送量をグラフにしています。</p>
-
-<ul>
-<li>series : &lsquo;stats&rsquo;</li>
-<li>alias : RX Bytes</li>
-<li>select mean(rx_bytes)</li>
-</ul>
-
-<p>同じく送信転送量もグラフにします。Add Query を押すと追加できます。</p>
-
-<ul>
-<li>series : &lsquo;stats&rsquo;</li>
-<li>alias : TX Bytes</li>
-<li>select mean(tx_bytes)</li>
-</ul>
-
-<p><img src="http://jedipunkz.github.io/pix/grafana_input_data.png" width="80%"></p>
-
-<p>時間が経過すると下記のようにグラフが描画されます。</p>
-
-<p><img src="http://jedipunkz.github.io/pix/grafana_graph.png" width="80%"></p>
-
-<h2 id="まとめと考察">まとめと考察</h2>
-
-<p>3つのソフトウェア共に開発が活発であり、cAdvisor は特に Docker コンテナの監視と
-して一般化しつつあるよう。Kubernates の一部ということもありそう簡単には廃れな
-いと想います。コンテナの中にエージェント等を入れることもなく、これで Docker コ
-ンテナのリソース監視が出来そう。ただサービス監視は別途考えなくてはいけないなぁ
-という印象です。また、今回 docker-compose に記した各コンテナのバージョンは
-Docker Hub を確認すると別バージョンもあるので時期が経ってこのブログ記事をご覧
-になった方は修正すると良いと想います。ただこの記事を書いている時点では
-influxDB の 0.9.x 系では動作しませんでした。よって latest ではなくバージョン指
-定で記してあります。</p>
-
-<h2 id="参考にしたサイト">参考にしたサイト</h2>
-
-<ul>
-<li><a href="http://qiita.com/atskimura/items/4c4aaaaa554e2814e938">http://qiita.com/atskimura/items/4c4aaaaa554e2814e938</a></li>
-<li><a href="https://www.brianchristner.io/how-to-setup-docker-monitoring/">https://www.brianchristner.io/how-to-setup-docker-monitoring/</a></li>
-</ul>
-</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1330,6 +1243,20 @@ influxDB の 0.9.x 系では動作しませんでした。よって latest で�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
@@ -1369,20 +1296,6 @@ influxDB の 0.9.x 系では動作しませんでした。よって latest で�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1417,7 +1330,7 @@ influxDB の 0.9.x 系では動作しませんでした。よって latest で�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">106</span>
+                                <span style="float:right;">107</span>
                             </header>
                         </article>
                     </li>
