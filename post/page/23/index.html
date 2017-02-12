@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2013-06-20T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-07-02T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,226 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/07/02/chef-opencenter-openstack/">内部で Chef を使っている OpenCenter で OpenStack 構築</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-07-02'>
+            July 2, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>第13回 OpenStack 勉強会に参加してきました。内容の濃い収穫のある勉強会でした。
+参加してよかった。特にえぐちさんの OpenCenter に関するプレゼン (下記のスライド
+参照のこと) には驚きました。ちょうど当日 RackSpace のエンジニアが管理している
+github 上の Chef Cookbooks を使って OpenStack 構築できたぁ！と感動していたのに、
+その晩のうちに Chef を使って GUI で！ OpenStack が自動構築出来るだなんて&hellip;。</p>
+
+<p>えぐちさんのスライド資料はこちら。</p>
+
+<p><a href="http://www.slideshare.net/guchi_hiro/open-centeropenstack">http://www.slideshare.net/guchi_hiro/open-centeropenstack</a></p>
+
+<p>早速、私も手元で OpenCenter 使ってみました。えぐちさん、情報ありがとうございましたー。</p>
+
+<p>実は私 としては Chef 単体で OpenStack を構築したいのですが、OpenCenter がどう
+Cookbook や Roles, Environment を割り当てているのか知りたかったので、
+OpenCenter を使って構築してみました。今回はその準備。今日は OpenCenter で皆さ
+んも OpenStack を構築できるようキャプチャ付きで方法を紹介しますが、次の機会に
+Chef 単体での OpenStack の構築方法を紹介出来ればいいなぁと思っています。</p>
+
+<h2 id="構成">構成</h2>
+
+<pre><code>+---------------+---------------+---------------+---------------+-------------- public network
+|eth0           |eth0           |eth1           |eth1           | eth1
+|10.200.10.11   |10.200.10.12   |10.200.10.13   |10.200.10.14   |10.200.10.15
++-------------+ +-------------+ +-------------+ +-------------+ +-------------+
+| opencenter  | |   oc-chef   | |oc-controller| | oc-compute01| | oc-compute02|
++-------------+ +-------------+ +-------------+ +-------------+ +-------------+
+                                                |10.200.9.14    |10.200.9.15
+                                                | eth0          |eth0
+                                                +---------------+-------------- vm network
+</code></pre>
+
+<ul>
+<li>5台使ってみた</li>
+<li>全てのノードでインターネットへの経路を public network に向ける</li>
+<li>VM が接続する br100 ブリッジは eth0 にバインドした</li>
+<li>VM からインターネットへのアクセスは oc-computeNN が NAT する</li>
+<li>oc-chef は Chef Server !</li>
+</ul>
+
+<h2 id="opencenter-の構築">OpenCenter の構築</h2>
+
+<p>構築は&hellip;</p>
+
+<pre><code class="language-bash">% curl -s -L http://sh.opencenter.rackspace.com/install.sh | sudo bash -s - --role=server
+% curl -s -L http://sh.opencenter.rackspace.com/install.sh | \
+  sudo bash -s - --role=dashboard --ip=10.200.10.11
+</code></pre>
+
+<p>これだけ！</p>
+
+<h2 id="opencenter-で管理するノードへエージェントをインストール">OpenCenter で管理するノードへエージェントをインストール</h2>
+
+<p>oc-chef, oc-controller, oc-computeNN は全て OpenCenter で管理する必要があるの
+で OpenCeter エージェントをインストールします。</p>
+
+<pre><code class="language-bash">% curl -s -L http://sh.opencenter.rackspace.com/install.sh | \
+  sudo bash -s - --role=agent --ip=10.200.10.11
+</code></pre>
+
+<h2 id="gui-へアクセス">GUI へアクセス</h2>
+
+<pre><code>https://10.200.10.11
+</code></pre>
+
+<p>ブラウザで上記の URL にアクセスするとデフォルトアカウント情報 (ユーザ名 :
+admin, パスワード : password) でログイン出来ます。</p>
+
+<p>{% img /pix/oc01.png 600 %}</p>
+
+<p>こんな感じ。</p>
+
+<h4 id="chef-server-のインストール">Chef Server のインストール</h4>
+
+<p>oc-chef をクリック -&gt; &lsquo;Install Chef Server&rsquo; を選択</p>
+
+<p>暫くするとタスクがグリーンになり完了。</p>
+
+<p>{% img /pix/oc02.png 600 %}</p>
+
+<p>こうなります。この Chef Server 上の Cookbooks, Roles 等を利用して knife
+bootstrap しコントローラ・コンピュートノードを構築する仕組みです。</p>
+
+<h4 id="novacluster-の作成">NovaCluster の作成</h4>
+
+<p>NovaCluster という controller x n, compute x n のセットを意味するモノを作りま
+す。入力フォームが表示されるので下記の画像のように入力します。</p>
+
+<p>{% img /pix/oc03.png 600 %}</p>
+
+<p>NAT Exclusion CIDRs が DMZ, VM Network CIDR が Fixed Range だと理解すれば、他
+は問題ないように思います。</p>
+
+<p>{% img /pix/oc04.png 600 %}</p>
+
+<p>結果、こうなります。</p>
+
+<h4 id="コントローラノード構築">コントローラノード構築</h4>
+
+<p>available nodes にあるノード &lsquo;oc-controller&rsquo; を &lsquo;Infrastructure&rsquo; へドラッグア
+ンドドロップします。</p>
+
+<p>{% img /pix/oc05.png 600 %}</p>
+
+<h4 id="コンピュートノード構築">コンピュートノード構築</h4>
+
+<p>available nodes にあるノード &lsquo;oc-computeNN&rsquo; を &lsquo;AZ Nova&rsquo; へドラッグアンドドロッ
+プします。</p>
+
+<p>{% img /pix/oc07.png 600 %}</p>
+
+<p>2台ともドラッグアンドドロップすると、こうなります。</p>
+
+<h2 id="horizon-へアクセスし操作">Horizon へアクセスし操作</h2>
+
+<p>あとはいつものように OpenStack を操作するだけです。Horizon へは下記の URL でア
+クセス出来ます。admin ユーザのパスワードは先ほどの NovaCluster 作成の際に入力
+したモノです。</p>
+
+<pre><code>https://10.200.10.13
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>完成された OpenStack を覗いたのですが monit が利用されていたり、Horizon が
+HTTPS 化されていたり、完成度が高かったです。さすが RackSpace 製という感じ。も
+う OpenStack 構築スクリプトを作成する必要がなくなったなぁと。Chef で構築するべ
+きです。</p>
+
+<p>内部で使われている Chef Cookbooks は下記の URL に同じものがありました。</p>
+
+<p><a href="https://github.com/rcbops/chef-cookbooks">https://github.com/rcbops/chef-cookbooks</a></p>
+
+<p>この Chef Cookbooks を単体で使って構築してみましたが同様に1コマンドで構築が出
+来ました。(オール・イン・ワン構成しか試していません) 僕らとしては GUI は仕事で
+は操作しにくいのでこのCookbooks を利用した形で改修し使っていきたいなぁと感じて
+います。GUI であってもドラッグアンドドロップで元には戻せませんし、後々
+Cookbook に手を入れ構成を変更するといったことも面倒になりそうです。</p>
+
+<p>とは言っても、ドラッグアンドドロップで構築できるなんて&hellip; 。誰でも構築できる時
+期にあるんですね。運用するには Cookbook を理解している必要がありそうですが、
+RackSpace としては Private Cloud Service に運用もセットで付加して売っているの
+で問題ないのでしょう。</p>
+
+<p>ちなみに Chef の情報は os-chef ノードの root ユーザホームディレクトリ配下で探
+れます。</p>
+
+<pre><code class="language-bash">oc-chef# cd ~
+oc-chef# knife cookbook list
+oc-chef# knife role list
+oc-chef# knife environment list
+oc-chef# knife environment show NovaCluster01
+</code></pre>
+</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/07/02/chef-opencenter-openstack/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -697,298 +917,6 @@ kb.run
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/">Ceph クラスターネットワーク構成</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-05-25'>
-            May 25, 2013</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>Ceph を運用する上で考慮しなければいけないのがトラフィックの負荷です。特に OSD
-同士のレプリケーション・ハートビートには相当トラフィックの負荷が掛かることが想
-像出来ます。</p>
-
-<p>このため MDS, MON の通信に影響を与えないよう、OSD レプリケーション・ハートビー
-トのためのネットワークを別に設けるのがベストプラクティスな構成の様です。このネッ
-トワークのことをクラスターネットワークと Ceph 的に言うそうです。</p>
-
-<p>こんな接続になります。</p>
-
-<pre><code>                +------+
-                |Client|
-                +------+
-                |
-+-------+-------+-------+-------+------ public network
-|       |       |       |       |
-+-----+ +-----+ +-----+ +-----+ +-----+
-| MON | | MDS | | OSD | | OSD | | OSD |
-+-----+ +-----+ +-----+ +-----+ +-----+
-                |       |       |
-----------------+-------+-------+------ cluster network
-</code></pre>
-
-<p>上図の様に MON, MDS は public ネットワークを介し OSD のレプリケーション・ハー
-トビートのみ cluster ネットワークを介します。Client と MDS との通信に影響を与
-えない構成になります。</p>
-
-<p>今回はその様な構成を ceph-deploy を使って構築する方法を書いていきます。前提と
-なるホストとプロセスとネットワークの関係は下記の図の通りです。</p>
-
-<pre><code>+----------+
-| 'client' |
-+----------+
-|
-+---------------+---------------+------------- public network
-|               |               |
-|10.0.0.11      | 10.0.0.12     | 10.0.0.13
-+----------+    +----------+    +----------+
-| 'ceph01' |    | 'ceph02' |    | 'ceph03' |
-|    osd   |    |    osd   |    |    osd   |
-|    mon   |    |    mon   |    |    mon   |
-|    mds   |    |    mds   |    |    mds   |
-+----------+    +----------+    +----------+
-|172.18.0.11    | 172.18.0.12   | 172.18.0.13
-|               |               |
-+---------------+---------------+------------- cluster network
-</code></pre>
-
-<p>特徴としては..</p>
-
-<ul>
-<li>ceph01-03 には NIC を2本出します。</li>
-<li>ceph01-03 の全てに MDS, MON, OSD を稼働させます。</li>
-<li>ceph01-03:/dev/sdb を Ceph 用のディスクとして利用</li>
-</ul>
-
-<p>となります。</p>
-
-<h2 id="ceph-deply-を利用するまでの準備">Ceph-Deply を利用するまでの準備</h2>
-
-<p>今回は ceph-deploy を利用し Ceph を構築する。そのための準備として下記の操作を
-行う。</p>
-
-<h4 id="ceph-サーバ-ceph01-03-の準備">ceph サーバ (ceph01-03) の準備</h4>
-
-<p>&lsquo;ceph&rsquo; ユーザの作成を行う。</p>
-
-<pre><code>% ssh user@ceph-server
-% sudo useradd -d /home/ceph -m ceph
-% sudo passwd ceph
-</code></pre>
-
-<p>sudoers の設定を行う。</p>
-
-<pre><code>% echo &quot;ceph ALL = (root) NOPASSWD:ALL&quot; | sudo tee /etc/sudoers.d/ceph
-% sudo chmod 0440 /etc/sudoers.d/ceph
-</code></pre>
-
-<h4 id="client-の準備">&lsquo;client&rsquo; の準備</h4>
-
-<p>ホスト &lsquo;client&rsquo; で準備をします。この準備によって ceph-deploy をそれぞれのホス
-トに対して実行できるようになります。</p>
-
-<p>まず、ノンパスフレーズの SSH 公開鍵・秘密鍵を生成します。</p>
-
-<pre><code>client% ssh-keygen
-Generating public/private key pair.
-Enter file in which to save the key (/ceph-client/.ssh/id_rsa):
-Enter passphrase (empty for no passphrase):
-Enter same passphrase again:
-Your identification has been saved in /ceph-client/.ssh/id_rsa.
-Your public key has been saved in /ceph-client/.ssh/id_rsa.pub.
-</code></pre>
-
-<p>公開鍵をターゲットホスト (ceph01-03) に配置します。</p>
-
-<pre><code>client% ssh-copy-id ceph@ceph01
-client% ssh-copy-id ceph@ceph02
-client% ssh-copy-id ceph@ceph03
-</code></pre>
-
-<p>ceph-deploy を取得します。</p>
-
-<pre><code>client% git clone https://github.com/ceph/ceph-deploy.git ~/ceph-deploy
-</code></pre>
-
-<p>&lsquo;python-virtualenv&rsquo; パッケージをインストールする。</p>
-
-<pre><code>client% sudo apt-get update ; sudo apt-get -y install python-virtualenv
-</code></pre>
-
-<p>ceph-deploy をブートストラップする</p>
-
-<pre><code>client% cd ~/ceph-deploy
-client% ./bootstrap
-</code></pre>
-
-<p>PATH を通す。下記は例。</p>
-
-<pre><code>client% ${EDITOR} ~/.zshrc
-export PATH=$HOME/ceph-deploy:$PATH
-</code></pre>
-
-<p>ホスト名の解決を行う。</p>
-
-<pre><code>cephclient% sudo ${EDITOR} /etc/hosts
-10.0.0.11    ceph01
-10.0.0.12    ceph02
-10.0.0.13    ceph03
-</code></pre>
-
-<p>これで準備は OK です。ceph-deploy が使える状態になりました。</p>
-
-<h2 id="ceph-構築手順">Ceph 構築手順</h2>
-
-<p>今回は ceph01-03 の3台構成を構築しますが、すべての操作はホスト &lsquo;client&rsquo; から行
-います。先ほど配置した公開鍵によってそれぞれのホストに対して操作が行えます。</p>
-
-<p>ceph サーバ・クライアント間通信のための鍵の生成とコンフィギュレーションの生成
-を下記の操作にて行う。</p>
-
-<pre><code>client% ceph-deploy new ceph01 ceph02 ceph03
-</code></pre>
-
-<p>上記の操作で生成されたカレントディレクトリ上の ceph.conf に対して下記の記述を
-追記する。</p>
-
-<pre><code>public network = 10.0.0.0/24
-cluster network = 172.18.0.0/24
-
-[mon.a]
-    host = ceph01
-    mon addr = 10.0.0.11:6789
-
-[mon.b]
-    host = ceph02
-    mon addr = 10.0.0.12:6789
-
-[mon.c]
-    host = ceph03
-    mon addr = 10.0.0.13:6789
-
-[osd.0]
-    public addr = 10.0.0.11
-    cluster addr = 172.18.0.11
-
-[osd.1
-    public addr = 10.0.0.12
-    cluster addr = 172.18.0.12
-
-[osd.2]
-    public addr = 10.0.0.13
-    cluster addr = 172.18.0.13
-
-[mds.a]
-    host = ceph01
-
-[mds.a]
-    host = ceph02
-
-[mds.a]
-    host = ceph03
-</code></pre>
-
-<p>次の操作でそれぞれのホストに対して ceph の公開しているレポジトリを参照させ
-ceph をインストールしていきます。</p>
-
-<pre><code>cephclient% ceph-deploy install ceph01 ceph02 ceph03
-</code></pre>
-
-<p>MON daemon のデプロイを行う。</p>
-
-<pre><code>cephclient% ceph-deploy mon create ceph01 ceph02 ceph03
-</code></pre>
-
-<p>鍵のデプロイを行う。Ceph サーバ間・クライアント間での共有鍵です。1 Cluster
-に対して1つの鍵を保有することになります。</p>
-
-<pre><code>cephclient% ceph-deploy gatherkeys ceph01 ceph02 ceph03
-</code></pre>
-
-<p>OSD daemon のデプロイを行う。下記の様にパーティションを指定しなければツールが
-自動でパーティショニングを行なってくれます。</p>
-
-<pre><code>cephclient% ceph-deploy osd create create ceph01:/dev/sdb ceph02:/dev/sdb ceph03:/dev/sdb
-</code></pre>
-
-<p>MDS deamon のデプロイを行う。</p>
-
-<pre><code>cephcleint% ceph-deploy mds create ceph01 ceph02 ceph03
-</code></pre>
-
-<p>完成です。</p>
-
-<p>全てのホスト ceph01-03 にて MON, MDS, OSD のプロセスが稼働しているのが確認出来
-ると思います。実際にどれかのホストの MDS に対して client から ceph ストレージ
-をマウントしてみてください。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>通常のフラットなネットワーク上にデプロイする方法とほぼ同じ操作で構築出来ます。
-異なるところは ceph.conf に対して設定を追加した点です。また、それぞれのホスト
-への ceph のインストールの時にオプションが渡せます。&ndash;testing と渡せば RC 版の
-ceph が利用できます。今回の様に何も記さなければ stable 版の利用ということにな
-ります。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1105,6 +1033,20 @@ ceph が利用できます。今回の様に何も記さなければ stable 版�
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
@@ -1144,20 +1086,6 @@ ceph が利用できます。今回の様に何も記さなければ stable 版�
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1192,7 +1120,7 @@ ceph が利用できます。今回の様に何も記さなければ stable 版�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">106</span>
+                                <span style="float:right;">107</span>
                             </header>
                         </article>
                     </li>

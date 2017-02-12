@@ -6,8 +6,136 @@
     <description>Recent content in Posts on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Fri, 13 Jan 2017 20:29:07 +0900</lastBuildDate>
+    <lastBuildDate>Sun, 12 Feb 2017 14:55:01 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/post/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>Serverless on Kubernetes : Fission を使ってみた</title>
+      <link>http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/</link>
+      <pubDate>Sun, 12 Feb 2017 14:55:01 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/</guid>
+      <description>
+
+&lt;p&gt;こんにちは。 @jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;今日は Kubernetes を使って Serverless を実現するソフトウェア Fission を紹介します。&lt;/p&gt;
+
+&lt;p&gt;AWS の Lambda とよく似た動きをします。Lambda も内部では各言語に特化したコンテナが起動してユーザが開発した Lambda Function を実行してくれるのですが、Fission も各言語がインストールされた Docker コンテナを起動しユーザが開発したコードを実行し応答を返してくれます。&lt;/p&gt;
+
+&lt;p&gt;それでは早速なのですが、Fission を動かしてみましょう。&lt;/p&gt;
+
+&lt;h2 id=&#34;動作させるための環境&#34;&gt;動作させるための環境&lt;/h2&gt;
+
+&lt;p&gt;macOS か Linux を前提として下記の環境を用意する必要があります。また Kubernetes 環境は minikube が手っ取り早いので用いますが、もちろん minikube 以外の kubernetes 環境でも動作します。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;macOS or Linux&lt;/li&gt;
+&lt;li&gt;minikube or kubernetes&lt;/li&gt;
+&lt;li&gt;kubectl&lt;/li&gt;
+&lt;li&gt;fission&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&#34;ソフトウェアのインストール方法&#34;&gt;ソフトウェアのインストール方法&lt;/h2&gt;
+
+&lt;p&gt;簡単にですが、ソフトウェアのインストール方法を書きます。&lt;/p&gt;
+
+&lt;h4 id=&#34;os&#34;&gt;OS&lt;/h4&gt;
+
+&lt;p&gt;私は Linux で動作させましたが筆者の方は macOS を使っている方が多数だと思いますので、この手順では macOS を使った利用方法を書いていきます。&lt;/p&gt;
+
+&lt;h4 id=&#34;minikube&#34;&gt;minikube&lt;/h4&gt;
+
+&lt;p&gt;ここでは簡単な手順で kubernetes 環境を構築できる minikube をインストールします。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.16.0/minikube-darwin-amd64 &amp;amp;&amp;amp; chmod +x minikube &amp;amp;&amp;amp; sudo mv minikube /usr/local/bin/fission
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;kubectl&#34;&gt;kubectl&lt;/h4&gt;
+
+&lt;p&gt;直接必要ではありませんが、kubectl があると minikube で構築した kubernetes 環境を操作できますのでインストールしておきます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;curl -Lo kubectl https://storage.googleapis.com/kubernetes-release/release/v1.5.2/bin/linux/amd64/kubectl &amp;amp;&amp;amp; chmod +x kubectl &amp;amp;&amp;amp; sudo mv kubectl /usr/local/bin/
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h4 id=&#34;fission&#34;&gt;Fission&lt;/h4&gt;
+
+&lt;p&gt;Fission のインストールです。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;curl http://fission.io/linux/fission &amp;gt; fission &amp;amp;&amp;amp; chmod +x fission &amp;amp;&amp;amp; sudo mv fission /usr/local/bin/fission
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;kubernetes-の起動&#34;&gt;kubernetes の起動&lt;/h2&gt;
+
+&lt;p&gt;ソフトウェアのインストールが完了したら minikube を使って kubernetes を起動します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ minikube start
+$ minikube status
+minikubeVM: Running
+localkube: Running
+$ kubectl get nodes
+NAME       STATUS    AGE
+minikube   Ready     1h
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;fission-の起動と環境変数の設定&#34;&gt;Fission の起動と環境変数の設定&lt;/h2&gt;
+
+&lt;p&gt;Fission を起動します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ kubectl create -f http://fission.io/fission.yaml
+$ kubectl create -f http://fission.io/fission-nodeport.yaml
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に環境変数を設定します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ export FISSION_URL=http://$(minikube ip):31313
+$ export FISSION_ROUTER=$(minikube ip):31314
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;fission-を使って-python-のコードを実行する&#34;&gt;Fission を使って Python のコードを実行する&lt;/h2&gt;
+
+&lt;p&gt;例として Python の Hello World を用意します。hello.py として保存します。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;def main():
+        return &amp;quot;Hello, world!\n&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ではいよいよ、kubernetes と Fission を使って上記の Hello World を実行させます。&lt;/p&gt;
+
+&lt;p&gt;まず Fission が用意してくれている Docker コンテナを扱うように &amp;lsquo;env&amp;rsquo; を作ります。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ fission env create --name python-env --image fission/python-env
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に Fission で Function を作ります。その際に上記の env と python コードを指定します。つまり、hello.py を fission/python-env という Docker コンテナで稼働する、という意味です。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ fission function create --name python-hello -env python-env --code ./hello.py
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;次に Router を作ります。クエリの Path に対して Fuction を関連付けることができます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ fission route add --function python-hello --url /python-hello
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;Function を実行する環境ができました。実際に curl を使ってアクセスしてみましょう。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;$ curl http://$FISSION_ROUTER/python-hello
+Hello, world!
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;hello.py の実行結果が得られました。&lt;/p&gt;
+
+&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
+
+&lt;p&gt;結果から Fission は &amp;ldquo;各言語の実行環境として Docker コンテナを用いていて、ユーザが開発したコードをそのコンテナ上で起動し実行結果を得られる。また各コード毎に URL パスが指定することができ、それをルータとして関係性を持たせられる&amp;rdquo; ということが分かりました。AWS の Lambda とほぼ同じことが実現出来ていることが分かると思います。&lt;/p&gt;
+
+&lt;p&gt;AWS には Lambda の実行結果を応答するための API Gateway があり、このマネージド HTTP サーバと併用することで API 環境を用意出来るのですが Fission の場合には HTTP サーバも込みで提供されていることも分かります。&lt;/p&gt;
+
+&lt;p&gt;あとは、この Fission を提供している元が &amp;ldquo;Platform9&amp;rdquo; という企業なのですが、この企業は OpenStack や kubernetes を使ったホスティングサービスを提供しているようです。開発元が一企業ということと、完全な OSS 開発体制になっていない可能性があって、万が一この企業に何かあった場合にこの Fission を使い続けられるのか問題がしばらくはありそうです。Fission 同等のソフトウェアを kubernetes が取り込むという話題は&amp;hellip;あるのかなぁ？&lt;/p&gt;
+
+&lt;p&gt;kubernetes の Job Scheduler が同等の機能を提供してくれるかもしれませんが、まだ Job Scheduler は利用するには枯れていない印象があります。Fission と Job Scheduler 、どちらがいち早く完成度を上げられるのでしょうか。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>Kubernetes Deployments を使ってみた！</title>
@@ -2916,236 +3044,6 @@ Deployment-Group を作成することで対応できます。ただ、cirlce.ym
 理を記述すれば良さそうです。デプロイが終わったら穴を塞げばいいですね。この辺の
 例については国内でもブログ記事にされている方がいらっしゃいますので参考にしてくだ
 さい。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>cAdvisor/influxDB/GrafanaでDockerリソース監視</title>
-      <link>http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/</link>
-      <pubDate>Sat, 12 Sep 2015 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;今回は Docker ネタです。Docker 導入するにしても監視はどうする？という話になる
-と思うのですが、各 Monitoring as a Service を使うにしてもエージェント入れない
-といけないしお金掛かることもあるし..で、調べていたら cAdvisor というキーワード
-が出てきました。今回は cAdvisor を使ってコンテナの監視が出来ないか、について書
-いていきたいと想います。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;cAdvisor とは ?&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;cAdvisor は Kubernates で用いられているコンポーネントで単体でも利用可能とのこ
-と。Google が開発しています。また Docker コンテナの監視においてこの cAdvisor
-は一般化しつつあるようです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/google/cadvisor&#34;&gt;https://github.com/google/cadvisor&lt;/a&gt;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;収集したメトリクスの保存&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;cAdvisor 自体も Docker で起動して、同ホスト上に起動している Docker コンテナの
-リソースをモニタリングしてくれます。そのメトリクスデータは幾つかの DB に保存出
-来るのですが、そのうちの一つが influxDB です。influxDB は時系列データベースで
-す。システムのメトリクスデータを収めるのにちょうどいいデータベースになります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://influxdb.com/&#34;&gt;https://influxdb.com/&lt;/a&gt;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;DB に収めたメトリクスの可視化&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;influxDB に収めたメトリクスデータを可視化するのが Grafana です。Grafana のデー
-タソースは influxDB の他にも幾つかあり Elasticsearch, KairosDB, Graphite 等が
-それです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://grafana.org/&#34;&gt;http://grafana.org/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;では早速試してみましょう。&lt;/p&gt;
-
-&lt;h2 id=&#34;前提の環境&#34;&gt;前提の環境&lt;/h2&gt;
-
-&lt;p&gt;今回は Vagrant を使います。また Vagrant 上で上記の3つのソフトウェアを Docker
-で稼働します。またどうせなので docker-compose を使って3つのコンテナを一斉に立
-ち上げてみましょう。&lt;/p&gt;
-
-&lt;h2 id=&#34;vagrantfile-の準備&#34;&gt;VagrantFile の準備&lt;/h2&gt;
-
-&lt;p&gt;下記のような VagrantFile を作成します。各ソフトウェアはそれぞれ WebUI を持って
-いて、そこに手元のコンピュータから接続するため forwarded_port しています。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;# -*- mode: ruby -*-
-# vi: set ft=ruby :
-
-Vagrant.configure(2) do |config|
-    config.vm.box = &amp;quot;ubuntu/trusty64&amp;quot;
-    config.vm.network &amp;quot;forwarded_port&amp;quot;, guest: 8080, host: 8080
-    config.vm.network &amp;quot;forwarded_port&amp;quot;, guest: 8083, host: 8083
-    config.vm.network &amp;quot;forwarded_port&amp;quot;, guest: 3000, host: 3000
-    config.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.10&amp;quot;
-end
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;docker-コンテナの起動と-docker-compose-yml-の準備&#34;&gt;Docker コンテナの起動と docker-compose.yml の準備&lt;/h2&gt;
-
-&lt;p&gt;Vagrant を起動し docker, docker-compose のインストールを行います。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ vagrant up
-$ vagrant ssh
-vagrant$ sudo apt-get update ; sudo apt-get -y install curl
-vagrant$ curl -sSL https://get.docker.com/ | sh
-vagrant$ sudo -i
-vagrant# export VERSION_NUM=1.4.0
-vagrant# curl -L https://github.com/docker/compose/releases/download/VERSION_NUM/docker-compose-`uname -s`-`uname -m` &amp;gt; /usr/local/bin/docker-compose
-vagrant# chmod +x /usr/local/bin/docker-compose
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に docker-compose.yml を作成します。上記3つのソフトウェアが稼働するコンテナ
-を起動するため下記のように記述しましょう。カレントディレクトリに作成します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;InfluxSrv:
-    image: &amp;quot;tutum/influxdb:0.8.8&amp;quot;
-    ports:
-        - &amp;quot;8083:8083&amp;quot;
-        - &amp;quot;8086:8086&amp;quot;
-    expose:
-        - &amp;quot;8090&amp;quot;
-        - &amp;quot;8099&amp;quot;
-    environment:
-        - PRE_CREATE_DB=cadvisor
-cadvisor:
-    image: &amp;quot;google/cadvisor:0.16.0&amp;quot;
-    volumes:
-        - &amp;quot;/:/rootfs:ro&amp;quot;
-        - &amp;quot;/var/run:/var/run:rw&amp;quot;
-        - &amp;quot;/sys:/sys:ro&amp;quot;
-        - &amp;quot;/var/lib/docker/:/var/lib/docker:ro&amp;quot;
-    links:
-        - &amp;quot;InfluxSrv:influxsrv&amp;quot;
-    ports:
-        - &amp;quot;8080:8080&amp;quot;
-    command: &amp;quot;-storage_driver=influxdb -storage_driver_db=cadvisor -storage_driver_host=influxsrv:8086 -storage_driver_user=root -storage_driver_password=root -storage_driver_secure=False&amp;quot;
-grafana:
-    image: &amp;quot;grafana/grafana:2.1.3&amp;quot;
-    ports:
-        - &amp;quot;3000:3000&amp;quot;
-    environment:
-        - INFLUXDB_HOST=localhost
-        - INFLUXDB_PORT=8086
-        - INFLUXDB_NAME=cadvisor
-        - INFLUXDB_USER=root
-        - INFLUXDB_PASS=root
-    links:
-        - &amp;quot;InfluxSrv:influxsrv&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;コンテナの起動
-+++&lt;/p&gt;
-
-&lt;p&gt;docker コンテナを立ち上げます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;vagrant$ docker-compose -d
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;influxdb-の-webui-に接続する&#34;&gt;influxDB の WebUI に接続する&lt;/h2&gt;
-
-&lt;p&gt;それでは起動したコンテナのうち一つ influxDB の WebUI に接続していましょう。
-上記の VagrantFile では IP アドレスを 192.168.33.10 と指定しました。&lt;/p&gt;
-
-&lt;p&gt;URL : &lt;a href=&#34;http://192.168.33.10:8083&#34;&gt;http://192.168.33.10:8083&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;データベースに接続します。&lt;/p&gt;
-
-&lt;p&gt;ユーザ名 : root
-パスワード : root&lt;/p&gt;
-
-&lt;p&gt;接続するとデータベース作成画面に飛びますので Database Datails 枠に &amp;ldquo;cadvisor&amp;rdquo;
-と入力、その他の項目はデフォルトのままで &amp;ldquo;Create Database&amp;rdquo; をクリックします。&lt;/p&gt;
-
-&lt;h2 id=&#34;cadvisor-の-webui-に接続する&#34;&gt;cAdvisor の WebUI に接続する&lt;/h2&gt;
-
-&lt;p&gt;続いて cAdvisor の WebUI に接続してみましょう。&lt;/p&gt;
-
-&lt;p&gt;URL : &lt;a href=&#34;http://192.168.33.10:8080&#34;&gt;http://192.168.33.10:8080&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;ここでは特に作業の必要はありません。コンテナの監視が行われグラフが描画されてい
-ることを確認します。&lt;/p&gt;
-
-&lt;h2 id=&#34;grafana-の-webui-に接続する&#34;&gt;Grafana の WebUI に接続する&lt;/h2&gt;
-
-&lt;p&gt;最後に Grafana の WebUI です。&lt;/p&gt;
-
-&lt;p&gt;URL : &lt;a href=&#34;http://192.168.33.10:3000&#34;&gt;http://192.168.33.10:3000&lt;/a&gt;
-ユーザ名 : admin
-パスワード : admin&lt;/p&gt;
-
-&lt;p&gt;まずデータソースの設定を行います。左上のアイコンをクリックし &amp;ldquo;Data Sources&amp;rdquo; を
-選択します。次に &amp;ldquo;Add New Data Source&amp;rdquo; ボタンをクリックします。&lt;/p&gt;
-
-&lt;p&gt;下記の情報を入力しましょう。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Name : influxdb&lt;/li&gt;
-&lt;li&gt;Type : influxDB 0.8.x&lt;/li&gt;
-&lt;li&gt;Url  : &lt;a href=&#34;http://influxsrv:8086&#34;&gt;http://influxsrv:8086&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Access : proxy&lt;/li&gt;
-&lt;li&gt;Basic Auth User admin&lt;/li&gt;
-&lt;li&gt;Basic Auth Password admin&lt;/li&gt;
-&lt;li&gt;Database : cadvisor&lt;/li&gt;
-&lt;li&gt;User : root&lt;/li&gt;
-&lt;li&gt;Password : root&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;さて最後にグラフを作成していきます。左メニューの &amp;ldquo;Dashboard&amp;rdquo; を選択し上部の
-&amp;ldquo;Home&amp;rdquo; ボランを押し &amp;ldquo;+New&amp;rdquo; を押します。&lt;/p&gt;
-
-&lt;p&gt;下記の画面を参考にし値に入力していきます。&lt;/p&gt;
-
-&lt;p&gt;Metrics を選択しネットワークの受信転送量をグラフにしています。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;series : &amp;lsquo;stats&amp;rsquo;&lt;/li&gt;
-&lt;li&gt;alias : RX Bytes&lt;/li&gt;
-&lt;li&gt;select mean(rx_bytes)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;同じく送信転送量もグラフにします。Add Query を押すと追加できます。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;series : &amp;lsquo;stats&amp;rsquo;&lt;/li&gt;
-&lt;li&gt;alias : TX Bytes&lt;/li&gt;
-&lt;li&gt;select mean(tx_bytes)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/grafana_input_data.png&#34; width=&#34;80%&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;時間が経過すると下記のようにグラフが描画されます。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/grafana_graph.png&#34; width=&#34;80%&#34;&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
-
-&lt;p&gt;3つのソフトウェア共に開発が活発であり、cAdvisor は特に Docker コンテナの監視と
-して一般化しつつあるよう。Kubernates の一部ということもありそう簡単には廃れな
-いと想います。コンテナの中にエージェント等を入れることもなく、これで Docker コ
-ンテナのリソース監視が出来そう。ただサービス監視は別途考えなくてはいけないなぁ
-という印象です。また、今回 docker-compose に記した各コンテナのバージョンは
-Docker Hub を確認すると別バージョンもあるので時期が経ってこのブログ記事をご覧
-になった方は修正すると良いと想います。ただこの記事を書いている時点では
-influxDB の 0.9.x 系では動作しませんでした。よって latest ではなくバージョン指
-定で記してあります。&lt;/p&gt;
-
-&lt;h2 id=&#34;参考にしたサイト&#34;&gt;参考にしたサイト&lt;/h2&gt;
-
-&lt;ul&gt;
-&lt;li&gt;&lt;a href=&#34;http://qiita.com/atskimura/items/4c4aaaaa554e2814e938&#34;&gt;http://qiita.com/atskimura/items/4c4aaaaa554e2814e938&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a href=&#34;https://www.brianchristner.io/how-to-setup-docker-monitoring/&#34;&gt;https://www.brianchristner.io/how-to-setup-docker-monitoring/&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
 </description>
     </item>
     

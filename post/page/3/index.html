@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2016-07-25T23:18:16&#43;09:00"/>
+<meta property="og:updated_time" content="2016-11-03T09:08:48&#43;09:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,305 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2016-11-03'>
+            November 3, 2016</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは、@jedipunkz です。今回は Kubernetes1.4 から実装された ScheduledJob を試してみたのでその内容を記したいと思います。</p>
+
+<p>ScheduledJob はバッチ的な処理を Kubernetes の pod を使って実行するための仕組みです。現在は alpha バージョンとして実装されています。
+kubernetes の pod, service は通常、永続的に立ち上げておくサーバなどを稼働させるものですが、それに対してこの scheduledJob は cron 感覚でバッチ処理を pod に任せることができます。</p>
+
+<p>Alpha バージョンということで今回の環境構築は minikube を使って簡易的に Mac 上に構築しました。Docker がインストールされていれば Linux でも環境を作れます。</p>
+
+<h2 id="参考-url">参考 URL</h2>
+
+<p>今回利用する yaml ファイルなどは下記のサイトを参考にしています。</p>
+
+<ul>
+<li><a href="http://kubernetes.io/docs/user-guide/scheduled-jobs/">http://kubernetes.io/docs/user-guide/scheduled-jobs/</a></li>
+<li><a href="https://github.com/kubernetes/minikube">https://github.com/kubernetes/minikube</a></li>
+</ul>
+
+<h2 id="前提の環境">前提の環境</h2>
+
+<p>私の環境では下記の環境を利用しました。</p>
+
+<ul>
+<li>Mac OSX</li>
+<li>Docker-machine or Docker for Mac</li>
+<li>minikube</li>
+</ul>
+
+<h2 id="kubernetes-1-4-以降の構成を-minikube-で構築する">kubernetes 1.4 以降の構成を minikube で構築する</h2>
+
+<p>まず minikube のインストールを行います。</p>
+
+<pre><code>$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.12.0/minikube-darwin-amd64 &amp;&amp; chmod +x minikube &amp;&amp; sudo mv minikube /usr/local/bin/
+</code></pre>
+
+<p>早速 minikube を起動します。</p>
+
+<pre><code>$ docker-machine start default
+$ minikube start
+$ eval $(minikube docker-env)
+</code></pre>
+
+<h2 id="google-cloud-の-gke-を利用する場合">Google Cloud の GKE を利用する場合</h2>
+
+<p>今回は minikube を使ってローカルマシンに kubernetes 1.4 環境を作りましたが Google Cloud の GKE を用いている場合下記のように gcloud SDK を用いて GKE クラスターノードを構築することで対応できます。ですが Google に確認したところこの構築方法を取った場合には Google からのサポートを得られないのと SLA も対象外になるとのことでした。リスクは大きいと思います。(2016/11現在)</p>
+
+<pre><code>gcloud alpha container clusters create alpha-test-cluster --zone asia-northeast1-b --enable-kubernetes-alpha
+gcloud container clusters get-credentials alpha-test-cluster
+gcloud container node-pools create alpha-test-pool --zone asia-northeast1-b --cluster alpha-test-cluster
+</code></pre>
+
+<h2 id="scheduledjob-を試す">scheduledjob を試す</h2>
+
+<h4 id="yaml-ファイルの生成">yaml ファイルの生成</h4>
+
+<p>scheduledjob を実行するための yaml ファイルを生成します。公式サイト (<a href="http://kubernetes.io/docs/user-guide/scheduled-jobs/">http://kubernetes.io/docs/user-guide/scheduled-jobs/</a>) にあるものを一部修正して記述しています。ファイル名は sj.yaml とします。</p>
+
+<pre><code>apiVersion: batch/v2alpha1
+kind: ScheduledJob
+metadata:
+  name: hello
+spec:
+  schedule: 0/1 * * * ?
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: busybox
+            args:
+            - /bin/sh
+            - -c
+            - date; echo Hello from the Kubernetes cluster
+          restartPolicy: OnFailure
+  concurrencyPolicy: Allow
+  #suspend: true
+</code></pre>
+
+<h4 id="scheduledjob-の実行">scheduledJob の実行</h4>
+
+<p>生成した yaml ファイルを元に kubectl コマンドで scheduledjob を実行します。</p>
+
+<pre><code>$ kubectl create -f ./sj.yaml
+</code></pre>
+
+<p>実行したジョブがどのような状況か確認します。下記のコマンドで生成した scheduledjob 一覧が確認できます。
+yaml ファイルの通り、1分間隔で &lsquo;hello&rsquo; という scheduledJob が実行されることが確認できると思います。</p>
+
+<pre><code>$ kubectl get scheduledjob
+NAME      SCHEDULE      SUSPEND   ACTIVE    LAST-SCHEDULE
+hello     0/1 * * * ?   False     0         &lt;none&gt;
+</code></pre>
+
+<p>scheduledjob を元に実行された(実行される) ジョブ(job) 一覧を確認します。
+1分間隔で実行されている様子が確認できます。また、DESIRED:1 で SUCCESSFUL:0 の行は、1分間隔で実行される直前のジョブとして認識されていることがわかります。</p>
+
+<pre><code>$ kubectl get jobs --watch
+NAME               DESIRED   SUCCESSFUL   AGE
+hello-1856276298   1         1            59s
+NAME               DESIRED   SUCCESSFUL   AGE
+hello-1780451143   1         0            0s
+hello-1780451143   1         0         0s
+hello-1780451143   1         1         5s
+hello-1476429627   1         0         0s
+hello-1476429627   1         0         0s
+hello-1476429627   1         1         5s
+hello-1628211009   1         0         0s
+hello-1628211009   1         0         0s
+hello-1628211009   1         1         5s
+hello-1552385854   1         0         0s
+hello-1552385854   1         0         0s
+hello-1552385854   1         1         5s
+</code></pre>
+
+<p>下記のコマンドで実行されたジョブ一覧を取得できます。こちらは結果のみですので SUCCESSFULL=1 のみが表示されています。</p>
+
+<pre><code>$ kubectl get job
+NAME               DESIRED   SUCCESSFUL   AGE
+hello-1476429627   1         1            6m
+hello-1552385854   1         1            4m
+hello-1552516926   1         1            1m
+hello-1628211009   1         1            5m
+hello-1628342081   1         1            2m
+hello-1704167236   1         1            3m
+hello-1704298308   1         1            49s
+hello-1780451143   1         1            7m
+hello-1856276298   1         1            8m
+</code></pre>
+
+<p>この際に pod の様子も確認してみます。&ndash;show-all オプションで過去の pod を一覧表示します。今回のジョブは一瞬で実行可能な内容なのでこのオプションを付けないと pod 一覧が取得できない可能性が高いです。</p>
+
+<pre><code>kubectl get pod --show-all
+NAME                     READY     STATUS      RESTARTS   AGE
+hello-1476429627-pxr06   0/1       Completed   0          8m
+hello-1552385854-y68ci   0/1       Completed   0          6m
+hello-1552516926-ggjpk   0/1       Completed   0          3m
+hello-1628211009-iih0i   0/1       Completed   0          7m
+hello-1628342081-ig5lg   0/1       Completed   0          4m
+hello-1628473153-9wvn4   0/1       Completed   0          1m
+hello-1704167236-zqg94   0/1       Completed   0          5m
+hello-1704298308-eaq8m   0/1       Completed   0          2m
+hello-1780254535-64mah   0/1       Completed   0          28s
+hello-1780451143-tjg8r   0/1       Completed   0          9m
+hello-1856276298-y2o65   0/1       Completed   0          10m
+</code></pre>
+
+<p>最終行のジョブ &lsquo;hello-1856276298-y2o65&rsquo; の内容を確認します。</p>
+
+<pre><code>$ kubectl logs hello-1856276298-y2o65
+Thu Oct 27 01:18:11 UTC 2016
+Hello from the Kubernetes cluster
+</code></pre>
+
+<p>sj.yaml 内に記述したジョブ内容 &lsquo;echo &hellip;&rsquo; の実行結果が表示されていることが確認できます。</p>
+
+<p>docker のイメージも確認します。ジョブ内で指定した image: busybox が確認できます。
+その他のイメージは minikube を構成するものです。</p>
+
+<pre><code>$ docker images
+REPOSITORY                                            TAG                 IMAGE ID            CREATED             SIZE
+busybox                                               latest              e02e811dd08f        2 weeks ago         1.093 MB
+gcr.io/google_containers/kubernetes-dashboard-amd64   v1.4.0              436faaeba2e2        5 weeks ago         86.27 MB
+gcr.io/google-containers/kube-addon-manager           v5.1                735ce4344f7f        3 months ago        255.8 MB
+gcr.io/google_containers/pause-amd64                  3.0                 99e59f495ffa        5 months ago        746.9 kB
+</code></pre>
+
+<h2 id="ジョブの削除">ジョブの削除</h2>
+
+<p>ジョブを削除します。削除する対象は scheduledjob とそれを元に生成・実行された jobs です。</p>
+
+<pre><code>$ kubectl delete scheduledjob hello
+$ kubectl delete jobs $(kubectl get jobs | awk '{print $1}' | grep -v NAME)
+job &quot;hello-1476429627&quot; deleted
+job &quot;hello-1552385854&quot; deleted
+job &quot;hello-1552516926&quot; deleted
+job &quot;hello-1628211009&quot; deleted
+job &quot;hello-1628342081&quot; deleted
+job &quot;hello-1628473153&quot; deleted
+job &quot;hello-1628604225&quot; deleted
+job &quot;hello-1704167236&quot; deleted
+job &quot;hello-1704298308&quot; deleted
+job &quot;hello-1704429380&quot; deleted
+job &quot;hello-1780254535&quot; deleted
+job &quot;hello-1780385607&quot; deleted
+job &quot;hello-1780451143&quot; deleted
+job &quot;hello-1856276298&quot; deleted
+</code></pre>
+
+<p>ここで確認できたのは scheduledjob を削除するとそれ以降の jobs は新規実行されませんでした。が、実行された後の jobs は情報として残ったままでした。</p>
+
+<h2 id="その他のオプション">その他のオプション</h2>
+
+<h4 id="concurrencypolicy">concurrencyPolicy</h4>
+
+<p>下記のように spec.concurrencyPolicy オプションが指定できます。下記のような value を渡すと実行されるジョブの動作を変えることが可能です。</p>
+
+<ul>
+<li>Allow (Default) : 重複するジョブ実行を許可</li>
+<li>Forbid : 直前のジョブが終了していない場合ジョブ実行をスキップする</li>
+<li>Replace : 直前のジョブが終了していない場合新しいジョブを上書きする</li>
+</ul>
+
+<h4 id="suspend">suspend</h4>
+
+<p>&lsquo;spec.suspend: true&rsquo; に設定すると ScheduledJob は生成されますが次回実行時のジョブがサスペンドされ実行されません。デフォルトは false です。</p>
+
+<pre><code>$ kubectl get scheduledjob
+NAME      SCHEDULE      SUSPEND   ACTIVE    LAST-SCHEDULE
+hello     0/1 * * * ?   True      0         &lt;none&gt;
+$ kubectl get job
+$
+</code></pre>
+
+<h4 id="オプションの適用例ファイル">オプションの適用例ファイル</h4>
+
+<pre><code>apiVersion: batch/v2alpha1
+kind: ScheduledJob
+metadata:
+  name: hello
+spec:
+  schedule: 0/1 * * * ?
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: busybox
+            args:
+            - /bin/sh
+            - -c
+            - date; echo Hello from the Kubernetes cluster
+          restartPolicy: OnFailure
+  concurrencyPolicy: Forbid
+  suspend: true
+</code></pre>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>今回試してみて、バッチ的な処理を kubernetes で行うならこの scheduledJob しかないな、と思いました。
+ですが、2016/11 現在ではまだ Alpha バージョンということで下記のようなリスクを含んでいます。</p>
+
+<ul>
+<li>このバージョンはバギーです</li>
+<li>アナウンス無しに機能が削られることがあります</li>
+<li>アナウンス無しにそれまでの互換性を変更することがあります</li>
+<li>テスト用としての利用を勧めます。</li>
+</ul>
+
+<p>参考サイト : <a href="http://kubernetes.io/docs/api/">http://kubernetes.io/docs/api/</a></p>
+
+<p>また上記にも記しましたが、ジョブの結果が残っていくため、通常使う cron のように数分間隔で実行しているとあっという間に job の量が大量に肥大化することが予想されます。この job には実行結果も含まれているため、消されるものではないのは理解できるのですが kubernetes api が持っている DB 上に大量のデータが生成され続けてしまうため、kubernetes api/サーバを管理している場合には問題になると思います。この辺り、仕様の修正が入ることを期待しています。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+    
+
+    
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -612,234 +911,6 @@ time            Idle            System          User            cpu
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h2>
-        
-        
-            <p>test-kitchen with ansible, docker</p>
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2016-07-14'>
-            July 14, 2016</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>私もインフラのプロビジョニングツールとして Chef ではなく Ansible を使うことが増えたのですが、Chef を使っていた頃に同じく利用していた test-kitchen が便利だったので ansible と併用できないかと思い試してみました。test-kitchen は Docker コンテナや EC2 等を起動して Chef, Ansible 等で構成をデプロイし serverspec 等のテストツールで構成をテストできるソフトウェアです。AWS EC2 でデプロイしてもいいのですが、EC2 を起動してデプロイして失敗したら削除してのサイクルを回すことを考えるとだいぶ面倒なので Docker + test-kitchen を使ってこのサイクルを高速に回す方がメリットが大きそうです。今回は Docker + test-kitchen を使って Ansible Role (Playbook) を開発するサイクルを高速化する方法を記したいと思います。</p>
-
-<h2 id="ソフトウェアの構成">ソフトウェアの構成</h2>
-
-<p>構成は、私の場合 Mac OSX を使っているので下記のとおりです。</p>
-
-<ul>
-<li>test-kitchen</li>
-<li>kitchen-ansible (test-kitchen ドライバ)</li>
-<li>kitchen-docker (test-kitchen ドライバ)</li>
-<li>serverspec</li>
-<li>ansible</li>
-<li>docker (Docker-machine)</li>
-<li>VirtualBox</li>
-</ul>
-
-<p>Linux でネイティブな Docker を使っている方は以降、読み替えて下さい。読み替えるのはそれほど難しくないと思います。</p>
-
-<h2 id="ソフトウェアのインストール">ソフトウェアのインストール</h2>
-
-<p>今回は上記ソフトウェアのインストール方法は省きます。test-kitchen, kitchen-ansible, kitchen-docker, serverspec は Ruby で開発されたソフトウェアなので Gemfile 等で管理、ansible は pip 等でインストールしてください。</p>
-
-<h2 id="環境作成">環境作成</h2>
-
-<p>test-kitchen が稼働するように環境を作っていきます。
-作業ディレクトリで kitchen コマンドを使って初期設定を行います。今回は試しに nginx のデプロイを実施したいと思います。</p>
-
-<pre><code>$ mkdir -p test-kitchen/nginx test-kitchen/roles
-$ cd test-kitchen/nginx
-$ kitchen init
-</code></pre>
-
-<p>また上記で作成した roles ディレクトリに ansible-galaxy で nginx の role を取得します。</p>
-
-<pre><code>$ ansible-galaxy install geerlingguy.nginx -p ../roles/nginx
-</code></pre>
-
-<p>下記の内容を .kitchen.local.yml として保存してください。
-Docker ホストの指定、Provisioner として ansible の指定、Platform として &lsquo;ubuntu:16.04&rsquo; の Docker コンテナの指定を行っています。</p>
-
-<pre><code>---
-driver:
-  name: docker
-  binary: /usr/local/bin/docker
-  socker: tcp://192.168.99.100:2376
-
-provisioner:
-  name: ansible_playbook
-  playbook: ./site.yml
-  roles_path: ../roles
-  host_vars_path: ./host_vars
-  hosts: kitchen-deploy
-  require_ansible_omnibus: false
-  ansible_platform: ubuntu
-  require_chef_for_busser: true
-
-platforms:
-    - name: ubuntu
-      driver_config:
-        image: ubuntu:16.04
-        platform: ubuntu
-        require_chef_omnibus: false
-
-suites:
-  - name: default
-    run_list:
-    attributes:
-</code></pre>
-
-<p>ここからは上記 .kitchen.local.yml ファイル内で指定したファイルの準備を行っていきます。</p>
-
-<p>site.yml ファイルの内容を下記のように書いてください。</p>
-
-<pre><code>---
-- hosts: kitchen-deploy
-  sudo: yes
-  roles:
-    - { role: geerlingguy.nginx, tags: nginx }
-</code></pre>
-
-<p>host_vars/hosts ファイルを作成します。&rsquo;host_vars&rsquo; ディレクトリは手動で作成してください。</p>
-
-<pre><code>localhost              ansible_connection=local
-[kitchen-deploy]
-localhost
-</code></pre>
-
-<p>次に serverspec で行うテストの内容を作成します。
-serverspec-init コマンドではインタラクティブに回答しますが、SSH ではなく EXEC(Local) を選択することに注意してください。</p>
-
-<pre><code>$ mkdir -p test/integration/default/serverspec
-$ cd test/integration/default/serverspec
-$ serverspec-init             # &lt;--- インタラクティブに回答 : 1) UNIX, 2) EXEC(Local) を選択
-$ rm localhost/sample_spec.rb # &lt;--- 必要ないので削除
-</code></pre>
-
-<p>test/integration/default/serverspec/localhost/nginx_spec.rb として下記の内容を試しに書いてみましょう。</p>
-
-<pre><code>require 'spec_helper'
-
-describe package('nginx') do
-    it { should be_installed }
-end
-
-describe service('nginx') do
-    it { should be_enabled }
-    it { should be_running }
-end
-
-describe file('/etc/nginx/nginx.conf') do
-    it { should be_file }
-end
-</code></pre>
-
-<p>下記のようなファイルとディレクトリ構成になっていることを確認しましょう。</p>
-
-<pre><code>.
-├── nginx
-│   ├── chefignore
-│   ├── host_vars
-│   │   └── hosts
-│   ├── site.yml
-│   └── test
-│       └── integration
-│           └── default
-│               ├── Rakefile
-│               └── serverspec
-│                   ├── localhost
-│                   │   └── nginx_spec.rb
-│                   └── spec_helper.rb
-└── roles
-    └── geerlingguy.nginx
-        ├── README.md
-        &lt;省略&gt;
-</code></pre>
-
-<h2 id="デプロイ-テストを実行する">デプロイ・テストを実行する</h2>
-
-<p>環境作成が完了したの Docker コンテナを起動し Ansible でデプロイ、その後 Serverspec でテストしてみます。</p>
-
-<pre><code>$ cd test-kitchen
-$ kitchen create  # &lt;--- Docker コンテナ起動
-$ kitchen setup   # &lt;--- Ansible デプロイ
-$ kitchen verify  # &lt;--- Serverspec テスト
-$ kitchen destroy # &lt;--- コンテナ削除
-$ kitchen test    # &lt;--- 上の4つのコマンドを一気に実行
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>Ansible でも test-kitchen を使ってデプロイ・テストが出来ることが分かりました。インスタンスを使ってデプロイ・テストを実施するよりコンテナを使うほうが失敗した際に削除・起動するのも一瞬で終わりますし Ansible 開発が高速化できることも実際に触っていただいてわかっていただけると思います。</p>
-
-<p>ただ上記の手順ではコンテナの中に Ruby, Chef も一緒にインストールされてしまいます。
-test-kitchen 的には下記の記述を .kitchen.local.yml の provisioner: の欄に記述すると Chef のインストールは省けるはず (Ruby は Serverspec で用いる) のですが今現在 (2016/7中旬) では NG でした。これが正常に機能するようになるともっと高速にコンテナデプロイが完了すると思うので残念です。</p>
-
-<pre><code>require_chef_for_busser: false
-require_ruby_for_busser: true
-</code></pre>
-</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -956,6 +1027,20 @@ require_ruby_for_busser: true
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
@@ -995,20 +1080,6 @@ require_ruby_for_busser: true
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1043,7 +1114,7 @@ require_ruby_for_busser: true
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">106</span>
+                                <span style="float:right;">107</span>
                             </header>
                         </article>
                     </li>

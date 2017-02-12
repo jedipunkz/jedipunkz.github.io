@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2016-11-20T11:27:00&#43;09:00"/>
+<meta property="og:updated_time" content="2016-11-27T21:00:45&#43;09:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,301 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h2>
+        
+        
+            <p>coreos が最近アナウンスした etcd operator を触ってみた</p>
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2016-11-27'>
+            November 27, 2016</time>
+        <span class="author">jedipunkz</span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは @jedipunkz です。</p>
+
+<p>今日は某アドベントカレンダーに参加していて記事を書いています。
+記事だけ先出ししちゃいます..。</p>
+
+<p>今日は最近 coreos がリリースした &lsquo;etcd-operator&rsquo; を触ってみようかと思います。ほぼ、README に書かれている手順通りに実施するのですが、所感を交えながら作業して記事にしてみたいと思います。</p>
+
+<p>coreos が提供している etcd についてご存知ない方もいらっしゃると思いますが etcd は KVS ストレージでありながら Configuration Management Store として利用できる分散型ストレージです。Docker 等の環境を提供する coreos という軽量 OS 内でも etcd が起動していてクラスタで管理された情報をクラスタ内の各 OS が読み書きできる、といった機能を etcd が提供しています。
+詳細については公式サイトを御覧ください。</p>
+
+<p>etcd 公式サイト : <a href="https://coreos.com/etcd/docs/latest/">https://coreos.com/etcd/docs/latest/</a></p>
+
+<p>etcd-operator はこの etcd クラスタを kubernetes 上でクラスタ管理するための簡単に運用管理するためのソフトウェアになります。</p>
+
+<p>etcd-operator 公式アナウンス : <a href="https://coreos.com/blog/introducing-the-etcd-operator.html">https://coreos.com/blog/introducing-the-etcd-operator.html</a></p>
+
+<p>後に実際に触れていきますが下記のような管理が可能になります。</p>
+
+<ul>
+<li>etcd クラスタの構築</li>
+<li>etcd クラスタのスケールアップ・ダウン</li>
+<li>etcd Pod の障害時自動復旧</li>
+<li>etcd イメージをオンラインで最新のモノにアップグレード</li>
+</ul>
+
+<p>では早速利用してみたいと思います。</p>
+
+<h2 id="必要な環境">必要な環境</h2>
+
+<p>下記の環境が事前に用意されている必要があります。</p>
+
+<ul>
+<li>Docker</li>
+<li>Kubernetes or minikube+kubernetes (<a href="https://github.com/kubernetes/minikube">https://github.com/kubernetes/minikube</a>)</li>
+<li>etcdctl : <a href="https://github.com/coreos/etcd/tree/master/etcdctl">https://github.com/coreos/etcd/tree/master/etcdctl</a></li>
+</ul>
+
+<h2 id="作業準備">作業準備</h2>
+
+<p>下記のレポジトリをクローンします。</p>
+
+<pre><code>$ git clone https://github.com/coreos/etcd-operator.git
+</code></pre>
+
+<h2 id="operator-のデプロイ">Operator のデプロイ</h2>
+
+<p>下記のような内容のファイルが記さているファイルを利用します。中身を確認しましょう。</p>
+
+<pre><code>$ cat  example/deployment.yaml
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: etcd-operator
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: etcd-operator
+    spec:
+      containers:
+      - name: etcd-operator
+        image: quay.io/coreos/etcd-operator
+        env:
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+</code></pre>
+
+<p>kind: Deployment で etcd-operator のイメージを使ってレプリカ数1のポッドを起動しているのが分かると思います。実際にデプロイします。</p>
+
+<pre><code>$ kubectl create -f example/deployment.yaml
+</code></pre>
+
+<p>どんなポッドが起動したか確認します。</p>
+
+<pre><code>kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-operator-217127005-futo0            1/1       Running   0          1m
+</code></pre>
+
+<p>あと、これは自分も知りませんでしたがサードパーティリソースという枠があるらしく下記のように確認することができます。</p>
+
+<pre><code>kubectl get thirdpartyresources
+NAME                      DESCRIPTION             VERSION(S)
+etcd-cluster.coreos.com   Managed etcd clusters   v1
+</code></pre>
+
+<p>replica数1 ですが、ポッドなのでポッド内のプロセスに問題があれば kubernetes が自動で修復 (場合によってポッドの再構築) されます。また replica 数を増やす運用も考えられそうです。</p>
+
+<h2 id="etcd-クラスタの構築">etcd クラスタの構築</h2>
+
+<p>下記の内容のファイルで etcd をデプロイします。中身を確認しましょう。
+API は coreos.com/v1 で kind: EtcdCluster という情報が記されています。また version でイメージバージョンが記されているのかなということが後に確認できます。また size でレプリカ数が記されているようです。</p>
+
+<pre><code>$ cat example/example-etcd-cluster.yaml
+apiVersion: &quot;coreos.com/v1&quot;
+kind: &quot;EtcdCluster&quot;
+metadata:
+  name: &quot;etcd-cluster&quot;
+spec:
+  size: 3
+  version: &quot;v3.1.0-alpha.1&quot;
+</code></pre>
+
+<p>デプロイをしてみます。</p>
+
+<pre><code>$ kubectl create -f example/example-etcd-cluster.yaml
+</code></pre>
+
+<p>クラスタがデプロイされたか見てみます。3つのポッドが確認できます。やはりファイル中 size: 3 はレプリカ数だったようです。</p>
+
+<pre><code>$ kubectl get pods --show-all
+NAME                                     READY     STATUS      RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running     0          1m
+etcd-cluster-0001                        1/1       Running     0          36s
+etcd-cluster-0002                        1/1       Running     0          21s
+</code></pre>
+
+<p>同様に Service について確認します。etcd-cluster-000[012] の3つが今回作った etcd クラスタです。</p>
+
+<pre><code>$ kubectl get svc
+NAME                    CLUSTER-IP   EXTERNAL-IP   PORT(S)             AGE
+etcd-cluster            10.0.0.80    &lt;none&gt;        2379/TCP            1m
+etcd-cluster-0000       10.0.0.13    &lt;none&gt;        2380/TCP,2379/TCP   1m
+etcd-cluster-0001       10.0.0.111   &lt;none&gt;        2380/TCP,2379/TCP   1m
+etcd-cluster-0002       10.0.0.183   &lt;none&gt;        2380/TCP,2379/TCP   50s
+kubernetes              10.0.0.1     &lt;none&gt;        443/TCP             5d
+</code></pre>
+
+<h2 id="etcd-クラスタをスケールアウト">etcd クラスタをスケールアウト</h2>
+
+<p>では etcd クラスタのレプリカ数を増やすことでスケールアウトしてみます。が、今現在 (<sup>2016</sup>&frasl;<sub>12</sub>) 時点では一部不具合があるらしく回避策として下記の通り curl を用いてスケールアウトすることが可能なようです。</p>
+
+<p>下記の内容で body.json ファイルを用意します。size: 5 になっていることが確認できて、レプリカ数5になるのだなと判断できます。</p>
+
+<pre><code>$ cat body.json
+{
+  &quot;apiVersion&quot;: &quot;coreos.com/v1&quot;,
+  &quot;kind&quot;: &quot;EtcdCluster&quot;,
+  &quot;metadata&quot;: {
+    &quot;name&quot;: &quot;etcd-cluster&quot;,
+    &quot;namespace&quot;: &quot;default&quot;
+  },
+  &quot;spec&quot;: {
+    &quot;size&quot;: 5
+  }
+}
+</code></pre>
+
+<p>ここで curl で実行するためプロキシを稼働します。</p>
+
+<pre><code>$ kubectl proxy --port=8080
+</code></pre>
+
+<p>curl で先程作った body.json を PUT してみます。</p>
+
+<pre><code>curl -H 'Content-Type: application/json' -X PUT --data @body.json http://127.0.0.1:8080/apis/coreos.com/v1/namespaces/default/etcdclusters/etcd-cluster
+</code></pre>
+
+<p>クラスタがスケールアウトされたか確認しましょう。</p>
+
+<pre><code>kubectl get pods --show-all
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          5m
+etcd-cluster-0001                        1/1       Running   0          4m
+etcd-cluster-0002                        1/1       Running   0          4m
+etcd-cluster-0003                        1/1       Running   0          32s
+etcd-cluster-0004                        1/1       Running   0          17s
+etcd-operator-217127005-futo0            1/1       Running   0          9m
+</code></pre>
+
+<p>5台構成のクラスタにスケールアウトしたことが確認できます。</p>
+
+<h2 id="etcd-にアクセス">etcd にアクセス</h2>
+
+<p>5台構成の etcd クラスタがデプロイできたので etcd に etcdctl を使ってアクセスしてみましょう。事前に etcdctl をインストールする必要があります。また私の環境もそうだったのですがローカルの Mac に minikube を使って kubernetes 環境を構築しているので下記のように nodePort を作るため作業が必要です。</p>
+
+<pre><code>$ kubectl create -f example/example-etcd-cluster-nodeport-service.json
+$ export ETCDCTL_API=3
+$ export ETCDCTL_ENDPOINTS=$(minikube service etcd-cluster-client-service --url)
+$ etcdctl put foo bar
+$ etcdctl get foo
+foo
+bar
+</code></pre>
+
+<p>etcdctl でキー・値を入力・読み込みが可能であることが分かりました！</p>
+
+<h2 id="ポッドの自動復旧">ポッドの自動復旧</h2>
+
+<p>kubernetes を普段使っている方は分かると思うのですがポッドを落としても kubernetes が自動復旧してくれます。ここで一つポッドを削除してみようと思います。</p>
+
+<pre><code>$kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          11m
+etcd-cluster-0001                        1/1       Running   0          11m
+etcd-cluster-0002                        1/1       Running   0          11m
+etcd-cluster-0003                        1/1       Running   0          6m
+etcd-cluster-0004                        1/1       Running   0          6m
+etcd-operator-217127005-futo0            1/1       Running   0          16m
+
+$kubect delete pod etcd-cluster-0004
+</code></pre>
+
+<p>しばらくすると下記の通り etcd-cluster-0004 に代わり etcd-cluster-0005 が稼働していることが確認できると思います。</p>
+
+<pre><code>$ kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          12m
+etcd-cluster-0001                        1/1       Running   0          12m
+etcd-cluster-0002                        1/1       Running   0          11m
+etcd-cluster-0003                        1/1       Running   0          7m
+etcd-cluster-0005                        1/1       Running   0          3s
+etcd-operator-217127005-futo0            1/1       Running   0          17m
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>kubernetes の上で構成することでうまく kubernetes のメリットを活かしつつ etcd クラスタを構成できていると言えると思います。記事執筆時ではまだ不具合が幾つかありました (上記の curl で実施した箇所や、イメージのアップグレード) が、etcd を手動で構築するより kubernetes で構成するほうがメリットが多いことは明らかです。また kubernetes のポッドから kubernetes dns を介してサービスネームに直接アクセスできるのでポッドから etcd に情報を読み書きすることも容易になりそうです。</p>
+
+<p>ですが etcd に収めるデータの性質によっては運用面で厳しくなることも想定できます。coreos 内で etcd クラスタを介して互いのコンテナ間でコンフィグを共有し合う使い方は非常に意味があると思うのですが、coreos 外の独自のソフトウェアがいろんな種別のデータを etcd クラスタに外から入出力することの意味はそれほど無いように思えます。であれば高耐久性で運用のし易い軽量な KVS ソフトウェアを使うべきだからです。</p>
+
+<p>また今回紹介した etcd-operator とは別に coreos が同時にアナウンスした(<a href="https://coreos.com/blog/the-prometheus-operator.html">https://coreos.com/blog/the-prometheus-operator.html</a>) に関しても興味を持っているので後に触ってみたいと思います。</p>
+
+<p>何と言うか所感として最後に述べるとサーバレスが叫ばれている中でわざわざクラスタソフトウェアを自前で管理するのか？と疑問も確かに残ります。それこそクラウドプラットフォームが提供すべき機能だと思うからです..。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -629,238 +924,6 @@ aba3a8c040d4        gcr.io/google_containers/pause-amd64:3.0               &quot
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2016-07-23'>
-            July 23, 2016</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>今日は Go 言語でサーバのメトリクスデータを InfluxDB に入れてリソース監視を行う方法について書きます。</p>
-
-<p>Ansible, Terraform, Chef などのソフトウェアを使ってインフラを定義するのが当たり前になった現在ですが、本当の意味でのソフトウェアによるインフラの定義ってなんだろと最近考えています。aws-sdk や fog などを使ったネイティブな言語でインフラを定義することの意味もあるように感じているからです。某サービスプロバイダのエンジニアはこうした言語によるインフラの定義の一番大きなメリットとして &ldquo;再利用性&rdquo; をあげていました。こうしたソフトウェアによるインフラの定義や構成を行う上で監視についてもコード化できるのでは？と考えて今回の記事に至りました。</p>
-
-<h2 id="使うモノ">使うモノ</h2>
-
-<ul>
-<li><a href="https://github.com/influxdata/influxdb/tree/master/client">https://github.com/influxdata/influxdb/tree/master/client</a></li>
-</ul>
-
-<p>公式の InfluxDB Go Client です。InfluxDB 自体が Go 言語で書かれていますがクライアントも Go 言語で記述することができます。ここにあるサンプルコードをすこしいじって、今回の記事を書こうと思います。</p>
-
-<ul>
-<li><a href="https://github.com/shirou/gopsutil">https://github.com/shirou/gopsutil</a></li>
-</ul>
-
-<p>@shirou さんが作られた psutil の Go 言語版です。CPU, Mem などリソースをモニタするのに便利なので利用します。</p>
-
-<h2 id="環境構築">環境構築</h2>
-
-<p>環境を作っていきます。InfluxDB と Chronograf を構築するのですが Docker で構築するのが簡単なのでこれを利用します。Chronograf は InfluxDB 内のデータを可視化するためのソフトウェアです。</p>
-
-<ul>
-<li>InfluxDB の起動</li>
-</ul>
-
-<p>InfluxDB のコンテナを起動します。</p>
-
-<pre><code>docker run -p 8083:8083 -p 8086:8086 \
-      -v $PWD:/var/lib/influxdb \
-      influxdb
-</code></pre>
-
-<ul>
-<li>Chronograf の起動</li>
-</ul>
-
-<p>Chronograf のコンテナを起動します。</p>
-
-<pre><code>docker run -p 10000:10000 chronograf
-</code></pre>
-
-<p>この時点で http://${DOCKER_HOST}:10000/ にアクセスすると Chronograf の UI を確認できます。</p>
-
-<h2 id="influxdb-にユーザ-データベースを作成する">InfluxDB にユーザ・データベースを作成する</h2>
-
-<p>InfluxDB 上にユーザとデータベースを作成します。言語の中でも作ることが出来ますが、今回は手動で。
-Mac OSX を使っている場合 homebrew で influxdb をインストールすることが簡単にできます。</p>
-
-<pre><code>brew install influxdb
-</code></pre>
-
-<p>ユーザを作ります。</p>
-
-<pre><code>influx -host 192.168.99.100 -port 8086
-&gt; create user foo with password 'foo'
-&gt; grant all privileges to foo
-</code></pre>
-
-<p>データベースを作ります。</p>
-
-<pre><code>influx -host 192.168.99.100 -port 8086
-&gt; CREATE DATABASE IF NOT EXISTS square_holes;
-</code></pre>
-
-<h2 id="go言語で-cpu-時間を取得し-influxdb-にメトリクスデータを挿入">Go言語で CPU 時間を取得し InfluxDB にメトリクスデータを挿入</h2>
-
-<p>Go 言語でメモリー使用率を取得し得られたメトリクスデータを InfluxDB に挿入するコードを書きます。</p>
-
-<pre><code class="language-golang">package main
-
-import (
-    &quot;log&quot;
-    &quot;time&quot;
-
-    &quot;github.com/influxdata/influxdb/client/v2&quot;
-    &quot;github.com/shirou/gopsutil/cpu&quot;
-)
-
-const (
-    MyDB = &quot;square_holes&quot;
-    username = &quot;foo&quot;
-    password = &quot;foo&quot;
-)
-
-func main() {
-    for {
-        // Make client
-        c, err := client.NewHTTPClient(client.HTTPConfig{
-            Addr: &quot;http://192.168.99.100:8086&quot;,
-            Username: username,
-            Password: password,
-        })
-    
-        if err != nil {
-            log.Fatalln(&quot;Error: &quot;, err)
-        }
-    
-        // Create a new point batch
-        bp, err := client.NewBatchPoints(client.BatchPointsConfig{
-            Database:  MyDB,
-            Precision: &quot;s&quot;,
-        })
-    
-        if err != nil {
-            log.Fatalln(&quot;Error: &quot;, err)
-        }
-    
-        // get CPU info
-        cp, _ := cpu.Times(true)
-
-        // get CPU status info for each core
-        var user, system, idle float64 = 0, 0, 0
-        for _, sub_cpu := range cp {
-            user = user + sub_cpu.User
-            system = system + sub_cpu.System
-            idle = idle + sub_cpu.Idle
-        }
-    
-        // Create a point and add to batch
-        tags := map[string]string{&quot;cpu&quot;: &quot;cpu&quot;}
-        fields := map[string]interface{}{
-            &quot;User&quot;:     user / float64(len(cp)),
-            &quot;System&quot;:   system / float64(len(cp)),
-            &quot;Idle&quot;:     idle / float64(len(cp)),
-        }
-        pt, err := client.NewPoint(&quot;cpu&quot;, tags, fields, time.Now())
-    
-        if err != nil {
-            log.Fatalln(&quot;Error: &quot;, err)
-        }
-    
-        bp.AddPoint(pt)
-    
-        // Write the batch
-        c.Write(bp)
-        time.Sleep(1 * time.Second)
-    }
-}
-</code></pre>
-
-<p>ビルドして実行すると下記のように influxdb 上のデータベースにメトリクスデータが挿入されていることを確認できます。</p>
-
-<pre><code>influx -host 192.168.99.100 -port 8086 -execute 'SELECT * FROM cpu' -database=square_holes -precision=s | head -8
-name: cpu
----------
-time            Idle            System          User            cpu
-1469342272      20831.04296875  3700.185546875  3544.90234375   cpu
-1469342273      20831.666015625 3700.302734375  3544.966796875  cpu
-1469342274      20832.2109375   3700.447265625  3545.068359375  cpu
-1469342275      20832.828125    3700.546875     3545.13671875   cpu
-1469342291      20841.728515625 3702.482421875  3546.806640625  cpu
-</code></pre>
-
-<p>Chronograf の UI で確認してみましょう。</p>
-
-<p><img src="http://jedipunkz.github.io/pix/influx-go.png" width="80%"></p>
-
-<p>得られた CPU に関するデータが可視化されていることが確認できます。変化に乏しいグラフですが&hellip;。
-この辺りは CPU 時間から CPU 使用率を得るコードに書き換えるといいかもしれません。</p>
-
-<h2 id="まとめと考察">まとめと考察</h2>
-
-<p>InfluxDB の提供元が出している Telegraf というメトリクスデータの送信エージェントがありますが、同じような動きを Go 言語で簡単に開発できることが分かりました。ネイティブな言語で開発するとより柔軟にデータの送信ができることも期待できます。また冒頭に述べた通り再利用も用意になるのではと思います。インフラの状態をメトリクスデータとして時系列 DB に挿入して可視化するということは監視のコード化とも言えると思います。ただし、フレームワークが出てきてもっと簡単に書ける仕組みが出てこないと厳しい気もしますが。果たしてこれらインフラを言語で記述していくことがどれだけ有用なのかまだわかりませんが、いつか現場で実践してみたいと思います。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -977,6 +1040,20 @@ time            Idle            System          User            cpu
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
@@ -1016,20 +1093,6 @@ time            Idle            System          User            cpu
                         </article>
                     </li>
                 
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
 
                 
                     <li>
@@ -1064,7 +1127,7 @@ time            Idle            System          User            cpu
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">106</span>
+                                <span style="float:right;">107</span>
                             </header>
                         </article>
                     </li>
