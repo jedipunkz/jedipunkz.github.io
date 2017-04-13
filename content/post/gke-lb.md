@@ -11,7 +11,7 @@ title = "GCP ロードバランサと GKE クラスタを Terraform を使って
 
 +++
 
-こんにちは @jedipunkz です。
+こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
 少し前まで Google Cloud Platform (GCP) を使っていたのですが、今回はその時に得たノウハウを記事にしようと思います。
 
