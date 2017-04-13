@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2012-04-28T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2012-05-12T00:00:00&#43;00:00"/>
 
 
 
@@ -196,19 +196,19 @@ ga('send', 'pageview');
 
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/"><p>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
             </ul>
@@ -230,7 +230,7 @@ ga('send', 'pageview');
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2012/04/28/vyattarouter/">vyatta で自宅ルータ構築</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2012/05/12/netbsd-first-setup/">NetBSD インストール直後の初期設定まとめ</a></h2>
         
         
     </div>
@@ -240,11 +240,11 @@ ga('send', 'pageview');
         
 
         <time class="published"
-            datetime='2012-04-28'>
-            April 28, 2012</time>
+            datetime='2012-05-12'>
+            May 12, 2012</time>
         <span class="author"></span>
         
-            <p>3 minute read</p>
+            <p>1 minute read</p>
         
         
     </div>
@@ -253,143 +253,110 @@ ga('send', 'pageview');
     
 
     
-    <p>自宅ルータを Vyatta で構築してみたくなり、秋葉原の ark でマシンを調達しました。
-Broadcom の BCM57780 チップが搭載された NIC がマザーボード J&amp;W MINIX™
-H61M-USB3 だったのですが、Vyatta.org によると Broadcom の NIC が Certificated
-Hardware に載っていなくて心配でした。まぁ定評のある NIC メーカだから動くだろう
-と楽観視していたのですけど、案の定動きました。vyatta.org の Certificated
-Hardware にコミットしたら &ldquo;user tested&rdquo; として掲載してもらえました。</p>
+    <p>普段は Mac, Linux がメインなのですが、NetBSD もたまにデスクトップ機として利用
+するので、初期設定手順をまとめ。</p>
 
-<p><a href="http://www.vyatta.org/hardware/interfaces">http://www.vyatta.org/hardware/interfaces</a></p>
+<h2 id="console-設定-キーリマップ">Console 設定, キーリマップ</h2>
 
-<p>こんな感じに見えています。</p>
+<p>Caps と Ctrl キーを入れ替えます。お約束。</p>
 
-<pre><code># dmesg | grep Broadcom
-[    3.284646] tg3 0000:03:00.0: eth0: attached PHY driver [Broadcom BCM57780](mii_bus:phy_addr=300:01)
-[    3.524122] tg3 0000:05:00.0: eth1: attached PHY driver [Broadcom BCM57780](mii_bus:phy_addr=500:01)
+<pre><code># wsconsctl -w encoding=us.swapctrlcaps
+# vi /etc/wscons.conf # 同様の設定を入れる
 </code></pre>
 
-<p>今回は、基本的な設定 (PPPoE, NAT, DHCP) 周りを記していきます。</p>
+<p>キーリピートを速くします。標準では遅すぎる。値は好みで。</p>
 
-<p>環境は&hellip;</p>
-
-<pre><code>+--------+
-|  Modem |
-+--------+
-|
-| pppoe0
-+--eth0--+
-| vyatta |
-+--eth1--+
-|           192.168.1.0/24
-+----------+
-|          |192.168.1.10
-+--------+ +--------+
-|  CPE   | |  DNS   |
-+--------+ +--------+
+<pre><code># wsconsctl -w repeat.del1=300 # リピートが始まるまでの時間
+# wsconsctl -w repeat.deln=40  # 反復間隔
+# vi /etc/wscons.conf          # 同様の値を入れる
 </code></pre>
 
-<p>として記します。</p>
+<h2 id="pkgsrc-をインストール">pkgsrc をインストール</h2>
 
-<p>まずインストール。<a href="http://www.vyatta.org/downloads">http://www.vyatta.org/downloads</a> から 64bit VC6.3 Live CD iso
-をダウンロードしてきます。(2012/04/28現在最新). インストール対象のマシンに挿入
-して CDROM ブートすると Vyatta が立ち上がるので、ユーザ vyatta, パスワード
-vyatta でログインし</p>
+<p>xx, y は次期に応じて変える。例 :2012Q1</p>
 
-<pre><code># install-system
+<pre><code># cd /usr
+# cvs -q -z3 -d anoncvs@anoncvs.NetBSD.org:/cvsroot checkout -r pkgsrc-20xxQy -P pkgsrc
 </code></pre>
 
-<p>します。インタラクティブに問い合わせられるので答えていってください。インストールが
-終わったらマシンを再起動します。</p>
+<p>最新の状態に更新する場合。リリースタグを利用したいなら不要。</p>
 
-<p>eth1 にプライベート IP アドレスを振ります。IP アドレスは適当に読み替えてくださ
-い。また基本的な設定も行います。</p>
-
-<pre><code># set service ssh port 10022 # firewall 設定するまではこうしたほうが安心です
-# set system host-name ${HOSTNAME}
-# set system time-zone Asia/Tokyo
-# set system name-server 8.8.8.8
-# set interface ethernet eth1 address 192.168.1.254
+<pre><code># cd /usr/pkgsrc
+# cvs update -dP
 </code></pre>
 
-<p>eth0 を PPPoE デバイスとして利用して PPPoE 接続を実際にします。</p>
+<h2 id="grub-のインストール">grub のインストール</h2>
 
-<pre><code># set interface ethernet eth0 pppoe 0
-# set interface ethernet eth0 pppoe 0 user-id ${PPPoE_username}
-# set interface ethernet eth0 pppoe 0 password ${PPPoE_password}
-# set interface ethernet eth0 pppoe 0 name-server auto
-# set interface ethernet eth0 pppoe 0 defaultroute auto
-# set interface ethernet eth0 pppoe 0 local-address XXX.XXX.XXX.XXX # 固定IPがある場合
-# commit
+<p>grub をインストール。デフォルトでも良いのだけど、安心したいから。他の OS とデュ
+アル・トリプルブートに設定することが多いので必要を感じて入れている場合もある。
+もちろん Linux 側からインストールしても OK。</p>
+
+<pre><code># cd /usr/pkgsrc/sysutils/grub
+# make install
+# /usr/pkg/sbin/grub-install '(hd0)'
+# vi /grub/menu.lst # 適当に設定
 </code></pre>
 
-<p>ここまでで vyatta ノードからインターネットに接続出来るようになります。</p>
+<h2 id="x-の設定">X の設定</h2>
 
-<p>次に、ローカルネットワーク上の CPE だったりサーバノードからのインターネット接
-続のために NAT 設定をします。</p>
-
-<pre><code># set service nat rule 1
-# set service nat rule 1 type masquerade
-# set service nat rule 1 source address 192.168.1.0/24
-# set service nat rule 1 outbound-interface pppoe0
-# commit
+<pre><code># X -configure
+# cp /root/Xorg.conf.new /etc/X11/xorg.conf
 </code></pre>
 
-<p>CPE からのインターネットへの接続が出来るようになりました。</p>
+<p>ウィンドウマネージャは普段は twm を利用しているので、何も入れない。</p>
 
-<p>あとは自宅ルータなので DHCP サービスがあったほうが便利だよね、とうことで。</p>
+<p>日本語フォントとして efont を使う。スグレモノフォント。</p>
 
-<pre><code># set service dhcp-server shared-network-name HOME subnet 198.168.1.0/24 start 192.168.1.100 stop 192.168.1.150
-# set service dhcp-server shared-network-name HOME subnet 192.168.1.0/24 default-router 192.168.1.254
-# set service dhcp-server shared-network-name HOME subnet 198.168.1.0/24 dns-server 8.8.8.8
-# set service dhcp-server shared-network-name HOME subnet 198.168.1.0/24 dns-server 8.8.4.4
-# commit
+<pre><code># cd /usr/pkgsrc/fonts/efont-unicode
+# make install
 </code></pre>
 
-<p>ローカルネットワーク上の CPE から DHCP リクエストを出してみてください。IP が取得できると思います。</p>
+<p>xorg.conf に FontPath を通す。</p>
 
-<p>ここまでで基本的な有線自宅ルータとしての構築はほぼ完了ですが、最後にローカルネットワーク上のサーバ
-を DNS サーバとして稼働させるための NAT 設定方法を記しておきます。</p>
-
-<pre><code># set service nat rule 2
-# set service nat rule 2 destination
-# set service nat rule 2 type destination
-# set service nat rule 2 type destination
-# set service nat rule 2 inbound-interface pppoe0
-# set service nat rule 2 protocol udp
-# set service nat rule 2 destination port 53
-# set service nat rule 2 inside-address address 192.168.1.10
-# commit
+<pre><code>FontPath &quot;/usr/pkg/lib/XZ11/fonts/efont&quot;
 </code></pre>
 
-<p>DNS は稀に TCP にフォールバックするので同様に TCP ようの NAT ルールも追記します。</p>
+<h2 id="urxvt-と-zsh">urxvt と zsh</h2>
 
-<pre><code># set service nat rule 3
-# set service nat rule 3 destination
-# set service nat rule 3 type destination
-# set service nat rule 3 type destination
-# set service nat rule 3 inbound-interface pppoe0
-# set service nat rule 3 protocol tcp
-# set service nat rule 3 destination port 53
-# set service nat rule 3 inside-address address 192.168.1.10
+<p>ターミナルエミュレータとして rxvt を利用。Unicode 対応な urxvt をインストール
+する。zsh はマルチバイト対応な zsh-current をインストール。</p>
+
+<pre><code># cd /usr/pkgsrc/shells/zsh-curren
+# make install
+# cd /usr/pkgsrc/x11/rxvt-unicode
+# make install
 </code></pre>
 
-<p>set service nat rule 3 destinationset service nat rule 3 destination    # commit</p>
+<h2 id="日本語入力設定">日本語入力設定</h2>
 
-<p>最後に設定を保存するために&hellip;</p>
+<p>日本語のインプットメソッド uim, anthy をインストール。</p>
 
-<pre><code># save
+<pre><code># cd /usr/pkgsrc/inputmethod/uim
+# make install
 </code></pre>
 
-<p>して終わりです。次回は UPnP な設定方法を書いて行きたいと思います。</p>
+<p>環境変数を設定。.zshrc でも .xinitrc でも可。</p>
 
-<p>ちなみに、私の自宅ルータはこんなモノを使いました。</p>
+<pre><code>export LANG=ja_JP.UTF-8
+export LC_ALL=ja_JP.UTF-8
+export LC_CTYPE=ja_JP.UTF-8
+export XMODIFIERS=@im=uim
+export GTK_IM_MODULE=uim
+exec uim-xim &amp;
+exec uim-toolbar-gtk *
+exec /usr/X11R7/bin/twm
+</code></pre>
 
-<p><img src="http://jedipunkz.github.com/pix/vyatta.jpg" width="200"></p>
+<h2 id="所感">所感</h2>
+
+<p>昔は FreeBSD を使っていたのだけど、Mac, Linux, NetBSD だけになってしまった。
+NetBSD は実装が綺麗なのでスーッと入っていけるので好き。ただ、source からのビル
+ドは時間が掛かるので、git や chef, puppet 等の仕組みを利用してビルドする方法を
+確立したいなぁと最近思ってる。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/04/28/vyattarouter/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2012/05/12/netbsd-first-setup/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -428,7 +395,7 @@ vyatta でログインし</p>
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2012/04/14/ssh-mosh/">Mosh を使う</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2012/05/04/emacs-nav/">Emacs でファイルブラウザ emacs-nav を利用</a></h2>
         
         
     </div>
@@ -438,8 +405,8 @@ vyatta でログインし</p>
         
 
         <time class="published"
-            datetime='2012-04-14'>
-            April 14, 2012</time>
+            datetime='2012-05-04'>
+            May 4, 2012</time>
         <span class="author"></span>
         
             <p>1 minute read</p>
@@ -451,85 +418,40 @@ vyatta でログインし</p>
     
 
     
-    <p>今週/先週？、Hacker News で取り上げられた <a href="http://mosh.mit.edu/">Mosh</a> を自宅
-と会社で使い始めた。SSH 代替なソフトウェアで、SSP (State Synchronization
-Protocol)over UDP で動作している。MIT が開発したそうだ。</p>
+    <p>Hacker News で取り上げられていた emacs-nav を使ってみた。</p>
 
-<p>動作は、クライアントがシーケンス番号と共にデータグラムをサーバに送信し、同期し
-続ける。クライアントがローミングし IP アドレスが代わる等した時、以前より大きい
-シーケンス番号と共に正当なパケットが送信されたとサーバが認識した場合のみ、サー
-バは新しいソース IP アドレスを新たなクライアントだと認識する。もちろん、この場
-合のローミングは NAT 越しの IP 再アサイン時やクライアントのネットワークインター
-フェース切り替えやノート PC を新たな無線アクセスポイント配下へ移動した場合も同
-様に動作する。めちゃ便利やん。Mosh は SSP を2経路持ち、1つはクライアントからサー
-バへユーザの打ったキーの同期を取る。もう一方はサーバからクライアントへで、スク
-リーンの状態をクライアントへ同期を取るためだ。</p>
+<p><a href="http://code.google.com/p/emacs-nav/">http://code.google.com/p/emacs-nav/</a></p>
 
-<p>つまり、ノート PC やその他モバイル機器の IP アドレスが変わったとしても接続性は
-担保され、また ノート PC のスリープ解除後にも接続性は確保され続ける。また、UDP
-で動作しているので、フルスクリーンの vim や emacs 等での再描画の遅延等も起こり
-にくそうだ。あと Ctrl-C 。TCP だと、キータイプがサーバプログラムに伝わらない状
-況はプログラムプロセスが混雑しているとよくあるのだが、SSP over UDP での Ctrl-C
-はそういうことが無いそうだ。</p>
+<p>インストール方法は簡単で</p>
 
-<p>また、認証機構は SSH に任せているので sshd は引き続き稼働させておく必要がある。
-mosh は接続する先のユーザが一般ユーザ権限で動作させるプログラムでしかない。つ
-まり mosh daemon は必要ないようだ。</p>
-
-<p>実際にインストールしてみた。Mac の場合、homebrew で</p>
-
-<pre><code>% brew update
-% brew install mobile-shell
+<pre><code>% wget http://emacs-nav.googlecode.com/files/emacs-nav-20110220a.tar.gz
+% tar zxvf emacs-nav-20110220a.tar.gz
+% mv emacs-nav-20110220a ~/.emacs.d/emacs-nav
 </code></pre>
 
-<p>で完了。私はサーバに Debian と Ubuntu を使っているのだが、Debian の場合は
-testing, unstable でパッケージが容易されている。が、testing のパッケージを使っ
-た所、動作が不安定だった。文字を削除しても一文字消えない等。よって、github か
-ら最新のソースを取得。(unstable のパッケージでもイイかもしれない、私は試してな
-いです。)</p>
+<p>して</p>
 
-<pre><code>% sudo apt-get install protobuf-compiler libprotobuf-dev pkg-config \
-  libboost-dev libncurses5-dev
-% cd gitwork
-% git clone https://github.com/keithw/mosh.git
-% cd mosh
-% ./autogen.sh &amp;&amp; ./configure &amp;&amp; make
-% sudo make install
+<pre><code>;; emacs-nav
+(add-to-list 'load-path &quot;~/.emacs.d/emacs-nav/&quot;)
+(require 'nav)
 </code></pre>
 
-<p>Ubuntu の場合は、</p>
+<p>するだけ。</p>
 
-<pre><code>% sudo apt-get install python-software-properties
-% sudo add-apt-repository ppa:keithw/mosh
-% sudo apt-get update
-% sudo apt-get install mosh
-</code></pre>
+<p>見た目はこんな感じ。</p>
 
-<p>だ。その他の destribution, OS の場合は下記のリンクを参照してみてください。</p>
+<p><img src="http://jedipunkz.github.com/pix/emacs-nav.png"></p>
 
-<p><a href="http://mosh.mit.edu/#getting">http://mosh.mit.edu/#getting</a></p>
+<p>起動は M-x nav と入力。ウィンドウの左にファイルブラウザが開いてファイルを選択
+出来る。これだけだと、使うメリットを感じないが、面白いのがマウスで選択出来ると
+ころ。TextMate のブラウザのような感じだ。</p>
 
-<p>次にクライアント &lt;-&gt; サーバ間の経路が変わっても接続したままになるのか、テスト
-してみた。</p>
-
-<p>MacBook wireless nic &lt;-&gt; server を MacBook ethernet nic &lt;-&gt; server に接続しな
-おしてみた。また、その接続しなおしのタイミングの間、</p>
-
-<pre><code>% while(true) do echo &quot;is mosh alive ?&quot; ;sleep 3; done
-</code></pre>
-
-<p>とシェル上で実行し続けた。結果、サーバに再接続され、また上のシェルプロセスも継
-続され続けた！これには驚いた。</p>
-
-<p>ということで、使い始めて1週間だが今のところ快適。</p>
-
-<p>会社の方に protobuf は Google が自社ネットワーク内のトラフィック軽減のために開
-発したものだ、と言っていた。こんなところでも Google の技術力がすんごいことに改
-めて気がついたよ。</p>
+<p>今だと anything.el が便利すぎて、こちらを利用する価値を見出せるか分からないけ
+ど、暫く使ってみようと思う。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/04/14/ssh-mosh/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2012/05/04/emacs-nav/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -547,7 +469,7 @@ testing, unstable でパッケージが容易されている。が、testing の
                     
 
                     
-                        Categories
+                        Category
                     
                 
             </li>
@@ -555,8 +477,6 @@ testing, unstable でパッケージが容易されている。が、testing の
     
 
     
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
     
         <li><a href='/categoriestools'>tools</a></li>
     
@@ -570,7 +490,7 @@ testing, unstable でパッケージが容易されている。が、testing の
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2012/04/07/debian-sid-on-thinkpad-first-setup/">debian sid on thinkpad</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2012/05/04/vyatta-wireless-ap/">Vyatta で無線アクセスポイント</a></h2>
         
         
     </div>
@@ -580,8 +500,8 @@ testing, unstable でパッケージが容易されている。が、testing の
         
 
         <time class="published"
-            datetime='2012-04-07'>
-            April 7, 2012</time>
+            datetime='2012-05-04'>
+            May 4, 2012</time>
         <span class="author"></span>
         
             <p>2 minute read</p>
@@ -593,137 +513,74 @@ testing, unstable でパッケージが容易されている。が、testing の
     
 
     
-    <p>ノート PC を購入するといつも Debian Gnu/Linux sid をインストールするのだけれど
-も、X Window System や InputMethod をインストールして利用し始められるところま
-での手順っていつも忘れる。メモとしてブログに載せておきます。</p>
+    <p>自宅ルータを Vyatta で運用開始したのだけど、無線ルータ化ができたのでメモしておき
+ます。</p>
 
-<h2 id="console-上での-ctrl-caps-swap-設定">console 上での ctrl:caps swap 設定</h2>
+<p>まずはアクセスポイントとして稼働する無線カードの選定。下記の URL に Linux 系で
+動作する無線カードチップ名の一覧が載っている。Vyatta は Linux 系ドライバを利用
+しているので、この一覧が有効なはずだ。</p>
 
-<p>取りあえずこの設定をしないと、何も操作出来ない。Caps Lock と Control キーを入
-れ替える設定です。</p>
+<p><a href="http://linuxwireless.org/en/users/Drivers">http://linuxwireless.org/en/users/Drivers</a></p>
 
-<p>/etc/default/keyboard を下記のように修正</p>
+<p>Intel 系も結構アクセスポイントとしては動作しないことが判ったので Atheros の
+AR9k のカードを購入した。私が買ったのはAR9280 チップの mini PCI-E 無線カード。</p>
 
-<pre><code>XKBOPTIONS=&quot;ctrl:swapcaps&quot;
+<p>早速装着してみると、認識した！</p>
+
+<pre><code>% dmesg | grep ath
+[   11.528390] ath9k 0000:01:00.0: PCI INT A -&gt; GSI 16 (level, low) -&gt; IRQ
+16
+[   11.528398] ath9k 0000:01:00.0: setting latency timer to 64
+[   11.961619] ath: EEPROM regdomain: 0x37
+[   11.961620] ath: EEPROM indicates we should expect a direct regpair map
+[   11.961622] ath: Country alpha2 being used: AW
+[   11.961623] ath: Regpair used: 0x37
+[   12.031676] ieee80211 phy0: Selected rate control algorithm 'ath9k_rate_control'
 </code></pre>
 
-<p>下記のコマンドで設定を反映。</p>
+<p>早速設定に入る。有線側有線 NIC と無線 NIC をブリッジ接続する。br0 デバイスにの
+み IP アドレスを振り、eth1, wlan0 は IP アドレスを振らない構成にする。</p>
 
-<pre><code>% sudo /etc/init.d/console-setup restart
+<p>まずはブリッジインターフェースを作る。</p>
+
+<pre><code>set interfaces bridge br0 address ${IP_ADDRESS}
+set interfaces bridge br0 description LOCAL_NET
 </code></pre>
 
-<h2 id="sid-の-sources-list-設定">sid の sources.list 設定</h2>
+<p>eth1 (ローカル側有線 NIC) をブリッジ br0 に含める。</p>
 
-<p>Debian Gnu/Linux をノート PC にインストールする時は必ず sid を入れます。新し目
-のソフトウェアを使いたいから。</p>
-
-<pre><code>deb http://ftp.riken.jp/Linux/debian/debian/ unstable main contrib non-free
-deb-src http://ftp.riken.jp/Linux/debian/debian/ unstable main contrib non-free
+<pre><code>set interfaces ethernet eth1 bridge-group bridge br0
+set interfaces ethernet eth1 description LOCAL_NET
 </code></pre>
 
-<p>下記のコマンドで dist-upgrade</p>
+<p>wlan0 の設定。同じく br0 に含めて、諸々の設定を投入。</p>
 
-<pre><code>% sudo apt-get update
-% sudo apt-get dist-upgrade
+<pre><code>set interfaces wireless wlan0 bridge-group bridge br0
+set interfaces wireless wlan0 channel 2
+set interfaces wireless wlan0 description LOCAL_NET
+set interfaces wireless wlan0 mode n
+set interfaces wireless wlan0 security wpa mode wpa2
+set interfaces wireless wlan0 security wpa passphrase ${PASS}
+set interfaces wireless wlan0 ssid ${SSID}
+set interfaces wireless wlan0 type access-point
+commit
+save
 </code></pre>
 
-<h2 id="iwlwifi-のインストールとネットワーク設定">iwlwifi のインストールとネットワーク設定</h2>
+<p>${IP_ADDRESS}, ${SSID}, ${PASS} は任意です。読み替えてください。</p>
 
-<p>買うノート PC はいつも ThinkPad。大体 intel チップな Wi-Fi モジュールが搭載さ
-れているので、iwlwifi を使う。</p>
+<p>ここでコツ。これらの設定をして commit してもうまく無線接続出来なかった。vyatta
+を再起動させる (予め save すること) と、無線接続ができた。</p>
 
-<pre><code>% sudo apt-get install firmware-iwlwifi
-% sudo modprobe iwl4965 # 各々の端末に合わせる。lspci コマンドで確認
-% sudo modprobe iwlagn
-% sudo iwconfig
-% sudo ifconfig wlan0 up
-</code></pre>
+<p>購入した無線モジュールは mini PCE-I Atheros　AR5BXB92 (AR9280 チップ)、
+PCI-E に変換するカード 、あとバッファローのアンテナだ。</p>
 
-<p>次に /etc/network/interfaces の設定</p>
-
-<pre><code>auto wlan0
-iface wlan0 inet dhcp
-     pre-up /sbin/wpa_supplicant -B -Dwext -c/etc/wpa_supplicant/wpa_supplicant.conf -iwlan0
-     pre-up iwconfig wlan0 essid ${SSID}
-     pre-up ip link set wlan0 up
-     pre-up iwconfig wlan0 ap any
-</code></pre>
-
-<p>/etc/wpa_supplicant/wpa_supplicant.conf の設定</p>
-
-<pre><code>% sudo wpa_passphrase ${SSID} ${PASSPHRASE} &gt; /etc/wpa_supplicant/wpa_supplicant.conf
-</code></pre>
-
-<p>生成した上記のファイルを修正・加筆</p>
-
-<pre><code>network={
-    proto=WPA WPA2
-    key_mgmt=WPA-PSK
-    pairwise=CCMP TKIP
-    ssid=&quot;${SSD}&quot;
-    psk=.....
-}
-</code></pre>
-
-<p>ネットワークインターフェースの再起動で接続</p>
-
-<pre><code>% sudo service networking restart
-</code></pre>
-
-<h2 id="x-window-周りの設定">X Window 周りの設定</h2>
-
-<p>必要なパッケージをインストールする。ビデオカードドライバは端末に合わせてインス
-トールする。thinkpad は Intel なビデオカードの場合が多いので下記のように指定。</p>
-
-<p>また、昔はよく enlightenment を使っていたのだけど、e17 が何時まで経っても完成
-度上がらないので諦めて openbox を使うことに。</p>
-
-<pre><code>% sudo apt-get insatll openbox obmenu xorg xserver-xorg-video-intel
-</code></pre>
-
-<p>console 同様に ctrl:caps を swap する。xorg.conf が無い(2012/04時点)ので、sid
-では /etc/X11/Xsession.d/10setxkbmap を下記のように生成して対応。</p>
-
-<pre><code>#!/bin/sh
-setxkbmap -option ctl:nocaps
-</code></pre>
-
-<h2 id="日本語入力-input-method-のインストール">日本語入力 input method のインストール</h2>
-
-<p>日本語入力に uim-mozc を利用することに。今のところこれが一番快適。</p>
-
-<pre><code>% sudo apt-get install uim-mozc uim-xim uim-utils mozc-utils-gui mozc-server uim-qt
-</code></pre>
-
-<p>/etc/X11/openbox/autostart に下記の行を追記</p>
-
-<pre><code>if type uim-xim &amp;&gt; /dev/null ; then
-    uim-xim &amp;
-    uim-toolbar-qt4 &amp;
-fi
-</code></pre>
-
-<p>uim-toolbar-qt4 の preference で &ldquo;オン・オフキー&rdquo; 等もろもろを好みに設定。</p>
-
-<h2 id="alsa-によるサウンドの出力">alsa によるサウンドの出力</h2>
-
-<p>昔は苦労したサウンド出力も、今ではこんなに簡単な操作で出来るようになりましたｗ</p>
-
-<pre><code>% sudo apt-get install alsa-utils alsa-base
-% sudo modprobe snd-pcm-oss
-% sudo alsactl init
-% sudo alsactl store
-</code></pre>
-
-<p>以上です。ここまで来れば、あとは好みで設定していけばいい。もちろん Ubuntu 等の
-dist を使えば、こんな操作は必要無いのだけど、自分でやらないとどうも気持ちが悪
-いし、万が一トラブルが起きても自分で設定していれば治せるし。</p>
-
-<p>まぁ、最近では MacBook を使うことがほとんどなのですが..。or2</p>
+<p>今のところ利用できているが、無線の強度が少し弱い気がする。これから少し調べてみ
+ます。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/04/07/debian-sid-on-thinkpad-first-setup/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2012/05/04/vyatta-wireless-ap/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -874,13 +731,13 @@ dist を使えば、こんな操作は必要無いのだけど、自分でやら
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/">GCP ロードバランサと GKE クラスタを Terraform を使って構築する</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
+                                    '2017-04-13'>
+                                    April 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -888,13 +745,13 @@ dist を使えば、こんな操作は必要無いのだけど、自分でやら
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -902,13 +759,13 @@ dist を使えば、こんな操作は必要無いのだけど、自分でやら
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-03'>
-                                    November 3, 2016</time>
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -916,13 +773,13 @@ dist を使えば、こんな操作は必要無いのだけど、自分でやら
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-07-25'>
-                                    July 25, 2016</time>
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
                             </header>
                         </article>
                     </li>
@@ -961,7 +818,7 @@ dist を使えば、こんな操作は必要無いのだけど、自分でやら
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">104</span>
+                                <span style="float:right;">108</span>
                             </header>
                         </article>
                     </li>

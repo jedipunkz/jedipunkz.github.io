@@ -6,8 +6,272 @@
     <description>Recent content on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sun, 12 Feb 2017 14:55:01 +0900</lastBuildDate>
+    <lastBuildDate>Thu, 13 Apr 2017 14:53:37 +0900</lastBuildDate>
     <atom:link href="http://jedipunkz.github.io/index.xml" rel="self" type="application/rss+xml" />
+    
+    <item>
+      <title>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</title>
+      <link>http://jedipunkz.github.io/blog/2017/04/13/gke-lb/</link>
+      <pubDate>Thu, 13 Apr 2017 14:53:37 +0900</pubDate>
+      
+      <guid>http://jedipunkz.github.io/blog/2017/04/13/gke-lb/</guid>
+      <description>
+
+&lt;p&gt;こんにちは @jedipunkz です。&lt;/p&gt;
+
+&lt;p&gt;少し前まで Google Cloud Platform (GCP) を使っていたのですが、今回はその時に得たノウハウを記事にしようと思います。&lt;/p&gt;
+
+&lt;p&gt;Google Container Engine (GKE) とロードバランサを組み合わせてサービスを立ち上げていました。手動でブラウザ上からポチポチして構築すると人的ミスや情報共有という観点でマズイと思ったので Terraform を使って GCP の各リソースを構築するよう仕掛けたのですが、まだまだ Terraform を使って GCP インフラを構築されている方が少ないため情報が無く情報収集や検証に時間が掛かりました。よって今回はまだネット上に情報が少ない GKE とロードバランサの構築を Terraform を使って行う方法を共有します。&lt;/p&gt;
+
+&lt;h2 id=&#34;構築のシナリオ&#34;&gt;構築のシナリオ&lt;/h2&gt;
+
+&lt;p&gt;構築するにあたって2パターンの構築の流れがあると思います。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;1) GKE クラスタとロードバランサを同時に構築する&lt;/li&gt;
+&lt;li&gt;2) GKE クラスタを予め構築しそのクラスタ向けにロードバランサを構築する&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;両方の方法を記していきます。&lt;/p&gt;
+
+&lt;h2 id=&#34;1-gke-クラスタとロードバランサを同時に構築する&#34;&gt;1) GKE クラスタとロードバランサを同時に構築する&lt;/h2&gt;
+
+&lt;p&gt;GKE クラスタとロードバランサを同時に作る方法です。&lt;/p&gt;
+
+&lt;p&gt;早速ですが下記に terraform ファイルを記しました。それぞれのシンタックスの意味については Terraform の公式ドキュメントをご覧になってください。&lt;/p&gt;
+
+&lt;p&gt;公式ドキュメント : &lt;a href=&#34;https://www.terraform.io/docs/providers/google/&#34;&gt;https://www.terraform.io/docs/providers/google/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;ここで特筆すべき点としては下記が挙げられます。&lt;/p&gt;
+
+&lt;h3 id=&#34;ロードバランサに紐付けるバックエンドの-id-取得のため-replace-element-的なことをしている&#34;&gt;ロードバランサに紐付けるバックエンドの ID 取得のため &amp;ldquo;${replace(element&amp;hellip;&amp;rdquo; 的なことをしている&lt;/h3&gt;
+
+&lt;p&gt;ロードバランサのバックエンドサービスに対して GKE クラスタを作成した際に自動で作成されるインスタンスグループの URI を紐付ける必要があります。ユーザとしては URI ではなく &amp;ldquo;インスタンスグループ名&amp;rdquo; であると扱いやすいのですが、URI が必要になります。この情報は下記のサイトを参考にさせていただきました。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;参考サイト : GKEでkubernetesのnodesをロードバランサーのバックエンドとして使いたいとき with terraform&lt;/li&gt;
+&lt;li&gt;URL : &lt;a href=&#34;http://qiita.com/techeten/items/b2ec5f11f4a70dd21d70&#34;&gt;http://qiita.com/techeten/items/b2ec5f11f4a70dd21d70&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&#34;ロードバランサ一つ作るために-6-個ものインフラリソースを作っている&#34;&gt;ロードバランサ一つ作るために 6 個ものインフラリソースを作っている&lt;/h3&gt;
+
+&lt;p&gt;一つのロードバランサを作るために6つのインフラリソースが必要になるというのも驚きですが公式ドキュメントを読むとなかなかその感覚がつかめませんでした。それぞれの簡単な意味を下記に記しておきます。&lt;/p&gt;
+
+&lt;ul&gt;
+&lt;li&gt;google_compute_http_health_check : ヘルスチェック&lt;/li&gt;
+&lt;li&gt;google_compute_backend_service : バックエンドサービス&lt;/li&gt;
+&lt;li&gt;google_compute_url_map : ロードバランサ名となるリソース&lt;/li&gt;
+&lt;li&gt;google_compute_target_http_proxy : プロキシ&lt;/li&gt;
+&lt;li&gt;google_compute_global_address : グローバル IP アドレス&lt;/li&gt;
+&lt;li&gt;google_compute_global_forwarding_rule : ポートマッピングによるフォワーディングルール&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;それでは実際の Terraform コードです&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;# 共通変数
+variable &amp;quot;credentials&amp;quot; {default = &amp;quot;/path/to/credentials.json&amp;quot;}
+variable &amp;quot;project&amp;quot; {default = &amp;quot;test01&amp;quot;}
+variable &amp;quot;region&amp;quot; {default = &amp;quot;asia-northeast&amp;quot;}
+variable &amp;quot;zone&amp;quot; {default = &amp;quot;asia-northeast1-b&amp;quot;}
+# GKE クラスタ用の変数
+variable &amp;quot;gke_name&amp;quot; {default = &amp;quot;gke-terraform-test&amp;quot;}
+variable &amp;quot;machine_type&amp;quot; {default = &amp;quot;n1-standard-1&amp;quot;}
+variable &amp;quot;disk_size_gb&amp;quot; {default = &amp;quot;50&amp;quot;}
+variable &amp;quot;node_count&amp;quot; {default = &amp;quot;2&amp;quot;}
+variable &amp;quot;network&amp;quot; {default = &amp;quot;default&amp;quot;}
+variable &amp;quot;subnetwork&amp;quot; {default = &amp;quot;default&amp;quot;}
+variable &amp;quot;cluster_ipv4_cidr&amp;quot; {default = &amp;quot;10.0.10.0/14&amp;quot;}
+variable &amp;quot;username&amp;quot; {default = &amp;quot;username&amp;quot;}
+variable &amp;quot;password&amp;quot; {default = &amp;quot;password&amp;quot;}
+# ロードバランサ用の変数
+variable &amp;quot;lb_name&amp;quot; {default = &amp;quot;lb-terraform-test&amp;quot;}
+variable &amp;quot;healthcheck_name&amp;quot; {default = &amp;quot;healthcheck-terraform-test&amp;quot;}
+variable &amp;quot;healthcheck_host&amp;quot; {default = &amp;quot;test.example.com&amp;quot;}
+variable &amp;quot;healthcheck_port&amp;quot; {default = &amp;quot;30300&amp;quot;}
+variable &amp;quot;backend_name&amp;quot; {default = &amp;quot;backend-terraform-test&amp;quot;}
+variable &amp;quot;http_proxy_name&amp;quot; {default = &amp;quot;terraform-proxy&amp;quot;}
+variable &amp;quot;global_address_name&amp;quot; {default = &amp;quot;terraform-global-address&amp;quot;}
+variable &amp;quot;global_forwarding_rule_name&amp;quot; {default = &amp;quot;terraform-global-forwarding-rule&amp;quot;}
+variable &amp;quot;global_forwarding_rule_port&amp;quot; {default =&amp;quot;80&amp;quot;}
+variable &amp;quot;port_name&amp;quot; {default = &amp;quot;port-test&amp;quot;}
+variable &amp;quot;enable_cdn&amp;quot; {default = false}
+
+provider &amp;quot;google&amp;quot; {
+  credentials = &amp;quot;${file(&amp;quot;${var.credentials}&amp;quot;)}&amp;quot;
+  project     = &amp;quot;${var.project}&amp;quot;
+  region      = &amp;quot;${var.region}&amp;quot;
+}
+
+resource &amp;quot;google_container_cluster&amp;quot; &amp;quot;cluster-terraform&amp;quot; {
+  name                = &amp;quot;${var.gke_name}&amp;quot;
+  zone                = &amp;quot;${var.zone}&amp;quot;
+  initial_node_count  = &amp;quot;${var.node_count}&amp;quot;
+  network             = &amp;quot;${var.network}&amp;quot;
+  subnetwork          = &amp;quot;${var.subnetwork}&amp;quot;
+  cluster_ipv4_cidr   = &amp;quot;${var.cluster_ipv4_cidr}&amp;quot;
+
+  master_auth {
+    username = &amp;quot;${var.username}&amp;quot;
+    password = &amp;quot;${var.password}&amp;quot;
+  }
+
+  node_config {
+	machine_type = &amp;quot;${var.machine_type}&amp;quot;
+	disk_size_gb = &amp;quot;${var.disk_size_gb}&amp;quot;
+    oauth_scopes = [
+      &amp;quot;https://www.googleapis.com/auth/compute&amp;quot;,
+      &amp;quot;https://www.googleapis.com/auth/devstorage.read_only&amp;quot;,
+      &amp;quot;https://www.googleapis.com/auth/logging.write&amp;quot;,
+      &amp;quot;https://www.googleapis.com/auth/monitoring&amp;quot;
+    ]
+  }
+  addons_config {
+    http_load_balancing {
+      disabled = true
+    }
+    horizontal_pod_autoscaling {
+      disabled = true
+    }
+  }
+}
+
+resource &amp;quot;google_compute_http_health_check&amp;quot; &amp;quot;healthcheck-terraform&amp;quot; {
+  name                = &amp;quot;${var.healthcheck_name}&amp;quot;
+  project             = &amp;quot;${var.project}&amp;quot;
+  request_path        = &amp;quot;/&amp;quot;
+  host                = &amp;quot;${var.healthcheck_host}&amp;quot;
+  check_interval_sec  = 5
+  timeout_sec         = 5
+  port                = &amp;quot;${var.healthcheck_port}&amp;quot;
+}
+resource &amp;quot;google_compute_backend_service&amp;quot; &amp;quot;backend-terraform&amp;quot; {
+  name          = &amp;quot;${var.backend_name}&amp;quot;
+
+  port_name     = &amp;quot;${var.port_name}&amp;quot;
+  protocol      = &amp;quot;HTTP&amp;quot;
+  timeout_sec   = 10
+  enable_cdn    = &amp;quot;${var.enable_cdn}&amp;quot;
+  region        = &amp;quot;${var.region}&amp;quot;
+  project       = &amp;quot;${var.project}&amp;quot;
+  backend {
+    group = &amp;quot;${replace(element(google_container_cluster.cluster-terraform.instance_group_urls, 1), &amp;quot;Manager&amp;quot;,&amp;quot;&amp;quot;)}&amp;quot;
+  }
+  health_checks = [&amp;quot;${google_compute_http_health_check.healthcheck-terraform.self_link}&amp;quot;]
+}
+resource &amp;quot;google_compute_url_map&amp;quot; &amp;quot;lb-terraform&amp;quot; {
+  name            = &amp;quot;${var.lb_name}&amp;quot;
+  default_service = &amp;quot;${google_compute_backend_service.backend-terraform.self_link}&amp;quot;
+  project         = &amp;quot;${var.project}&amp;quot;
+}
+resource &amp;quot;google_compute_target_http_proxy&amp;quot; &amp;quot;http_proxy-terraform&amp;quot; {
+  name        = &amp;quot;${var.http_proxy_name}&amp;quot;
+  url_map     = &amp;quot;${google_compute_url_map.lb-terraform.self_link}&amp;quot;
+}
+resource &amp;quot;google_compute_global_address&amp;quot; &amp;quot;ip-terraform&amp;quot; {
+  name    = &amp;quot;${var.global_address_name}&amp;quot;
+  project = &amp;quot;${var.project}&amp;quot;
+}
+resource &amp;quot;google_compute_global_forwarding_rule&amp;quot; &amp;quot;forwarding_rule-terraform&amp;quot; {
+  name        = &amp;quot;${var.global_forwarding_rule_name}&amp;quot;
+  target      = &amp;quot;${google_compute_target_http_proxy.http_proxy-terraform.self_link}&amp;quot;
+  ip_address  = &amp;quot;${google_compute_global_address.ip-terraform.address}&amp;quot;
+  port_range  = &amp;quot;${var.global_forwarding_rule_port}&amp;quot;
+  project     = &amp;quot;${var.project}&amp;quot;
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;2-gke-クラスタを予め構築しそのクラスタ向けにロードバランサを構築する&#34;&gt;2) GKE クラスタを予め構築しそのクラスタ向けにロードバランサを構築する&lt;/h2&gt;
+
+&lt;p&gt;次に GKE クラスタとロードバランサを別々のタイミングに構築する方法です。
+実際には GKE クラスタの上には多数のコンテナが起動されるのですでにクラスタが存在する状態でロードバランサを別サービスのために作成したいというケースが一般的なように思います。&lt;/p&gt;
+
+&lt;h3 id=&#34;gke-クラスタのインスタンスグループ-uri-を取得し設定&#34;&gt;GKE クラスタのインスタンスグループ URI を取得し設定&lt;/h3&gt;
+
+&lt;p&gt;既存 GKE クラスタを用いる場合、インスタンスグループ URI がいずれにせよ必要になります。
+インスタンスグループ URI を取得するには gcloud CLI を使って下記のように知ることができます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ gcloud compute instance-groups managed describe | grep -rin URI
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;ここで得たインスタンスグループ URI は下記のように variable &amp;ldquo;backend_group&amp;rdquo; に記します。&lt;/p&gt;
+
+&lt;h3 id=&#34;port-マッピングを手動で設定&#34;&gt;Port マッピングを手動で設定&lt;/h3&gt;
+
+&lt;p&gt;ここは残念なのですが &lt;sup&gt;2017&lt;/sup&gt;&amp;frasl;&lt;sub&gt;04&lt;/sub&gt; 現在、Port マッピングの設定を WebUI 上から行う必要があります。UI から GKE クラスタのインスタンスグループを選択し、Port マッピングの設定を行い名前を記します。ここでは &amp;ldquo;port-test&amp;rdquo; として作成したとし説明します。&lt;/p&gt;
+
+&lt;h3 id=&#34;terraform-のコードを記述&#34;&gt;Terraform のコードを記述&lt;/h3&gt;
+
+&lt;p&gt;ここでロードバランサ単独で構築する際の Terraform コードを見てみます。&lt;/p&gt;
+
+&lt;pre&gt;&lt;code&gt;variable &amp;quot;credentials&amp;quot; {default = &amp;quot;/path/to/credentials.json&amp;quot;}
+variable &amp;quot;project&amp;quot; {default = &amp;quot;test01&amp;quot;}
+variable &amp;quot;region&amp;quot; {default = &amp;quot;asia-northeast1&amp;quot;}
+variable &amp;quot;lb_name&amp;quot; {default = &amp;quot;lb-terraform-test&amp;quot;}
+variable &amp;quot;healthcheck_name&amp;quot; {default = &amp;quot;healthcheck-terraform-test&amp;quot;}
+variable &amp;quot;healthcheck_host&amp;quot; {default = &amp;quot;test.example.com&amp;quot;}
+variable &amp;quot;healthcheck_port&amp;quot; {default = &amp;quot;30300&amp;quot;}
+variable &amp;quot;backend_name&amp;quot; {default = &amp;quot;backend-terraform-test&amp;quot;}
+variable &amp;quot;backend_group&amp;quot; {default = &amp;quot;https://www.googleapis.com/compute/v1/projects/test01/zones/asia-northeast1-b/instanceGroups/gke-gke-terraform-test-default-pool-c001020e-grp&amp;quot;}
+variable &amp;quot;http_proxy_name&amp;quot; {default = &amp;quot;terraform-proxy&amp;quot;}
+variable &amp;quot;global_address_name&amp;quot; {default = &amp;quot;terraform-global-address&amp;quot;}
+variable &amp;quot;global_forwarding_rule_name&amp;quot; {default = &amp;quot;terraform-global-forwarding-rule&amp;quot;}
+variable &amp;quot;global_forwarding_rule_port&amp;quot; {default =&amp;quot;80&amp;quot;}
+variable &amp;quot;port_name&amp;quot; {default = &amp;quot;port-test&amp;quot;}
+variable &amp;quot;enable_cdn&amp;quot; {default = false}
+
+provider &amp;quot;google&amp;quot; {
+  credentials = &amp;quot;${file(&amp;quot;${var.credentials}&amp;quot;)}&amp;quot;
+  project     = &amp;quot;${var.project}&amp;quot;
+  region      = &amp;quot;${var.region}&amp;quot;
+}
+resource &amp;quot;google_compute_http_health_check&amp;quot; &amp;quot;healthcheck-terraform-test&amp;quot; {
+  name                = &amp;quot;${var.healthcheck_name}&amp;quot;
+  project             = &amp;quot;${var.project}&amp;quot;
+  request_path        = &amp;quot;/&amp;quot;
+  host                = &amp;quot;${var.healthcheck_host}&amp;quot;
+  check_interval_sec  = 5
+  timeout_sec         = 5
+  port                = &amp;quot;${var.healthcheck_port}&amp;quot;
+}
+resource &amp;quot;google_compute_backend_service&amp;quot; &amp;quot;backend-terraform-test&amp;quot; {
+  name          = &amp;quot;${var.backend_name}&amp;quot;
+  port_name     = &amp;quot;${var.port_name}&amp;quot;
+  protocol      = &amp;quot;HTTP&amp;quot;
+  timeout_sec   = 10
+  enable_cdn    = &amp;quot;${var.enable_cdn}&amp;quot;
+  region        = &amp;quot;${var.region}&amp;quot;
+  project       = &amp;quot;${var.project}&amp;quot;
+  backend {
+    group = &amp;quot;${var.backend_group}&amp;quot;
+  }
+  health_checks = [&amp;quot;${google_compute_http_health_check.healthcheck-terraform-test.self_link}&amp;quot;]
+}
+resource &amp;quot;google_compute_url_map&amp;quot; &amp;quot;lb-terraform-test&amp;quot; {
+  name            = &amp;quot;${var.lb_name}&amp;quot;
+  default_service = &amp;quot;${google_compute_backend_service.backend-terraform-test.self_link}&amp;quot;
+  project         = &amp;quot;${var.project}&amp;quot;
+}
+resource &amp;quot;google_compute_target_http_proxy&amp;quot; &amp;quot;http_proxy-terraform-test&amp;quot; {
+  name        = &amp;quot;${var.http_proxy_name}&amp;quot;
+  url_map     = &amp;quot;${google_compute_url_map.lb-terraform-test.self_link}&amp;quot;
+}
+resource &amp;quot;google_compute_global_address&amp;quot; &amp;quot;ip-terraform-test&amp;quot; {
+  name    = &amp;quot;${var.global_address_name}&amp;quot;
+  project = &amp;quot;${var.project}&amp;quot;
+}
+resource &amp;quot;google_compute_global_forwarding_rule&amp;quot; &amp;quot;forwarding_rule-terraform-test&amp;quot; {
+  name        = &amp;quot;${var.global_forwarding_rule_name}&amp;quot;
+  target      = &amp;quot;${google_compute_target_http_proxy.http_proxy-terraform-test.self_link}&amp;quot;
+  ip_address  = &amp;quot;${google_compute_global_address.ip-terraform-test.address}&amp;quot;
+  port_range  = &amp;quot;${var.global_forwarding_rule_port}&amp;quot;
+  project     = &amp;quot;${var.project}&amp;quot;
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
+
+&lt;p&gt;GCP のロードバランサが特徴的な構築方法が必要になることが分かったと思います。将来的に URI で記す箇所を名前で記せれば構築がもっと簡単になると思いますので GCP 側の API バージョンアップを期待します。また今回は記しませんでしたが SSL (HTTPS) 証明書をロードバランサに紐付けることも Terraform を使えば容易に出来ます。試してみてください。一旦 Terraform 化すればパラメータを変更するだけで各ロードバランサが一発で構築できるので自動化は是非しておきたいところです。私は以前、この構築を Terraform + Hubot により ChatOps 化していました。作業の見える化と、メンバ間のコードレビューが可能になるからです。&lt;/p&gt;
+</description>
+    </item>
     
     <item>
       <title>Serverless on Kubernetes : Fission を使ってみた</title>
@@ -2463,316 +2727,6 @@ sudo service chronograf start
 てもサーバ上で稼働しているコンテナ周りの情報も取得できたので個人的にはハッピー。
 cAdvisor でしか取得できない情報もありそうですが今後、導入を検討する上で評価し
 ていきたいと思います。&lt;/p&gt;
-</description>
-    </item>
-    
-    <item>
-      <title>Weave を使った Docker ネットワーク</title>
-      <link>http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/</link>
-      <pubDate>Tue, 22 Dec 2015 00:00:00 +0000</pubDate>
-      
-      <guid>http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;今回は Weave というコンテナ間のネットワークを提供してくれる Docker のネットワークプラ
-グインを使ってみました。下記のような沢山の機能があるようです。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Fast Data Path&lt;/li&gt;
-&lt;li&gt;Docker Network Plugin&lt;/li&gt;
-&lt;li&gt;Security&lt;/li&gt;
-&lt;li&gt;Dynamic Netwrok Attachment&lt;/li&gt;
-&lt;li&gt;Service Binding&lt;/li&gt;
-&lt;li&gt;Fault Tolerance&lt;/li&gt;
-&lt;li&gt;etc &amp;hellip;&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;この記事では上から幾つか抜粋して、Weave ってどのように動かせるのか？を解説します。
-そこから Weave が一体ナニモノなのか理解できればなぁと思います。&lt;/p&gt;
-
-&lt;h2 id=&#34;vagrant-を使った構成&#34;&gt;Vagrant を使った構成&lt;/h2&gt;
-
-&lt;p&gt;この記事では下記の構成を作って色々と試していきます。使う技術は&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Vagrant&lt;/li&gt;
-&lt;li&gt;Docker&lt;/li&gt;
-&lt;li&gt;Weave&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;+---------------------+ +---------------------+ +---------------------+
-| docker container a1 | | docker container a2 | | docker container a3 |
-+---------------------+ +---------------------+ +---------------------+
-|    vagrant host 1   | |    vagrant host 2   | |    vagrant host 3   |
-+---------------------+-+---------------------+-+---------------------+
-|                          Mac or Windows                             |
-+---------------------------------------------------------------------+
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;特徴としては&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;作業端末(Mac or Windows or Linux)上で Vagrant を動作させる&lt;/li&gt;
-&lt;li&gt;各 Vagrant VM 同士はホスト OS のネットワークインターフェース上で疎通が取れる&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;です。&lt;/p&gt;
-
-&lt;h2 id=&#34;vagrantfile-の作成と-host1-2-3-の起動&#34;&gt;Vagrantfile の作成と host1,2,3 の起動&lt;/h2&gt;
-
-&lt;p&gt;上記の3台の構成を下記の Vagrantfile で構築します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;Vagrant.configure(2) do |config|
-  config.vm.box = &amp;quot;ubuntu/vivid64&amp;quot;
-
-  config.vm.define &amp;quot;host1&amp;quot; do |server|
-    server.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.11&amp;quot;
-  end
-
-  config.vm.define &amp;quot;host2&amp;quot; do |server|
-    server.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.12&amp;quot;
-  end
-
-  config.vm.define &amp;quot;host3&amp;quot; do |server|
-    server.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.13&amp;quot;
-  end
-
-  config.vm.provision :shell, inline: &amp;lt;&amp;lt;-SHELL
-apt-get update
-apt-get install -y libsqlite3-dev docker.io
-curl -L git.io/weave -o /usr/local/bin/weave
-chmod a+x /usr/local/bin/weave
-  SHELL
-end
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;vagrant コマンドを使って host1, host2, host3 を起動します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ vagrant up
-$ vagrant ssh host1 # &amp;lt;--- host1 に SSH する場合
-$ vagrant ssh host2 # &amp;lt;--- host2 に SSH する場合
-$ vagrant ssh host3 # &amp;lt;--- host3 に SSH する場合
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;物理ノードまたがったコンテナ間で通信をする&#34;&gt;物理ノードまたがったコンテナ間で通信をする&lt;/h2&gt;
-
-&lt;p&gt;weave でまず物理ノードをまたがったコンテナ間で通信をさせてみましょう。ここでは
-上図の host1, host2 を使います。通常、物理ノードまたがっていると各々のホストで
-稼働する Docker コンテナは通信し合えませんが weave を使うと通信しあうことが出
-来ます。&lt;/p&gt;
-
-&lt;p&gt;まず weave が用いる Docker コンテナを稼働します。下記のように /16 でレンジを切って
-更にそこからデフォルトのレンジを指定することが出来ます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24
-host1# eval $(weave env)
-host2# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
-host2# eval $(weave env)
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;この状態で下記のようなコンテナが稼働します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# docker ps
-CONTAINER ID        IMAGE                        COMMAND                CREATED             STATUS              PORTS               NAMES
-c55e96b4bdf9        weaveworks/weaveexec:1.4.0   &amp;quot;/home/weave/weavepr   4 seconds ago       Up 3 seconds                            weaveproxy
-394382c9c5d9        weaveworks/weave:1.4.0       &amp;quot;/home/weave/weaver    5 seconds ago       Up 4 seconds                            weave
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;host1, host2 でそれぞれテスト用コンテナを稼働させます。名前を &amp;ndash;name オプションで付けるのを
-忘れないようにしてください。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# docker run --name a1 -ti ubuntu
-host2# docker run --name a2 -ti ubuntu
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;どちらか一方から ping をもう一方に打ってみましょう。下記では a2 -&amp;gt; a1 の流れで
-ping を実行しています。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;root@a2:/# ping 10.2.1.1 -c 3
-PING 10.2.1.1 (10.2.1.1) 56(84) bytes of data.
-64 bytes from 10.2.1.1: icmp_seq=1 ttl=64 time=0.316 ms
-64 bytes from 10.2.1.1: icmp_seq=2 ttl=64 time=0.501 ms
-64 bytes from 10.2.1.1: icmp_seq=3 ttl=64 time=0.619 ms
-
---- 10.2.1.1 ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss, time 1999ms
-rtt min/avg/max/mdev = 0.316/0.478/0.619/0.127 ms
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;また docker コンテナを起動する時に指定した &amp;ndash;name a1, &amp;ndash;name a2 の名前で ping
-を実行してみましょう。これも weave の機能の１つで dns lookup が行えます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;root@b2:/# ping a1 -c 3
-PING b1.weave.local (10.2.1.1) 56(84) bytes of data.
-64 bytes from a1.weave.local (10.2.1.1): icmp_seq=1 ttl=64 time=1.14 ms
-64 bytes from a1.weave.local (10.2.1.1): icmp_seq=2 ttl=64 time=0.446 ms
-64 bytes from a1.weave.local (10.2.1.1): icmp_seq=3 ttl=64 time=0.364 ms
-
---- b1.weave.local ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss, time 2001ms
-rtt min/avg/max/mdev = 0.364/0.653/1.149/0.352 ms
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;結果から、異なる物理ノード(今回は VM)上で動作させた Docker コンテナ同士が通信し合えた
-ことがわかります。またコンテナ名の DNS 的は名前解決も可能になりました。&lt;/p&gt;
-
-&lt;h2 id=&#34;ダイナミックにネットワークをアタッチ-デタッチする&#34;&gt;ダイナミックにネットワークをアタッチ・デタッチする&lt;/h2&gt;
-
-&lt;p&gt;次に weave のネットワークを動的(コンテナがオンラインのまま)にアタッチ・デタッ
-チすることが出来るので試してみます。&lt;/p&gt;
-
-&lt;p&gt;最初に weave のネットワークに属さない a1-1 という名前のコンテナを作ります。
-docker exec で IP アドレスを確認すると eth0, lo のインターフェースしか持っていない
-ことが判ります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# C=$(docker run --name a1-1 -e WEAVE_CIDR=none -dti ubuntu)
-host1# docker exec -it a1-1 ip a # &amp;lt;--- docker コンテナ内でコマンド実行
-1: lo: &amp;lt;LOOPBACK,UP,LOWER_UP&amp;gt; mtu 65536 qdisc noqueue state UNKNOWN group default
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    inet 127.0.0.1/8 scope host lo
-       valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host
-       valid_lft forever preferred_lft forever
-25: eth0: &amp;lt;BROADCAST,UP,LOWER_UP&amp;gt; mtu 1500 qdisc noqueue state UP group default
-    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
-    inet 172.17.0.5/16 scope global eth0
-       valid_lft forever preferred_lft forever
-    inet6 fe80::42:acff:fe11:5/64 scope link
-       valid_lft forever preferred_lft forever
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;では weave のネットワークを a1-1 コンテナにアタッチしてみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# weave attach $C
-10.2.1.1
-host1# docker exec -it a1-1 ip a
-1: lo: &amp;lt;LOOPBACK,UP,LOWER_UP&amp;gt; mtu 65536 qdisc noqueue state UNKNOWN group default
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    inet 127.0.0.1/8 scope host lo
-       valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host
-       valid_lft forever preferred_lft forever
-25: eth0: &amp;lt;BROADCAST,UP,LOWER_UP&amp;gt; mtu 1500 qdisc noqueue state UP group default
-    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
-    inet 172.17.0.5/16 scope global eth0
-       valid_lft forever preferred_lft forever
-    inet6 fe80::42:acff:fe11:5/64 scope link
-       valid_lft forever preferred_lft forever
-27: ethwe: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
-    link/ether aa:15:06:51:6a:3b brd ff:ff:ff:ff:ff:ff
-    inet 10.2.1.1/24 scope global ethwe
-       valid_lft forever preferred_lft forever
-    inet6 fe80::a815:6ff:fe51:6a3b/64 scope link
-       valid_lft forever preferred_lft forever
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;上記のようにインターフェース ethwe が付与され最初に指定したデフォルトのサブネッ
-ト上の IP アドレスが付きました。&lt;/p&gt;
-
-&lt;p&gt;次に weave ネットワークを複数アタッチしてみましょう。default, 10.2.2.0/24,
-10.2.3.0/24 のネットワーク(サブネット)をアタッチします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# weave attach net:default net:10.2.2.0/24 net:10.2.3.0/24 $C
-10.2.1.1 10.2.2.1 10.2.3.1
-root@vagrant-ubuntu-vivid-64:~# docker exec -it b3 ip a
-1: lo: &amp;lt;LOOPBACK,UP,LOWER_UP&amp;gt; mtu 65536 qdisc noqueue state UNKNOWN group default
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    inet 127.0.0.1/8 scope host lo
-       valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host
-       valid_lft forever preferred_lft forever
-25: eth0: &amp;lt;BROADCAST,UP,LOWER_UP&amp;gt; mtu 1500 qdisc noqueue state UP group default
-    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
-    inet 172.17.0.5/16 scope global eth0
-       valid_lft forever preferred_lft forever
-    inet6 fe80::42:acff:fe11:5/64 scope link
-       valid_lft forever preferred_lft forever
-33: ethwe: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
-    link/ether 9a:74:73:1b:24:a9 brd ff:ff:ff:ff:ff:ff
-    inet 10.2.1.1/24 scope global ethwe
-       valid_lft forever preferred_lft forever
-    inet 10.2.2.1/24 scope global ethwe
-       valid_lft forever preferred_lft forever
-    inet 10.2.3.1/24 scope global ethwe
-       valid_lft forever preferred_lft forever
-    inet6 fe80::9874:73ff:fe1b:24a9/64 scope link
-       valid_lft forever preferred_lft forever
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;結果、ethwe インターフェースに3つの IP アドレスが付与されました。
-この様にダイナミックにコンテナに対して weave ネットワークをアタッチすることが出来ます。&lt;/p&gt;
-
-&lt;h2 id=&#34;コンテナ外部から情報を取得する&#34;&gt;コンテナ外部から情報を取得する&lt;/h2&gt;
-
-&lt;p&gt;下記のようにコンテナを起動しているホスト上 (Vagrant VM) からコンテナの情報を取
-得する事もできます。シンプルですがオーケストレーション・自動化を行う上で重要な機能に
-なりそうな予感がします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# weave expose
-10.2.1.1
-host1# weave dns-lookup a2
-10.2.1.128
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;ダイナミックに物理ノードを追加し-weave-ネットワークへ&#34;&gt;ダイナミックに物理ノードを追加し weave ネットワークへ&lt;/h2&gt;
-
-&lt;p&gt;物理ノード(今回の場合 vagrant vm)を追加し上記で作成した weave ネットワークへ参
-加させることも可能です。なお、今回は上記の vagrant up の時点で追加分の vm (host3)
-を既に稼働させています。&lt;/p&gt;
-
-&lt;p&gt;host1 で新しい物理ノードを接続します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;host1# weave connect 192.168.33.12
-host1# weave status targets
-192.168.33.13
-192.168.33.12
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;host3 で weave コンテナ・テストコンテナを起動します。
-下記で指定している 192.168.33.11 は host1 の IP アドレスです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;host3# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
-host3# docker run --name a3 -ti ubuntu
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;host2 の a2 コンテナに ping を打ってみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;roota3:/# ping a2 -c 3
-PING a2.weave.local (10.2.1.128) 56(84) bytes of data.
-64 bytes from a2.weave.local (10.2.1.128): icmp_seq=1 ttl=64 time=0.366 ms
-64 bytes from a2.weave.local (10.2.1.128): icmp_seq=2 ttl=64 time=0.709 ms
-64 bytes from a2.weave.local (10.2.1.128): icmp_seq=3 ttl=64 time=0.569 ms
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;host3 上の a3 コンテナが既存の weave ネットワークに参加し通信出来たことが確認
-できました。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
-
-&lt;p&gt;コンフィギュレーションらしきモノを記述することなく Docker コンテナ間の通信
-が出来ました。これは自動化する際に優位になるでしょう。また今回紹介したのは
-&amp;lsquo;weave net&amp;rsquo; と呼ばれるモノですが他にも &amp;lsquo;weave scope&amp;rsquo;, &amp;lsquo;weave run&amp;rsquo; といったモノ
-があります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://weave.works/product/&#34;&gt;http://weave.works/product/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;また Docker Swarm, Compose と組み合わせる構成も組めるようです。試してみたい方
-がいましたら是非。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html&#34;&gt;http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;ですが結果、まだ weave をどう自分たちのサービスに組み込めるかは検討が付いてい
-ません。&amp;rsquo;出来る&amp;rsquo; と &amp;lsquo;運用できる&amp;rsquo; が別物であることと、コンテナまわりのネットワー
-ク機能全般に理解して選定する必要がありそうです。&lt;/p&gt;
-
-&lt;p&gt;参考サイト
-+++&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://weave.works/docs/&#34;&gt;http://weave.works/docs/&lt;/a&gt;&lt;/p&gt;
 </description>
     </item>
     

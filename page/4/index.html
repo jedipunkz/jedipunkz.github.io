@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2015-12-22T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2016-07-23T02:40:11&#43;09:00"/>
 
 
 
@@ -196,19 +196,19 @@ ga('send', 'pageview');
 
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/"><p>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
             </ul>
@@ -230,7 +230,7 @@ ga('send', 'pageview');
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h2>
         
         
     </div>
@@ -240,711 +240,8 @@ ga('send', 'pageview');
         
 
         <time class="published"
-            datetime='2015-12-22'>
-            December 22, 2015</time>
-        <span class="author"></span>
-        
-            <p>5 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>今回は Weave というコンテナ間のネットワークを提供してくれる Docker のネットワークプラ
-グインを使ってみました。下記のような沢山の機能があるようです。</p>
-
-<ul>
-<li>Fast Data Path</li>
-<li>Docker Network Plugin</li>
-<li>Security</li>
-<li>Dynamic Netwrok Attachment</li>
-<li>Service Binding</li>
-<li>Fault Tolerance</li>
-<li>etc &hellip;</li>
-</ul>
-
-<p>この記事では上から幾つか抜粋して、Weave ってどのように動かせるのか？を解説します。
-そこから Weave が一体ナニモノなのか理解できればなぁと思います。</p>
-
-<h2 id="vagrant-を使った構成">Vagrant を使った構成</h2>
-
-<p>この記事では下記の構成を作って色々と試していきます。使う技術は</p>
-
-<ul>
-<li>Vagrant</li>
-<li>Docker</li>
-<li>Weave</li>
-</ul>
-
-<p>です。</p>
-
-<pre><code>+---------------------+ +---------------------+ +---------------------+
-| docker container a1 | | docker container a2 | | docker container a3 |
-+---------------------+ +---------------------+ +---------------------+
-|    vagrant host 1   | |    vagrant host 2   | |    vagrant host 3   |
-+---------------------+-+---------------------+-+---------------------+
-|                          Mac or Windows                             |
-+---------------------------------------------------------------------+
-</code></pre>
-
-<p>特徴としては</p>
-
-<ul>
-<li>作業端末(Mac or Windows or Linux)上で Vagrant を動作させる</li>
-<li>各 Vagrant VM 同士はホスト OS のネットワークインターフェース上で疎通が取れる</li>
-</ul>
-
-<p>です。</p>
-
-<h2 id="vagrantfile-の作成と-host1-2-3-の起動">Vagrantfile の作成と host1,2,3 の起動</h2>
-
-<p>上記の3台の構成を下記の Vagrantfile で構築します。</p>
-
-<pre><code>Vagrant.configure(2) do |config|
-  config.vm.box = &quot;ubuntu/vivid64&quot;
-
-  config.vm.define &quot;host1&quot; do |server|
-    server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.11&quot;
-  end
-
-  config.vm.define &quot;host2&quot; do |server|
-    server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.12&quot;
-  end
-
-  config.vm.define &quot;host3&quot; do |server|
-    server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.13&quot;
-  end
-
-  config.vm.provision :shell, inline: &lt;&lt;-SHELL
-apt-get update
-apt-get install -y libsqlite3-dev docker.io
-curl -L git.io/weave -o /usr/local/bin/weave
-chmod a+x /usr/local/bin/weave
-  SHELL
-end
-</code></pre>
-
-<p>vagrant コマンドを使って host1, host2, host3 を起動します。</p>
-
-<pre><code class="language-bash">$ vagrant up
-$ vagrant ssh host1 # &lt;--- host1 に SSH する場合
-$ vagrant ssh host2 # &lt;--- host2 に SSH する場合
-$ vagrant ssh host3 # &lt;--- host3 に SSH する場合
-</code></pre>
-
-<h2 id="物理ノードまたがったコンテナ間で通信をする">物理ノードまたがったコンテナ間で通信をする</h2>
-
-<p>weave でまず物理ノードをまたがったコンテナ間で通信をさせてみましょう。ここでは
-上図の host1, host2 を使います。通常、物理ノードまたがっていると各々のホストで
-稼働する Docker コンテナは通信し合えませんが weave を使うと通信しあうことが出
-来ます。</p>
-
-<p>まず weave が用いる Docker コンテナを稼働します。下記のように /16 でレンジを切って
-更にそこからデフォルトのレンジを指定することが出来ます。</p>
-
-<pre><code class="language-bash">host1# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24
-host1# eval $(weave env)
-host2# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
-host2# eval $(weave env)
-</code></pre>
-
-<p>この状態で下記のようなコンテナが稼働します。</p>
-
-<pre><code class="language-bash">host1# docker ps
-CONTAINER ID        IMAGE                        COMMAND                CREATED             STATUS              PORTS               NAMES
-c55e96b4bdf9        weaveworks/weaveexec:1.4.0   &quot;/home/weave/weavepr   4 seconds ago       Up 3 seconds                            weaveproxy
-394382c9c5d9        weaveworks/weave:1.4.0       &quot;/home/weave/weaver    5 seconds ago       Up 4 seconds                            weave
-</code></pre>
-
-<p>host1, host2 でそれぞれテスト用コンテナを稼働させます。名前を &ndash;name オプションで付けるのを
-忘れないようにしてください。</p>
-
-<pre><code class="language-bash">host1# docker run --name a1 -ti ubuntu
-host2# docker run --name a2 -ti ubuntu
-</code></pre>
-
-<p>どちらか一方から ping をもう一方に打ってみましょう。下記では a2 -&gt; a1 の流れで
-ping を実行しています。</p>
-
-<pre><code class="language-bash">root@a2:/# ping 10.2.1.1 -c 3
-PING 10.2.1.1 (10.2.1.1) 56(84) bytes of data.
-64 bytes from 10.2.1.1: icmp_seq=1 ttl=64 time=0.316 ms
-64 bytes from 10.2.1.1: icmp_seq=2 ttl=64 time=0.501 ms
-64 bytes from 10.2.1.1: icmp_seq=3 ttl=64 time=0.619 ms
-
---- 10.2.1.1 ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss, time 1999ms
-rtt min/avg/max/mdev = 0.316/0.478/0.619/0.127 ms
-</code></pre>
-
-<p>また docker コンテナを起動する時に指定した &ndash;name a1, &ndash;name a2 の名前で ping
-を実行してみましょう。これも weave の機能の１つで dns lookup が行えます。</p>
-
-<pre><code>root@b2:/# ping a1 -c 3
-PING b1.weave.local (10.2.1.1) 56(84) bytes of data.
-64 bytes from a1.weave.local (10.2.1.1): icmp_seq=1 ttl=64 time=1.14 ms
-64 bytes from a1.weave.local (10.2.1.1): icmp_seq=2 ttl=64 time=0.446 ms
-64 bytes from a1.weave.local (10.2.1.1): icmp_seq=3 ttl=64 time=0.364 ms
-
---- b1.weave.local ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss, time 2001ms
-rtt min/avg/max/mdev = 0.364/0.653/1.149/0.352 ms
-</code></pre>
-
-<p>結果から、異なる物理ノード(今回は VM)上で動作させた Docker コンテナ同士が通信し合えた
-ことがわかります。またコンテナ名の DNS 的は名前解決も可能になりました。</p>
-
-<h2 id="ダイナミックにネットワークをアタッチ-デタッチする">ダイナミックにネットワークをアタッチ・デタッチする</h2>
-
-<p>次に weave のネットワークを動的(コンテナがオンラインのまま)にアタッチ・デタッ
-チすることが出来るので試してみます。</p>
-
-<p>最初に weave のネットワークに属さない a1-1 という名前のコンテナを作ります。
-docker exec で IP アドレスを確認すると eth0, lo のインターフェースしか持っていない
-ことが判ります。</p>
-
-<pre><code class="language-bash">host1# C=$(docker run --name a1-1 -e WEAVE_CIDR=none -dti ubuntu)
-host1# docker exec -it a1-1 ip a # &lt;--- docker コンテナ内でコマンド実行
-1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    inet 127.0.0.1/8 scope host lo
-       valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host
-       valid_lft forever preferred_lft forever
-25: eth0: &lt;BROADCAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default
-    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
-    inet 172.17.0.5/16 scope global eth0
-       valid_lft forever preferred_lft forever
-    inet6 fe80::42:acff:fe11:5/64 scope link
-       valid_lft forever preferred_lft forever
-</code></pre>
-
-<p>では weave のネットワークを a1-1 コンテナにアタッチしてみましょう。</p>
-
-<pre><code class="language-bash">host1# weave attach $C
-10.2.1.1
-host1# docker exec -it a1-1 ip a
-1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    inet 127.0.0.1/8 scope host lo
-       valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host
-       valid_lft forever preferred_lft forever
-25: eth0: &lt;BROADCAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default
-    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
-    inet 172.17.0.5/16 scope global eth0
-       valid_lft forever preferred_lft forever
-    inet6 fe80::42:acff:fe11:5/64 scope link
-       valid_lft forever preferred_lft forever
-27: ethwe: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
-    link/ether aa:15:06:51:6a:3b brd ff:ff:ff:ff:ff:ff
-    inet 10.2.1.1/24 scope global ethwe
-       valid_lft forever preferred_lft forever
-    inet6 fe80::a815:6ff:fe51:6a3b/64 scope link
-       valid_lft forever preferred_lft forever
-</code></pre>
-
-<p>上記のようにインターフェース ethwe が付与され最初に指定したデフォルトのサブネッ
-ト上の IP アドレスが付きました。</p>
-
-<p>次に weave ネットワークを複数アタッチしてみましょう。default, 10.2.2.0/24,
-10.2.3.0/24 のネットワーク(サブネット)をアタッチします。</p>
-
-<pre><code class="language-bash">host1# weave attach net:default net:10.2.2.0/24 net:10.2.3.0/24 $C
-10.2.1.1 10.2.2.1 10.2.3.1
-root@vagrant-ubuntu-vivid-64:~# docker exec -it b3 ip a
-1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    inet 127.0.0.1/8 scope host lo
-       valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host
-       valid_lft forever preferred_lft forever
-25: eth0: &lt;BROADCAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default
-    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
-    inet 172.17.0.5/16 scope global eth0
-       valid_lft forever preferred_lft forever
-    inet6 fe80::42:acff:fe11:5/64 scope link
-       valid_lft forever preferred_lft forever
-33: ethwe: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
-    link/ether 9a:74:73:1b:24:a9 brd ff:ff:ff:ff:ff:ff
-    inet 10.2.1.1/24 scope global ethwe
-       valid_lft forever preferred_lft forever
-    inet 10.2.2.1/24 scope global ethwe
-       valid_lft forever preferred_lft forever
-    inet 10.2.3.1/24 scope global ethwe
-       valid_lft forever preferred_lft forever
-    inet6 fe80::9874:73ff:fe1b:24a9/64 scope link
-       valid_lft forever preferred_lft forever
-</code></pre>
-
-<p>結果、ethwe インターフェースに3つの IP アドレスが付与されました。
-この様にダイナミックにコンテナに対して weave ネットワークをアタッチすることが出来ます。</p>
-
-<h2 id="コンテナ外部から情報を取得する">コンテナ外部から情報を取得する</h2>
-
-<p>下記のようにコンテナを起動しているホスト上 (Vagrant VM) からコンテナの情報を取
-得する事もできます。シンプルですがオーケストレーション・自動化を行う上で重要な機能に
-なりそうな予感がします。</p>
-
-<pre><code class="language-bash">host1# weave expose
-10.2.1.1
-host1# weave dns-lookup a2
-10.2.1.128
-</code></pre>
-
-<h2 id="ダイナミックに物理ノードを追加し-weave-ネットワークへ">ダイナミックに物理ノードを追加し weave ネットワークへ</h2>
-
-<p>物理ノード(今回の場合 vagrant vm)を追加し上記で作成した weave ネットワークへ参
-加させることも可能です。なお、今回は上記の vagrant up の時点で追加分の vm (host3)
-を既に稼働させています。</p>
-
-<p>host1 で新しい物理ノードを接続します。</p>
-
-<pre><code>host1# weave connect 192.168.33.12
-host1# weave status targets
-192.168.33.13
-192.168.33.12
-</code></pre>
-
-<p>host3 で weave コンテナ・テストコンテナを起動します。
-下記で指定している 192.168.33.11 は host1 の IP アドレスです。</p>
-
-<pre><code>host3# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
-host3# docker run --name a3 -ti ubuntu
-</code></pre>
-
-<p>host2 の a2 コンテナに ping を打ってみます。</p>
-
-<pre><code>roota3:/# ping a2 -c 3
-PING a2.weave.local (10.2.1.128) 56(84) bytes of data.
-64 bytes from a2.weave.local (10.2.1.128): icmp_seq=1 ttl=64 time=0.366 ms
-64 bytes from a2.weave.local (10.2.1.128): icmp_seq=2 ttl=64 time=0.709 ms
-64 bytes from a2.weave.local (10.2.1.128): icmp_seq=3 ttl=64 time=0.569 ms
-</code></pre>
-
-<p>host3 上の a3 コンテナが既存の weave ネットワークに参加し通信出来たことが確認
-できました。</p>
-
-<h2 id="まとめと考察">まとめと考察</h2>
-
-<p>コンフィギュレーションらしきモノを記述することなく Docker コンテナ間の通信
-が出来ました。これは自動化する際に優位になるでしょう。また今回紹介したのは
-&lsquo;weave net&rsquo; と呼ばれるモノですが他にも &lsquo;weave scope&rsquo;, &lsquo;weave run&rsquo; といったモノ
-があります。</p>
-
-<p><a href="http://weave.works/product/">http://weave.works/product/</a></p>
-
-<p>また Docker Swarm, Compose と組み合わせる構成も組めるようです。試してみたい方
-がいましたら是非。</p>
-
-<p><a href="http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html">http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html</a></p>
-
-<p>ですが結果、まだ weave をどう自分たちのサービスに組み込めるかは検討が付いてい
-ません。&rsquo;出来る&rsquo; と &lsquo;運用できる&rsquo; が別物であることと、コンテナまわりのネットワー
-ク機能全般に理解して選定する必要がありそうです。</p>
-
-<p>参考サイト
-+++</p>
-
-<p><a href="http://weave.works/docs/">http://weave.works/docs/</a></p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/">CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2015-11-15'>
-            November 15, 2015</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>最近、業務で CircleCI を扱っていて、だいぶ &ldquo;出来ること・出来ないこと&rdquo; や &ldquo;出来ないこと
-に対する回避方法&rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。</p>
-
-<h2 id="この記事の前提">この記事の前提&hellip;</h2>
-
-<p>ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ
-ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、
-それの回避方法等&hellip;についてまとめています。</p>
-
-<h2 id="cirlceci-と併用するサービスについて">CirlceCI と併用するサービスについて</h2>
-
-<p>CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ
-スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た
-ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー
-トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ
-うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た
-らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが
-省けそう。ってことで</p>
-
-<ul>
-<li>AWS S3 (<a href="https://aws.amazon.com/jp/s3/">https://aws.amazon.com/jp/s3/</a>)</li>
-<li>AWS CodeDeploy (<a href="https://aws.amazon.com/jp/codedeploy/">https://aws.amazon.com/jp/codedeploy/</a>)</li>
-</ul>
-
-<p>を併用することを考えました。</p>
-
-<p>S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、
-ビルドした結果を格納します。私の務めている会社ではプログラミング言語として
-Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ
-ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り
-戻すことが出来そうです。</p>
-
-<p>また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ
-ロイが可能になるサービスです。東京リージョンでは <sup>2015</sup>&frasl;<sub>08</sub> から利用が可能になり
-ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内
-のインスタンスに対してもデプロイが可能なところです。</p>
-
-<p>Tips 的な情報として
-+++</p>
-
-<p>circle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで
-CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい
-と思います。</p>
-
-<h2 id="git-push-からデプロイまでを自動で行う-circle-yml">Git push からデプロイまでを自動で行う circle.yml</h2>
-
-<p>Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の
-circle.yml を紹介します。全体の流れとしては&hellip;</p>
-
-<ul>
-<li>レポジトリに git push, merge ことがトリガで処理が走る</li>
-<li>circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る</li>
-<li>S3 バケットにビルドされた結果が格納される</li>
-<li>CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする</li>
-</ul>
-
-<p>となります。</p>
-
-<pre><code class="language-yml">machine:
-  environment:
-    SBT_VERSION: 0.13.9
-    SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot;
-  services:
-    - docker
-
-dependencies:
-  pre:
-    - (事前に実行したいコマンド・スクリプトを記述)
-  cache_directories:
-    - &quot;~/.sbt&quot;
-
-test:
-  override:
-    - sbt compile
-
-deployment:
-  production:
-    branch: master
-    codedeploy:
-      codedeploy-sample:
-        application_root: /
-        region: ap-northeast-1
-        revision_location:
-          revision_type: S3
-          s3_location:
-            bucket: circleci-sample-bucket
-            key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip
-        deployment_group: codedeploy-sample-group
-</code></pre>
-
-<h4 id="それぞれのパラメータの意味">それぞれのパラメータの意味</h4>
-
-<p>上記 circle.yml の重要なパラメータのみ説明していきます。
-私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに
-SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき
-ると思いますので読み替えてください。</p>
-
-<ul>
-<li>machine -&gt; environment : 全体で適用できる環境変数を定義します</li>
-<li>dependencies -&gt; pre : 事前に実行したいコマンド等を定義できます</li>
-<li>test -&gt; overide : テストを実行するコマンドを書きます。</li>
-<li>deployment -&gt; production -&gt; branch : 適用するブランチ名と本番環境であることを記述します。</li>
-<li>&lsquo;codedeploy-sample&rsquo; : CodeDeploy 上にサンプルで作成した &lsquo;Application&rsquo; 名です</li>
-<li>s3_location -&gt; bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します</li>
-<li>s3_location -&gt; key_pattern : S3 バケットに収めるファイル名指定です</li>
-<li>deployment_group : CodeDeploy で定義する &lsquo;Deployment-Group&rsquo; 名です</li>
-</ul>
-
-<p>より詳細な説明を読みたい場合は下記の URL に描いてあります。</p>
-
-<p><a href="https://circleci.com/docs/configuration">https://circleci.com/docs/configuration</a></p>
-
-<h2 id="s3-のみににデプロイする例">S3 のみににデプロイする例</h2>
-
-<p>上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて
-実行したい場面もありそうです。流れとしては&hellip;</p>
-
-<ul>
-<li>レポジトリに git push, merge ことがトリガで処理が走る</li>
-<li>circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る</li>
-<li>S3 バケットにビルドされた結果が格納される</li>
-</ul>
-
-<p>です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の
-API を直接叩けば出来そうです。</p>
-
-<p><a href="http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html">http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html</a></p>
-
-<p>このリファレンスにある &ldquo;CreateDeployment&rdquo; については後に例をあげます。</p>
-
-<p>ただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが
-CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。</p>
-
-<p>よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば
-上記の流れが組めそうです。</p>
-
-<pre><code class="language-yml">machine:
-  environment:
-    SBT_VERSION: 0.13.9
-    SBT_OPTS: &quot;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&quot;
-  services:
-    - docker
-
-dependencies:
-  pre:
-    - sudo pip install awscli
-  cache_directories:
-    - &quot;~/.sbt&quot;
-
-test:
-  override:
-    - sbt compile
-
-deployment:
-  master:
-    branch: master
-    commands:
-      - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip .
-      - aws s3 cp
-        sample-code-${CIRCLE_PROJECT_REPONAME}-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip s3://&lt;バケット名&gt;/&lt;ディレクトリ&gt;/ --region ap-northeast-1
-</code></pre>
-
-<p>事前に awscli をインストールしているだけです。</p>
-
-<p>S3 バケットに格納された成果物を CodeDeploy を使って手動でデプロイするには下記
-のコマンドで実施できます。</p>
-
-<pre><code class="language-bash">$ aws deploy create-deployment \
-  --application-name codedeploy-sample \
-  --deployment-config-name CodeDeployDefault.OneAtATime \
-  --deployment-group-name codedeploy-sample-group \
-  --description &quot;deploy test&quot; \
-  --s3-location bucket=&lt;バケット名&gt;,bundleType=zip,key=&lt;ファイル名&gt;
-  {
-    &quot;deploymentId&quot;: &quot;d-2B4OAMT0B&quot;
-   }
-</code></pre>
-
-<p>deploymentId は CodeDeploy 上の Application に紐付いた ID です。CodeDeploy の
-API を叩くか AWS コンソールで確認可能です。</p>
-
-<h4 id="circleci-の問題点とそれの回避方法">CircleCI の問題点とそれの回避方法</h4>
-
-<ul>
-<li>production と staging</li>
-</ul>
-
-<p>1つのブランチで管理できる circle.yml は1つです。このファイルの中で定義できる &lsquo;本番用&rsquo;, &lsquo;開発用&rsquo; の定義は
-deployment -&gt; production, staging の2種類になります。この2つで管理しきれない環境がある場合(例えば staging 以前の
-development 環境がある) は、レポジトリのブランチを別けて circle.yml を管理する方法があると思います。</p>
-
-<ul>
-<li>複数のデプロイ先があるレポジトリの運用</li>
-</ul>
-
-<p>同一のレポジトリ内で管理しているコードのデプロイ先が複数ある場合は CodeDeploy 上で1つの Application に対して複数の
-Deployment-Group を作成することで対応できます。ただ、cirlce.yml で定義できるデプロイ先は deployment_group: の1つ(
-厳密に言うと production, staging の2つ) になるので、こちらもブランチによる circle.yml の別管理で回避できそうです。</p>
-
-<p>こちらの問題については CircleCI 的にはおそらく「1つのレポジトリで管理するデプロイ先は1つに」というコンセプトなのかもしれません。</p>
-
-<h4 id="aws-iam-ユーザにアタッチする-policy-作成">AWS IAM ユーザにアタッチする Policy 作成</h4>
-
-<p>IAM ユーザを CircleCI に事前に設定しておくことで直接 AWS のリソースを操作出来るのですが、
-そのユーザにアタッチしておくべき Policy について例をあげておきます。</p>
-
-<p>特定の S3 バケットにオブジェクト Put する Policy</p>
-
-<pre><code class="language-json">{
-    &quot;Version&quot;: &quot;2012-10-17&quot;,
-    &quot;Statement&quot;: [
-        {
-            &quot;Sid&quot;: &quot;Stmt1444196633000&quot;,
-            &quot;Effect&quot;: &quot;Allow&quot;,
-            &quot;Action&quot;: [
-                &quot;s3:PutObject&quot;
-            ],
-            &quot;Resource&quot;: [
-                &quot;arn:aws:s3:::&lt;S3 バケット名&gt;/*&quot;
-            ]
-        }
-    ]
-}
-</code></pre>
-
-<p>CodeDeploy の各 Action を実行する Policy</p>
-
-<pre><code class="language-json">{
-    &quot;Version&quot;: &quot;2012-10-17&quot;,
-    &quot;Statement&quot;: [
-        {
-            &quot;Effect&quot;: &quot;Allow&quot;,
-            &quot;Action&quot;: [
-                &quot;codedeploy:RegisterApplicationRevision&quot;,
-                &quot;codedeploy:GetApplicationRevision&quot;
-            ],
-            &quot;Resource&quot;: [
-                &quot;*&quot;
-            ]
-        },
-        {
-            &quot;Effect&quot;: &quot;Allow&quot;,
-            &quot;Action&quot;: [
-                &quot;codedeploy:CreateDeployment&quot;,
-                &quot;codedeploy:GetDeployment&quot;
-            ],
-            &quot;Resource&quot;: [
-                &quot;*&quot;
-            ]
-        },
-        {
-            &quot;Effect&quot;: &quot;Allow&quot;,
-            &quot;Action&quot;: [
-                &quot;codedeploy:GetDeploymentConfig&quot;
-            ],
-            &quot;Resource&quot;: [
-                &quot;*&quot;
-            ]
-        }
-    ]
-}
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>CodeDeploy, S3 を併用することで CircleCI を使っても VPC 内のプライベートインス
-タンスにデプロイできることが判りました。もし EC2 インスタンスを使っている場合
-は他の方法も取れることが判っています。circle.yml 内の pre: で指定出来るコマン
-ド・スクリプトで EC2 インスタンスに紐付いているセキュリティグループに穴あけ処
-理を記述すれば良さそうです。デプロイが終わったら穴を塞げばいいですね。この辺の
-例については国内でもブログ記事にされている方がいらっしゃいますので参考にしてくだ
-さい。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/">cAdvisor/influxDB/GrafanaでDockerリソース監視</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2015-09-12'>
-            September 12, 2015</time>
+            datetime='2016-07-23'>
+            July 23, 2016</time>
         <span class="author"></span>
         
             <p>2 minute read</p>
@@ -958,228 +255,679 @@ Deployment-Group を作成することで対応できます。ただ、cirlce.ym
     
     <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 
-<p>今回は Docker ネタです。Docker 導入するにしても監視はどうする？という話になる
-と思うのですが、各 Monitoring as a Service を使うにしてもエージェント入れない
-といけないしお金掛かることもあるし..で、調べていたら cAdvisor というキーワード
-が出てきました。今回は cAdvisor を使ってコンテナの監視が出来ないか、について書
-いていきたいと想います。</p>
+<p>今日は Go 言語でサーバのメトリクスデータを InfluxDB に入れてリソース監視を行う方法について書きます。</p>
+
+<p>Ansible, Terraform, Chef などのソフトウェアを使ってインフラを定義するのが当たり前になった現在ですが、本当の意味でのソフトウェアによるインフラの定義ってなんだろと最近考えています。aws-sdk や fog などを使ったネイティブな言語でインフラを定義することの意味もあるように感じているからです。某サービスプロバイダのエンジニアはこうした言語によるインフラの定義の一番大きなメリットとして &ldquo;再利用性&rdquo; をあげていました。こうしたソフトウェアによるインフラの定義や構成を行う上で監視についてもコード化できるのでは？と考えて今回の記事に至りました。</p>
+
+<h2 id="使うモノ">使うモノ</h2>
 
 <ul>
-<li>cAdvisor とは ?</li>
+<li><a href="https://github.com/influxdata/influxdb/tree/master/client">https://github.com/influxdata/influxdb/tree/master/client</a></li>
 </ul>
 
-<p>cAdvisor は Kubernates で用いられているコンポーネントで単体でも利用可能とのこ
-と。Google が開発しています。また Docker コンテナの監視においてこの cAdvisor
-は一般化しつつあるようです。</p>
-
-<p><a href="https://github.com/google/cadvisor">https://github.com/google/cadvisor</a></p>
+<p>公式の InfluxDB Go Client です。InfluxDB 自体が Go 言語で書かれていますがクライアントも Go 言語で記述することができます。ここにあるサンプルコードをすこしいじって、今回の記事を書こうと思います。</p>
 
 <ul>
-<li>収集したメトリクスの保存</li>
+<li><a href="https://github.com/shirou/gopsutil">https://github.com/shirou/gopsutil</a></li>
 </ul>
 
-<p>cAdvisor 自体も Docker で起動して、同ホスト上に起動している Docker コンテナの
-リソースをモニタリングしてくれます。そのメトリクスデータは幾つかの DB に保存出
-来るのですが、そのうちの一つが influxDB です。influxDB は時系列データベースで
-す。システムのメトリクスデータを収めるのにちょうどいいデータベースになります。</p>
+<p>@shirou さんが作られた psutil の Go 言語版です。CPU, Mem などリソースをモニタするのに便利なので利用します。</p>
 
-<p><a href="https://influxdb.com/">https://influxdb.com/</a></p>
+<h2 id="環境構築">環境構築</h2>
+
+<p>環境を作っていきます。InfluxDB と Chronograf を構築するのですが Docker で構築するのが簡単なのでこれを利用します。Chronograf は InfluxDB 内のデータを可視化するためのソフトウェアです。</p>
 
 <ul>
-<li>DB に収めたメトリクスの可視化</li>
+<li>InfluxDB の起動</li>
 </ul>
 
-<p>influxDB に収めたメトリクスデータを可視化するのが Grafana です。Grafana のデー
-タソースは influxDB の他にも幾つかあり Elasticsearch, KairosDB, Graphite 等が
-それです。</p>
+<p>InfluxDB のコンテナを起動します。</p>
 
-<p><a href="http://grafana.org/">http://grafana.org/</a></p>
-
-<p>では早速試してみましょう。</p>
-
-<h2 id="前提の環境">前提の環境</h2>
-
-<p>今回は Vagrant を使います。また Vagrant 上で上記の3つのソフトウェアを Docker
-で稼働します。またどうせなので docker-compose を使って3つのコンテナを一斉に立
-ち上げてみましょう。</p>
-
-<h2 id="vagrantfile-の準備">VagrantFile の準備</h2>
-
-<p>下記のような VagrantFile を作成します。各ソフトウェアはそれぞれ WebUI を持って
-いて、そこに手元のコンピュータから接続するため forwarded_port しています。</p>
-
-<pre><code># -*- mode: ruby -*-
-# vi: set ft=ruby :
-
-Vagrant.configure(2) do |config|
-    config.vm.box = &quot;ubuntu/trusty64&quot;
-    config.vm.network &quot;forwarded_port&quot;, guest: 8080, host: 8080
-    config.vm.network &quot;forwarded_port&quot;, guest: 8083, host: 8083
-    config.vm.network &quot;forwarded_port&quot;, guest: 3000, host: 3000
-    config.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.10&quot;
-end
+<pre><code>docker run -p 8083:8083 -p 8086:8086 \
+      -v $PWD:/var/lib/influxdb \
+      influxdb
 </code></pre>
 
-<h2 id="docker-コンテナの起動と-docker-compose-yml-の準備">Docker コンテナの起動と docker-compose.yml の準備</h2>
-
-<p>Vagrant を起動し docker, docker-compose のインストールを行います。</p>
-
-<pre><code class="language-bash">$ vagrant up
-$ vagrant ssh
-vagrant$ sudo apt-get update ; sudo apt-get -y install curl
-vagrant$ curl -sSL https://get.docker.com/ | sh
-vagrant$ sudo -i
-vagrant# export VERSION_NUM=1.4.0
-vagrant# curl -L https://github.com/docker/compose/releases/download/VERSION_NUM/docker-compose-`uname -s`-`uname -m` &gt; /usr/local/bin/docker-compose
-vagrant# chmod +x /usr/local/bin/docker-compose
-</code></pre>
-
-<p>次に docker-compose.yml を作成します。上記3つのソフトウェアが稼働するコンテナ
-を起動するため下記のように記述しましょう。カレントディレクトリに作成します。</p>
-
-<pre><code>InfluxSrv:
-    image: &quot;tutum/influxdb:0.8.8&quot;
-    ports:
-        - &quot;8083:8083&quot;
-        - &quot;8086:8086&quot;
-    expose:
-        - &quot;8090&quot;
-        - &quot;8099&quot;
-    environment:
-        - PRE_CREATE_DB=cadvisor
-cadvisor:
-    image: &quot;google/cadvisor:0.16.0&quot;
-    volumes:
-        - &quot;/:/rootfs:ro&quot;
-        - &quot;/var/run:/var/run:rw&quot;
-        - &quot;/sys:/sys:ro&quot;
-        - &quot;/var/lib/docker/:/var/lib/docker:ro&quot;
-    links:
-        - &quot;InfluxSrv:influxsrv&quot;
-    ports:
-        - &quot;8080:8080&quot;
-    command: &quot;-storage_driver=influxdb -storage_driver_db=cadvisor -storage_driver_host=influxsrv:8086 -storage_driver_user=root -storage_driver_password=root -storage_driver_secure=False&quot;
-grafana:
-    image: &quot;grafana/grafana:2.1.3&quot;
-    ports:
-        - &quot;3000:3000&quot;
-    environment:
-        - INFLUXDB_HOST=localhost
-        - INFLUXDB_PORT=8086
-        - INFLUXDB_NAME=cadvisor
-        - INFLUXDB_USER=root
-        - INFLUXDB_PASS=root
-    links:
-        - &quot;InfluxSrv:influxsrv&quot;
-</code></pre>
-
-<p>コンテナの起動
-+++</p>
-
-<p>docker コンテナを立ち上げます。</p>
-
-<pre><code>vagrant$ docker-compose -d
-</code></pre>
-
-<h2 id="influxdb-の-webui-に接続する">influxDB の WebUI に接続する</h2>
-
-<p>それでは起動したコンテナのうち一つ influxDB の WebUI に接続していましょう。
-上記の VagrantFile では IP アドレスを 192.168.33.10 と指定しました。</p>
-
-<p>URL : <a href="http://192.168.33.10:8083">http://192.168.33.10:8083</a></p>
-
-<p>データベースに接続します。</p>
-
-<p>ユーザ名 : root
-パスワード : root</p>
-
-<p>接続するとデータベース作成画面に飛びますので Database Datails 枠に &ldquo;cadvisor&rdquo;
-と入力、その他の項目はデフォルトのままで &ldquo;Create Database&rdquo; をクリックします。</p>
-
-<h2 id="cadvisor-の-webui-に接続する">cAdvisor の WebUI に接続する</h2>
-
-<p>続いて cAdvisor の WebUI に接続してみましょう。</p>
-
-<p>URL : <a href="http://192.168.33.10:8080">http://192.168.33.10:8080</a></p>
-
-<p>ここでは特に作業の必要はありません。コンテナの監視が行われグラフが描画されてい
-ることを確認します。</p>
-
-<h2 id="grafana-の-webui-に接続する">Grafana の WebUI に接続する</h2>
-
-<p>最後に Grafana の WebUI です。</p>
-
-<p>URL : <a href="http://192.168.33.10:3000">http://192.168.33.10:3000</a>
-ユーザ名 : admin
-パスワード : admin</p>
-
-<p>まずデータソースの設定を行います。左上のアイコンをクリックし &ldquo;Data Sources&rdquo; を
-選択します。次に &ldquo;Add New Data Source&rdquo; ボタンをクリックします。</p>
-
-<p>下記の情報を入力しましょう。</p>
-
 <ul>
-<li>Name : influxdb</li>
-<li>Type : influxDB 0.8.x</li>
-<li>Url  : <a href="http://influxsrv:8086">http://influxsrv:8086</a></li>
-<li>Access : proxy</li>
-<li>Basic Auth User admin</li>
-<li>Basic Auth Password admin</li>
-<li>Database : cadvisor</li>
-<li>User : root</li>
-<li>Password : root</li>
+<li>Chronograf の起動</li>
 </ul>
 
-<p>さて最後にグラフを作成していきます。左メニューの &ldquo;Dashboard&rdquo; を選択し上部の
-&ldquo;Home&rdquo; ボランを押し &ldquo;+New&rdquo; を押します。</p>
+<p>Chronograf のコンテナを起動します。</p>
 
-<p>下記の画面を参考にし値に入力していきます。</p>
+<pre><code>docker run -p 10000:10000 chronograf
+</code></pre>
 
-<p>Metrics を選択しネットワークの受信転送量をグラフにしています。</p>
+<p>この時点で http://${DOCKER_HOST}:10000/ にアクセスすると Chronograf の UI を確認できます。</p>
 
-<ul>
-<li>series : &lsquo;stats&rsquo;</li>
-<li>alias : RX Bytes</li>
-<li>select mean(rx_bytes)</li>
-</ul>
+<h2 id="influxdb-にユーザ-データベースを作成する">InfluxDB にユーザ・データベースを作成する</h2>
 
-<p>同じく送信転送量もグラフにします。Add Query を押すと追加できます。</p>
+<p>InfluxDB 上にユーザとデータベースを作成します。言語の中でも作ることが出来ますが、今回は手動で。
+Mac OSX を使っている場合 homebrew で influxdb をインストールすることが簡単にできます。</p>
 
-<ul>
-<li>series : &lsquo;stats&rsquo;</li>
-<li>alias : TX Bytes</li>
-<li>select mean(tx_bytes)</li>
-</ul>
+<pre><code>brew install influxdb
+</code></pre>
 
-<p><img src="http://jedipunkz.github.io/pix/grafana_input_data.png" width="80%"></p>
+<p>ユーザを作ります。</p>
 
-<p>時間が経過すると下記のようにグラフが描画されます。</p>
+<pre><code>influx -host 192.168.99.100 -port 8086
+&gt; create user foo with password 'foo'
+&gt; grant all privileges to foo
+</code></pre>
 
-<p><img src="http://jedipunkz.github.io/pix/grafana_graph.png" width="80%"></p>
+<p>データベースを作ります。</p>
+
+<pre><code>influx -host 192.168.99.100 -port 8086
+&gt; CREATE DATABASE IF NOT EXISTS square_holes;
+</code></pre>
+
+<h2 id="go言語で-cpu-時間を取得し-influxdb-にメトリクスデータを挿入">Go言語で CPU 時間を取得し InfluxDB にメトリクスデータを挿入</h2>
+
+<p>Go 言語でメモリー使用率を取得し得られたメトリクスデータを InfluxDB に挿入するコードを書きます。</p>
+
+<pre><code class="language-golang">package main
+
+import (
+    &quot;log&quot;
+    &quot;time&quot;
+
+    &quot;github.com/influxdata/influxdb/client/v2&quot;
+    &quot;github.com/shirou/gopsutil/cpu&quot;
+)
+
+const (
+    MyDB = &quot;square_holes&quot;
+    username = &quot;foo&quot;
+    password = &quot;foo&quot;
+)
+
+func main() {
+    for {
+        // Make client
+        c, err := client.NewHTTPClient(client.HTTPConfig{
+            Addr: &quot;http://192.168.99.100:8086&quot;,
+            Username: username,
+            Password: password,
+        })
+    
+        if err != nil {
+            log.Fatalln(&quot;Error: &quot;, err)
+        }
+    
+        // Create a new point batch
+        bp, err := client.NewBatchPoints(client.BatchPointsConfig{
+            Database:  MyDB,
+            Precision: &quot;s&quot;,
+        })
+    
+        if err != nil {
+            log.Fatalln(&quot;Error: &quot;, err)
+        }
+    
+        // get CPU info
+        cp, _ := cpu.Times(true)
+
+        // get CPU status info for each core
+        var user, system, idle float64 = 0, 0, 0
+        for _, sub_cpu := range cp {
+            user = user + sub_cpu.User
+            system = system + sub_cpu.System
+            idle = idle + sub_cpu.Idle
+        }
+    
+        // Create a point and add to batch
+        tags := map[string]string{&quot;cpu&quot;: &quot;cpu&quot;}
+        fields := map[string]interface{}{
+            &quot;User&quot;:     user / float64(len(cp)),
+            &quot;System&quot;:   system / float64(len(cp)),
+            &quot;Idle&quot;:     idle / float64(len(cp)),
+        }
+        pt, err := client.NewPoint(&quot;cpu&quot;, tags, fields, time.Now())
+    
+        if err != nil {
+            log.Fatalln(&quot;Error: &quot;, err)
+        }
+    
+        bp.AddPoint(pt)
+    
+        // Write the batch
+        c.Write(bp)
+        time.Sleep(1 * time.Second)
+    }
+}
+</code></pre>
+
+<p>ビルドして実行すると下記のように influxdb 上のデータベースにメトリクスデータが挿入されていることを確認できます。</p>
+
+<pre><code>influx -host 192.168.99.100 -port 8086 -execute 'SELECT * FROM cpu' -database=square_holes -precision=s | head -8
+name: cpu
+---------
+time            Idle            System          User            cpu
+1469342272      20831.04296875  3700.185546875  3544.90234375   cpu
+1469342273      20831.666015625 3700.302734375  3544.966796875  cpu
+1469342274      20832.2109375   3700.447265625  3545.068359375  cpu
+1469342275      20832.828125    3700.546875     3545.13671875   cpu
+1469342291      20841.728515625 3702.482421875  3546.806640625  cpu
+</code></pre>
+
+<p>Chronograf の UI で確認してみましょう。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/influx-go.png" width="80%"></p>
+
+<p>得られた CPU に関するデータが可視化されていることが確認できます。変化に乏しいグラフですが&hellip;。
+この辺りは CPU 時間から CPU 使用率を得るコードに書き換えるといいかもしれません。</p>
 
 <h2 id="まとめと考察">まとめと考察</h2>
 
-<p>3つのソフトウェア共に開発が活発であり、cAdvisor は特に Docker コンテナの監視と
-して一般化しつつあるよう。Kubernates の一部ということもありそう簡単には廃れな
-いと想います。コンテナの中にエージェント等を入れることもなく、これで Docker コ
-ンテナのリソース監視が出来そう。ただサービス監視は別途考えなくてはいけないなぁ
-という印象です。また、今回 docker-compose に記した各コンテナのバージョンは
-Docker Hub を確認すると別バージョンもあるので時期が経ってこのブログ記事をご覧
-になった方は修正すると良いと想います。ただこの記事を書いている時点では
-influxDB の 0.9.x 系では動作しませんでした。よって latest ではなくバージョン指
-定で記してあります。</p>
+<p>InfluxDB の提供元が出している Telegraf というメトリクスデータの送信エージェントがありますが、同じような動きを Go 言語で簡単に開発できることが分かりました。ネイティブな言語で開発するとより柔軟にデータの送信ができることも期待できます。また冒頭に述べた通り再利用も用意になるのではと思います。インフラの状態をメトリクスデータとして時系列 DB に挿入して可視化するということは監視のコード化とも言えると思います。ただし、フレームワークが出てきてもっと簡単に書ける仕組みが出てこないと厳しい気もしますが。果たしてこれらインフラを言語で記述していくことがどれだけ有用なのかまだわかりませんが、いつか現場で実践してみたいと思います。</p>
 
-<h2 id="参考にしたサイト">参考にしたサイト</h2>
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h2>
+        
+        
+            <p>test-kitchen with ansible, docker</p>
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2016-07-14'>
+            July 14, 2016</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>私もインフラのプロビジョニングツールとして Chef ではなく Ansible を使うことが増えたのですが、Chef を使っていた頃に同じく利用していた test-kitchen が便利だったので ansible と併用できないかと思い試してみました。test-kitchen は Docker コンテナや EC2 等を起動して Chef, Ansible 等で構成をデプロイし serverspec 等のテストツールで構成をテストできるソフトウェアです。AWS EC2 でデプロイしてもいいのですが、EC2 を起動してデプロイして失敗したら削除してのサイクルを回すことを考えるとだいぶ面倒なので Docker + test-kitchen を使ってこのサイクルを高速に回す方がメリットが大きそうです。今回は Docker + test-kitchen を使って Ansible Role (Playbook) を開発するサイクルを高速化する方法を記したいと思います。</p>
+
+<h2 id="ソフトウェアの構成">ソフトウェアの構成</h2>
+
+<p>構成は、私の場合 Mac OSX を使っているので下記のとおりです。</p>
 
 <ul>
-<li><a href="http://qiita.com/atskimura/items/4c4aaaaa554e2814e938">http://qiita.com/atskimura/items/4c4aaaaa554e2814e938</a></li>
-<li><a href="https://www.brianchristner.io/how-to-setup-docker-monitoring/">https://www.brianchristner.io/how-to-setup-docker-monitoring/</a></li>
+<li>test-kitchen</li>
+<li>kitchen-ansible (test-kitchen ドライバ)</li>
+<li>kitchen-docker (test-kitchen ドライバ)</li>
+<li>serverspec</li>
+<li>ansible</li>
+<li>docker (Docker-machine)</li>
+<li>VirtualBox</li>
 </ul>
+
+<p>Linux でネイティブな Docker を使っている方は以降、読み替えて下さい。読み替えるのはそれほど難しくないと思います。</p>
+
+<h2 id="ソフトウェアのインストール">ソフトウェアのインストール</h2>
+
+<p>今回は上記ソフトウェアのインストール方法は省きます。test-kitchen, kitchen-ansible, kitchen-docker, serverspec は Ruby で開発されたソフトウェアなので Gemfile 等で管理、ansible は pip 等でインストールしてください。</p>
+
+<h2 id="環境作成">環境作成</h2>
+
+<p>test-kitchen が稼働するように環境を作っていきます。
+作業ディレクトリで kitchen コマンドを使って初期設定を行います。今回は試しに nginx のデプロイを実施したいと思います。</p>
+
+<pre><code>$ mkdir -p test-kitchen/nginx test-kitchen/roles
+$ cd test-kitchen/nginx
+$ kitchen init
+</code></pre>
+
+<p>また上記で作成した roles ディレクトリに ansible-galaxy で nginx の role を取得します。</p>
+
+<pre><code>$ ansible-galaxy install geerlingguy.nginx -p ../roles/nginx
+</code></pre>
+
+<p>下記の内容を .kitchen.local.yml として保存してください。
+Docker ホストの指定、Provisioner として ansible の指定、Platform として &lsquo;ubuntu:16.04&rsquo; の Docker コンテナの指定を行っています。</p>
+
+<pre><code>---
+driver:
+  name: docker
+  binary: /usr/local/bin/docker
+  socker: tcp://192.168.99.100:2376
+
+provisioner:
+  name: ansible_playbook
+  playbook: ./site.yml
+  roles_path: ../roles
+  host_vars_path: ./host_vars
+  hosts: kitchen-deploy
+  require_ansible_omnibus: false
+  ansible_platform: ubuntu
+  require_chef_for_busser: true
+
+platforms:
+    - name: ubuntu
+      driver_config:
+        image: ubuntu:16.04
+        platform: ubuntu
+        require_chef_omnibus: false
+
+suites:
+  - name: default
+    run_list:
+    attributes:
+</code></pre>
+
+<p>ここからは上記 .kitchen.local.yml ファイル内で指定したファイルの準備を行っていきます。</p>
+
+<p>site.yml ファイルの内容を下記のように書いてください。</p>
+
+<pre><code>---
+- hosts: kitchen-deploy
+  sudo: yes
+  roles:
+    - { role: geerlingguy.nginx, tags: nginx }
+</code></pre>
+
+<p>host_vars/hosts ファイルを作成します。&rsquo;host_vars&rsquo; ディレクトリは手動で作成してください。</p>
+
+<pre><code>localhost              ansible_connection=local
+[kitchen-deploy]
+localhost
+</code></pre>
+
+<p>次に serverspec で行うテストの内容を作成します。
+serverspec-init コマンドではインタラクティブに回答しますが、SSH ではなく EXEC(Local) を選択することに注意してください。</p>
+
+<pre><code>$ mkdir -p test/integration/default/serverspec
+$ cd test/integration/default/serverspec
+$ serverspec-init             # &lt;--- インタラクティブに回答 : 1) UNIX, 2) EXEC(Local) を選択
+$ rm localhost/sample_spec.rb # &lt;--- 必要ないので削除
+</code></pre>
+
+<p>test/integration/default/serverspec/localhost/nginx_spec.rb として下記の内容を試しに書いてみましょう。</p>
+
+<pre><code>require 'spec_helper'
+
+describe package('nginx') do
+    it { should be_installed }
+end
+
+describe service('nginx') do
+    it { should be_enabled }
+    it { should be_running }
+end
+
+describe file('/etc/nginx/nginx.conf') do
+    it { should be_file }
+end
+</code></pre>
+
+<p>下記のようなファイルとディレクトリ構成になっていることを確認しましょう。</p>
+
+<pre><code>.
+├── nginx
+│   ├── chefignore
+│   ├── host_vars
+│   │   └── hosts
+│   ├── site.yml
+│   └── test
+│       └── integration
+│           └── default
+│               ├── Rakefile
+│               └── serverspec
+│                   ├── localhost
+│                   │   └── nginx_spec.rb
+│                   └── spec_helper.rb
+└── roles
+    └── geerlingguy.nginx
+        ├── README.md
+        &lt;省略&gt;
+</code></pre>
+
+<h2 id="デプロイ-テストを実行する">デプロイ・テストを実行する</h2>
+
+<p>環境作成が完了したの Docker コンテナを起動し Ansible でデプロイ、その後 Serverspec でテストしてみます。</p>
+
+<pre><code>$ cd test-kitchen
+$ kitchen create  # &lt;--- Docker コンテナ起動
+$ kitchen setup   # &lt;--- Ansible デプロイ
+$ kitchen verify  # &lt;--- Serverspec テスト
+$ kitchen destroy # &lt;--- コンテナ削除
+$ kitchen test    # &lt;--- 上の4つのコマンドを一気に実行
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>Ansible でも test-kitchen を使ってデプロイ・テストが出来ることが分かりました。インスタンスを使ってデプロイ・テストを実施するよりコンテナを使うほうが失敗した際に削除・起動するのも一瞬で終わりますし Ansible 開発が高速化できることも実際に触っていただいてわかっていただけると思います。</p>
+
+<p>ただ上記の手順ではコンテナの中に Ruby, Chef も一緒にインストールされてしまいます。
+test-kitchen 的には下記の記述を .kitchen.local.yml の provisioner: の欄に記述すると Chef のインストールは省けるはず (Ruby は Serverspec で用いる) のですが今現在 (2016/7中旬) では NG でした。これが正常に機能するようになるともっと高速にコンテナデプロイが完了すると思うので残念です。</p>
+
+<pre><code>require_chef_for_busser: false
+require_ruby_for_busser: true
+</code></pre>
 </p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/">イベントドリブンな StackStorm で運用自動化</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2016-07-02'>
+            July 2, 2016</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>今回は StackStorm (<a href="https://stackstorm.com/">https://stackstorm.com/</a>) というイベントドリブンオートメーションツールを使ってみましたので
+紹介したいと思います。</p>
+
+<p>クラウドとプロビジョニングツールの登場で昨今はエンジニアがほぼ全ての操作を自動化出来るようになりました。
+ですが監視についてはどうでしょうか？監視システムを自動で構築することが出来ても障害発生時に対応を行う
+のは手動になっていませんでしょうか。もちろんクラスタ組んでいれば大抵のアラートは放置出来ますが、クラスタ
+を組むことが出来ないような箇所はクラウドを使ってもどうしても出てきます。</p>
+
+<p>そこで登場するのが今回紹介する StackStorm のようなツールかなぁと考えるようになりました。</p>
+
+<h2 id="インストール">インストール</h2>
+
+<p>インストール手順は下記の URL にあります。</p>
+
+<p><a href="https://docs.stackstorm.com/install/index.html">https://docs.stackstorm.com/install/index.html</a></p>
+
+<p>自分は CentOS7 を使ったので下記のワンライナーでインストールできました。
+password は任意のものを入れてください。</p>
+
+<pre><code>curl -sSL https://stackstorm.com/packages/install.sh | bash -s -- --user=st2admin --password=foo
+</code></pre>
+
+<p>MongoDB, postgreSQL が依存してインストールされます。</p>
+
+<p>80番ポートで下記のような WEB UI も起動します。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/stackstorm.png" width="70%"></p>
+
+<h2 id="stackstorm-の基本">StackStorm の基本</h2>
+
+<p>基本を知るために幾つかの要素について説明していきます。</p>
+
+<p>まず CLI で操作するために TOKEN を取得して環境変数にセットする必要があります。
+上記で設定したユーザ名・パスワードを入力してください。</p>
+
+<pre><code>export ST2_AUTH_TOKEN=`st2 auth -t -p foo st2admin`
+</code></pre>
+
+<ul>
+<li>Action</li>
+</ul>
+
+<p>Action はイベントが発生した際に実行できるアクションになります。早速アクションの一覧を取得してみましょう。</p>
+
+<pre><code>$ st2 action list
++---------------------------------+---------+-------------------------------------------------------------+
+| ref                             | pack    | description                                                 |
++---------------------------------+---------+-------------------------------------------------------------+
+| chatops.format_execution_result | chatops | Format an execution result for chatops                      |
+| chatops.post_message            | chatops | Post a message to stream for chatops                        |
+| chatops.post_result             | chatops | Post an execution result to stream for chatops              |
+&lt;省略&gt;
+| core.http                       | core    | Action that performs an http request.                       |
+| core.local                      | core    | Action that executes an arbitrary Linux command on the      |
+|                                 |         | localhost.                                                  |
+| core.local_sudo                 | core    | Action that executes an arbitrary Linux command on the      |
+|                                 |         | localhost.                                                  |
+| core.remote                     | core    | Action to execute arbitrary linux command remotely.         |
+| core.remote_sudo                | core    | Action to execute arbitrary linux command remotely.         |
+| core.sendmail                   | core    | This sends an email                                         |
+| core.windows_cmd                | core    | Action to execute arbitrary Windows command remotely.       |
+&lt;省略&gt;
+| linux.cp                        | linux   | Copy file(s)                                                |
+| linux.diag_loadavg              | linux   | Diagnostic workflow for high load alert                     |
+| linux.dig                       | linux   | Dig action                                                  |
+&lt;省略&gt;
+| st2.kv.get                      | st2     | Get value from datastore                                    |
+| st2.kv.set                      | st2     | Set value in datastore                                      |
++---------------------------------+---------+-------------------------------------------------------------+
+</code></pre>
+
+<p>上記のように Linux のコマンドや ChatOps, HTTP でクエリを投げるもの、Key Value の読み書きを行うモノまであります。
+上記はかなり咲楽して貼り付けたので本来はもっと沢山のアクションがあります。</p>
+
+<ul>
+<li>Trigger</li>
+</ul>
+
+<p>Trigger は Action を実行する際のトリガになります。同様に一覧を見てみましょう。</p>
+
+<pre><code>$ st2 trigger list
++--------------------------------------+-------+----------------------------------------------------------------+
+| ref                                  | pack  | description                                                    |
++--------------------------------------+-------+----------------------------------------------------------------+
+| core.st2.generic.actiontrigger       | core  | Trigger encapsulating the completion of an action execution.   |
+| core.st2.IntervalTimer               | core  | Triggers on specified intervals. e.g. every 30s, 1week etc.    |
+| core.st2.generic.notifytrigger       | core  | Notification trigger.                                          |
+| core.st2.DateTimer                   | core  | Triggers exactly once when the current time matches the        |
+|                                      |       | specified time. e.g. timezone:UTC date:2014-12-31 23:59:59.    |
+| core.st2.action.file_writen          | core  | Trigger encapsulating action file being written on disk.       |
+| core.st2.CronTimer                   | core  | Triggers whenever current time matches the specified time      |
+|                                      |       | constaints like a UNIX cron scheduler.                         |
+| core.st2.key_value_pair.create       | core  | Trigger encapsulating datastore item creation.                 |
+| core.st2.key_value_pair.update       | core  | Trigger encapsulating datastore set action.                    |
+| core.st2.key_value_pair.value_change | core  | Trigger encapsulating a change of datastore item value.        |
+| core.st2.key_value_pair.delete       | core  | Trigger encapsulating datastore item deletion.                 |
+| core.st2.sensor.process_spawn        | core  | Trigger indicating sensor process is started up.               |
+| core.st2.sensor.process_exit         | core  | Trigger indicating sensor process is stopped.                  |
+| core.st2.webhook                     | core  | Trigger type for registering webhooks that can consume         |
+|                                      |       | arbitrary payload.                                             |
+| linux.file_watch.line                | linux | Trigger which indicates a new line has been detected           |
++--------------------------------------+-------+----------------------------------------------------------------+
+</code></pre>
+
+<p>CronTimer はその名の通り Cron であることが分かります。IntervalTimer は同じように一定時間間隔で実行するようです。
+その他 webhook や Key Value のペアが生成・削除・変更されたタイミング、等あります。</p>
+
+<ul>
+<li>Rule</li>
+</ul>
+
+<p>Rule は Trigger が発生して Action を実行する際のルールを記述するものになります。</p>
+
+<pre><code>$ st2 rule list
++----------------+---------+-------------------------------------------------+---------+
+| ref            | pack    | description                                     | enabled |
++----------------+---------+-------------------------------------------------+---------+
+| chatops.notify | chatops | Notification rule to send results of action     | True    |
+|                |         | executions to stream for chatops                |         |
++----------------+---------+-------------------------------------------------+---------+
+</code></pre>
+
+<p>初期では上記の chatops.notify のみがあります。</p>
+
+<h2 id="実際に使ってみる">実際に使ってみる</h2>
+
+<p>core.local というアクションを実行してみました。</p>
+
+<pre><code>$ st2 run core.local -- uname -a
+id: 5774c022e138230c66f2eefc
+status: succeeded
+parameters:
+  cmd: uname -a
+result:
+  failed: false
+  return_code: 0
+  stderr: ''
+  stdout: 'Linux localhost.localdomain 3.10.0-327.el7.x86_64 #1 SMP Thu Nov 19 22:10:57 UTC 2015 x86_64 x86_64 x86_64 GNU/Linux'
+  succeeded: true
+</code></pre>
+
+<p>stdout に実行結果が出力されています。また下記のように実行結果の一覧を得ることが出来ます。</p>
+
+<pre><code>$ st2 execution list
++----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
+| id                         | action.ref    | context.user | status                  | start_timestamp             | end_timestamp                 |
++----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
+|   5774bdbee138230c66f2eeef | core.local    | st2admin     | succeeded (0s elapsed)  | Thu, 30 Jun 2016 06:35:42   | Thu, 30 Jun 2016 06:35:42 UTC |
+|                            |               |              |                         | UTC                         |                               |
++----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
+</code></pre>
+
+<h2 id="応用した使い方">応用した使い方</h2>
+
+<p>上記のように core.local, core.remote 等でホスト上のコマンドを実行できることが分かりました。
+ここで応用した使い方をしてみます。と言いますか、上記の基本的な使い方だけでは StackStorm を
+使うメリットが無いように思えます。</p>
+
+<p>下記のような Rule を作成します。ファイル名は st2_sample_rule_webhook_remote_command.yaml とします。</p>
+
+<pre><code>---
+    name: &quot;st2_sample_rule_webhook_remote_command&quot;
+    pack: &quot;examples&quot;
+    description: &quot;Sample rule of webhook.&quot;
+    enabled: true
+
+    trigger:
+        type: &quot;core.st2.webhook&quot;
+        parameters:
+            url: &quot;restart&quot;
+
+    criteria:
+
+    action:
+        ref: &quot;core.remote&quot;
+        parameters:
+            hosts: &quot;10.0.1.250&quot;
+            username: &quot;thirai&quot;
+            private_key: &quot;/root/.ssh/id_rsa&quot;
+            cmd: &quot;sudo service cron restart&quot;
+</code></pre>
+
+<p>StackStorm の基本要素 Action, Criteria(Rule の基準), Trigger から成っていることが分かります。
+Triger は webhoook です。url: &ldquo;restart&rdquo; となっているのは URL : https://<stackstorm_ip_addr>/api/v1/webhooks/restart という名前で
+アクセスを受けるようになるという意味です。criteria は今回は無条件で action を実行したいので空行にします。
+action では core.remote が選択されていて hosts: &lsquo;10.0.1.250&rsquo; に username で SSH してコマンドを実行しています。</p>
+
+<p>要するに https://<stackstorm_ip_addr>/api/v1/webhooks/restart というアドレスでリクエストを受けると
+10.0.1.250 に &lsquo;foo&rsquo; というユーザで SSH してコマンドを実行する、というルールになっています。</p>
+
+<p>下記のコマンドで上記の yaml ファイルをルールに読み込みます。</p>
+
+<pre><code>st2 rule create st2_sample_rule_webhook_remote_command.yaml
+</code></pre>
+
+<p>実際にリクエストを投げてみましょう。Token は読み替えてください。</p>
+
+<pre><code>curl -k https://localhost/api/v1/webhooks/restart -d '{}' -H 'Content-Type: application/json' -H 'X-Auth-Token: &lt;Your_Token&gt;'
+</code></pre>
+
+<p>するとリモートホストで &lsquo;cron&rsquo; プロセスの再起動が掛かります。</p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>StackStorm は紹介した以外にも沢山のアクションがあり応用が効きます。また監視ツールでアラートが発生した際に webhook 通知するようにして
+障害対応を自動で行うといった操作も可能な事がわかりました。ChatOps でも応用が可能なことが分かります。従来、ChatOps ではリモートホストで
+コマンドなどを実行しようとした場合には Hubot 等のプロセスが稼働しているホストもしくはそのホストから SSH 出来るホストで実行する必要がありましたが
+StackStorm を介すことで実行結果の閲覧やルールに従った実行等が可能になります。</p>
+
+<p>自分はまだ少しのアクション・ルールを試用しただけなのですが、他に良い運用上の応用例がないか探してみようと思います。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2016/07/02/stackstorm/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -1330,13 +1078,13 @@ influxDB の 0.9.x 系では動作しませんでした。よって latest で�
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/">GCP ロードバランサと GKE クラスタを Terraform を使って構築する</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
+                                    '2017-04-13'>
+                                    April 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -1344,13 +1092,13 @@ influxDB の 0.9.x 系では動作しませんでした。よって latest で�
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -1358,13 +1106,13 @@ influxDB の 0.9.x 系では動作しませんでした。よって latest で�
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-03'>
-                                    November 3, 2016</time>
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -1372,13 +1120,13 @@ influxDB の 0.9.x 系では動作しませんでした。よって latest で�
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-07-25'>
-                                    July 25, 2016</time>
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
                             </header>
                         </article>
                     </li>
@@ -1417,7 +1165,7 @@ influxDB の 0.9.x 系では動作しませんでした。よって latest で�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">104</span>
+                                <span style="float:right;">108</span>
                             </header>
                         </article>
                     </li>
