@@ -13,12 +13,12 @@
 <html>
     <head>
         
-            <title>infrastructure Posts - ジェダイさんのブログ</title>
+            <title>Infrastructure Posts - ジェダイさんのブログ</title>
         
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.18" />
+        <meta name="generator" content="Hugo 0.20" />
         
 
 
@@ -30,13 +30,15 @@
         
 
         
-        <meta property="og:title" content="infrastructure" />
+        <meta property="og:title" content="Infrastructure" />
 <meta property="og:description" content="技術ネタを書いていきます" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2016-11-27T21:00:45&#43;09:00"/>
+
+<meta property="og:updated_time" content="2016-12-29T09:32:49&#43;09:00"/>
+
 
 
 
@@ -47,7 +49,7 @@
 
 
         
-<meta itemprop="name" content="infrastructure">
+<meta itemprop="name" content="Infrastructure">
 <meta itemprop="description" content="技術ネタを書いていきます">
 
 
@@ -79,7 +81,7 @@
 (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
 (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
 m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-})(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
 
 ga('create', 'UA-30563095-1', 'auto');
 ga('send', 'pageview');
@@ -198,6 +200,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/"><p>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
                     </li>
                 
@@ -209,10 +215,6 @@ ga('send', 'pageview');
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
-                    </li>
-                
             </ul>
         </section>
 
@@ -222,8 +224,142 @@ ga('send', 'pageview');
 
     
     <div id="main">
-        <h1>infrastructure</h1>
+        <h1>Infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/">Google Cloud CDN を使ってみた</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2016-12-29'>
+            December 29, 2016</time>
+        <span class="author"></span>
+        
+            <p>1 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。@jedipunkz です。</p>
+
+<p>今回は Google Cloud Platform の Google CloudCDN について調べてみたので記したいと思います。</p>
+
+<p>CloudCDN は GCP のロードバランサのバックエンドサービスに紐付けられるサービスです。このバックエンドサービスで CloudCDN を有効にしていると CDN サービスを機能させることが出来ます。先に書いておくとこの CloudCDN はとてもシンプルで扱いやすいサービスだと判りました。高機能な他の CDN サービスと比べると機能が足らない感ありますが、必要最低限なところを抑えているのと、価格がとても安いです。(価格は下記の URL 参照)</p>
+
+<p>価格表 : <a href="https://cloud.google.com/cdn/pricing">https://cloud.google.com/cdn/pricing</a></p>
+
+<h2 id="構成">構成</h2>
+
+<p>構成と構成の特徴です。</p>
+
+<pre><code>+----------+                                    +---------+
+| instance |--+                               +-| EndUser |
++----------+  |  +------------+  +----------+ | +---------+
+              +--|LoadBalancer|--| CloudCDN |-+-| EndUser |
++----------+  |  +------------+  +----------+ | +---------+
+| instance |--+                               +-| EndUser |
++----------+                                    +---------+
+</code></pre>
+
+<ul>
+<li>コンテンツが初めてリクエストされた場合キャッシュミスする</li>
+<li>キャッシュミスした際に近くにあるキャッシュからコンテンツを取得しようと試みる</li>
+<li>近くのキャッシュがコンテンツがある場合、最初のキャッシュにコンテンツが送信される</li>
+<li>近くのキャッシュにコンテンツがない場合、HTTP ロードバランサにリクエストが転送される</li>
+<li>その後のリクエストはキャッシュが応答する(キャッシュヒット)</li>
+<li>キャッシュ間のフィルは EndUser のリクエストに応じて実行される</li>
+<li>キャッシュを事前に読み込むことできない</li>
+<li>キャッシュは世界各地に配置されている</li>
+</ul>
+
+<h2 id="cloudcdn-を導入する方法">CloudCDN を導入する方法</h2>
+
+<p>導入する方法は簡単で下記のとおりです。</p>
+
+<ul>
+<li>新規 LB を WebUI で作成</li>
+<li>バックエンドサービスを作成</li>
+<li>右パネルの下にある [Cloud CDN を有効にする] チェックボックスをオンに</li>
+<li>作成ボタンを押下</li>
+</ul>
+
+<p>HTTPD サーバ側 (今回は Apache を使います) でキャッシュに関する設定を行います。
+下記は例です。3600秒、キャッシュさせる設定になります。</p>
+
+<pre><code>Header set Cache-control &quot;public, max-age=3600&quot;
+</code></pre>
+
+<p>キャッシュされる条件は RFC7324 に規定されているとおりです。</p>
+
+<h2 id="特定のキャッシュを削除する方法">特定のキャッシュを削除する方法</h2>
+
+<p>Google Cloud SDK <a href="https://cloud.google.com/sdk/">https://cloud.google.com/sdk/</a> を使うと CLI でコンテンツを指定してキャッシュのクリアが出来ます。また WebUI でもクリアは可能です。</p>
+
+<pre><code>$ gcloud compute url-maps invalidate-cdn-cache &lt;url-map の名前&gt; --path &quot;コンテンツのパス&quot;
+</code></pre>
+
+<p>このときに &ndash;path で指定できるコンテンツの記し方は下記のように指定することも可能です。</p>
+
+<pre><code>--path &quot;/cat.png # &lt;--- 1つのコンテンツキャッシュを削除
+--path &quot;/*&quot;      # &lt;--- 全てのコンテンツキャッシュを削除
+--path &quot;/pix/*&quot;  # &lt;--- ディレクトリ指定で削除
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>価格が低価格で必要最低限な機能に絞られている印象です。シンプルな分、理解し易いですしキャッシュクリアについても Hubot 化などすれば開発者の方に実行してもらいやすいのではないでしょうか。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -768,162 +904,6 @@ mysql&gt;
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2016-07-25'>
-            July 25, 2016</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>kubernetes の環境を簡易的に作れる Minikube (<a href="https://github.com/kubernetes/minikube">https://github.com/kubernetes/minikube</a>) が2ヶ月前ほどにリリースになっていました。簡単ですが少し触ってみたのでその際のメモを記したいと思います。VirtualBox もしくは VMware Fusion がインストールされていればすぐにでも稼働可能です。私は Kubernetes 初心者ですが何も考えずに kubernetes を動かすことが出来ました。</p>
-
-<h2 id="前提">前提</h2>
-
-<p>前提として下記の環境が必要になります。</p>
-
-<ul>
-<li>Mac OSX がインストールされていること</li>
-<li>VirtualBox もしくは VMware Fusion がインストールされていること</li>
-</ul>
-
-<h2 id="minikube-をインストール">minikube をインストール</h2>
-
-<p>minikube をインストールします。</p>
-
-<pre><code>$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.6.0/minikube-darwin-amd64 &amp;&amp; chmod +x minikube &amp;&amp; sudo mv minikube /usr/local/bin/
-</code></pre>
-
-<h2 id="kubetl-をインストール">kubetl をインストール</h2>
-
-<p>次に kubectl をインストールします。</p>
-
-<pre><code>$ curl -k -o kubectl https://kuar.io/darwin/kubectl &amp;&amp; chmod +x kubectl &amp;&amp; sudo mv kubectl /usr/local/bin/
-</code></pre>
-
-<h2 id="minikube-で-kurbernates-を稼働">Minikube で Kurbernates を稼働</h2>
-
-<p>Minikube を使って Kubernetes を稼働してみます。下記のコマンドを実行すると Virtualbox 上で仮想マシンが稼働し Kubernetes 一式も立ち上がります。</p>
-
-<pre><code>$ minikube start
-</code></pre>
-
-<h2 id="kurbernates-を使ってみる">Kurbernates を使ってみる</h2>
-
-<p>Pods を立ち上げてみましょう。下記の内容を redis-django.yaml ファイルに保存します。</p>
-
-<pre><code>apiVersion: v1
-kind: Pod
-metadata:
-  name: redis-django
-  labels:
-    app: web
-spec:
-  containers:
-    - name: key-value-store
-      image: redis
-      ports:
-        - containerPort: 6379
-    - name: frontend
-      image: django
-      ports:
-        - containerPort: 8000
-</code></pre>
-
-<p>kubectl コマンドで Pod を立ち上げます。</p>
-
-<pre><code>$ kubectl create -f ./redis-django.yaml
-</code></pre>
-
-<p>Pod の様子を確認します。</p>
-
-<pre><code>$ kubectl get pods
-NAME           READY     STATUS             RESTARTS   AGE
-redis-django   1/2       CrashLoopBackOff   7          15m
-</code></pre>
-
-<p>Minikube はクラスタといってもノードが1つなので READY <sup>1</sup>&frasl;<sub>2</sub> となるようです。Nodes の様子を見てみます。</p>
-
-<pre><code>$ kubectl get nodes
-NAME         LABELS                                                                                        STATUS
-minikubevm   beta.kubernetes.io/arch=amd64,beta.kubernetes.io/os=linux,kubernetes.io/hostname=minikubevm   Ready
-</code></pre>
-
-<p>Docker ホスト上の様子を見てみましょう。Kubernetes を形成するコンテナと共に redis のコンテナが稼働していることが確認できます。</p>
-
-<pre><code>$ eval $(minikube docker-env)
-$ docker ps
-CONTAINER ID        IMAGE                                                  COMMAND                  CREATED             STATUS              PORTS               NAMES
-550285614e33        redis                                                  &quot;docker-entrypoint.sh&quot;   20 minutes ago      Up 20 minutes                           k8s_key-value-store.a3b8356e_redis-django_default_4440a1d8-5272-11e6-9f19-6e0006e7fb51_90c3fec8
-aba3a8c040d4        gcr.io/google_containers/pause-amd64:3.0               &quot;/pause&quot;                 20 minutes ago      Up 20 minutes                           k8s_POD.822b267d_redis-django_default_4440a1d8-5272-11e6-9f19-6e0006e7fb51_5bef1d2a
-9ea96a3f3e10        gcr.io/google-containers/kube-addon-manager-amd64:v2   &quot;/opt/kube-addons.sh&quot;    48 minutes ago      Up 48 minutes                           k8s_kube-addon-manager.a1c58ca2_kube-addon-manager-minikubevm_kube-system_48abed82af93bb0b941173334110923f_84f4fd38
-192e886a5795        gcr.io/google_containers/pause-amd64:3.0               &quot;/pause&quot;                 48 minutes ago      Up 48 minutes                           k8s_POD.d8dbe16c_kube-addon-manager-minikubevm_kube-system_48abed82af93bb0b941173334110923f_6c65b482
-7b005c68d9d4        gcr.io/google_containers/pause-amd64:3.0               &quot;/pause&quot;                 48 minutes ago      Up 48 minutes                           k8s_POD.2225036b_kubernetes-dashboard-pzdxy_kube-system_7005dce1-479a-11e6-a0ce-86b669e45864_c08bd009
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>Kubernetes のことを殆ど知らない私でもなんとなくですが稼働させて基本的な操作が出来ました。2016/5/31 にリリースされたツールなのでまだ安定しないところもありますが、より容易に Kubernetes が稼働できるようになったのでエンジニアの敷居が下がったのではないでしょうか。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1040,6 +1020,20 @@ aba3a8c040d4        gcr.io/google_containers/pause-amd64:3.0               &quot
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/">GCP ロードバランサと GKE クラスタを Terraform を使って構築する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-04-13'>
+                                    April 13, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
                                 
                                     
@@ -1069,20 +1063,6 @@ aba3a8c040d4        gcr.io/google_containers/pause-amd64:3.0               &quot
                         <article>
                             <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-12-29'>
-                                    December 29, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/">Google Cloud CDN を使ってみた</a></h3>
                                 
                                     
                                 
@@ -1127,7 +1107,7 @@ aba3a8c040d4        gcr.io/google_containers/pause-amd64:3.0               &quot
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">107</span>
+                                <span style="float:right;">108</span>
                             </header>
                         </article>
                     </li>

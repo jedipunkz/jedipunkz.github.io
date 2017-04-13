@@ -13,12 +13,12 @@
 <html>
     <head>
         
-            <title>infrastructure Posts - ジェダイさんのブログ</title>
+            <title>Infrastructure Posts - ジェダイさんのブログ</title>
         
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.18" />
+        <meta name="generator" content="Hugo 0.20" />
         
 
 
@@ -30,13 +30,15 @@
         
 
         
-        <meta property="og:title" content="infrastructure" />
+        <meta property="og:title" content="Infrastructure" />
 <meta property="og:description" content="技術ネタを書いていきます" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2015-11-15T00:00:00&#43;00:00"/>
+
+<meta property="og:updated_time" content="2015-12-22T00:00:00&#43;00:00"/>
+
 
 
 
@@ -47,7 +49,7 @@
 
 
         
-<meta itemprop="name" content="infrastructure">
+<meta itemprop="name" content="Infrastructure">
 <meta itemprop="description" content="技術ネタを書いていきます">
 
 
@@ -79,7 +81,7 @@
 (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
 (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
 m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
-})(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
 
 ga('create', 'UA-30563095-1', 'auto');
 ga('send', 'pageview');
@@ -198,6 +200,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/"><p>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
                     </li>
                 
@@ -209,10 +215,6 @@ ga('send', 'pageview');
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
-                    </li>
-                
             </ul>
         </section>
 
@@ -222,8 +224,373 @@ ga('send', 'pageview');
 
     
     <div id="main">
-        <h1>infrastructure</h1>
+        <h1>Infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/">Weave を使った Docker ネットワーク</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2015-12-22'>
+            December 22, 2015</time>
+        <span class="author"></span>
+        
+            <p>5 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>今回は Weave というコンテナ間のネットワークを提供してくれる Docker のネットワークプラ
+グインを使ってみました。下記のような沢山の機能があるようです。</p>
+
+<ul>
+<li>Fast Data Path</li>
+<li>Docker Network Plugin</li>
+<li>Security</li>
+<li>Dynamic Netwrok Attachment</li>
+<li>Service Binding</li>
+<li>Fault Tolerance</li>
+<li>etc &hellip;</li>
+</ul>
+
+<p>この記事では上から幾つか抜粋して、Weave ってどのように動かせるのか？を解説します。
+そこから Weave が一体ナニモノなのか理解できればなぁと思います。</p>
+
+<h2 id="vagrant-を使った構成">Vagrant を使った構成</h2>
+
+<p>この記事では下記の構成を作って色々と試していきます。使う技術は</p>
+
+<ul>
+<li>Vagrant</li>
+<li>Docker</li>
+<li>Weave</li>
+</ul>
+
+<p>です。</p>
+
+<pre><code>+---------------------+ +---------------------+ +---------------------+
+| docker container a1 | | docker container a2 | | docker container a3 |
++---------------------+ +---------------------+ +---------------------+
+|    vagrant host 1   | |    vagrant host 2   | |    vagrant host 3   |
++---------------------+-+---------------------+-+---------------------+
+|                          Mac or Windows                             |
++---------------------------------------------------------------------+
+</code></pre>
+
+<p>特徴としては</p>
+
+<ul>
+<li>作業端末(Mac or Windows or Linux)上で Vagrant を動作させる</li>
+<li>各 Vagrant VM 同士はホスト OS のネットワークインターフェース上で疎通が取れる</li>
+</ul>
+
+<p>です。</p>
+
+<h2 id="vagrantfile-の作成と-host1-2-3-の起動">Vagrantfile の作成と host1,2,3 の起動</h2>
+
+<p>上記の3台の構成を下記の Vagrantfile で構築します。</p>
+
+<pre><code>Vagrant.configure(2) do |config|
+  config.vm.box = &quot;ubuntu/vivid64&quot;
+
+  config.vm.define &quot;host1&quot; do |server|
+    server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.11&quot;
+  end
+
+  config.vm.define &quot;host2&quot; do |server|
+    server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.12&quot;
+  end
+
+  config.vm.define &quot;host3&quot; do |server|
+    server.vm.network &quot;private_network&quot;, ip: &quot;192.168.33.13&quot;
+  end
+
+  config.vm.provision :shell, inline: &lt;&lt;-SHELL
+apt-get update
+apt-get install -y libsqlite3-dev docker.io
+curl -L git.io/weave -o /usr/local/bin/weave
+chmod a+x /usr/local/bin/weave
+  SHELL
+end
+</code></pre>
+
+<p>vagrant コマンドを使って host1, host2, host3 を起動します。</p>
+
+<pre><code class="language-bash">$ vagrant up
+$ vagrant ssh host1 # &lt;--- host1 に SSH する場合
+$ vagrant ssh host2 # &lt;--- host2 に SSH する場合
+$ vagrant ssh host3 # &lt;--- host3 に SSH する場合
+</code></pre>
+
+<h2 id="物理ノードまたがったコンテナ間で通信をする">物理ノードまたがったコンテナ間で通信をする</h2>
+
+<p>weave でまず物理ノードをまたがったコンテナ間で通信をさせてみましょう。ここでは
+上図の host1, host2 を使います。通常、物理ノードまたがっていると各々のホストで
+稼働する Docker コンテナは通信し合えませんが weave を使うと通信しあうことが出
+来ます。</p>
+
+<p>まず weave が用いる Docker コンテナを稼働します。下記のように /16 でレンジを切って
+更にそこからデフォルトのレンジを指定することが出来ます。</p>
+
+<pre><code class="language-bash">host1# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24
+host1# eval $(weave env)
+host2# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
+host2# eval $(weave env)
+</code></pre>
+
+<p>この状態で下記のようなコンテナが稼働します。</p>
+
+<pre><code class="language-bash">host1# docker ps
+CONTAINER ID        IMAGE                        COMMAND                CREATED             STATUS              PORTS               NAMES
+c55e96b4bdf9        weaveworks/weaveexec:1.4.0   &quot;/home/weave/weavepr   4 seconds ago       Up 3 seconds                            weaveproxy
+394382c9c5d9        weaveworks/weave:1.4.0       &quot;/home/weave/weaver    5 seconds ago       Up 4 seconds                            weave
+</code></pre>
+
+<p>host1, host2 でそれぞれテスト用コンテナを稼働させます。名前を &ndash;name オプションで付けるのを
+忘れないようにしてください。</p>
+
+<pre><code class="language-bash">host1# docker run --name a1 -ti ubuntu
+host2# docker run --name a2 -ti ubuntu
+</code></pre>
+
+<p>どちらか一方から ping をもう一方に打ってみましょう。下記では a2 -&gt; a1 の流れで
+ping を実行しています。</p>
+
+<pre><code class="language-bash">root@a2:/# ping 10.2.1.1 -c 3
+PING 10.2.1.1 (10.2.1.1) 56(84) bytes of data.
+64 bytes from 10.2.1.1: icmp_seq=1 ttl=64 time=0.316 ms
+64 bytes from 10.2.1.1: icmp_seq=2 ttl=64 time=0.501 ms
+64 bytes from 10.2.1.1: icmp_seq=3 ttl=64 time=0.619 ms
+
+--- 10.2.1.1 ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 1999ms
+rtt min/avg/max/mdev = 0.316/0.478/0.619/0.127 ms
+</code></pre>
+
+<p>また docker コンテナを起動する時に指定した &ndash;name a1, &ndash;name a2 の名前で ping
+を実行してみましょう。これも weave の機能の１つで dns lookup が行えます。</p>
+
+<pre><code>root@b2:/# ping a1 -c 3
+PING b1.weave.local (10.2.1.1) 56(84) bytes of data.
+64 bytes from a1.weave.local (10.2.1.1): icmp_seq=1 ttl=64 time=1.14 ms
+64 bytes from a1.weave.local (10.2.1.1): icmp_seq=2 ttl=64 time=0.446 ms
+64 bytes from a1.weave.local (10.2.1.1): icmp_seq=3 ttl=64 time=0.364 ms
+
+--- b1.weave.local ping statistics ---
+3 packets transmitted, 3 received, 0% packet loss, time 2001ms
+rtt min/avg/max/mdev = 0.364/0.653/1.149/0.352 ms
+</code></pre>
+
+<p>結果から、異なる物理ノード(今回は VM)上で動作させた Docker コンテナ同士が通信し合えた
+ことがわかります。またコンテナ名の DNS 的は名前解決も可能になりました。</p>
+
+<h2 id="ダイナミックにネットワークをアタッチ-デタッチする">ダイナミックにネットワークをアタッチ・デタッチする</h2>
+
+<p>次に weave のネットワークを動的(コンテナがオンラインのまま)にアタッチ・デタッ
+チすることが出来るので試してみます。</p>
+
+<p>最初に weave のネットワークに属さない a1-1 という名前のコンテナを作ります。
+docker exec で IP アドレスを確認すると eth0, lo のインターフェースしか持っていない
+ことが判ります。</p>
+
+<pre><code class="language-bash">host1# C=$(docker run --name a1-1 -e WEAVE_CIDR=none -dti ubuntu)
+host1# docker exec -it a1-1 ip a # &lt;--- docker コンテナ内でコマンド実行
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+25: eth0: &lt;BROADCAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.5/16 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:5/64 scope link
+       valid_lft forever preferred_lft forever
+</code></pre>
+
+<p>では weave のネットワークを a1-1 コンテナにアタッチしてみましょう。</p>
+
+<pre><code class="language-bash">host1# weave attach $C
+10.2.1.1
+host1# docker exec -it a1-1 ip a
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+25: eth0: &lt;BROADCAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.5/16 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:5/64 scope link
+       valid_lft forever preferred_lft forever
+27: ethwe: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether aa:15:06:51:6a:3b brd ff:ff:ff:ff:ff:ff
+    inet 10.2.1.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet6 fe80::a815:6ff:fe51:6a3b/64 scope link
+       valid_lft forever preferred_lft forever
+</code></pre>
+
+<p>上記のようにインターフェース ethwe が付与され最初に指定したデフォルトのサブネッ
+ト上の IP アドレスが付きました。</p>
+
+<p>次に weave ネットワークを複数アタッチしてみましょう。default, 10.2.2.0/24,
+10.2.3.0/24 のネットワーク(サブネット)をアタッチします。</p>
+
+<pre><code class="language-bash">host1# weave attach net:default net:10.2.2.0/24 net:10.2.3.0/24 $C
+10.2.1.1 10.2.2.1 10.2.3.1
+root@vagrant-ubuntu-vivid-64:~# docker exec -it b3 ip a
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host
+       valid_lft forever preferred_lft forever
+25: eth0: &lt;BROADCAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default
+    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.5/16 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:acff:fe11:5/64 scope link
+       valid_lft forever preferred_lft forever
+33: ethwe: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 9a:74:73:1b:24:a9 brd ff:ff:ff:ff:ff:ff
+    inet 10.2.1.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet 10.2.2.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet 10.2.3.1/24 scope global ethwe
+       valid_lft forever preferred_lft forever
+    inet6 fe80::9874:73ff:fe1b:24a9/64 scope link
+       valid_lft forever preferred_lft forever
+</code></pre>
+
+<p>結果、ethwe インターフェースに3つの IP アドレスが付与されました。
+この様にダイナミックにコンテナに対して weave ネットワークをアタッチすることが出来ます。</p>
+
+<h2 id="コンテナ外部から情報を取得する">コンテナ外部から情報を取得する</h2>
+
+<p>下記のようにコンテナを起動しているホスト上 (Vagrant VM) からコンテナの情報を取
+得する事もできます。シンプルですがオーケストレーション・自動化を行う上で重要な機能に
+なりそうな予感がします。</p>
+
+<pre><code class="language-bash">host1# weave expose
+10.2.1.1
+host1# weave dns-lookup a2
+10.2.1.128
+</code></pre>
+
+<h2 id="ダイナミックに物理ノードを追加し-weave-ネットワークへ">ダイナミックに物理ノードを追加し weave ネットワークへ</h2>
+
+<p>物理ノード(今回の場合 vagrant vm)を追加し上記で作成した weave ネットワークへ参
+加させることも可能です。なお、今回は上記の vagrant up の時点で追加分の vm (host3)
+を既に稼働させています。</p>
+
+<p>host1 で新しい物理ノードを接続します。</p>
+
+<pre><code>host1# weave connect 192.168.33.12
+host1# weave status targets
+192.168.33.13
+192.168.33.12
+</code></pre>
+
+<p>host3 で weave コンテナ・テストコンテナを起動します。
+下記で指定している 192.168.33.11 は host1 の IP アドレスです。</p>
+
+<pre><code>host3# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
+host3# docker run --name a3 -ti ubuntu
+</code></pre>
+
+<p>host2 の a2 コンテナに ping を打ってみます。</p>
+
+<pre><code>roota3:/# ping a2 -c 3
+PING a2.weave.local (10.2.1.128) 56(84) bytes of data.
+64 bytes from a2.weave.local (10.2.1.128): icmp_seq=1 ttl=64 time=0.366 ms
+64 bytes from a2.weave.local (10.2.1.128): icmp_seq=2 ttl=64 time=0.709 ms
+64 bytes from a2.weave.local (10.2.1.128): icmp_seq=3 ttl=64 time=0.569 ms
+</code></pre>
+
+<p>host3 上の a3 コンテナが既存の weave ネットワークに参加し通信出来たことが確認
+できました。</p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>コンフィギュレーションらしきモノを記述することなく Docker コンテナ間の通信
+が出来ました。これは自動化する際に優位になるでしょう。また今回紹介したのは
+&lsquo;weave net&rsquo; と呼ばれるモノですが他にも &lsquo;weave scope&rsquo;, &lsquo;weave run&rsquo; といったモノ
+があります。</p>
+
+<p><a href="http://weave.works/product/">http://weave.works/product/</a></p>
+
+<p>また Docker Swarm, Compose と組み合わせる構成も組めるようです。試してみたい方
+がいましたら是非。</p>
+
+<p><a href="http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html">http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html</a></p>
+
+<p>ですが結果、まだ weave をどう自分たちのサービスに組み込めるかは検討が付いてい
+ません。&rsquo;出来る&rsquo; と &lsquo;運用できる&rsquo; が別物であることと、コンテナまわりのネットワー
+ク機能全般に理解して選定する必要がありそうです。</p>
+
+<p>参考サイト
++++</p>
+
+<p><a href="http://weave.works/docs/">http://weave.works/docs/</a></p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -851,701 +1218,6 @@ influxDB の 0.9.x 系では動作しませんでした。よって latest で�
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2015/07/20/knife-zero-openstack-kilo/">Knife-ZeroでOpenStack Kiloデプロイ(複数台編)</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2015-07-20'>
-            July 20, 2015</time>
-        <span class="author"></span>
-        
-            <p>6 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>前回 OpenStack Kilo のオールインワン構成を Chef-Zero を使ってデプロイする方法
-を書きましたが、複数台構成についても調べたので結果をまとめていきます。</p>
-
-<p>使うのは openstack/openstack-chef-repo です。下記の URL にあります。</p>
-
-<p><a href="https://github.com/openstack/openstack-chef-repo">https://github.com/openstack/openstack-chef-repo</a></p>
-
-<p>この中に Vagrant を使ったファイルが存在しますが、実機でのデプロイには全く役に
-立ちません。自分で Environment ファイルを作成する必要があります。今回は前提の
-構成を作って、それに合わせた Environment ファイルを記します。ほぼスタンダード
-な構成にしましたので、自分の環境に合わせて修正するのも比較的簡単だと想います。
-参考にしてください。</p>
-
-<p>今回は knife-zero を使ってデプロイします。Chef サーバが必要なく、knife-zero を
-使うホスト上のオンメモリで Chef サーバが稼働するので準備がほとんど必要ありません。</p>
-
-<p>早速ですが、構成と準備・そしてデプロイ作業を記していきます。</p>
-
-<h2 id="前提の構成">前提の構成</h2>
-
-<pre><code>   +------------+
-   | GW Router  |
-+--+------------+
-|  |
-|  +--------------+--------------+---------------------------- public network
-|  | eth0         | eth0
-|  +------------+ +------------+ +------------+ +------------+
-|  | Controller | |  Network   | |  Compute   | | Knife-Zero | 
-|  +------------+ +-------+----+ +------+-----+ +------------+
-|  | eth1         | eth1  |      | eth1 |       | eth1 
-+--+--------------+-------)------+------)-------+------------- api/management network
-                          | eth2        | eth2
-                          +-------------+--------------------- guest network
-</code></pre>
-
-<p>特徴としては&hellip;</p>
-
-<ul>
-<li>public, api/management, guest の3つのネットワークに接続された OpenStack ホスト</li>
-<li>Controller, Network, Compute の最小複数台構成</li>
-<li>knife-zero を実行する &lsquo;Knife-Zero&rsquo; ホスト</li>
-<li>Knife-zero ホストは api/management network のみに接続で可</li>
-<li>デプロイは api/management network を介して行う</li>
-<li>public, api/management network はインターネットへの疎通が必須</li>
-<li>OS は Ubuntu 14.04 amd64</li>
-</ul>
-
-<p>とくに api/management network がインターネットへの疎通が必要なところに注意して
-ください。デプロイは knife-zero ホストで実行しますが、各ノードへログインしデプ
-ロイする際にインターネット上からパッケージの取得を試みます。</p>
-
-<p>また api/management network を2つに分離するのも一般的ですが、ここでは一本にま
-とめています。</p>
-
-<h2 id="ip-アドレス">IP アドレス</h2>
-
-<p>IP アドレスは下記を前提にします。</p>
-
-<table>
-<thead>
-<tr>
-<th align="left">interface</th>
-<th align="left">IP addr</th>
-</tr>
-</thead>
-
-<tbody>
-<tr>
-<td align="left">Controller eth0</td>
-<td align="left">10.0.1.10</td>
-</tr>
-
-<tr>
-<td align="left">Controller eth1</td>
-<td align="left">10.0.2.10</td>
-</tr>
-
-<tr>
-<td align="left">Network eth0</td>
-<td align="left">10.0.1.11</td>
-</tr>
-
-<tr>
-<td align="left">Network eth1</td>
-<td align="left">10.0.2.11</td>
-</tr>
-
-<tr>
-<td align="left">Network eth2</td>
-<td align="left">10.0.3.11</td>
-</tr>
-
-<tr>
-<td align="left">Compute eth1</td>
-<td align="left">10.0.2.12</td>
-</tr>
-
-<tr>
-<td align="left">Compute eth2</td>
-<td align="left">10.0.3.12</td>
-</tr>
-
-<tr>
-<td align="left">Knife-Zero eth1</td>
-<td align="left">10.0.2.13</td>
-</tr>
-</tbody>
-</table>
-
-<h2 id="ネットワークインターフェース設定">ネットワークインターフェース設定</h2>
-
-<p>それぞれのホストで下記のようにネットワークインターフェースを設定します。</p>
-
-<ul>
-<li>Controller ホスト</li>
-</ul>
-
-<p>eth0, 1 を使用します。</p>
-
-<pre><code class="language-bash">auto eth0
-iface eth0 inet static
-    address 10.0.1.10
-    netmask 255.255.255.0
-    gateway 10.0.1.254
-    dns-nameservers 8.8.8.8
-    dns-search jedihub.com
-
-auto eth1
-iface eth1 inet static
-    address 10.0.2.10
-    netmask 255.255.255.0
-
-auto eth2
-iface eth2 inet manual
-</code></pre>
-
-<ul>
-<li>Network ホスト</li>
-</ul>
-
-<p>eth0, 1, 2 全てを使用します。</p>
-
-<pre><code class="language-bash">auto eth0
-iface eth0 inet static
-        up ifconfig $IFACE 0.0.0.0 up
-        up ip link set $IFACE promisc on
-        down ip link set $IFACE promisc off
-        down ifconfig $IFACE down
-        address 10.0.1.11
-        netmask 255.255.255.0
-
-auto eth1
-iface eth1 inet static
-        address 10.0.2.11
-        netmask 255.255.255.0
-        gateway 10.0.2.248
-        dns-nameservers 8.8.8.8
-        dns-search jedihub.com
-
-auto eth2
-iface eth2 inet static
-        address 10.0.3.11
-        netmask 255.255.255.0
-</code></pre>
-
-<ul>
-<li>Compute ホスト</li>
-</ul>
-
-<p>eth1, 2 を使用します。</p>
-
-<pre><code class="language-bash">auto eth0
-iface eth0 inet manual
-
-auto eth1
-iface eth1 inet static
-        address 10.0.2.12
-        netmask 255.255.255.0
-        gateway 10.0.2.248
-        dns-nameservers 8.8.8.8
-        dns-search jedihub.com
-
-auto eth2
-iface eth2 inet static
-        address 10.0.3.12
-        netmask 255.255.255.0
-</code></pre>
-
-<p>これらの作業は knife-zero からログインし eth1 を介して行ってください。でないと
-接続が切断される可能性があります。</p>
-
-<h2 id="準備">準備</h2>
-
-<p>knife-zero ホストに chef, knife-zero, berkshelf が入っている必要があるので、こ
-こでインストールしていきます。</p>
-
-<p>knife-zero ホストに chef をインストールします。Omnibus パッケージを使って手っ
-取り早く環境を整えます。</p>
-
-<pre><code class="language-bash">sudo -i
-curl -L https://www.opscode.com/chef/install.sh | bash
-</code></pre>
-
-<p>Berkshelf をインストールするのに必要なソフトウェアをインストールします。</p>
-
-<pre><code class="language-bash">apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev ruby-dev libxml2-dev libxslt-dev g++
-</code></pre>
-
-<p>Berkshelf をインストールします。</p>
-
-<pre><code class="language-bash">/opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc
-</code></pre>
-
-<p>最後に knife-zero をインストールします。</p>
-
-<pre><code class="language-bash">/opt/chef/embedded/bin/gem install knife-zero --no-ri --no-rdoc
-</code></pre>
-
-<h2 id="デプロイ作業">デプロイ作業</h2>
-
-<p>それでは openstack-chef-repo を取得してデプロイの準備を行います。
-ブランチの指定は行わず master ブランチを取得します。Kilo は master ブランチで
-管理されています。次のバージョンの開発が始まるタイミングで &lsquo;stable/kilo&rsquo; ブラ
-ンチに管理が移されます。</p>
-
-<pre><code class="language-bash">sudo -i
-cd ~/
-git clone https://github.com/openstack/openstack-chef-repo.git
-</code></pre>
-
-<p>次に Berkshelf を使って必要な Cookbooks をダウンロードします。</p>
-
-<pre><code class="language-bash">cd ~/openstack-chef-repo
-/opt/chef/embedded/bin/berks vendor ./cookbooks
-</code></pre>
-
-<p>Environment を作成します。これは各環境に合わせた設定ファイルのようなもので、各
-Cookbooks の Attributes を上書きする仕組みになっています。下記の内容を</p>
-
-<pre><code>openstack-chef-repo/environments/multi-neutron-kilo.json
-</code></pre>
-
-<p>というファイル名で保存してください。</p>
-
-<pre><code class="language-json">{
-  &quot;name&quot;: &quot;multi-neutron-kilo&quot;,
-  &quot;description&quot;: &quot;test&quot;,
-  &quot;cookbook_versions&quot;: {
-  },
-  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
-  &quot;chef_type&quot;: &quot;environment&quot;,
-  &quot;default_attributes&quot;: {
-  },
-  &quot;override_attributes&quot;: {
-    &quot;mysql&quot;: {
-      &quot;bind_address&quot;: &quot;0.0.0.0&quot;,
-      &quot;server_root_password&quot;: &quot;mysqlroot&quot;,
-      &quot;server_debian_password&quot;: &quot;mysqlroot&quot;,
-      &quot;server_repl_password&quot;: &quot;mysqlroot&quot;,
-      &quot;allow_remote_root&quot;: true,
-      &quot;root_network_acl&quot;: [&quot;10.0.0.0/8&quot;]
-    },
-    &quot;rabbitmq&quot;: {
-      &quot;address&quot;: &quot;0.0.0.0&quot;,
-      &quot;port&quot;: &quot;5672&quot;,
-      &quot;loopback_users&quot;: []
-    },
-    &quot;openstack&quot;: {
-      &quot;auth&quot;: {
-        &quot;validate_certs&quot;: false
-      },
-      &quot;dashboard&quot;: {
-        &quot;session_backend&quot;: &quot;file&quot;
-      },
-      &quot;block-storage&quot;: {
-        &quot;syslog&quot;: {
-          &quot;use&quot;: false
-        },
-        &quot;api&quot;: {
-          &quot;ratelimit&quot;: &quot;False&quot;
-        },
-        &quot;debug&quot;: true,
-        &quot;image_api_chef_role&quot;: &quot;os-image&quot;,
-        &quot;identity_service_chef_role&quot;: &quot;os-identity&quot;,
-        &quot;rabbit_server_chef_role&quot;: &quot;os-ops-messaging&quot;
-      },
-      &quot;compute&quot;: {
-        &quot;rabbit&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;novnc_proxy&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;libvirt&quot;: {
-          &quot;virt_type&quot;: &quot;qemu&quot;,
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;novnc_proxy&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;xvpvnc_proxy&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;image_api_chef_role&quot;: &quot;os-image&quot;,
-        &quot;identity_service_chef_role&quot;: &quot;os-identity&quot;,
-        &quot;nova_setup_chef_role&quot;: &quot;os-compute-api&quot;,
-        &quot;rabbit_server_chef_role&quot;: &quot;os-ops-messaging&quot;,
-        &quot;network&quot;: {
-          &quot;public_interface&quot;: &quot;eth1&quot;,
-          &quot;service_type&quot;: &quot;neutron&quot;
-        }
-      },
-      &quot;network&quot;: {
-        &quot;debug&quot;: &quot;True&quot;,
-        &quot;dhcp&quot;: {
-          &quot;enable_isolated_metadata&quot;: &quot;True&quot;
-        },
-        &quot;metadata&quot;: {
-          &quot;nova_metadata_ip&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;openvswitch&quot;: {
-          &quot;tunnel_id_ranges&quot;: &quot;1:1000&quot;,
-          &quot;enable_tunneling&quot;: &quot;True&quot;,
-          &quot;tenant_network_type&quot;: &quot;gre&quot;,
-          &quot;tunnel_types&quot;: &quot;gre&quot;,
-          &quot;tunnel_type&quot;: &quot;gre&quot;,
-          &quot;bridge_mappings&quot;: &quot;physnet1:br-eth2&quot;,
-          &quot;bridge_mapping_interface&quot;: &quot;br-eth2:eth2&quot;
-        },
-        &quot;ml2&quot;: {
-          &quot;tenant_network_types&quot;: &quot;gre&quot;,
-          &quot;mechanism_drivers&quot;: &quot;openvswitch&quot;,
-          &quot;tunnel_id_ranges&quot;: &quot;1:1000&quot;,
-          &quot;enable_security_group&quot;: &quot;True&quot;
-        },
-        &quot;api&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;l3&quot;: {
-          &quot;external_network_bridge_interface&quot;: &quot;eth0&quot;
-        },
-        &quot;service_plugins&quot;: [&quot;neutron.services.l3_router.l3_router_plugin.L3RouterPlugin&quot;]
-      },
-      &quot;db&quot;: {
-        &quot;bind_interface&quot;: &quot;eth1&quot;,
-        &quot;compute&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;identity&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;image&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;network&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;volume&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;dashboard&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;telemetry&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        },
-        &quot;orchestration&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;
-        }
-      },
-      &quot;developer_mode&quot;: true,
-      &quot;endpoints&quot;: {
-        &quot;network-openvswitch&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;compute-api-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8774&quot;
-        },
-        &quot;compute-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8774&quot;
-        },
-        &quot;compute-ec2-admin-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8773&quot;
-        },
-        &quot;compute-ec2-admin&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8773&quot;
-        },
-       &quot;compute-ec2-api-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8773&quot;
-        },
-        &quot;compute-ec2-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8773&quot;
-        },
-        &quot;compute-xvpvnc&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;6081&quot;
-        },
-        &quot;compute-novnc-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;6080&quot;
-        },
-        &quot;compute-novnc&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;6080&quot;
-        },
-        &quot;compute-vnc&quot;: {
-          &quot;host&quot;: &quot;0.0.0.0&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;6080&quot;
-        },
-        &quot;image-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;9292&quot;
-        },
-        &quot;image-api-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;9292&quot;
-        },
-        &quot;image-registry&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;9191&quot;
-        },
-        &quot;image-registry-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;9191&quot;
-        },
-        &quot;identity-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;5000&quot;
-        },
-        &quot;identity-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;5000&quot;
-        },
-        &quot;identity-admin&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;35357&quot;
-        },
-        &quot;identity-internal&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;35357&quot;
-        },
-        &quot;volume-api-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8776&quot;
-        },
-        &quot;volume-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8776&quot;
-        },
-        &quot;telemetry-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8777&quot;
-        },
-        &quot;network-api-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.11&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;9696&quot;
-        },
-        &quot;network-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.11,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;9696&quot;
-        },
-        &quot;block-storage-api-bind&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;port&quot;: &quot;8776&quot;,
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;block-storage-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8776&quot;
-        },
-        &quot;orchestration-api&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8004&quot;
-        },
-        &quot;orchestration-api-cfn&quot;: {
-          &quot;host&quot;: &quot;10.0.2.10&quot;,
-          &quot;scheme&quot;: &quot;http&quot;,
-          &quot;port&quot;: &quot;8000&quot;
-        },
-        &quot;db&quot;: {
-          &quot;host&quot;: &quot;0.0.0.0&quot;,
-          &quot;port&quot;: &quot;3306&quot;
-        },
-        &quot;bind-host&quot;: &quot;0.0.0.0&quot;
-      },
-      &quot;identity&quot;: {
-        &quot;admin_user&quot;: &quot;admin&quot;,
-        &quot;bind_interface&quot;: &quot;eth1&quot;,
-        &quot;debug&quot;: true
-      },
-      &quot;image&quot;: {
-        &quot;api&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;debug&quot;: true,
-        &quot;identity_service_chef_role&quot;: &quot;os-identity&quot;,
-        &quot;rabbit_server_chef_role&quot;: &quot;os-ops-messaging&quot;,
-        &quot;registry&quot;: {
-          &quot;bind_interface&quot;: &quot;eth1&quot;
-        },
-        &quot;syslog&quot;: {
-          &quot;use&quot;: false
-        }
-      },
-      &quot;mq&quot;: {
-        &quot;bind_interface&quot;: &quot;eth1&quot;,
-        &quot;host&quot;: &quot;10.0.2.10&quot;,
-        &quot;user&quot;: &quot;guest&quot;,
-        &quot;vhost&quot;: &quot;/nova&quot;,
-        &quot;network&quot;: {
-          &quot;rabbit&quot;: {
-             &quot;host&quot;: &quot;10.0.2.10&quot;,
-             &quot;port&quot;: &quot;5672&quot;
-          }
-        },
-        &quot;compute&quot;: {
-           &quot;service_type&quot;: &quot;rabbitmq&quot;,
-          &quot;rabbit&quot;: {
-            &quot;host&quot;: &quot;10.0.2.10&quot;,
-            &quot;port&quot;: &quot;5672&quot;
-          }
-        },
-        &quot;block-storage&quot;: {
-          &quot;service_type&quot;: &quot;rabbitmq&quot;,
-          &quot;rabbit&quot;: {
-            &quot;host&quot;: &quot;10.0.2.10&quot;,
-            &quot;port&quot;: &quot;5672&quot;
-          }
-        }
-      }
-    },
-    &quot;queue&quot;: {
-      &quot;host&quot;: &quot;10.0.2.10&quot;,
-      &quot;user&quot;: &quot;guest&quot;,
-      &quot;vhost&quot;: &quot;/nova&quot;
-    }
-  }
-}
-</code></pre>
-
-<p>上記ファイルでは virt_type : qemu に設定していますが、KVM リソースを利用出来る
-環境であればここを削除してください。デフォルトの &lsquo;kvm&rsquo; が適用されます。また気
-をつけることは IP アドレスとネットワークインターフェース名です。環境に合わせて
-設定していきましょう。今回は前提構成に合わせて environemnt ファイルを作ってい
-ます。</p>
-
-<p>次に openstack-chef-repo/.chef/encrypted_data_bag_secret というファイルが
-knife-zero ホストにあるはずです。これをデプロイ対象の3ノードに事前に転送してお
-く必要があります。</p>
-
-<pre><code class="language-bash">scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.10:/tmp/
-scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.11:/tmp/
-scp openstack-chef-repo/.chef/encrypted_data_bag_secret 10.0.2.12:/tmp/
-</code></pre>
-
-<p>対象ホストにて</p>
-
-<pre><code class="language-bash">mkdir /etc/chef
-mv /tmp/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
-</code></pre>
-
-<p>ではいよいよデプロイです。</p>
-
-<p>Controller ホストへのデプロイ</p>
-
-<pre><code class="language-bash">knife zero bootstrap 10.0.2.10 -N kilo01 -r 'role[os-compute-single-controller-no-network]' -E multi-neutron-kilo -x &lt;USERNAME&gt; --sudo
-</code></pre>
-
-<p>Network ホストへのデプロイ</p>
-
-<pre><code class="language-bash">knife zero bootstrap 10.0.2.11 -N kilo02 -r 'role[os-client]','role[os-network]' -E multi-neutron-kilo -x &lt;USERNAME&gt; --sudo
-</code></pre>
-
-<p>Compute ノードへのデプロイ</p>
-
-<pre><code class="language-bash">knife zero bootstrap 10.0.2.12 -N kilo03 -r 'role[os-compute-worker]' -E multi-neutron-kilo -x &lt;USERNAME&gt; --sudo
-</code></pre>
-
-<p>これで完了です。admin/mypass というユーザ・パスワードでログインが可能です。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>openstack-chef-repo を使って OpenStack Kilo の複数台構成をデプロイ出来ました。重要なのは Environment をどうやって作るか？ですが、
-私は 作成 -&gt; デプロイ -&gt; 修正 -&gt; デプロイ -&gt;&hellip;. を繰り返して作成しています。何度実行しても不具合は発生しない設計なクックブックに
-なっていますので、このような作業が可能になります。また、「ここの設定を追加したい」という時は&hellip;</p>
-
-<ul>
-<li>該当の template を探す</li>
-<li>該当のパラメータを確認する</li>
-<li>recipe 内で template にどうパラメータを渡しているか確認する</li>
-<li>attribute なり、変数なりを修正するための方法を探す</li>
-</ul>
-
-<p>と行います。比較的難しい作業になるのですが、自らの環境に合わせた Environment を作成するにはこれらの作業が必須となってきます。</p>
-
-<p>以上、複数台構成のデプロイ方法についてでした。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2015/07/20/knife-zero-openstack-kilo/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1662,6 +1334,20 @@ mv /tmp/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/">GCP ロードバランサと GKE クラスタを Terraform を使って構築する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-04-13'>
+                                    April 13, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
                                 
                                     
@@ -1691,20 +1377,6 @@ mv /tmp/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
                         <article>
                             <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-12-29'>
-                                    December 29, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/">Google Cloud CDN を使ってみた</a></h3>
                                 
                                     
                                 
@@ -1749,7 +1421,7 @@ mv /tmp/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">107</span>
+                                <span style="float:right;">108</span>
                             </header>
                         </article>
                     </li>
