@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2013-09-01T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-09-28T00:00:00&#43;00:00"/>
 
 
 
@@ -196,19 +196,19 @@ ga('send', 'pageview');
 
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/"><p>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
             </ul>
@@ -230,7 +230,7 @@ ga('send', 'pageview');
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2013/09/01/hurricane-electric-vyatta-ipv6/">Hurricane Electric &#43; Vyatta で宅内 IPv6 化</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/">Mesos アーキテクチャ #1</a></h2>
         
         
     </div>
@@ -240,8 +240,8 @@ ga('send', 'pageview');
         
 
         <time class="published"
-            datetime='2013-09-01'>
-            September 1, 2013</time>
+            datetime='2013-09-28'>
+            September 28, 2013</time>
         <span class="author"></span>
         
             <p>2 minute read</p>
@@ -255,121 +255,147 @@ ga('send', 'pageview');
     
     <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 
-<p>自宅の IPv6 化、したいなぁとぼんやり考えていたのですが、Hurricane Electric
-Internet Services を見つけました。IPv4 の固定グローバル IP を持っていれば誰で
-も IPv6 のトンネルサービスを無料で受けられるサービスです。</p>
+<p>今回はクラスタマネージャである Mesos について書こうと思います。</p>
 
-<p>1つのユーザで5アカウントまで取得でき (5 エンドポイント)、1アカウントで /64 の
-アドレスがもらえます。また申請さえすれば (クリックするだけ) /48 も1アカウント
-毎にもらえます。つまり /48 x 5 + /64 x 5 &hellip; でか！</p>
+<p>Mesos は Apache Software Foundation によって管理されるソフトウェアで分散アプリ
+ケーションをクラスタ化することが出来るマネージャです。Twitter が採用しているこ
+とで有名だそうで、開発にも積極的に参加しているそうです。</p>
 
-<p>私の宅内は Vyatta で PPPOE してるのですが、各種 OS (Debian, NetBSD&hellip;) や機器
-(Cisco, JunOS..)のコンフィギュレーションを自動生成してくれるので、接続するだけ
-であればそれをターミナルに貼り付けるだけ！です。</p>
+<p><a href="http://mesos.apache.org/">http://mesos.apache.org/</a></p>
 
-<h2 id="サービス-url">サービス URL</h2>
+<p>@riywo さんが既に Mesos + Marathon + Zookeper + Docker な構成を組む手順をブロ
+グで紹介されていますので是非試してみると面白いと思います。</p>
 
-<p>Hurricane Electric は下記の URL です。アカウントもここで作成出来ます。</p>
+<p><a href="http://tech.riywo.com/blog/2013/09/27/mesos-introduction-1/">http://tech.riywo.com/blog/2013/09/27/mesos-introduction-1/</a></p>
 
-<p><a href="http://tunnelbroker.net">http://tunnelbroker.net</a></p>
+<p>私は理解した Mesos のアーキテクチャについて少し書いていきたいと思います。</p>
 
-<h2 id="ipv6-接続性を確保する方法">IPv6 接続性を確保する方法</h2>
+<h2 id="全体の構造">全体の構造</h2>
 
-<p>Vyatta が IPv6 のアドレスを持ち接続性を確保するだけであれば、上に記したように
-コピペで出来ます。上記の URL でアカウントを作成しログインします。左メニューの
-&ldquo;Create Regular Tunnel&rdquo; を押して、自分の情報 (IPv4 のエンドポイントアドレス等)
-を入力します。その後、取得した IPv6 のレンジのリンクをクリックし上記メニュー
-&ldquo;Example Configuration&rdquo; を選択します。プルダウンメニューが現れるので、自宅の
-OS や機器に合った名前を選択します。</p>
-
-<p>すると下記のようなコマンドがテキストエリアに出力されるのでこれをコピペする&hellip;だ
-けです。</p>
-
-<pre><code class="language-bash">configure
-edit interfaces tunnel tun0
-set encapsulation sit
-set local-ip xxx.xxx.xxx.xxx
-set remote-ip xxx.xxx.xxx.xxx
-set address 2001:470:xx:xxx:2/64
-set description &quot;HE.NET IPv6 Tunnel&quot;
-exit
-set protocols static interface-route6 ::/0 next-hop-interface tun0
-commit
+<pre><code>+-----------+
+| zookeeper |
+|  quorum   |
++-----------+
+|
++----------------+----------------+
+|                |                |
++--------------+ +--------------+ +--------------+
+| mesos-master | | mesos-master | | mesos-master |
+|    active    | |  hot standby | |  hot standby |
++--------------+ +--------------+ +--------------+ ...
+|
++----------------+----------------+
+|                |                |
++--------------+ +--------------+ +--------------+
+|  mesos-slave | |  mesos-slave | |  mesos-slave |
+|   executor   | |   executor   | |   executor   |
+| +----++----+ | | +----++----+ | | +----++----+ |
+| |task||task| | | |task||task| | | |task||task| |
+| +----++----+ | | +----++----+ | | +----++----+ |
++--------------+ +--------------+ +--------------+ ...
 </code></pre>
 
-<p>コピペしたら接続できたか確認しましょう。</p>
+<p>基本的に few masters + many slaves の構成です。task は slaves の上で走ります。
+master はオファーによりアプリケーション(フレームワーク)に対して CPU, メモリの
+リソースをシェア出来ます。リソースは slave ID, resource1: amount1,
+resource2, amount2, &hellip; といった配列を含みます。master はポリシに従いそれぞれ
+のフレームワークに対してリソースをどれだけ提供するか決定します。プラグイン形式
+で様々なポリシを取り込む仕組みになっています。</p>
 
-<pre><code class="language-bash">% ping6 ipv6.google.com -c 3
-PING ipv6.google.com(2404:6800:4004:803::1010) 56 data bytes
-64 bytes from 2404:6800:4004:803::1010: icmp_seq=1 ttl=59 time=32.6 ms
-64 bytes from 2404:6800:4004:803::1010: icmp_seq=2 ttl=59 time=27.4 ms
-64 bytes from 2404:6800:4004:803::1010: icmp_seq=3 ttl=59 time=20.5 ms
+<p>mesos は zookeeper により HA を組むことが出来ます。1つの active master と複数
+(もしくは1つの) stand-by master(s) の構成です。active を投票するため zookeeper
+のアルゴリズムが用いられます。</p>
 
---- ipv6.google.com ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss, time 2002ms
-rtt min/avg/max/mdev = 20.542/26.901/32.677/4.971 ms
+<p>mesos-master を起動する際に下記のパラメータを渡すとmulti masters の構成が組め
+ます。</p>
+
+<pre><code>--zk=zk://host1:port1/path,host2:port2/path,...
 </code></pre>
 
-<h2 id="vyatta-配下の宅内-lan-の端末を-ipv6-化する">Vyatta 配下の宅内 LAN の端末を IPv6 化する</h2>
+<p>それに対して multi slaves に対しては下記のパラータを渡します。</p>
 
-<p>ここまでの操作だと Vyatta は IPv6 トンネル接続出来ましたが、その配下の機器はま
-だ接続できていません。そこで IPv6 RA (Router Advertise) します。</p>
-
-<pre><code class="language-bash">configure
-edit interfaces ethernet eth0 
-set ipv6 router-advert send-advert true
-set ipv6 router-advert cur-hop-limit 64
-set ipv6 router-advert max-interval 10
-set ipv6 router-advert other-config-flag true
-set ipv6 router-advert default-preference high
-set ipv6 router-advert managed-flag true
-set ipv6 router-advert prefix 2001:470:xx:xxx::/64
-set ipv6 router-advert prefix 2001:470:xx:xxx::/64 autonomous-flag true
-commit
+<pre><code>--master=zk://host1:port1/path,host2:port2/path,...
 </code></pre>
 
-<p>ここで RA のみの起動をしていますが、LAN 内に Windows 端末がある場合、IPv6 ネー
-ムサーバの情報が取得できないため DHCPv6 サーバを別途起動する必要があります。が、
-私の LAN 内には Mac, Linux, *BSD しかありませんでしたので起動しませんでした。
-必要に応じて起動してください。</p>
+<h2 id="ネットワークの分断">ネットワークの分断</h2>
 
-<h2 id="ipv6-ファイアーウォール設定">IPv6 ファイアーウォール設定</h2>
+<p>ネットワークの分断により様々な事象が発生します。幾つかのパターンによる動きにつ
+いて見ていきます。</p>
 
-<p>これで端末も IPv6 トンネル接続できるようになった！のですが、外部から端末に直接
-接続が出来てしまいます。ファイアーウォールを設定しましょう。</p>
+<ul>
+<li>slave が master と分断された場合</li>
+</ul>
 
-<pre><code class="language-bash">configure
-set firewall ipv6-name tun-in description &quot;IPv6 Traffice to Internal&quot;
-set firewall ipv6-name tun-in default-action drop
-set firewall ipv6-name tun-in rule 10 action accept
-set firewall ipv6-name tun-in rule 10 description &quot;Accept Established-Related&quot;
-set firewall ipv6-name tun-in rule 10 state established enable
-set firewall ipv6-name tun-in rule 10 state related enable
-set firewall ipv6-name tun-local default-action drop
-set firewall ipv6-name tun-local description &quot;IPv6 Traffic to Router&quot;
-set firewall ipv6-name tun-local rule 10 action accept
-set firewall ipv6-name tun-local rule 10 description &quot;Accept Established-Related&quot;
-set firewall ipv6-name tun-local rule 10 state established enable
-set firewall ipv6-name tun-local rule 10 state related enable
+<p>ヘルスチェックが失敗。master は slave のことを &lsquo;deactivated&rsquo; と判断しその
+slave に分配した task を LOST とします。</p>
 
-set interface tunnel tun0 firewall in ipv6-name tun-in
-set interface tunnel tun0 firewall local ipv6-name tun-local
-commit
-save
+<ul>
+<li>master に再接続出来ない場合</li>
+</ul>
+
+<p>&lsquo;deactivated&rsquo; となった slave が master に再接続出来ない場合、シャットダウンの
+指示が送られる</p>
+
+<ul>
+<li>slave が zookeeper と分断された場合</li>
+</ul>
+
+<p>master がいない状態となり、再び master の投票が行われ active master が現れるま
+で master からの指示を拒否する</p>
+
+<h2 id="リソースのオファ">リソースのオファ</h2>
+
+<pre><code>+-------------------+
+|     framework     |
+|    +----+----+    |
+|    |job1|job2|    |
+|    +----+----+    |
+|     scheduler     |
++-------------------+
+~(2)                |(3)
+|                   ~
++-------------------+
+|    mesos-master   |
+| allocation module |
++-------------------+
+~(1)                |(4)
+|                   ~
++-------------------+
+|    mesos-slave    |
+|      executor     |
+|    +----+----+    |
+|    |task|task|    |
+|    +----+----+    |
++-------------------+
 </code></pre>
+
+<p>リソースのオファの流れについて。</p>
+
+<ul>
+<li>(1) mesos-slave が空きの CPU, Mem の状況(4cpus,4g mem)を mesos-mater に伝える。</li>
+<li>(2) mesos-master はそのリソース空き状況を framework に対して伝える</li>
+<li>(3) framework の scheduler は mesos-mater に対して mesos-slave の上で動かすべ
+き2個のタスクについて伝える。1個めは 2cpus, 1g mem。2個めは 1cpus, 2g memと。</li>
+<li>(4) master は task を slave に対して伝える。結果 1cpu, 1gb mem がアロケートさ
+れない状況だが、それについては別の framework に対してアロケートすることとな
+る。</li>
+</ul>
 
 <h2 id="まとめ">まとめ</h2>
 
-<p>ルータ配下のサービスを IPv6 で外部に公開したい場合は tun-in のファイアーウォールに
-ルールを追加すれば OK です。</p>
+<p>このクラスタ自体が1つの OS かのような動きを取ることが見て取れます。Mesos の上
+で Hadoop, Spark などを稼働させることが出来るそうですが、次回、私は docker を動
+かしてみたいと思っています。</p>
 
-<p>また自動生成出来るサンプルコンフィギュレーションに対応したOS, 機器の種類が豊富です。
-pfSense や Solaris, Windows, ScreenOS, Fortigate 等など、多岐にわたっているの
-で、大抵の方は問題ないのではないでしょうか。</p>
+<p><a href="http://mesosphere.io/2013/09/26/docker-on-mesos/">http://mesosphere.io/2013/09/26/docker-on-mesos/</a></p>
+
+<p>ここが参考になります。</p>
+
+<p>駆け足でしたが、以上です。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/09/01/hurricane-electric-vyatta-ipv6/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -408,7 +434,7 @@ pfSense や Solaris, Windows, ScreenOS, Fortigate 等など、多岐にわたっ
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2013/08/24/vyatta-l2tp-ipsec-vpn/">Vyatta で L2TP over IPsec による VPN 構築</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2013/09/13/chef-kibana-elasticsearch-fluentd/">Chef で kibana &#43; elasticsearch &#43; fluentd デプロイしてみた</a></h2>
         
         
     </div>
@@ -418,11 +444,11 @@ pfSense や Solaris, Windows, ScreenOS, Fortigate 等など、多岐にわたっ
         
 
         <time class="published"
-            datetime='2013-08-24'>
-            August 24, 2013</time>
+            datetime='2013-09-13'>
+            September 13, 2013</time>
         <span class="author"></span>
         
-            <p>1 minute read</p>
+            <p>2 minute read</p>
         
         
     </div>
@@ -433,96 +459,160 @@ pfSense や Solaris, Windows, ScreenOS, Fortigate 等など、多岐にわたっ
     
     <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 
-<p>以前、こんな記事をブログに記しました。2012/06 の記事です。</p>
+<p>前回 kibana + elasticsearch + fluentd を構築する方法を載せたのだけど手動で構築
+したので格好悪いなぁと思っていました。いうことで！ Chef でデプロイする方法を調
+べてみました。</p>
 
-<p><a href="http://jedipunkz.github.io/blog/2012/06/13/vyatta-vpn/">http://jedipunkz.github.io/blog/2012/06/13/vyatta-vpn/</a></p>
+<p>意外と簡単に出来たし、スッキリした形でデプロイ出来たのでオススメです。</p>
 
-<p>その後、PPTP で保護されたネットワークの VPN パスワードを奪取出来るツールが公開
-されました。2012/07 のことです。よって今では VPN に PPTP を用いることが推奨さ
-れていません。</p>
+<h2 id="前提の環境は">前提の環境は&hellip;</h2>
 
-<p>ということで L2TP over IPsec による VPN 構築を Vyatta で行う方法を記します。</p>
+<ul>
+<li>Ubuntu 12.04 LTS precise</li>
+<li>Chef サーバ構成</li>
+<li>入力するログは nginx (例)</li>
+<li>オールインワン構成</li>
+</ul>
 
-<h2 id="fig-1-home-lan-と-vyatta-のアドレス">fig.1 : home lan と vyatta のアドレス</h2>
+<p>Cookbook が他の OS に対応しているか確認していないので Ubuntu を前提にしていま
+す。Chef サーバのデプロイや knife の設定は済んでいるものとして説明していきます。
+例で nginx のログを入力します。なので nginx も Chef でデプロイします。ここは他
+のものに置き換えてもらっても大丈夫です。手順を省略化するためオールインワン構成
+で説明します。nginx, fluentd は複数のノードに配置することも手順を読み替えれば
+もちろん可能です。</p>
 
-<pre><code>                +--------+                      +-----+
-    home lan ---| vyatta | --- the internet --- | CPE |
-                +--------+                      +-----+
-    X.X.X.X/X(NAT)     pppoe0
-                       Y.Y.Y.Y
+<h2 id="cookbook-の準備">Cookbook の準備</h2>
+
+<p>お決まり。Cookbooks の取得に Berkshelf を用いる。</p>
+
+<pre><code class="language-bash">% cd chef-repo
+% gem install berkshelf
+% ${EDITOR} Berksfile
+cookbook 'elasticsearch', git: 'https://github.com/elasticsearch/cookbook-elasticsearch.git'
+cookbook 'td-agent', git: 'https://github.com/treasure-data/chef-td-agent.git'
+cookbook 'kibana', git: 'https://github.com/realityforge/chef-kibana.git'
+cookbook 'nginx', git: 'https://github.com/opscode-cookbooks/nginx.git'
 </code></pre>
 
-<p>この様に X.X.X.X/X と Y.Y.Y.Y/Y が関係しているとします。CPE は VPN により
-X.X.X.X/X に接続することが出来ます。</p>
+<p>Cookbooks を取得します。</p>
 
-<h2 id="手順-ipsec">手順 : IPsec</h2>
-
-<p>下記の操作で IPsec を待ち受けるインターフェースの設定します。</p>
-
-<pre><code class="language-bash">% configure
-# edit vpn ipsec
-# set ipsec-interface interface pppoe0
+<pre><code class="language-bash">% berks install --path=./cookbooks
 </code></pre>
 
-<p>インターフェース名は環境に合わせて設定してください。私の環境では pppoe0 です。</p>
+<h2 id="elasticsearch-デプロイ準備">elasticsearch デプロイ準備</h2>
 
-<p>IPsec パケットが NAT を超えるように設定します。</p>
+<p>elasticsearch の Role を作成する。java, elasticsearch レシピを指定。また Java
+に openjdk7 を override_attributes にて指定する。openjdk6 だと elasticsearch が起動し
+なかった。尚、デフォルトは 6 です。Environment で override_attributes を指定し
+てもらっても構わないです。</p>
 
-<pre><code class="language-bash"># set nat-traversal enable
+<pre><code class="language-bash">% ${EDITOR} roles/elasticsearch.rb
+name &quot;elasticsearch&quot;
+description &quot;Base role applied to elasticsearch nodes.&quot;
+run_list(
+  &quot;recipe[java]&quot;,
+  &quot;recipe[elasticsearch]&quot;
+)
+override_attributes &quot;java&quot; =&gt; { &quot;install_flavor&quot; =&gt; &quot;openjdk&quot;, &quot;jdk_version&quot; =&gt; &quot;7&quot; }
 </code></pre>
 
-<p>CPE がどの環境にいるか、IPsec 接続を許可するネットワークアドレスを入力します。
-渡しの場合はどこからでも接続できるよう 0.0.0.0/0 を入力しました。</p>
+<h2 id="fluentd-デプロイの準備">fluentd デプロイの準備</h2>
 
-<pre><code class="language-bash"># set nat-networks allowed-network 0.0.0.0/0
-# exit
+<p>td-agent (fluentd) の Role を作成する。override_attributes にて td-agent のプ
+ラグインを指定。配列で複数指定可能。こちらも同じく Role で override_attributes
+を指定したが Environments で指定しても構わないです。あと公式の README には
+attributes に直接 plugins を指定するよう書いてありましたが、構成毎に plugins
+は変えたいと思うので、この様に Roles, Environments で指定するのが良いと思います。</p>
+
+<pre><code class="language-ruby">% ${EDITOR} roles/td-agent.rb
+name &quot;td-agent&quot;
+description &quot;Base role applied to td-agent nodes.&quot;
+run_list(
+  &quot;recipe[td-agent]&quot;
+)
+override_attributes &quot;td_agent&quot; =&gt; {
+                      &quot;plugins&quot; =&gt; [ &quot;elasticsearch&quot; ]
+                    }
 </code></pre>
 
-<h2 id="手順-l2tp">手順 : L2TP</h2>
+<p>td-agent.conf の template を作成。今回は nginx の
+/var/log/nginx/localhost.access.log を入力する。これは例なので好きなログを指定
+可能。</p>
 
-<p>入力を省くために edit します。</p>
+<pre><code class="language-ruby">% ${EDITOR} cookbooks/td-agent/templates/default/td-agent.conf.erb
+&lt;source&gt;
+  type tail
+  format nginx
+  path /var/log/nginx/localhost.access.log
+  tag foo01.nginx.access
+&lt;/source&gt;
 
-<pre><code class="language-bash"># edit vpn l2tp remote-access
+&lt;match *.nginx.*&gt;
+  index_name adminpack
+  type_name nginx
+  type elasticsearch
+  include_tag_key true
+  tag_key @log_name
+  host localhost
+  port 9200
+  logstash_format true
+  flush_interval 10s
+&lt;/match&gt;    
 </code></pre>
 
-<p>IPsec 認証モードに pre-shared-secret を選択し pre-shared-secret (パスワード)
-を設定します。このパスワードは接続するユーザ全員が知るものです。また認証モード
-を local に設定します。</p>
+<h2 id="デプロイ">デプロイ</h2>
 
-<pre><code class="language-bash"># set ipsec-settings authentication mode pre-shared-secret
-# set ipsec-settings authentication pre-shared-secret &lt;パスワード&gt;
-# set authentication mode local
+<p>Cookbooks, Roles を Chef サーバにアップロード。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
+% knife role from file roles/*.rb
 </code></pre>
 
-<p>接続ユーザを作成します。パスワードはユーザに合わせたパスワードを入力します。先
-ほど設定した pre-shared-secret とは別のパスワードを設定するべきです。</p>
+<p>knife bootstrap しデプロイ！</p>
 
-<pre><code class="language-bash"># set authentication local-users username &lt;ユーザ名&gt; password &lt;パスワード&gt;
+<pre><code class="language-bash">% knife bootstrap &lt;ip_addr&gt; -N &lt;hostname&gt; -r \
+  'role[td-agent]','role[elasticsearch]','recipe[kibana]','recipe[nginx]' \
+  --sudo -x &lt;username&gt;
 </code></pre>
 
-<p>接続するネットワーク情報を記します。pool のアドレス範囲は環境に合わせて設定し
-てください。渡しの場合は第4オクテット 100 - 120 を設定しました。</p>
+<p>下記の URL にブラウザでアクセスし nginx のログを生成。</p>
 
-<pre><code class="language-bash"># set outside-address Y.Y.Y.Y
-# set client-ip-pool start X.X.X.100
-# set client-ip-pool stop X.X.X.120
+<pre><code>http://&lt;ip_addr&gt;/
 </code></pre>
 
-<p>最後に commit &amp; save を忘れずに。</p>
+<p>下記の URL にて Kibana の UI 越しにログ解析結果を確認出来る。</p>
 
-<pre><code class="language-bash"># commit
-# save
+<pre><code>http://&lt;ip_addr&gt;:5601
 </code></pre>
 
 <h2 id="まとめ">まとめ</h2>
 
-<p>iPhone で接続を確認しました。iOS の場合は L2TP, PPTP, IPsec と3つのタブがあり、
-どれかを選択するようになっていますが、L2TP over IPsec の場合には L2TP タブの項
-目に情報を入力すれば OK です。</p>
+<p>fluentd plugins は複数指定可能。環境毎に td-agent.conf を変更したいという要望
+があると思うけど fluentd の Recipe を修正する必要がありそう。それとも
+td-agent.conf 自体でうまくさばけるのかな？調べてない。オールインワン構成で説明
+しましたが、elasticsearch + kibana のノードに対して、複数の nginx(なんでも良い)
++ td-agent ノードの構成が一般的だと思います。手順を読み替えてやってみてくださ
+い。その場合 kibana の Cookbook の attributes 中に elasticsearch の IP アドレ
+ス・ポートを記す箇所があるので Role, Environments で上書きしてあげてください。</p>
+
+<pre><code class="language-ruby">default['kibana']['elasticsearch']['hosts'] = ['127.0.0.1']
+default['kibana']['elasticsearch']['port'] = 9200
+````
+
+あと td-agent/templates/default/td-agent.conf.erb の中に記した host, port の指
+定も elasticsearch のホスト情報に書き換えてあげてください。
+
+</code></pre>
+
+<p>host localhost
+port 9200
+```</p>
+
+<p>以上です。意外と簡単に出来ました。スッキリ。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/08/24/vyatta-l2tp-ipsec-vpn/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2013/09/13/chef-kibana-elasticsearch-fluentd/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -561,7 +651,7 @@ X.X.X.X/X に接続することが出来ます。</p>
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2013/08/18/openstack-nova-network-ipv6/">OpenStack nova-network IPv6 対応</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2013/09/09/14th-openstack-study-hackathon/">第14回 OpenStack 勉強会参加ログ</a></h2>
         
         
     </div>
@@ -571,11 +661,11 @@ X.X.X.X/X に接続することが出来ます。</p>
         
 
         <time class="published"
-            datetime='2013-08-18'>
-            August 18, 2013</time>
+            datetime='2013-09-09'>
+            September 9, 2013</time>
         <span class="author"></span>
         
-            <p>1 minute read</p>
+            <p>3 minute read</p>
         
         
     </div>
@@ -584,101 +674,212 @@ X.X.X.X/X に接続することが出来ます。</p>
     
 
     
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です</p>
+    <p>こんにちは。@jedipunkz です。</p>
 
-<p>今更なのかもしれませんが、OpenStack の nova-network を IPv6 対応する方法を調べ
-てみました。何故 nova-network なのか? 自宅の構成が nova-network だからです..。
-以前は Quantum (現 Neutron) 構成で使っていましたが、ノードをコントローラとコン
-ピュートに別けた時に NIC が足らなくなり&hellip;。</p>
+<p>OpenStack 第14回勉強会 ハッカソンに参加してきました。その時の自分の作業ログを
+記しておきます。自分の作業内容は &lsquo;OpenStack + Docker 構築&rsquo; です。</p>
 
-<p>さて本題です。下記のサイトを参考にしました。ほぼそのままの手順ですが、自分のた
-めにもメモです。</p>
+<pre><code>場所 : CreationLine さま
+日時 : 2013年9月8日(土)
+</code></pre>
 
-<h2 id="参考-url">参考 URL</h2>
+<p>当日の atnd。</p>
 
-<p><a href="http://docs.openstack.org/grizzly/openstack-compute/admin/content/configuring-compute-to-use-ipv6-addresses.html">http://docs.openstack.org/grizzly/openstack-compute/admin/content/configuring-compute-to-use-ipv6-addresses.html</a></p>
+<p><a href="http://atnd.org/events/42891">http://atnd.org/events/42891</a></p>
 
-<h2 id="前提">前提</h2>
+<p>当日発表のあった内容</p>
 
 <ul>
-<li>OpenStack の構成は予め構築されている</li>
-<li>nova-network を用いている</li>
-<li>構成はオールインワンでも複数台構成でも可能</li>
+<li>Ansible で OpenStack を実際に皆の前でデプロイ！</li>
+<li>Yoshiyama さん開発 LogCas お披露目</li>
+<li>Havana の機能改善・機能追加内容確認</li>
+<li>その他 Horizon の機能についてだったり openstack.jp の運用についてなど</li>
 </ul>
 
-<h2 id="手順">手順</h2>
+<p>自分が話を聞きながら黙々とやったことは</p>
 
-<p>nova がインストールされているすべてのノードで python-netaddr をインストールし
-ます。私の場合は rcbops の chef cookbooks で構築したのですが、既にインストール
-されていました。</p>
+<ul>
+<li>OpenStack + Docker 構築</li>
+</ul>
 
-<pre><code class="language-bash">% sudo apt-get install python-netaddr
+<p>結果&hellip; NG 動かず。時間切れ。公式の wiki の手順がだいぶ変なので手順を修正しながら進めました。</p>
+
+<p>公式の wiki はこちらにあります。</p>
+
+<p><a href="https://wiki.openstack.org/wiki/Docker">https://wiki.openstack.org/wiki/Docker</a></p>
+
+<p>その修正しながらメモった手順を下記に貼り付けておきます。</p>
+
+<h2 id="作業環境">作業環境</h2>
+
+<ul>
+<li>ホスト : Ubuntu 12.04.3 Precise</li>
+<li>OpenStack バージョン : devstack (2013/09/08 master ブランチ)</li>
+<li>構成 : オールインワン (with heat, ceilometer, neutron)</li>
+</ul>
+
+<h2 id="普通に動かすとエラーが出力される">普通に動かすとエラーが出力される</h2>
+
+<p>これは devstack (2013/09/08 時点) での不具合なので直ちに修正されるかも。</p>
+
+<p>デフォルトのエンコーディングが &lsquo;ascii&rsquo; になっているのが原因らしい.</p>
+
+<pre><code class="language-python">% python
+Python 2.7.3 (default, Apr 10 2013, 06:20:15)
+[GCC 4.6.3] on linux2
+Type &quot;help&quot;, &quot;copyright&quot;, &quot;credits&quot; or &quot;license&quot; for more information.
+&gt;&gt;&gt; import sys
+&gt;&gt;&gt; sys.getdefaultencoding()
+'ascii'
+&gt;&gt;&gt;
 </code></pre>
 
-<p>nova-network が稼働しているノードで radvd をインストールします。これは
-IPv6 を Advertise しているルータ等が予め備わっている環境であっても、インストー
-ルする必要があります。また /etc/radvd.conf が初め無いので radvd 単体では稼働し
-ませんが、問題ありません。OpenStack の場合 /var/lib/nova 配下のコンフィギュレー
-ションファイルを読み込んでくれます。</p>
+<h2 id="エラーの内容は">エラーの内容は…</h2>
 
-<pre><code class="language-bash">% sudo apt-get install radvd
+<p>この状態だと… 下記のようなエラーが nova から出力される。むむむ。</p>
+
+<pre><code class="language-bash">% nova boot --image &quot;ubuntu:latest&quot; --flavor 1 vm01
+ERROR: UnicodeError: 'ascii' codec can't decode byte 0xe5 in position 2: ordinal not in range(128) (HTTP 400) (Request-ID: req-40ebfb9b-d76a-40b8-8f75-facb4dd73db4)
 </code></pre>
 
-<p>/etc/sysctl.conf に下記の記述を追記します。RA の受信とフォワーディングを許可し
-ています。</p>
+<p>とりあえず暫定処置として、下記のように setdefaultencoding(&lsquo;utf-8&rsquo;) を追記。ち
+なみに devstack デプロイ前にこの作業を済ませました。デプロイ後だと色々めんどい。
+当日、何度もめんどい場面に遭遇しました&hellip;</p>
 
-<pre><code class="language-bash">% ${EDITOR} /etc/sysctl.conf
-net.ipv6.conf.default.forwarding=1
-net.ipv6.conf.all.forwarding = 1
-net.ipv6.conf.all.accept_ra = 1
-% sudo sysctl -p
+<pre><code class="language-bash">% ${EDITOR} /usr/lib/python2.7/sitecustomize.py
+# install the apport exception handler if available
+try:
+    import apport_python_hook
+except ImportError:
+    pass
+else:
+    apport_python_hook.install()
+
+# 下記の2行を追記
+import sys
+sys.setdefaultencoding('utf-8')
 </code></pre>
 
-<p>nova がインストールされている全てのノードで /etc/nova.conf に下記の行を追記し
-ます。</p>
+<h2 id="ubuntu12-04-の場合-linux-kernel-3-8-にアップデート">Ubuntu12.04 の場合 Linux Kernel 3.8 にアップデート</h2>
 
-<pre><code class="language-bash">% sudo ${EDITOR} /etc/nova/nova.conf
-use_ipv6=true # &lt;- 追記
+<p>wiki には載っていないが docker が Linux Kernel 3.8 以上を推奨しているため
+raring から 3.8 を持ってくる。</p>
+
+<pre><code class="language-bash">% sudo apt-get update
+% sudo apt-get install linux-image-generic-lts-raring linux-headers-generic-lts-raring
+% sudo reboot
 </code></pre>
 
-<p>nova プロセスを再起動します。</p>
+<h2 id="socat-インストール">socat インストール</h2>
 
-<pre><code class="language-bash">% cd /etc/init.d/; for i in $( ls nova-* ); do sudo service $i restart; done
+<p>後に実行する install_docker.sh スクリプトが必要とする。実行前に入れないとと痛
+い目見る。当日何度も痛い目見ました&hellip;</p>
+
+<pre><code class="language-bash">% sudo apt-get install socat
 </code></pre>
 
-<p>次に IPv6 のレンジの仮想ネットワークを nova-manage コマンドで生成します。環境にあったレンジを
-追加してください。</p>
+<h2 id="localrc-追記">localrc 追記</h2>
 
-<pre><code class="language-bash"> % sudo nova-manage network create public --fixed_range_v4 x.x.x.x/24 \
-   --fixed_range_v6 xxxx:xxx:xx:xxx::/64 --bridge=br300 --bridge_interface=eth0 \
-   --dns1=8.8.8.8 --dns2=8.8.4.4 --multi_host=T
+<p>localrc に下記を追記。その他のパラメータは各自のモノで良い。</p>
+
+<pre><code>VIRT_DRIVER=docker
 </code></pre>
 
-<p>ここで IPv4 のレンジも追加しなくてはならないようです。IPv6 オンリーで生成したところ、
-nova-network が下記のエラーを吐いてハングアップしました。</p>
+<h2 id="install-docker-sh-実行">install_docker.sh 実行</h2>
 
-<pre><code>TRACE nova Stderr: 'Error: an inet prefix is expected rather than &quot;None&quot;.\n'
+<p>一般ユーザ権限で OK 。中で sudo している。が、極稀に sudo のタイムアウトが来る
+ので、色々しんどい。ちなみに僕はここで何度もやりなおしました。&hellip;</p>
+
+<pre><code class="language-bash">% ./tools/docker/install_docker.sh
 </code></pre>
 
-<p>また仮想ネットワーク生成時に指定した物理ネットワークインターフェース名は IPv6 が通信出来る
-セグメントのものを利用してください。(環境に合わせてください)</p>
+<h2 id="devstack-インストール">devstack インストール</h2>
 
-<p>あとは nova boot で仮想マシンを生成すると IPv4, IPv6 のデュアルスタックで起動してきます。</p>
+<p>devstack をデプロイする。</p>
 
-<h2 id="まとめ">まとめ</h2>
+<pre><code class="language-bash">% ./stack.sh
+</code></pre>
 
-<p>OpenStack 外の構成についても IPv6 にもちろん対応している必要があります。上記の例だと
-OpenStack の eth0 側の IPv6 ネットワークを適切にルーティングしてくれるルータが必要です。
-自分の場合は自宅で Vyatta を使って行いました。(今度その方法も記そうと思います) また
-floating ip は IPv6 には対応していないそうです。はじめこの方法を取ろうと思ったのですがダメでした。
-上記のように public ネットワーク側のネットワークインターフェースをブリッジインターフェースにして
-public ネットワークを生成する方法で対応出来ますので問題ないかと。</p>
+<h2 id="index-docker-io-から-ubuntu-イメージをダウンロード">index.docker.io から &lsquo;ubuntu&rsquo; イメージをダウンロード</h2>
 
-<p>また、Neutron 構成でも今度 IPv6 対応してみないと。:D</p>
+<p>index.docker.io のトップレベルから &lsquo;ubuntu&rsquo; イメージを取得。どのイメージでも良い。</p>
+
+<pre><code class="language-bash">% sudo docker pull ubuntu
+Pulling repository ubuntu
+8dbd9e392a96: Download complete
+b750fe79269d: Download complete
+27cf78414709: Download complete
+````
+
+docker-registry (プライベートレポジトリ) に対して push する -&gt; Glance に登録
+----
+
+この状態で docker-registry.sh というプロセスが起動しているはず。これは docker   
+のプライベートレポジトリに相当。5042 tcp で待ち受けているので下記のように tag を打った後、プライベートレポジトリに
+アップロード。
+
+``` bash
+% sudo docker tag ubuntu 10.200.9.25:5042/ubuntu
+% sudo docker push 10.200.9.25:5042/ubuntu
+The push refers to a repository [10.200.9.25:5042/ubuntu] (len: 1)
+Sending image list
+Pushing repository 10.200.9.25:5042/ubuntu (1 tags)
+Pushing 8dbd9e392a964056420e5d58ca5cc376ef18e2de93b5cc90e868a1bbc8318c1c
+Pushing tags for rev [8dbd9e392a964056420e5d58ca5cc376ef18e2de93b5cc90e868a1bbc8318c1c] on {http://10.200.9.25:5042/v1/repositories/ubuntu/tags/latest}
+</code></pre>
+
+<p>docker のレポジトリについてはここが参考になる。</p>
+
+<p><a href="http://docs.docker.io/en/latest/use/workingwithrepository/">http://docs.docker.io/en/latest/use/workingwithrepository/</a></p>
+
+<h2 id="glance-に登録されていることを確認">glance に登録されていることを確認</h2>
+
+<p>&lsquo;ubuntu:latest&rsquo; が表示されるはず。やった。</p>
+
+<pre><code class="language-bash">% glance image-list
++--------------------------------------+---------------------------------+-------------+------------------+----------+--------+
+| ID                                   | Name                           | Disk Format | Container Format | Size  | Status |
++--------------------------------------+---------------------------------+-------------+------------------+----------+--------+
+| f5845be4-1ac0-42c7-9280-a8c316be6beb | cirros-0.3.1-x86_64-uec         | ami       | ami            | 25165824 | active |
+| aa8bcdff-6eb9-402b-9e27-675648dbe311 | cirros-0.3.1-x86_64-uec-kernel  | aki       | aki            | 4955792  | active |
+| f8857736-5613-401a-b28c-02c286271af4 | cirros-0.3.1-x86_64-uec-ramdisk | ari       | ari            | 3714968  | active |
+| ae56cacb-7eb6-413e-bd75-46f3cd63123b | docker-busybox:latest         | raw         | docker          | 2271796  | active |
+| 613b05c3-30f6-4c53-aa94-103ea516373e | ubuntu:latest                 | raw         | docker          | 71497587 | active |
++--------------------------------------+---------------------------------+-------------+------------------+----------+--------+
+</code></pre>
+
+<h2 id="nova-boot">nova boot</h2>
+
+<p>ぐったり&hellip; nova-scheduler がエラー吐いてるぽいけど、原因つかめず。ハッカソン時間切れ。</p>
+
+<pre><code class="language-bash">% nova boot --image &quot;ubuntu:latest&quot; --flavor m1.tiny vm01
+% nova list
++--------------------------------------+------+--------+------------+-------------+----------+
+| ID                                   | Name | Status | Task State | Power State | Networks |
++--------------------------------------+------+--------+------------+-------------+----------+
+| e1563b55-bb5d-43a6-a1fc-c3bc63600ac7 | vm01 | ERROR  | None       | NOSTATE     |          |
++--------------------------------------+------+--------+------------+-------------+----------+
+</code></pre>
+
+<h2 id="エラー内容">エラー内容..</h2>
+
+<p>下記のエラーが出力されていた。なんだか OpenStack のメッセージじゃないような。
+調べてたら素の Python のメッセージらしく。うーん。devstack なので仕方ない。</p>
+
+<pre><code>    Sep  7 14:53:08 devstack01 2013-09-07 14:53:08.490 ERROR nova.compute.manager [req-d4ff6a45-88bc-4d6e-8f9d-43de79e601c6 demo demo] [instance: fdd0fdfb-aaa2-4e91-98cc-cdb347e9ae09] Instance failed to spawn#0122013-09-07 14:53:08.490 31835 TRACE nova.compute.manager [instance: fdd0fdfb-aaa2-4e91-98cc-cdb347e9ae09] Traceback (most recent call last):#0122013-09-07 14:53:08.490 31835 TRACE nova.compute.manager [instance: fdd0fdfb-aaa2-4e91-98cc-cdb347e9ae09]   File &quot;/opt/stack/nova/nova/compute/manager.py&quot;, line 1416, in _spawn#0122013-09-07 14:53:08.490 31835 TRACE nova.compute.manager [instance: fdd0fdfb-aaa2-4e91-98cc-cdb347e9ae09]     block_device_info)#0122013-09-07 14:53:08.490 31835 TRACE nova.compute.manager [instance: fdd0fdfb-aaa2-4e91-98cc-cdb347e9ae09]   File &quot;/opt/stack/nova/nova/virt/docker/driver.py&quot;, line 305, in spawn#0122013-09-07 14:53:08.490 31835 TRACE nova.compute.manager [instance: fdd0fdfb-aaa2-4e91-98cc-cdb347e9ae09]     raise exception.InstanceDeployFailure(msg.format(e),#0122013-09-07 14:53:08.490 31835 TRACE nova.compute.manager [instance: fdd0fdfb-aaa2-4e91-98cc-cdb347e9ae09]   File &quot;/opt/stack/nova/nova/openstack/common/gettextutils.py&quot;, line 255, in __getattribute__#0122013-09-07 14:53:08.490 31835 TRACE nova.compute.manager [instance: fdd0fdfb-aaa2-4e91-98cc-cdb347e9ae09]     return UserString.UserString.__getattribute__(self, name)#0122013-09-07 14:53:08.490 31835 TRACE nova.compute.manager [instance: fdd0fdfb-aaa2-4e91-98cc-cdb347e9ae09] AttributeError: 'Message' object has no attribute 'format'#0122013-09-07 14:53:08.490 31835 TRACE nova.compute.manager [instance: fdd0fdfb-aaa2-4e91-98cc-cdb347e9ae09]
+</code></pre>
+
+<h2 id="所感とまとめ">所感とまとめ</h2>
+
+<p>前半の1,2時間、みなさんの話に聞き入ってしまったので時間が…。発表の内容も皆さ
+んの会話も楽しかった。また参加したい。Netron 周りで聞きたい事とか色々あったの
+だけどコアデベロッパの方に聞けなかったのが後悔。今度教えてもらおう。あとやっぱ
+りみなさん詳しい。その情報どこから？ということまでよく知っているし知識が深い。
+理解度がまだまだちゃうなぁと実感。次回も参加させていただこうと思います。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/08/18/openstack-nova-network-ipv6/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2013/09/09/14th-openstack-study-hackathon/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -696,7 +897,7 @@ public ネットワークを生成する方法で対応出来ますので問題�
                     
 
                     
-                        Category
+                        Categories
                     
                 
             </li>
@@ -706,6 +907,8 @@ public ネットワークを生成する方法で対応出来ますので問題�
     
     
         <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+        <li><a href='/categoriesreport'>report</a></li>
     
 </ul>
 
@@ -829,13 +1032,13 @@ public ネットワークを生成する方法で対応出来ますので問題�
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/">GCP ロードバランサと GKE クラスタを Terraform を使って構築する</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
+                                    '2017-04-13'>
+                                    April 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -843,13 +1046,13 @@ public ネットワークを生成する方法で対応出来ますので問題�
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -857,13 +1060,13 @@ public ネットワークを生成する方法で対応出来ますので問題�
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-03'>
-                                    November 3, 2016</time>
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -871,13 +1074,13 @@ public ネットワークを生成する方法で対応出来ますので問題�
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-07-25'>
-                                    July 25, 2016</time>
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
                             </header>
                         </article>
                     </li>
@@ -916,7 +1119,7 @@ public ネットワークを生成する方法で対応出来ますので問題�
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">104</span>
+                                <span style="float:right;">108</span>
                             </header>
                         </article>
                     </li>

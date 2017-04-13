@@ -18,7 +18,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.18" />
+        <meta name="generator" content="Hugo 0.17" />
         
 
 
@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2013-07-02T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-07-08T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/"><p>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,296 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/07/08/chef-openstack-deploy/">Chef で OpenStack デプロイ</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-07-08'>
+            July 8, 2013</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>前回の記事で OpenCenter を使った OpenStack デプロイを行いましたが、デプロイの
+仕組みの実体は Opscode Chef です。慣れている人であれば Chef を単独で使った方が
+よさそうです。僕もこの方法を今後取ろうと思っています。</p>
+
+<p>幾つかの構成を試している最中ですが、今回 nova-network を使ったオールインワン構
+成を作ってみたいと思います。NIC の数は1つです。ノート PC や VPS サービス上にも
+構築できると思いますので試してみてください。</p>
+
+<p>今回は Chef サーバの構築や Knife の環境構築に関しては割愛します。</p>
+
+<p>また全ての操作は workstation ノードで行います。皆さんお手持ちの Macbook 等です。
+デプロイする先は OpenStack をデプロイするサーバです。</p>
+
+<h2 id="手順">手順</h2>
+
+<h4 id="chef-cookbook-を取得">Chef Cookbook を取得</h4>
+
+<p>RackSpace 社のエンジニアがメンテナンスしている Chef Cookbook を使います。各
+Cookbook が git submodule 化されているので &ndash;recursive オプションを付けます。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo
+% cd openstack-chef-repo
+</code></pre>
+
+<h4 id="v4-0-0-ブランチをチェックアウト">&lsquo;v4.0.0&rsquo; ブランチをチェックアウト</h4>
+
+<p>master ブランチは今現在 (2013/07/08) folsom ベースの構成になっているので
+&lsquo;grizzly&rsquo; のためのブランチ &lsquo;v4.0.0&rsquo; をローカルにチェックアウトします。</p>
+
+<pre><code class="language-bash">% git checkout v4.0.0
+</code></pre>
+
+<p>submodule である Cookbooks を初期化 -&gt; 更新を行います。</p>
+
+<pre><code class="language-bash">% git submodule init
+% git submodule sync
+% git submodule update
+</code></pre>
+
+<h4 id="environment-の作成">Environment の作成</h4>
+
+<p>Chef の中に Environment という情報があります。これは環境に合わせ各 Cookbooks
+内の Attributes 等を上書きすることが可能です。この Environment を作成すること
+でそれぞれ独立している Cookbooks を用いて一つの環境を作ることが可能になっています。
+Environement は clone してきた環境の environments ディレクトリ配下に格納します。
+下記の情報をコピペして environments/AllinOne.json として保存してください。</p>
+
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;AllinOne&quot;,
+  &quot;description&quot;: &quot;&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;package_component&quot;: &quot;grizzly&quot;,
+    &quot;osops_networks&quot;: {
+      &quot;management&quot;: &quot;10.0.0.0/24&quot;,
+      &quot;public&quot;: &quot;10.0.0.0/24&quot;,
+      &quot;nova&quot;: &quot;10.0.0.0/24&quot;
+    },
+    &quot;nova&quot;: {
+      &quot;networks&quot;: [
+        {
+          &quot;bridge&quot;: &quot;br100&quot;,
+          &quot;num_networks&quot;: &quot;1&quot;,
+          &quot;dns2&quot;: &quot;8.8.4.4&quot;,
+          &quot;dns1&quot;: &quot;8.8.8.8&quot;,
+          &quot;ipv4_cidr&quot;: &quot;172.16.0.0/24&quot;,
+          &quot;network_size&quot;: &quot;256&quot;,
+          &quot;label&quot;: &quot;private&quot;
+        }
+      ],
+      &quot;config&quot;: {
+        &quot;use_single_default_gateway&quot;: false,
+        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
+        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
+      },
+      &quot;network&quot;: {
+        &quot;dmz_cidr&quot;: &quot;172.18.0.0/24&quot;,
+        &quot;public_interface&quot;: &quot;eth0&quot;,
+        &quot;multi_host&quot;: true,
+        &quot;fixed_range&quot;: &quot;172.16.0.0/24&quot;
+      },
+      &quot;apply_patches&quot;: true,
+      &quot;libvirt&quot;: {
+        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
+        &quot;virt_type&quot;: &quot;qemu&quot;
+      }
+    },
+    &quot;keystone&quot;: {
+      &quot;admin_user&quot;: &quot;admin&quot;,
+      &quot;tenants&quot;: [
+        &quot;admin&quot;,
+        &quot;service&quot;
+      ],
+      &quot;users&quot;: {
+        &quot;admin&quot;: {
+          &quot;password&quot;: &quot;secrete&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [
+              &quot;admin&quot;
+            ]
+          }
+        },
+        &quot;demo&quot;: {
+          &quot;password&quot;: &quot;demo&quot;,
+          &quot;default_tenant&quot; : &quot;service&quot;,
+          &quot;roles&quot;: {
+            &quot;service&quot;: [ &quot;service&quot; ]
+          }
+        }
+      }
+    },
+    &quot;horizon&quot;: {
+      &quot;theme&quot;: &quot;Rackspace&quot;
+    },
+    &quot;mysql&quot;: {
+      &quot;root_network_acl&quot;: &quot;%&quot;,
+      &quot;allow_remote_root&quot;: true
+    },
+    &quot;monitoring&quot;: {
+      &quot;procmon_provider&quot;: &quot;monit&quot;,
+      &quot;metric_provider&quot;: &quot;collectd&quot;
+    },
+    &quot;glance&quot;: {
+      &quot;images&quot;: [
+        &quot;precise&quot;,
+        &quot;cirros&quot;
+      ],
+      &quot;image&quot;: {
+      },
+      &quot;image_upload&quot;: true
+    },
+    &quot;developer_mode&quot;: false
+  }
+}
+</code></pre>
+
+<p>環境に合わせ修正する必要があるのは&hellip;</p>
+
+<pre><code>&quot;osops_networks&quot;: {
+  &quot;management&quot;: &quot;10.0.0.0/24&quot;,
+  &quot;public&quot;: &quot;10.0.0.0/24&quot;,
+  &quot;nova&quot;: &quot;10.0.0.0/24&quot;
+},
+</code></pre>
+
+<p>だけです。私の環境は 10.0.0.0/24 にあるので上記のように記しましたが、これはみ
+なさんのネットワーク環境に合わせ修正してください。</p>
+
+<h2 id="roles-の修正">Roles の修正</h2>
+
+<p>デフォルトの &lsquo;allinone&rsquo; Role では Cinder が使えない状態です。これは別ストレー
+ジを扱うことを前提にしているためと思われます。今回はオールインワンでコミコミの
+構成を組みたいので roles/allinone.json を下記のように追記します。</p>
+
+<pre><code class="language-ruby">run_list(
+  &quot;role[single-controller]&quot;,
+  &quot;role[single-compute]&quot;,
+  &quot;role[cinder-volume]&quot; # &lt;- 追加
+)
+</code></pre>
+
+<h2 id="cookbooks-roles-environments-を-chef-サーバへアップロード">Cookbooks, Roles, Environments を Chef サーバへアップロード</h2>
+
+<p>チェックアウトした Cookbooks, Roles, あと今作成した Environements を Chef サー
+バへアップロードします。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
+% knife role from file roles/*.rb
+% knife environment from file environments/AllinOne.json
+</code></pre>
+
+<h2 id="openstack-をデプロイ">OpenStack をデプロイ</h2>
+
+<p>いよいよ、次のコマンドでデプロイを行います。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;ip_address&gt; -N &lt;hostname&gt; -r 'role[allinone]' -E AllinOne --sudo -x &lt;username&gt;
+</code></pre>
+
+<p>数分経つと OpenStack デプロイが完了します。ブラウザで https://<ip_address> へ
+アクセスして確認してみてください。ログインアカウントを上記の environments 内に
+記してあります。(user : demo, pass : demo, もしくは user : admin, pass : secrete)</p>
+
+<h2 id="cinder-の利用">Cinder の利用</h2>
+
+<p>この状態で VM を作成してアクセスすることは出来るのですが、Block Storage as a
+Service (Cinder) は利用できない状態です。下記の操作で使えるようになります。</p>
+
+<pre><code class="language-bash">% sudo dd if=/dev/zero of=/var/lib/cinder/volumes-disk bs=2 count=0 seek=7G
+% sudo modprobe loop
+% sudo losetup /dev/loop3 /var/lib/cinder/volumes-disk
+% sudo pvcreate /dev/loop3
+% sudo vgcreate cinder-volumes /dev/loop3
+% sudo service cinder-volume restart
+</code></pre>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>操作して気がついたと思いますが、Roles が数多く存在します。これは色んな構成が組
+めることを明示していると言えます。また、Environments を OpenStack 上の一つの構
+成に見立てる (例 : controller + compute x n ) あたりが、とても Chef との親和性
+が高いと言えます。今まで構築のために bash スクリプトを書いてきましたが、もうそ
+の必要が無くなりました。また Git のブランチに &lsquo;folsom&rsquo; 等がある通り、ブランチ
+をチェックアウトし直すことで folsom ベースの構成も組むことが出来ます。私は今、
+コントローラノードの HA 化をこの Cookbooks でデプロイしてみています。とても完
+成度が高いなぁと感じるのは environments である json ファイルに vips という項目
+を追記するだけで HA 構成が組める点です。これにより MySQL, Rabbitmq, API が VIP
+を持ち、コントローラノードの片系に障害が発生しても OpenStack 全体の構成 (今回
+で言う一つの Envorinments ですね) がサービス継続できる！ということです。次回、
+機会がありましたら、その構成のデプロイ方法についても紹介したいと思います。</p>
+
+<p>また、今回は VPS サービス上等に構築出来るように</p>
+
+<pre><code>&quot;virt_type&quot;: &quot;qemu&quot;
+</code></pre>
+
+<p>と environments に記しましたが、KVM リソースが扱える環境であればここを &lsquo;kvm&rsquo;
+とすることでパフォーマンスは若干上がると思います。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/07/08/chef-openstack-deploy/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -741,184 +1031,6 @@ sensu の監視をグルーピングしたいときは role 名を変えて knif
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/06/12/chef-ruby-code/">Chef を Ruby コード内で利用する</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-06-12'>
-            June 12, 2013</time>
-        <span class="author"></span>
-        
-            <p>1 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>require &lsquo;chef&rsquo; して Ruby コードの中で chef を利用したいと思って色々調べていた
-のですが、そもそもリファレンスが無くサンプルコードもごくわずかしかネット上に見
-つけられない状態でした。結局ソースコードを読んで理解していく世界なわけですが、
-サンプルコードが幾つかあると他の人に役立つかなぁと思い、ブログに載せていこうか
-なぁと。</p>
-
-<p>まず Chef サーバへアクセスするためには下記の情報が必要です。</p>
-
-<ul>
-<li>ユーザ名</li>
-<li>ユーザ用のクライアント鍵</li>
-<li>Chef サーバの URL</li>
-</ul>
-
-<p>これらは Chef::Config で記していきます。</p>
-
-<p>では早速サンプルコードです。まずは data bags 内データの一覧を取得するコードで
-す。data bags 内のデータを全で取得し配列で表示します。</p>
-
-<pre><code class="language-ruby">#!/usr/bin/env ruby
-
-require 'rubygems'
-require 'chef/rest'
-require 'chef/search/query'
-
-Chef::Config[:node_name]='user01'
-Chef::Config[:client_key]='/home/user01/user01.pem'
-Chef::Config[:chef_server_url]=&quot;https://10.200.9.22&quot;
-
-Chef::DataBag::list.each do |bag_name, url|
-  Chef::DataBag::load(bag_name).each do |item_name, url|
-    item = Chef::DataBagItem.load(bag_name, item_name).to_hash
-    puts item
-  end
-end
-</code></pre>
-
-<p>次は data bags にデータを入力するコードです。json_data という JSON 形式のデー
-タを test_data という data bag に放り込んでいます。</p>
-
-<pre><code class="language-ruby">#!/usr/bin/env ruby
-
-require 'rubygems'
-require 'chef/rest'
-require 'chef/search/query'
-
-Chef::Config[:node_name]='user01'
-Chef::Config[:client_key]='/home/user01/user01.pem'
-Chef::Config[:chef_server_url]=&quot;https://10.0.0.10&quot;
-
-json_data = {
-  &quot;id&quot; =&gt; &quot;test&quot;,
-  &quot;command&quot; =&gt; &quot;echo test&quot;
-}
-
-databag_item = Chef::DataBagItem.new
-databag_item.data_bag('test_data')
-databag_item.raw_data = proc_nginx
-databag_item.save
-</code></pre>
-
-<p>次は nodes 一覧の取得です。</p>
-
-<pre><code class="language-ruby">#!/usr/bin/env ruby
-
-require 'rubygems'
-require 'chef/rest'
-require 'chef/search/query'
-
-
-Chef::Config[:node_name]='user01'
-Chef::Config[:client_key]='/home/user01/user01.pem'
-Chef::Config[:chef_server_url]=&quot;https://10.0.0.10&quot;
-
-Chef::Node.list.each do |node|
-  puts node
-end
-</code></pre>
-
-<p>次は bootstrap するコード。</p>
-
-<pre><code class="language-ruby">#!/usr/bin/env ruby
-require 'rubygems'
-require &quot;chef&quot;
-require &quot;chef/knife/core/bootstrap_context&quot;
-require 'chef/knife'
-require 'chef/knife/ssh'
-require 'net/ssh'
-require 'net/ssh/multi'
-require 'chef/knife/bootstrap'
-
-
-Chef::Config[:node_name]='user01'
-Chef::Config[:client_key]='/home/user01/user01.pem'
-Chef::Config[:validation_key]='/home/user01/chef-validator.pem'
-Chef::Config[:chef_server_url]=&quot;https://10.0.0.10&quot;
-
-kb = Chef::Knife::Bootstrap.new
-kb.name_args = [&quot;sensu-client04.deathstar.jp&quot;, &quot;10.0.0.20&quot;]
-kb.config[:ssh_user] = &quot;root&quot;
-kb.config[:identity_file] = &quot;~/novakey01&quot;
-kb.config[:ssh_port] = &quot;22&quot;
-kb.config[:run_list ] = &quot;role[sensu-client]&quot;
-kb.config[:template_file] = &quot;/home/thirai/chef-full.erb&quot;
-kb.run
-</code></pre>
-
-<p>以上です。他のサンプルもこれから探していこうかと思ってます。knife のソース見る
-のが一番はやいかなぁと。もしくは Chef のテストコード見るか。皆さんもご存知であ
-れば共有してくださーい。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/06/12/chef-ruby-code/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -1035,6 +1147,20 @@ kb.run
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/">GCP ロードバランサと GKE クラスタを Terraform を使って構築する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-04-13'>
+                                    April 13, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
                                 
                                     
@@ -1064,20 +1190,6 @@ kb.run
                         <article>
                             <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-12-29'>
-                                    December 29, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/">Google Cloud CDN を使ってみた</a></h3>
                                 
                                     
                                 
@@ -1122,7 +1234,7 @@ kb.run
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">107</span>
+                                <span style="float:right;">108</span>
                             </header>
                         </article>
                     </li>

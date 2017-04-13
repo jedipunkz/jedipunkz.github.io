@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2016-07-25T23:18:16&#43;09:00"/>
+<meta property="og:updated_time" content="2016-12-29T09:43:18&#43;09:00"/>
 
 
 
@@ -196,19 +196,19 @@ ga('send', 'pageview');
 
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/"><p>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
             </ul>
@@ -230,7 +230,164 @@ ga('send', 'pageview');
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h2>
+        
+        
+            <p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging へログ転送</p>
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2016-12-29'>
+            December 29, 2016</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは @jedipunkz です。</p>
+
+<p>今回は Kubernetes を使った構成で Google-Fluentd をどのコンテナに載せるか？ってことを考えてみたので書きたいと思います。</p>
+
+<p>Kubernetes は Docker を利用したソフトウェアなので Docker と同じく &ldquo;1コンテナ, 1プロセス&rdquo; というポリシがあります。つまり、コンテナ上のプロセスが停止したら Kubernetes がそれを検知してコンテナを起動しなおしてくれます。ですが、複数プロセスを1コンテナに稼働させると、それが出来ません。そうは言っても中には複数のプロセスを稼働させたい場面があります。その場面として考えられる具体的な例として HTTPD サーバのログを Google-Fluentd を使って GCP Cloud Logging に転送したい場合があります。</p>
+
+<p>今回は上記の例を fluentd-sidecar-gcp と kubernetes volumes を使って解決する方法を記したいと思います。</p>
+
+<h2 id="構成のシナリオ">構成のシナリオ</h2>
+
+<p>シナリオとしては下記のとおりです。</p>
+
+<ul>
+<li>マルチコンテナポッドを扱う</li>
+<li>1つの Kubernetes Volumes を複数コンテナで共有する</li>
+<li>HTTPD ログをその Volume に出力</li>
+<li>隣接する Google-Fluentd コンテナでその Volume に出力されたログを読み込みログ転送</li>
+</ul>
+
+<h2 id="fluentd-sidecar-gcp-とは">fluentd-sidecar-gcp とは</h2>
+
+<p>次に説明するのは fluentd-sidecar-gcp の概略です。これは Kubernetes が contrib で扱っているコンテナです。下記の URL にあります。</p>
+
+<p><a href="https://github.com/kubernetes/contrib/tree/master/logging/fluentd-sidecar-gcp">https://github.com/kubernetes/contrib/tree/master/logging/fluentd-sidecar-gcp</a></p>
+
+<p>Google-Fluentd を稼働させる Dockerfile が用意されているのですが、下記の記述を確認するとこのコンテナに環境変数 $FILES_TO_COLLECT を渡すと Google Fluentd でログを取得してくれることが分かります。</p>
+
+<p><a href="https://github.com/kubernetes/contrib/blob/master/logging/fluentd-sidecar-gcp/config_generator.sh#L22-L37">https://github.com/kubernetes/contrib/blob/master/logging/fluentd-sidecar-gcp/config_generator.sh#L22-L37</a></p>
+
+<p>つまり、fluentd-sidecar-gcp コンテナに隣接する HTTPD コンテナのログが出力される Kubernetes Volumes 上のファイルパスを指定すれば HTTPD のログが取得でき、Google Cloud Logging へログが転送できます。</p>
+
+<h2 id="サンプルの-kubernetes-yaml">サンプルの Kubernetes YAML</h2>
+
+<p>下記にサンプルとして Kubernetes YAML を記します。</p>
+
+<pre><code>apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    run:  my-nginx
+  name: nginx-fluentd-logging-example
+spec:
+  containers:
+  - name: nginx-container
+    image: nginx
+    ports:
+    - containerPort: 80
+    volumeMounts:
+    - name: log-storage
+      mountPath: /var/log/nginx
+  - name: sidecar-log-collector
+    image: gcr.io/google_containers/fluentd-sidecar-gcp:1.4
+    resources:
+      limits:
+        cpu: 100m
+        memory: 200Mi
+    env:
+    - name: FILES_TO_COLLECT
+      value: &quot;/mnt/log/nginx/access.log /mnt/log/nginx/error.log&quot;
+    volumeMounts:
+    - name: log-storage
+      readOnly: true
+      mountPath: /mnt/log/nginx
+  volumes:
+  - name: log-storage
+    emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-nginx
+  labels:
+    run: my-nginx
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+  selector:
+    run: my-nginx
+</code></pre>
+
+<p>特徴を下記に解説します。</p>
+
+<ul>
+<li>nginx-container, sidecar-log-collector のマルチコンテナポッドです。</li>
+<li>sidecar-log-collector の image: としては gcr.io/google_containers/fluentd-sidecar-gcp:1.4 が指定されています</li>
+<li>&lsquo;log-storage&rsquo; として nginx-container の /var/log/nginx が sidecar-log-collector の /mnt/log/nginx として共有されています</li>
+<li>FILES_TO_COLLECT として共有 Volume 上の access.log, error.log が指定されています</li>
+</ul>
+
+<p>結果、Nginx コンテナのログが Kubernetes Volume で Google-Fluentd コンテナに読み込み専用で共有され (readOnly 行) 、この Google-Fluentd は環境変数で渡された /mnt/log/nginx/access.log と /mnt/log/nginx/error.log を読み込み開始し、内容を Google Cloud Logging へ転送します。</p>
+
+<h2 id="デプロイ方法">デプロイ方法</h2>
+
+<p>デプロイは下記の通り実施します。</p>
+
+<pre><code>$ kubectl create -f &lt;上記のファイル名&gt;
+</code></pre>
+
+<h2 id="結果とまとめ">結果とまとめ</h2>
+
+<p>それぞれのログファイルを Tag を Google-Fluentd で付けた形で Google Cloud Logging へ転送出来ました。ログ毎に結果を Cloud Logging UI 上で確認できます。
+本来、Docker なので標準出力にログを出力し Kubernetes がその標準出力を Cloud Logging へ転送してくれるのですが、それだと Tag が付けられないため、ログを分離するのが一苦労だと思います。ですが、今回紹介した方法では Google-Fluentd で Tag を付けてログ転送出来たため、その心配はありません。</p>
+
+<p>この Kubernetes Volumes は他にも利用方法がありそうです。</p>
+
+<p>本来、GKE や Kubernetes を利用される方は Microservice Architecture が採用出来ている方々だと思うのですが、fluentd をアプリコンテナから分離するのは結構悩むところじゃないかと思うので、今回紹介した方法はそう言った場合に有用かと思います。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+    
+
+    
+    
+</ul>
+
+    </footer>
+</article>
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/">Google Cloud CDN を使ってみた</a></h2>
         
         
     </div>
@@ -240,11 +397,11 @@ ga('send', 'pageview');
         
 
         <time class="published"
-            datetime='2016-07-25'>
-            July 25, 2016</time>
+            datetime='2016-12-29'>
+            December 29, 2016</time>
         <span class="author"></span>
         
-            <p>2 minute read</p>
+            <p>1 minute read</p>
         
         
     </div>
@@ -255,98 +412,76 @@ ga('send', 'pageview');
     
     <p>こんにちは。@jedipunkz です。</p>
 
-<p>kubernetes の環境を簡易的に作れる Minikube (<a href="https://github.com/kubernetes/minikube">https://github.com/kubernetes/minikube</a>) が2ヶ月前ほどにリリースになっていました。簡単ですが少し触ってみたのでその際のメモを記したいと思います。VirtualBox もしくは VMware Fusion がインストールされていればすぐにでも稼働可能です。私は Kubernetes 初心者ですが何も考えずに kubernetes を動かすことが出来ました。</p>
+<p>今回は Google Cloud Platform の Google CloudCDN について調べてみたので記したいと思います。</p>
 
-<h2 id="前提">前提</h2>
+<p>CloudCDN は GCP のロードバランサのバックエンドサービスに紐付けられるサービスです。このバックエンドサービスで CloudCDN を有効にしていると CDN サービスを機能させることが出来ます。先に書いておくとこの CloudCDN はとてもシンプルで扱いやすいサービスだと判りました。高機能な他の CDN サービスと比べると機能が足らない感ありますが、必要最低限なところを抑えているのと、価格がとても安いです。(価格は下記の URL 参照)</p>
 
-<p>前提として下記の環境が必要になります。</p>
+<p>価格表 : <a href="https://cloud.google.com/cdn/pricing">https://cloud.google.com/cdn/pricing</a></p>
+
+<h2 id="構成">構成</h2>
+
+<p>構成と構成の特徴です。</p>
+
+<pre><code>+----------+                                    +---------+
+| instance |--+                               +-| EndUser |
++----------+  |  +------------+  +----------+ | +---------+
+              +--|LoadBalancer|--| CloudCDN |-+-| EndUser |
++----------+  |  +------------+  +----------+ | +---------+
+| instance |--+                               +-| EndUser |
++----------+                                    +---------+
+</code></pre>
 
 <ul>
-<li>Mac OSX がインストールされていること</li>
-<li>VirtualBox もしくは VMware Fusion がインストールされていること</li>
+<li>コンテンツが初めてリクエストされた場合キャッシュミスする</li>
+<li>キャッシュミスした際に近くにあるキャッシュからコンテンツを取得しようと試みる</li>
+<li>近くのキャッシュがコンテンツがある場合、最初のキャッシュにコンテンツが送信される</li>
+<li>近くのキャッシュにコンテンツがない場合、HTTP ロードバランサにリクエストが転送される</li>
+<li>その後のリクエストはキャッシュが応答する(キャッシュヒット)</li>
+<li>キャッシュ間のフィルは EndUser のリクエストに応じて実行される</li>
+<li>キャッシュを事前に読み込むことできない</li>
+<li>キャッシュは世界各地に配置されている</li>
 </ul>
 
-<h2 id="minikube-をインストール">minikube をインストール</h2>
+<h2 id="cloudcdn-を導入する方法">CloudCDN を導入する方法</h2>
 
-<p>minikube をインストールします。</p>
+<p>導入する方法は簡単で下記のとおりです。</p>
 
-<pre><code>$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.6.0/minikube-darwin-amd64 &amp;&amp; chmod +x minikube &amp;&amp; sudo mv minikube /usr/local/bin/
+<ul>
+<li>新規 LB を WebUI で作成</li>
+<li>バックエンドサービスを作成</li>
+<li>右パネルの下にある [Cloud CDN を有効にする] チェックボックスをオンに</li>
+<li>作成ボタンを押下</li>
+</ul>
+
+<p>HTTPD サーバ側 (今回は Apache を使います) でキャッシュに関する設定を行います。
+下記は例です。3600秒、キャッシュさせる設定になります。</p>
+
+<pre><code>Header set Cache-control &quot;public, max-age=3600&quot;
 </code></pre>
 
-<h2 id="kubetl-をインストール">kubetl をインストール</h2>
+<p>キャッシュされる条件は RFC7324 に規定されているとおりです。</p>
 
-<p>次に kubectl をインストールします。</p>
+<h2 id="特定のキャッシュを削除する方法">特定のキャッシュを削除する方法</h2>
 
-<pre><code>$ curl -k -o kubectl https://kuar.io/darwin/kubectl &amp;&amp; chmod +x kubectl &amp;&amp; sudo mv kubectl /usr/local/bin/
+<p>Google Cloud SDK <a href="https://cloud.google.com/sdk/">https://cloud.google.com/sdk/</a> を使うと CLI でコンテンツを指定してキャッシュのクリアが出来ます。また WebUI でもクリアは可能です。</p>
+
+<pre><code>$ gcloud compute url-maps invalidate-cdn-cache &lt;url-map の名前&gt; --path &quot;コンテンツのパス&quot;
 </code></pre>
 
-<h2 id="minikube-で-kurbernates-を稼働">Minikube で Kurbernates を稼働</h2>
+<p>このときに &ndash;path で指定できるコンテンツの記し方は下記のように指定することも可能です。</p>
 
-<p>Minikube を使って Kubernetes を稼働してみます。下記のコマンドを実行すると Virtualbox 上で仮想マシンが稼働し Kubernetes 一式も立ち上がります。</p>
-
-<pre><code>$ minikube start
-</code></pre>
-
-<h2 id="kurbernates-を使ってみる">Kurbernates を使ってみる</h2>
-
-<p>Pods を立ち上げてみましょう。下記の内容を redis-django.yaml ファイルに保存します。</p>
-
-<pre><code>apiVersion: v1
-kind: Pod
-metadata:
-  name: redis-django
-  labels:
-    app: web
-spec:
-  containers:
-    - name: key-value-store
-      image: redis
-      ports:
-        - containerPort: 6379
-    - name: frontend
-      image: django
-      ports:
-        - containerPort: 8000
-</code></pre>
-
-<p>kubectl コマンドで Pod を立ち上げます。</p>
-
-<pre><code>$ kubectl create -f ./redis-django.yaml
-</code></pre>
-
-<p>Pod の様子を確認します。</p>
-
-<pre><code>$ kubectl get pods
-NAME           READY     STATUS             RESTARTS   AGE
-redis-django   1/2       CrashLoopBackOff   7          15m
-</code></pre>
-
-<p>Minikube はクラスタといってもノードが1つなので READY <sup>1</sup>&frasl;<sub>2</sub> となるようです。Nodes の様子を見てみます。</p>
-
-<pre><code>$ kubectl get nodes
-NAME         LABELS                                                                                        STATUS
-minikubevm   beta.kubernetes.io/arch=amd64,beta.kubernetes.io/os=linux,kubernetes.io/hostname=minikubevm   Ready
-</code></pre>
-
-<p>Docker ホスト上の様子を見てみましょう。Kubernetes を形成するコンテナと共に redis のコンテナが稼働していることが確認できます。</p>
-
-<pre><code>$ eval $(minikube docker-env)
-$ docker ps
-CONTAINER ID        IMAGE                                                  COMMAND                  CREATED             STATUS              PORTS               NAMES
-550285614e33        redis                                                  &quot;docker-entrypoint.sh&quot;   20 minutes ago      Up 20 minutes                           k8s_key-value-store.a3b8356e_redis-django_default_4440a1d8-5272-11e6-9f19-6e0006e7fb51_90c3fec8
-aba3a8c040d4        gcr.io/google_containers/pause-amd64:3.0               &quot;/pause&quot;                 20 minutes ago      Up 20 minutes                           k8s_POD.822b267d_redis-django_default_4440a1d8-5272-11e6-9f19-6e0006e7fb51_5bef1d2a
-9ea96a3f3e10        gcr.io/google-containers/kube-addon-manager-amd64:v2   &quot;/opt/kube-addons.sh&quot;    48 minutes ago      Up 48 minutes                           k8s_kube-addon-manager.a1c58ca2_kube-addon-manager-minikubevm_kube-system_48abed82af93bb0b941173334110923f_84f4fd38
-192e886a5795        gcr.io/google_containers/pause-amd64:3.0               &quot;/pause&quot;                 48 minutes ago      Up 48 minutes                           k8s_POD.d8dbe16c_kube-addon-manager-minikubevm_kube-system_48abed82af93bb0b941173334110923f_6c65b482
-7b005c68d9d4        gcr.io/google_containers/pause-amd64:3.0               &quot;/pause&quot;                 48 minutes ago      Up 48 minutes                           k8s_POD.2225036b_kubernetes-dashboard-pzdxy_kube-system_7005dce1-479a-11e6-a0ce-86b669e45864_c08bd009
+<pre><code>--path &quot;/cat.png # &lt;--- 1つのコンテンツキャッシュを削除
+--path &quot;/*&quot;      # &lt;--- 全てのコンテンツキャッシュを削除
+--path &quot;/pix/*&quot;  # &lt;--- ディレクトリ指定で削除
 </code></pre>
 
 <h2 id="まとめ">まとめ</h2>
 
-<p>Kubernetes のことを殆ど知らない私でもなんとなくですが稼働させて基本的な操作が出来ました。2016/5/31 にリリースされたツールなのでまだ安定しないところもありますが、より容易に Kubernetes が稼働できるようになったのでエンジニアの敷居が下がったのではないでしょうか。</p>
+<p>価格が低価格で必要最低限な機能に絞られている印象です。シンプルな分、理解し易いですしキャッシュクリアについても Hubot 化などすれば開発者の方に実行してもらいやすいのではないでしょうか。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -385,8 +520,10 @@ aba3a8c040d4        gcr.io/google_containers/pause-amd64:3.0               &quot
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/">Go言語とInfluxDBで監視のコード化</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h2>
         
+        
+            <p>coreos が最近アナウンスした etcd operator を触ってみた</p>
         
     </div>
     <div class="meta">
@@ -395,11 +532,11 @@ aba3a8c040d4        gcr.io/google_containers/pause-amd64:3.0               &quot
         
 
         <time class="published"
-            datetime='2016-07-23'>
-            July 23, 2016</time>
-        <span class="author"></span>
+            datetime='2016-11-27'>
+            November 27, 2016</time>
+        <span class="author">jedipunkz</span>
         
-            <p>2 minute read</p>
+            <p>3 minute read</p>
         
         
     </div>
@@ -408,404 +545,237 @@ aba3a8c040d4        gcr.io/google_containers/pause-amd64:3.0               &quot
     
 
     
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+    <p>こんにちは @jedipunkz です。</p>
 
-<p>今日は Go 言語でサーバのメトリクスデータを InfluxDB に入れてリソース監視を行う方法について書きます。</p>
+<p>今日は某アドベントカレンダーに参加していて記事を書いています。
+記事だけ先出ししちゃいます..。</p>
 
-<p>Ansible, Terraform, Chef などのソフトウェアを使ってインフラを定義するのが当たり前になった現在ですが、本当の意味でのソフトウェアによるインフラの定義ってなんだろと最近考えています。aws-sdk や fog などを使ったネイティブな言語でインフラを定義することの意味もあるように感じているからです。某サービスプロバイダのエンジニアはこうした言語によるインフラの定義の一番大きなメリットとして &ldquo;再利用性&rdquo; をあげていました。こうしたソフトウェアによるインフラの定義や構成を行う上で監視についてもコード化できるのでは？と考えて今回の記事に至りました。</p>
+<p>今日は最近 coreos がリリースした &lsquo;etcd-operator&rsquo; を触ってみようかと思います。ほぼ、README に書かれている手順通りに実施するのですが、所感を交えながら作業して記事にしてみたいと思います。</p>
 
-<h2 id="使うモノ">使うモノ</h2>
+<p>coreos が提供している etcd についてご存知ない方もいらっしゃると思いますが etcd は KVS ストレージでありながら Configuration Management Store として利用できる分散型ストレージです。Docker 等の環境を提供する coreos という軽量 OS 内でも etcd が起動していてクラスタで管理された情報をクラスタ内の各 OS が読み書きできる、といった機能を etcd が提供しています。
+詳細については公式サイトを御覧ください。</p>
 
-<ul>
-<li><a href="https://github.com/influxdata/influxdb/tree/master/client">https://github.com/influxdata/influxdb/tree/master/client</a></li>
-</ul>
+<p>etcd 公式サイト : <a href="https://coreos.com/etcd/docs/latest/">https://coreos.com/etcd/docs/latest/</a></p>
 
-<p>公式の InfluxDB Go Client です。InfluxDB 自体が Go 言語で書かれていますがクライアントも Go 言語で記述することができます。ここにあるサンプルコードをすこしいじって、今回の記事を書こうと思います。</p>
+<p>etcd-operator はこの etcd クラスタを kubernetes 上でクラスタ管理するための簡単に運用管理するためのソフトウェアになります。</p>
 
-<ul>
-<li><a href="https://github.com/shirou/gopsutil">https://github.com/shirou/gopsutil</a></li>
-</ul>
+<p>etcd-operator 公式アナウンス : <a href="https://coreos.com/blog/introducing-the-etcd-operator.html">https://coreos.com/blog/introducing-the-etcd-operator.html</a></p>
 
-<p>@shirou さんが作られた psutil の Go 言語版です。CPU, Mem などリソースをモニタするのに便利なので利用します。</p>
-
-<h2 id="環境構築">環境構築</h2>
-
-<p>環境を作っていきます。InfluxDB と Chronograf を構築するのですが Docker で構築するのが簡単なのでこれを利用します。Chronograf は InfluxDB 内のデータを可視化するためのソフトウェアです。</p>
+<p>後に実際に触れていきますが下記のような管理が可能になります。</p>
 
 <ul>
-<li>InfluxDB の起動</li>
+<li>etcd クラスタの構築</li>
+<li>etcd クラスタのスケールアップ・ダウン</li>
+<li>etcd Pod の障害時自動復旧</li>
+<li>etcd イメージをオンラインで最新のモノにアップグレード</li>
 </ul>
 
-<p>InfluxDB のコンテナを起動します。</p>
+<p>では早速利用してみたいと思います。</p>
 
-<pre><code>docker run -p 8083:8083 -p 8086:8086 \
-      -v $PWD:/var/lib/influxdb \
-      influxdb
-</code></pre>
+<h2 id="必要な環境">必要な環境</h2>
+
+<p>下記の環境が事前に用意されている必要があります。</p>
 
 <ul>
-<li>Chronograf の起動</li>
+<li>Docker</li>
+<li>Kubernetes or minikube+kubernetes (<a href="https://github.com/kubernetes/minikube">https://github.com/kubernetes/minikube</a>)</li>
+<li>etcdctl : <a href="https://github.com/coreos/etcd/tree/master/etcdctl">https://github.com/coreos/etcd/tree/master/etcdctl</a></li>
 </ul>
 
-<p>Chronograf のコンテナを起動します。</p>
+<h2 id="作業準備">作業準備</h2>
 
-<pre><code>docker run -p 10000:10000 chronograf
+<p>下記のレポジトリをクローンします。</p>
+
+<pre><code>$ git clone https://github.com/coreos/etcd-operator.git
 </code></pre>
 
-<p>この時点で http://${DOCKER_HOST}:10000/ にアクセスすると Chronograf の UI を確認できます。</p>
+<h2 id="operator-のデプロイ">Operator のデプロイ</h2>
 
-<h2 id="influxdb-にユーザ-データベースを作成する">InfluxDB にユーザ・データベースを作成する</h2>
+<p>下記のような内容のファイルが記さているファイルを利用します。中身を確認しましょう。</p>
 
-<p>InfluxDB 上にユーザとデータベースを作成します。言語の中でも作ることが出来ますが、今回は手動で。
-Mac OSX を使っている場合 homebrew で influxdb をインストールすることが簡単にできます。</p>
-
-<pre><code>brew install influxdb
+<pre><code>$ cat  example/deployment.yaml
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: etcd-operator
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: etcd-operator
+    spec:
+      containers:
+      - name: etcd-operator
+        image: quay.io/coreos/etcd-operator
+        env:
+        - name: MY_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
 </code></pre>
 
-<p>ユーザを作ります。</p>
+<p>kind: Deployment で etcd-operator のイメージを使ってレプリカ数1のポッドを起動しているのが分かると思います。実際にデプロイします。</p>
 
-<pre><code>influx -host 192.168.99.100 -port 8086
-&gt; create user foo with password 'foo'
-&gt; grant all privileges to foo
+<pre><code>$ kubectl create -f example/deployment.yaml
 </code></pre>
 
-<p>データベースを作ります。</p>
+<p>どんなポッドが起動したか確認します。</p>
 
-<pre><code>influx -host 192.168.99.100 -port 8086
-&gt; CREATE DATABASE IF NOT EXISTS square_holes;
+<pre><code>kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-operator-217127005-futo0            1/1       Running   0          1m
 </code></pre>
 
-<h2 id="go言語で-cpu-時間を取得し-influxdb-にメトリクスデータを挿入">Go言語で CPU 時間を取得し InfluxDB にメトリクスデータを挿入</h2>
+<p>あと、これは自分も知りませんでしたがサードパーティリソースという枠があるらしく下記のように確認することができます。</p>
 
-<p>Go 言語でメモリー使用率を取得し得られたメトリクスデータを InfluxDB に挿入するコードを書きます。</p>
+<pre><code>kubectl get thirdpartyresources
+NAME                      DESCRIPTION             VERSION(S)
+etcd-cluster.coreos.com   Managed etcd clusters   v1
+</code></pre>
 
-<pre><code class="language-golang">package main
+<p>replica数1 ですが、ポッドなのでポッド内のプロセスに問題があれば kubernetes が自動で修復 (場合によってポッドの再構築) されます。また replica 数を増やす運用も考えられそうです。</p>
 
-import (
-    &quot;log&quot;
-    &quot;time&quot;
+<h2 id="etcd-クラスタの構築">etcd クラスタの構築</h2>
 
-    &quot;github.com/influxdata/influxdb/client/v2&quot;
-    &quot;github.com/shirou/gopsutil/cpu&quot;
-)
+<p>下記の内容のファイルで etcd をデプロイします。中身を確認しましょう。
+API は coreos.com/v1 で kind: EtcdCluster という情報が記されています。また version でイメージバージョンが記されているのかなということが後に確認できます。また size でレプリカ数が記されているようです。</p>
 
-const (
-    MyDB = &quot;square_holes&quot;
-    username = &quot;foo&quot;
-    password = &quot;foo&quot;
-)
+<pre><code>$ cat example/example-etcd-cluster.yaml
+apiVersion: &quot;coreos.com/v1&quot;
+kind: &quot;EtcdCluster&quot;
+metadata:
+  name: &quot;etcd-cluster&quot;
+spec:
+  size: 3
+  version: &quot;v3.1.0-alpha.1&quot;
+</code></pre>
 
-func main() {
-    for {
-        // Make client
-        c, err := client.NewHTTPClient(client.HTTPConfig{
-            Addr: &quot;http://192.168.99.100:8086&quot;,
-            Username: username,
-            Password: password,
-        })
-    
-        if err != nil {
-            log.Fatalln(&quot;Error: &quot;, err)
-        }
-    
-        // Create a new point batch
-        bp, err := client.NewBatchPoints(client.BatchPointsConfig{
-            Database:  MyDB,
-            Precision: &quot;s&quot;,
-        })
-    
-        if err != nil {
-            log.Fatalln(&quot;Error: &quot;, err)
-        }
-    
-        // get CPU info
-        cp, _ := cpu.Times(true)
+<p>デプロイをしてみます。</p>
 
-        // get CPU status info for each core
-        var user, system, idle float64 = 0, 0, 0
-        for _, sub_cpu := range cp {
-            user = user + sub_cpu.User
-            system = system + sub_cpu.System
-            idle = idle + sub_cpu.Idle
-        }
-    
-        // Create a point and add to batch
-        tags := map[string]string{&quot;cpu&quot;: &quot;cpu&quot;}
-        fields := map[string]interface{}{
-            &quot;User&quot;:     user / float64(len(cp)),
-            &quot;System&quot;:   system / float64(len(cp)),
-            &quot;Idle&quot;:     idle / float64(len(cp)),
-        }
-        pt, err := client.NewPoint(&quot;cpu&quot;, tags, fields, time.Now())
-    
-        if err != nil {
-            log.Fatalln(&quot;Error: &quot;, err)
-        }
-    
-        bp.AddPoint(pt)
-    
-        // Write the batch
-        c.Write(bp)
-        time.Sleep(1 * time.Second)
-    }
+<pre><code>$ kubectl create -f example/example-etcd-cluster.yaml
+</code></pre>
+
+<p>クラスタがデプロイされたか見てみます。3つのポッドが確認できます。やはりファイル中 size: 3 はレプリカ数だったようです。</p>
+
+<pre><code>$ kubectl get pods --show-all
+NAME                                     READY     STATUS      RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running     0          1m
+etcd-cluster-0001                        1/1       Running     0          36s
+etcd-cluster-0002                        1/1       Running     0          21s
+</code></pre>
+
+<p>同様に Service について確認します。etcd-cluster-000[012] の3つが今回作った etcd クラスタです。</p>
+
+<pre><code>$ kubectl get svc
+NAME                    CLUSTER-IP   EXTERNAL-IP   PORT(S)             AGE
+etcd-cluster            10.0.0.80    &lt;none&gt;        2379/TCP            1m
+etcd-cluster-0000       10.0.0.13    &lt;none&gt;        2380/TCP,2379/TCP   1m
+etcd-cluster-0001       10.0.0.111   &lt;none&gt;        2380/TCP,2379/TCP   1m
+etcd-cluster-0002       10.0.0.183   &lt;none&gt;        2380/TCP,2379/TCP   50s
+kubernetes              10.0.0.1     &lt;none&gt;        443/TCP             5d
+</code></pre>
+
+<h2 id="etcd-クラスタをスケールアウト">etcd クラスタをスケールアウト</h2>
+
+<p>では etcd クラスタのレプリカ数を増やすことでスケールアウトしてみます。が、今現在 (<sup>2016</sup>&frasl;<sub>12</sub>) 時点では一部不具合があるらしく回避策として下記の通り curl を用いてスケールアウトすることが可能なようです。</p>
+
+<p>下記の内容で body.json ファイルを用意します。size: 5 になっていることが確認できて、レプリカ数5になるのだなと判断できます。</p>
+
+<pre><code>$ cat body.json
+{
+  &quot;apiVersion&quot;: &quot;coreos.com/v1&quot;,
+  &quot;kind&quot;: &quot;EtcdCluster&quot;,
+  &quot;metadata&quot;: {
+    &quot;name&quot;: &quot;etcd-cluster&quot;,
+    &quot;namespace&quot;: &quot;default&quot;
+  },
+  &quot;spec&quot;: {
+    &quot;size&quot;: 5
+  }
 }
 </code></pre>
 
-<p>ビルドして実行すると下記のように influxdb 上のデータベースにメトリクスデータが挿入されていることを確認できます。</p>
+<p>ここで curl で実行するためプロキシを稼働します。</p>
 
-<pre><code>influx -host 192.168.99.100 -port 8086 -execute 'SELECT * FROM cpu' -database=square_holes -precision=s | head -8
-name: cpu
----------
-time            Idle            System          User            cpu
-1469342272      20831.04296875  3700.185546875  3544.90234375   cpu
-1469342273      20831.666015625 3700.302734375  3544.966796875  cpu
-1469342274      20832.2109375   3700.447265625  3545.068359375  cpu
-1469342275      20832.828125    3700.546875     3545.13671875   cpu
-1469342291      20841.728515625 3702.482421875  3546.806640625  cpu
+<pre><code>$ kubectl proxy --port=8080
 </code></pre>
 
-<p>Chronograf の UI で確認してみましょう。</p>
+<p>curl で先程作った body.json を PUT してみます。</p>
 
-<p><img src="http://jedipunkz.github.io/pix/influx-go.png" width="80%"></p>
-
-<p>得られた CPU に関するデータが可視化されていることが確認できます。変化に乏しいグラフですが&hellip;。
-この辺りは CPU 時間から CPU 使用率を得るコードに書き換えるといいかもしれません。</p>
-
-<h2 id="まとめと考察">まとめと考察</h2>
-
-<p>InfluxDB の提供元が出している Telegraf というメトリクスデータの送信エージェントがありますが、同じような動きを Go 言語で簡単に開発できることが分かりました。ネイティブな言語で開発するとより柔軟にデータの送信ができることも期待できます。また冒頭に述べた通り再利用も用意になるのではと思います。インフラの状態をメトリクスデータとして時系列 DB に挿入して可視化するということは監視のコード化とも言えると思います。ただし、フレームワークが出てきてもっと簡単に書ける仕組みが出てこないと厳しい気もしますが。果たしてこれらインフラを言語で記述していくことがどれだけ有用なのかまだわかりませんが、いつか現場で実践してみたいと思います。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/">Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</a></h2>
-        
-        
-            <p>test-kitchen with ansible, docker</p>
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2016-07-14'>
-            July 14, 2016</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>私もインフラのプロビジョニングツールとして Chef ではなく Ansible を使うことが増えたのですが、Chef を使っていた頃に同じく利用していた test-kitchen が便利だったので ansible と併用できないかと思い試してみました。test-kitchen は Docker コンテナや EC2 等を起動して Chef, Ansible 等で構成をデプロイし serverspec 等のテストツールで構成をテストできるソフトウェアです。AWS EC2 でデプロイしてもいいのですが、EC2 を起動してデプロイして失敗したら削除してのサイクルを回すことを考えるとだいぶ面倒なので Docker + test-kitchen を使ってこのサイクルを高速に回す方がメリットが大きそうです。今回は Docker + test-kitchen を使って Ansible Role (Playbook) を開発するサイクルを高速化する方法を記したいと思います。</p>
-
-<h2 id="ソフトウェアの構成">ソフトウェアの構成</h2>
-
-<p>構成は、私の場合 Mac OSX を使っているので下記のとおりです。</p>
-
-<ul>
-<li>test-kitchen</li>
-<li>kitchen-ansible (test-kitchen ドライバ)</li>
-<li>kitchen-docker (test-kitchen ドライバ)</li>
-<li>serverspec</li>
-<li>ansible</li>
-<li>docker (Docker-machine)</li>
-<li>VirtualBox</li>
-</ul>
-
-<p>Linux でネイティブな Docker を使っている方は以降、読み替えて下さい。読み替えるのはそれほど難しくないと思います。</p>
-
-<h2 id="ソフトウェアのインストール">ソフトウェアのインストール</h2>
-
-<p>今回は上記ソフトウェアのインストール方法は省きます。test-kitchen, kitchen-ansible, kitchen-docker, serverspec は Ruby で開発されたソフトウェアなので Gemfile 等で管理、ansible は pip 等でインストールしてください。</p>
-
-<h2 id="環境作成">環境作成</h2>
-
-<p>test-kitchen が稼働するように環境を作っていきます。
-作業ディレクトリで kitchen コマンドを使って初期設定を行います。今回は試しに nginx のデプロイを実施したいと思います。</p>
-
-<pre><code>$ mkdir -p test-kitchen/nginx test-kitchen/roles
-$ cd test-kitchen/nginx
-$ kitchen init
+<pre><code>curl -H 'Content-Type: application/json' -X PUT --data @body.json http://127.0.0.1:8080/apis/coreos.com/v1/namespaces/default/etcdclusters/etcd-cluster
 </code></pre>
 
-<p>また上記で作成した roles ディレクトリに ansible-galaxy で nginx の role を取得します。</p>
+<p>クラスタがスケールアウトされたか確認しましょう。</p>
 
-<pre><code>$ ansible-galaxy install geerlingguy.nginx -p ../roles/nginx
+<pre><code>kubectl get pods --show-all
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          5m
+etcd-cluster-0001                        1/1       Running   0          4m
+etcd-cluster-0002                        1/1       Running   0          4m
+etcd-cluster-0003                        1/1       Running   0          32s
+etcd-cluster-0004                        1/1       Running   0          17s
+etcd-operator-217127005-futo0            1/1       Running   0          9m
 </code></pre>
 
-<p>下記の内容を .kitchen.local.yml として保存してください。
-Docker ホストの指定、Provisioner として ansible の指定、Platform として &lsquo;ubuntu:16.04&rsquo; の Docker コンテナの指定を行っています。</p>
+<p>5台構成のクラスタにスケールアウトしたことが確認できます。</p>
 
-<pre><code>---
-driver:
-  name: docker
-  binary: /usr/local/bin/docker
-  socker: tcp://192.168.99.100:2376
+<h2 id="etcd-にアクセス">etcd にアクセス</h2>
 
-provisioner:
-  name: ansible_playbook
-  playbook: ./site.yml
-  roles_path: ../roles
-  host_vars_path: ./host_vars
-  hosts: kitchen-deploy
-  require_ansible_omnibus: false
-  ansible_platform: ubuntu
-  require_chef_for_busser: true
+<p>5台構成の etcd クラスタがデプロイできたので etcd に etcdctl を使ってアクセスしてみましょう。事前に etcdctl をインストールする必要があります。また私の環境もそうだったのですがローカルの Mac に minikube を使って kubernetes 環境を構築しているので下記のように nodePort を作るため作業が必要です。</p>
 
-platforms:
-    - name: ubuntu
-      driver_config:
-        image: ubuntu:16.04
-        platform: ubuntu
-        require_chef_omnibus: false
-
-suites:
-  - name: default
-    run_list:
-    attributes:
+<pre><code>$ kubectl create -f example/example-etcd-cluster-nodeport-service.json
+$ export ETCDCTL_API=3
+$ export ETCDCTL_ENDPOINTS=$(minikube service etcd-cluster-client-service --url)
+$ etcdctl put foo bar
+$ etcdctl get foo
+foo
+bar
 </code></pre>
 
-<p>ここからは上記 .kitchen.local.yml ファイル内で指定したファイルの準備を行っていきます。</p>
+<p>etcdctl でキー・値を入力・読み込みが可能であることが分かりました！</p>
 
-<p>site.yml ファイルの内容を下記のように書いてください。</p>
+<h2 id="ポッドの自動復旧">ポッドの自動復旧</h2>
 
-<pre><code>---
-- hosts: kitchen-deploy
-  sudo: yes
-  roles:
-    - { role: geerlingguy.nginx, tags: nginx }
+<p>kubernetes を普段使っている方は分かると思うのですがポッドを落としても kubernetes が自動復旧してくれます。ここで一つポッドを削除してみようと思います。</p>
+
+<pre><code>$kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          11m
+etcd-cluster-0001                        1/1       Running   0          11m
+etcd-cluster-0002                        1/1       Running   0          11m
+etcd-cluster-0003                        1/1       Running   0          6m
+etcd-cluster-0004                        1/1       Running   0          6m
+etcd-operator-217127005-futo0            1/1       Running   0          16m
+
+$kubect delete pod etcd-cluster-0004
 </code></pre>
 
-<p>host_vars/hosts ファイルを作成します。&rsquo;host_vars&rsquo; ディレクトリは手動で作成してください。</p>
+<p>しばらくすると下記の通り etcd-cluster-0004 に代わり etcd-cluster-0005 が稼働していることが確認できると思います。</p>
 
-<pre><code>localhost              ansible_connection=local
-[kitchen-deploy]
-localhost
-</code></pre>
-
-<p>次に serverspec で行うテストの内容を作成します。
-serverspec-init コマンドではインタラクティブに回答しますが、SSH ではなく EXEC(Local) を選択することに注意してください。</p>
-
-<pre><code>$ mkdir -p test/integration/default/serverspec
-$ cd test/integration/default/serverspec
-$ serverspec-init             # &lt;--- インタラクティブに回答 : 1) UNIX, 2) EXEC(Local) を選択
-$ rm localhost/sample_spec.rb # &lt;--- 必要ないので削除
-</code></pre>
-
-<p>test/integration/default/serverspec/localhost/nginx_spec.rb として下記の内容を試しに書いてみましょう。</p>
-
-<pre><code>require 'spec_helper'
-
-describe package('nginx') do
-    it { should be_installed }
-end
-
-describe service('nginx') do
-    it { should be_enabled }
-    it { should be_running }
-end
-
-describe file('/etc/nginx/nginx.conf') do
-    it { should be_file }
-end
-</code></pre>
-
-<p>下記のようなファイルとディレクトリ構成になっていることを確認しましょう。</p>
-
-<pre><code>.
-├── nginx
-│   ├── chefignore
-│   ├── host_vars
-│   │   └── hosts
-│   ├── site.yml
-│   └── test
-│       └── integration
-│           └── default
-│               ├── Rakefile
-│               └── serverspec
-│                   ├── localhost
-│                   │   └── nginx_spec.rb
-│                   └── spec_helper.rb
-└── roles
-    └── geerlingguy.nginx
-        ├── README.md
-        &lt;省略&gt;
-</code></pre>
-
-<h2 id="デプロイ-テストを実行する">デプロイ・テストを実行する</h2>
-
-<p>環境作成が完了したの Docker コンテナを起動し Ansible でデプロイ、その後 Serverspec でテストしてみます。</p>
-
-<pre><code>$ cd test-kitchen
-$ kitchen create  # &lt;--- Docker コンテナ起動
-$ kitchen setup   # &lt;--- Ansible デプロイ
-$ kitchen verify  # &lt;--- Serverspec テスト
-$ kitchen destroy # &lt;--- コンテナ削除
-$ kitchen test    # &lt;--- 上の4つのコマンドを一気に実行
+<pre><code>$ kubectl get pods
+NAME                                     READY     STATUS    RESTARTS   AGE
+etcd-cluster-0000                        1/1       Running   0          12m
+etcd-cluster-0001                        1/1       Running   0          12m
+etcd-cluster-0002                        1/1       Running   0          11m
+etcd-cluster-0003                        1/1       Running   0          7m
+etcd-cluster-0005                        1/1       Running   0          3s
+etcd-operator-217127005-futo0            1/1       Running   0          17m
 </code></pre>
 
 <h2 id="まとめ">まとめ</h2>
 
-<p>Ansible でも test-kitchen を使ってデプロイ・テストが出来ることが分かりました。インスタンスを使ってデプロイ・テストを実施するよりコンテナを使うほうが失敗した際に削除・起動するのも一瞬で終わりますし Ansible 開発が高速化できることも実際に触っていただいてわかっていただけると思います。</p>
+<p>kubernetes の上で構成することでうまく kubernetes のメリットを活かしつつ etcd クラスタを構成できていると言えると思います。記事執筆時ではまだ不具合が幾つかありました (上記の curl で実施した箇所や、イメージのアップグレード) が、etcd を手動で構築するより kubernetes で構成するほうがメリットが多いことは明らかです。また kubernetes のポッドから kubernetes dns を介してサービスネームに直接アクセスできるのでポッドから etcd に情報を読み書きすることも容易になりそうです。</p>
 
-<p>ただ上記の手順ではコンテナの中に Ruby, Chef も一緒にインストールされてしまいます。
-test-kitchen 的には下記の記述を .kitchen.local.yml の provisioner: の欄に記述すると Chef のインストールは省けるはず (Ruby は Serverspec で用いる) のですが今現在 (2016/7中旬) では NG でした。これが正常に機能するようになるともっと高速にコンテナデプロイが完了すると思うので残念です。</p>
+<p>ですが etcd に収めるデータの性質によっては運用面で厳しくなることも想定できます。coreos 内で etcd クラスタを介して互いのコンテナ間でコンフィグを共有し合う使い方は非常に意味があると思うのですが、coreos 外の独自のソフトウェアがいろんな種別のデータを etcd クラスタに外から入出力することの意味はそれほど無いように思えます。であれば高耐久性で運用のし易い軽量な KVS ソフトウェアを使うべきだからです。</p>
 
-<pre><code>require_chef_for_busser: false
-require_ruby_for_busser: true
-</code></pre>
-</p>
+<p>また今回紹介した etcd-operator とは別に coreos が同時にアナウンスした(<a href="https://coreos.com/blog/the-prometheus-operator.html">https://coreos.com/blog/the-prometheus-operator.html</a>) に関しても興味を持っているので後に触ってみたいと思います。</p>
+
+<p>何と言うか所感として最後に述べるとサーバレスが叫ばれている中でわざわざクラスタソフトウェアを自前で管理するのか？と疑問も確かに残ります。それこそクラウドプラットフォームが提供すべき機能だと思うからです..。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -956,13 +926,13 @@ require_ruby_for_busser: true
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/">GCP ロードバランサと GKE クラスタを Terraform を使って構築する</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
+                                    '2017-04-13'>
+                                    April 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -970,13 +940,13 @@ require_ruby_for_busser: true
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -984,13 +954,13 @@ require_ruby_for_busser: true
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-03'>
-                                    November 3, 2016</time>
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -998,13 +968,13 @@ require_ruby_for_busser: true
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-07-25'>
-                                    July 25, 2016</time>
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
                             </header>
                         </article>
                     </li>
@@ -1043,7 +1013,7 @@ require_ruby_for_busser: true
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">104</span>
+                                <span style="float:right;">108</span>
                             </header>
                         </article>
                     </li>

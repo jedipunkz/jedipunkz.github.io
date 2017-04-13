@@ -16,7 +16,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.18" />
+        <meta name="generator" content="Hugo 0.17" />
         
 
 
@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/post/" />
 
 
-<meta property="og:updated_time" content="2013-11-13T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-11-17T00:00:00&#43;00:00"/>
 
 
 
@@ -196,6 +196,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/"><p>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
                     </li>
                 
@@ -205,10 +209,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,405 @@ ga('send', 'pageview');
         
             
         
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/">OpenStack Havana を Chef でデプロイ</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-11-17'>
+            November 17, 2013</time>
+        <span class="author"></span>
+        
+            <p>4 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>毎度お馴染みになった OpenStack の Chef によるデプロイですが、今回は OpenStack
+Havana 構成を Chef でデプロイする方法についてです。使用するのは今回も
+rcbops/chef-cookbooks です。ブランチは &lsquo;havana&rsquo; を用います。</p>
+
+<p>早速ですが構成について。4.1.2 辺りからだと思うのですが構成の前提が物理ネットワー
+ク4つを前提にし始めました。public, external (VM) を別ける必要が出てきました。
+通信の特性も異なるので (public は public API を。external は VM 用) 、別けるの
+が得策かもしれません。</p>
+
+<h2 id="構成">構成</h2>
+
+<pre><code>                  +--------------+------------------------------------------------------- external
+                  |              |
++--------------+--(-----------+--(-----------+--------------+---------------------------- public
+|              |  |           |  |           |              |
++------------+ +------------+ +------------+ +------------+ +------------+ +------------+
+| controller | |  network   | |  network   | |  compute   | |  compute   | | workstation|
++------------+ +------------+ +------------+ +------------+ +------------+ +------------+
+|              |  |           |  |           |  |           |  |           |
++--------------+--(-----------+--(-----------+--(-----------+--(-----------+------------- management
+                  |              |              |              |
+                  +--------------+--------------+--------------+------------------------- guest
+</code></pre>
+
+<h4 id="上記の構成の特徴">上記の構成の特徴</h4>
+
+<ul>
+<li>4つの物理ネットワークを前提</li>
+<li>public ネットワーク : 外部 API 用ネットワーク</li>
+<li>external ネットワーク : インスタンス外部接続用ネットワーク</li>
+<li>guest ネットワーク : インスタンス内部用ネットワーク</li>
+<li>management ネットワーク : 各コンポーネント接続用ネットワーク</li>
+<li>public, external のみグローバルネットワーク</li>
+<li>controller : 2 nics, network : 4 nics, compute : 3nics の構成</li>
+<li>controller はシングル構成</li>
+<li>network ノードは台数拡張可能, agent 単位でノード間移動可能</li>
+<li>compute ノードも台数拡張可能</li>
+<li>workstation は chef-repo の所在地, management ネットワークに所属</li>
+</ul>
+
+<h2 id="各ノードの準備">各ノードの準備</h2>
+
+<p>OS インストール後、各ノードのネットワークインターフェースの設定を下記の通り行っ
+てください。また LVM を使うのであれば cinder ボリュームの設定も必要になってきます。</p>
+
+<h4 id="controller-ノード">controller ノード</h4>
+
+<p>2 nics を下記の通り設定します。</p>
+
+<ul>
+<li>eth0 を public ネットワークに。gateway をこのインターフェースに設定</li>
+<li>eth1 を guest ネットワークに。gateway はなし</li>
+</ul>
+
+<p>/etc/network/interfaces の例</p>
+
+<pre><code>auto eth0
+iface eth0 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    gateway &lt;gateway&gt;
+    dns-nameservers &lt;dns_cache_server&gt;
+    dns-search &lt;domain&gt;
+
+auto eth1
+iface eth1 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+</code></pre>
+
+<p>/dev/sdb を cinder 用ディスクデバイスとします。</p>
+
+<pre><code class="language-bash">% sudo pvcreate /dev/sdb
+% sudo vgcreate cinder-volumes /dev/sdb
+</code></pre>
+
+<h4 id="network-ノード">network ノード</h4>
+
+<p>4 nics を下記の通り設定します。up route で仮想ネットワークへのルーティングを書
+いてあげると、network ノードから直接仮想ネットワーク上のインスタンスへ通信する
+ことが可能です。最初は書かなくても OK です。</p>
+
+<pre><code>auto eth0
+iface eth0 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    dns-nameservers &lt;dns_cache_server&gt;
+    dns-search &lt;domain&gt;
+
+auto eth1
+iface eth1 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+
+auto eth2
+iface eth2 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    gateway 10.200.10.1
+    dns-nameservers 8.8.8.8 8.8.4.4
+    dns-search cpi.ad.jp
+
+auto eth3
+iface eth3 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    # 仮想ネットワークへのルーティング
+    # up route add -net &lt;virtual_net_cidr&gt; gw &lt;neutron_gw&gt;
+    # up route add -net &lt;virtual_net_cidr&gt; gw &lt;neutron_gw&gt;
+</code></pre>
+
+<h4 id="compute-ノード">compute ノード</h4>
+
+<p>3 nics を下記の通り設定します。</p>
+
+<pre><code>auto eth0
+iface eth0 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    dns-nameservers &lt;dns_cache_server&gt;
+    dns-search &lt;domain&gt;
+
+auto eth1
+iface eth1 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    
+auto eth2
+iface eth2 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    gateway &lt;gateway&gt;
+    dns-nameservers &lt;dns_cache_server&gt;
+    dns-search &lt;domain&gt;
+</code></pre>
+
+<h2 id="cookbooks-roles-environments-等の準備">Cookbooks, Roles, Environments 等の準備</h2>
+
+<p>下記の操作は全て workstation ノードからの操作です。
+また chef のインストールや chef サーバの構築方法については割愛します。</p>
+
+<p>rcbops/chef-cookbooks を取得します。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git
+% cd chef-cookbooks
+% git checkout -b havana remotes/origin/havana
+% # .chef 配下の準備割愛。各 Chef サーバ環境に合わせる
+% git submodule init
+% git submodule sync
+% git submodule update
+% knife cookbook upload -o cookbooks -a
+% knife role from file roles/*.rb
+</code></pre>
+
+<p>今回の構成用の environment を生成します。それぞれの環境に合わせて作成してくだ
+さい。生成のコツは各 Cookbooks の attributes を見ながら設定することです。
+生成した json ファイルを environments ディレクトリ配下に配置します。</p>
+
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;havana-neutron&quot;,
+  &quot;description&quot;: &quot;&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;package_component&quot;: &quot;havana&quot;,
+    &quot;osops_networks&quot;: {
+      &quot;management&quot;: &quot;10.200.10.0/24&quot;,
+      &quot;public&quot;: &quot;10.200.9.0/24&quot;,
+      &quot;nova&quot;: &quot;10.200.10.0/24&quot;
+    },
+    &quot;nova&quot;: {
+      &quot;config&quot;: {
+        &quot;use_single_default_gateway&quot;: false,
+        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
+        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
+      },
+      &quot;network&quot;: {
+        &quot;provider&quot;: &quot;neutron&quot;,
+        &quot;network_type&quot;: &quot;vlan&quot;
+      },
+      &quot;apply_patches&quot;: true,
+      &quot;libvirt&quot;: {
+        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
+        &quot;virt_type&quot;: &quot;kvm&quot;
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;nova&quot;
+      },
+      &quot;services&quot;: {
+        &quot;novnc-proxy&quot;: {
+          &quot;network&quot;: &quot;public&quot;
+        },
+        &quot;ec2-admin&quot;: {
+          &quot;network&quot;: &quot;management&quot;
+        }
+      }
+    },
+    &quot;cinder&quot;: {
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;cinder&quot;
+      }
+    },
+    &quot;keystone&quot;: {
+      &quot;admin_user&quot;: &quot;admin&quot;,
+      &quot;tenants&quot;: [
+        &quot;admin&quot;,
+        &quot;service&quot;
+      ],
+      &quot;users&quot;: {
+        &quot;admin&quot;: {
+          &quot;password&quot;: &quot;secrete&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [
+              &quot;admin&quot;
+            ]
+          }
+        },
+        &quot;demo&quot;: {
+          &quot;password&quot;: &quot;demo&quot;,
+          &quot;default_tenant&quot; : &quot;service&quot;,
+          &quot;roles&quot;: {
+            &quot;service&quot;: [ &quot;service&quot; ]
+          }
+        }
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;keystone&quot;
+      }
+    },
+    &quot;horizon&quot;: {
+      &quot;theme&quot;: &quot;Rackspace&quot;,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;horizon&quot;
+      },
+      &quot;endpoint_type&quot; : &quot;publicURL&quot;,
+      &quot;endpoint_scheme&quot; : &quot;http&quot;
+    },
+    &quot;mysql&quot;: {
+      &quot;root_network_acl&quot;: &quot;%&quot;,
+      &quot;allow_remote_root&quot;: true,
+      &quot;server_root_password&quot;: &quot;secrete&quot;,
+      &quot;server_repl_password&quot;: &quot;secrete&quot;,
+      &quot;server_debian_password&quot;: &quot;secrete&quot;
+    },
+    &quot;monitoring&quot;: {
+      &quot;procmon_provider&quot;: &quot;monit&quot;,
+      &quot;metric_provider&quot;: &quot;collectd&quot;
+    },
+    &quot;glance&quot;: {
+      &quot;images&quot;: [
+        &quot;precise&quot;, &quot;cirros&quot;
+      ],
+      &quot;image&quot;: {
+      },
+      &quot;image_upload&quot;: false,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;glance&quot;
+      }
+    },
+    &quot;neutron&quot;: {
+      &quot;service_pass&quot;: &quot;neutron&quot;,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;neutron&quot;
+      }
+    },
+    &quot;developer_mode&quot;: false
+  }
+}
+</code></pre>
+
+<p>environment ファイルの chef サーバへのアップロード。</p>
+
+<pre><code class="language-bash">% knife environment from file environments/havana-neutron.json
+</code></pre>
+
+<h2 id="knife-bootstrap-によるデプロイ">knife bootstrap によるデプロイ</h2>
+
+<p>下記の通り knife bootstrap することで各ノードをデプロイします。</p>
+
+<p>controller ノードのデプロイ。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;controller_ipaddr&gt; -N &lt;controller_name&gt; \
+  -r 'role[single-controller]','role[cinder-volume]' \
+  -E havana-neutron -x &lt;username&gt; --sudo
+</code></pre>
+
+<p>network ノードのデプロイ。台数分デプロイしてください。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;network_ipaddr&gt; -N &lt;network_name&gt; \
+  -r 'role[single-network-node]','recipe[nova-network::neutron-l3-agent]' \
+  -E neutron-havana -x &lt;username&gt; --sudo
+</code></pre>
+
+<p>compute ノードのデプロイ。台数分デプロイしてください。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;compute_ipaddr&gt; -N &lt;compute_name&gt; \
+  -r 'role[single-compute]' \
+  -E havana-neutron -x &lt;username&gt; --sudo
+</code></pre>
+
+<h2 id="openvswitch-の物理-nic-とブリッジインタフェースマッピング作業">openvswitch の物理 NIC とブリッジインタフェースマッピング作業</h2>
+
+<p>各ノードで下記の通り物理 NIC とブリッジのマッピング作業を行ってください。操作
+は必ず management ネットワークを介して行うようにしましょう。その他のネットワー
+クから操作すると通信が途絶える可能性があります。</p>
+
+<p>network ノード</p>
+
+<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
+% sudo ovs-vsctl add-port br-ex eth3
+</code></pre>
+
+<p>compute ノード</p>
+
+<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
+</code></pre>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>havana の roles にはコアプロジェクトのコンポーネントが入っています。つまり
+ceilometer と heat も上記のデプロイで入ってきます。ceilometer に関して公式のド
+キュメントではデータ格納用 DB として mongodb が記されていますが、ここでは
+mysqld 上に格納する構成になっていました。これは個人的には非常に助かります。
+また、compute ノードから controller ノードの public api を叩く必要が出てきて、
+compute ノードにも public ネットワーク用の NIC を足しましたが、こうするべきな
+のかどうかは今後考えてみます。理想は management ネットワークを介することですが
+attributes の調整でけではうまくいきませんでした。&rsquo;havana&rsquo; ブランチはまだ開発が
+進んでいるので改善されるかもしれません。コントリビュートするのも手だと思います。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
 
         
             <article class="post">
@@ -803,608 +1202,6 @@ joined&rsquo; というメッセージが出力されるはずだ。実際に実
 </article>
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/10/27/swift-chef/">実用的な Swift 構成を Chef でデプロイ</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-10-27'>
-            October 27, 2013</time>
-        <span class="author"></span>
-        
-            <p>8 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>以前、&rdquo;Swift HA 構成を Chef でデプロイ&rdquo; というタイトルで記事を書きました。</p>
-
-<p><a href="http://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/">http://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/</a></p>
-
-<p>こちらですが、Swift-Proxy, MySQL, Keystone をそれぞれ haproxy, keepalived で
-HA 組みました。ですが、これは実用的なのかどうか自分でずっと考えていました。</p>
-
-<p>MySQL と KeepAlived はできればシングル構成にしたいのと、Swift-Proxy は HA で組
-みたい。MySQL は Master/Master レプリケーション構成になり、どちらかのノードが
-障害を起こし万が一復旧が難しくなった時、構築し直しがしんどくなります。かと言っ
-て Swift-Proxy をシングル構成にすると今度はノード追加・削除の作業時にサービス
-断が発生します。Swift-Proxy を再起動書ける必要があるからです。なので
-Swift-Proxy は引き続き HA 構成にしたい。</p>
-
-<p>もう一点、見直したいと思っていました。</p>
-
-<p>日経コンピュータから出版されている &ldquo;仮想化大全 2014&rdquo; の記事を読んでいて
-気がついたのですが。Swift には下記の通りそれぞれのサーバがあります。</p>
-
-<ul>
-<li>swift-proxy-server</li>
-<li>swift-account-server</li>
-<li>swift-container-server</li>
-<li>swift-object-server</li>
-</ul>
-
-<p>Swift には下記のような特徴がある事がわかりました。</p>
-
-<ul>
-<li>swift-object</li>
-</ul>
-
-<p>swift-object は swift-accout, swift-container とは物理リソースの扱いに全く異な
-る特性を持っています。swift-account, swift-container はクライアントからのリクエ
-ストに対して &ldquo;アカウントの存在を確認&rdquo;, &ldquo;ACL 情報の確認&rdquo; 等を行うサーバであるの
-に対して swift-object はストレージ上のオブジェクトをクライアントに提供、または
-逆に格納するサーバです。よって、Disk I/O の利用特性として swift-account,
-container は SSD 等、高スループットの Disk を利用するケースが推奨されるのに対
-して swift-object はオブジェクトの実体を格納する必要があるため Disk 容量の大き
-なストレージを要する。</p>
-
-<p>よって今回は下記の構成変更をしてより実用的な構成を Chef でデプロイする方法を記
-そうと思います。</p>
-
-<ul>
-<li>swift-object を swift-account, swift-container とノードを分離する</li>
-<li>MySQL/Keystone の HA を行わず Swift-Proxy のみ HA 化する</li>
-</ul>
-
-<h2 id="参考資料">参考資料</h2>
-
-<ul>
-<li><a href="http://www.rackspace.com/knowledge_center/article/managing-openstack-object-storage-with-chef">http://www.rackspace.com/knowledge_center/article/managing-openstack-object-storage-with-chef</a></li>
-<li><a href=http://www.amazon.co.jp/%E3%81%99%E3%81%B9%E3%81%A6%E3%82%8F%E3%81%8B%E3%82%8B%E4%BB%AE%E6%83%B3%E5%8C%96%E5%A4%A7%E5%85%A82014-%E6%97%A5%E7%B5%8CBP%E3%83%A0%E3%83%83%E3%82%AF-%E6%97%A5%E7%B5%8C%E3%82%B3%E3%83%B3%E3%83%94%E3%83%A5%E3%83%BC%E3%82%BF/dp/4822262871>仮想化大全</a></li>
-</ul>
-
-<h2 id="構成">構成</h2>
-
-<pre><code>+-----------------+
-|  load balancer  |
-+-----------------+
-|
-+-------------------+-------------------+-------------------+-------------------+---------------------- proxy network
-|                   |                   |                   |                   |                   
-+-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+
-|   chef server   | | chef workstation| |   swift-mange   | |  swift-proxy01  | |  swift-proxy02  | 
-+-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ ...&gt; scaling
-|                   |                   |                   |                   |                   
-+-------------------+-------------------+-------------------+-------------------+-------------------+-- storage network
-|                   |                   |                   |                   |                   |
-+-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ 
-| swift-storage01 | | swift-storage02 | | swift-storage03 | | swift-account01 | | swift-account02 | | swift-account03 |
-+-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ ..&gt; scaling
-</code></pre>
-
-<h4 id="特徴">特徴</h4>
-
-<ul>
-<li>load balancer は一般的なハードウェア、ソフトウェアで用意 (今回は割愛)</li>
-<li>swift-proxy は同等の機能のモノを並列に</li>
-<li>swift-storage と &lsquo;swift-account, container&rsquo; はそれぞれの zone 毎に並べるため同数</li>
-<li>swift-account は swift-account, swift-container が稼働</li>
-<li>swift-manage は mysql, keystone, git server を搭載</li>
-<li>chef server は外部に配置しても構わないが到達出来る箇所に</li>
-<li>chef workstation は全ての操作を行う端末。全てのノードに到達出来る箇所に</li>
-</ul>
-
-<h2 id="それぞれのノードでの-disk-の準備">それぞれのノードでの disk の準備</h2>
-
-<p>object, account, container 共に OS 領域とは別の disk を必要とするため /dev/sdb
-等のディスクを追加し下記の通り gdisk でパーティションを切る。</p>
-
-<pre><code class="language-bash">% sudo apt-get update; sudo apt-get -y install gdisk
-% sudo gdisk /dev/sdb # デバイス名は例
-</code></pre>
-
-<p>対象ノード : swift-object0[1-3], swift-account0[1-3]</p>
-
-<h2 id="デプロイ準備">デプロイ準備</h2>
-
-<p>下記は全て chef-workstation での操作</p>
-
-<p>rcpops 管理の chef-repo を取得する。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git
-% cd chef-cookbooks
-</code></pre>
-
-<p>現時点で v4.1.2 がリリースされているので tag を利用して checkout する。</p>
-
-<pre><code class="language-bash">% git tag -l
-1.0.0
-release-2011.3-d5
-release-v2.0
-v2.9.0
-v2.9.1
-v2.9.2
-v2.9.3
-v2.9.4
-v2.9.5
-v2.9.6
-v2.9.7
-v2.9.8
-v3.0.0
-v3.0.1
-v3.1.0
-v4.1.0
-v4.1.1
-v4.1.2
-% git checkout -b v4.1.2 refs/tags/v4.1.2
-</code></pre>
-
-<p>git submodule 化されている cookbooks を取得する。</p>
-
-<pre><code class="language-bash">% git submodule init
-% git submodule sync
-% git submodule upate
-</code></pre>
-
-<p>cookbooks, roles の chef-server へのアップロードを行う。</p>
-
-<pre><code class="language-bash">% knife cookbook upload -o cookbook -a
-% knife role from file role/*.rb
-</code></pre>
-
-<p>今回の構成一式を収容する chef environment を作成する。</p>
-
-<pre><code class="language-json">{
-  &quot;name&quot;: &quot;swift&quot;,
-  &quot;description&quot;: &quot;&quot;,
-  &quot;cookbook_versions&quot;: {
-  },
-  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
-  &quot;chef_type&quot;: &quot;environment&quot;,
-  &quot;default_attributes&quot;: {
-  },
-  &quot;override_attributes&quot;: {
-    &quot;package_component&quot;: &quot;grizzly&quot;,
-    &quot;osops_networks&quot;: {
-      &quot;management&quot;: &quot;10.200.9.0/24&quot;,
-      &quot;public&quot;: &quot;10.200.9.0/24&quot;,
-      &quot;nova&quot;: &quot;10.200.9.0/24&quot;,
-      &quot;swift&quot;: &quot;10.200.9.0/24&quot;
-    },
-    &quot;keystone&quot;: {
-      &quot;admin_user&quot;: &quot;admin&quot;,
-      &quot;tenants&quot;: [
-        &quot;admin&quot;,
-        &quot;service&quot;
-      ],
-      &quot;users&quot;: {
-        &quot;admin&quot;: {
-          &quot;password&quot;: &quot;secrete&quot;,
-          &quot;roles&quot;: {
-            &quot;admin&quot;: [
-              &quot;admin&quot;
-            ]
-          }
-        },
-        &quot;demo&quot;: {
-          &quot;password&quot;: &quot;demo&quot;,
-          &quot;default_tenant&quot; : &quot;service&quot;,
-          &quot;roles&quot;: {
-            &quot;admin&quot;: [ &quot;admin&quot; ]
-          }
-        }
-      },
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;keystone&quot;
-      }
-    },
-    &quot;mysql&quot;: {
-      &quot;root_network_acl&quot;: &quot;%&quot;,
-      &quot;allow_remote_root&quot;: true,
-      &quot;server_root_password&quot;: &quot;secrete&quot;,
-      &quot;server_repl_password&quot;: &quot;secrete&quot;,
-      &quot;server_debian_password&quot;: &quot;secrete&quot;
-    },
-    &quot;monitoring&quot;: {
-      &quot;procmon_provider&quot;: &quot;monit&quot;,
-      &quot;metric_provider&quot;: &quot;collectd&quot;
-    },
-    &quot;vips&quot;: {
-      &quot;keystone-admin-api&quot;: &quot;10.200.9.112&quot;,
-      &quot;keystone-service-api&quot;: &quot;10.200.9.112&quot;,
-      &quot;keystone-internal-api&quot;: &quot;10.200.9.112&quot;,
-      &quot;swift-proxy&quot;: &quot;10.200.9.112&quot;,
-      &quot;config&quot;: {
-        &quot;10.200.9.112&quot;: {
-          &quot;vrid&quot;: 12,
-          &quot;network&quot;: &quot;management&quot;
-        }
-      }
-    },
-    &quot;developer_mode&quot;: false,
-    &quot;swift&quot;: {
-      &quot;swift_hash&quot;: &quot;107c0568ea84&quot;,
-      &quot;authmode&quot;: &quot;keystone&quot;,
-      &quot;authkey&quot;: &quot;3f281b71-ce89-4b27-a2ad-ad873d3f2760&quot;
-    }
-  }
-}
-</code></pre>
-
-<p>作成した environment ファイル environments/swift.json を chef-server へアップ
-ロードする。</p>
-
-<pre><code class="language-bash">% knife environment from file environments/swift.json
-</code></pre>
-
-<h2 id="デプロイ">デプロイ</h2>
-
-<p>かきのとおり knife bootstrap する。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;manage_ip_addr&gt; -N swift-manage -r 'role[base]','role[mysql-master]','role[keystone]','role[swift-management-server]' -E swift --sudo -x thirai
-% knife bootstrap &lt;proxy01_ip_addr&gt; -N swift-proxy01 -r &quot;role[base]&quot;,&quot;role[swift-proxy-server]&quot;,'role[swift-setup]','role[openstack-ha]' -E swift --sudo -x thirai
-% knife bootstrap &lt;proxy02_ip_addr&gt; -N swift-proxy02 -r &quot;role[base]&quot;,&quot;role[swift-proxy-server]&quot;,'role[openstack-ha]' -E swift --sudo -x thirai
-% knife bootstrap &lt;storage01_ip_addr&gt; -N swift-storage01 -r 'role[base]','role[swift-object-server]' -E swift --sudo -x thirai
-% knife bootstrap &lt;storage02_ip_addr&gt; -N swift-storage02 -r 'role[base]','role[swift-object-server]' -E swift --sudo -x thirai
-% knife bootstrap &lt;storage03_ip_addr&gt; -N swift-storage03 -r 'role[base]','role[swift-object-server]' -E swift --sudo -x thirai
-% knife bootstrap &lt;account01_ip_addr&gt; -N swift-account01 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift --sudo -x thirai
-% knife bootstrap &lt;account02_ip_addr&gt; -N swift-account02 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift --sudo -x thirai
-% knife bootstrap &lt;account03_ip_addr&gt; -N swift-account03 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift --sudo -x thirai
-</code></pre>
-
-<p>zone 番号を付与する。</p>
-
-<pre><code class="language-bash">% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
-</code></pre>
-
-<p>zone 番号が付与されたことを確認する。</p>
-
-<p>account-server の確認</p>
-
-<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-account-server&quot;) \
-  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
-  [swift-account-server] and is in swift zone #{z}&quot;; }'
-swift-account01 has the role       [swift-account-server] and is in swift zone 1
-swift-account02 has the role       [swift-account-server] and is in swift zone 2
-swift-account03 has the role       [swift-account-server] and is in swift zone 3
-</code></pre>
-
-<p>container-server の確認</p>
-
-<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-container-server&quot;) \
-  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
-  [swift-container-server] and is in swift zone #{z}&quot;; }'
-swift-account01 has the role       [swift-container-server] and is in swift zone 1
-swift-account02 has the role       [swift-container-server] and is in swift zone 2
-swift-account03 has the role       [swift-container-server] and is in swift zone 3
-</code></pre>
-
-<p>object-server の確認</p>
-
-<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-object-server&quot;) \
-  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
-  [swift-object-server] and is in swift zone #{z}&quot;; }'
-swift-storage01 has the role   [swift-object-server] and is in swift zone 1
-swift-storage02 has the role   [swift-object-server] and is in swift zone 2
-swift-storage03 has the role   [swift-object-server] and is in swift zone 3
-</code></pre>
-
-<p>Chef が各々のノードに搭載された Disk を検知出来るか否かを確認する。</p>
-
-<pre><code class="language-bash">% knife exec -E \
-  'search(:node,&quot;role:swift-object-server OR \
-  role:swift-account-server \
-  OR role:swift-container-server&quot;) \
-  { |n| puts &quot;#{n.name}&quot;; \
-  begin; n[:swift][:state][:devs].each do |d| \
-  puts &quot;\tdevice #{d[1][&quot;device&quot;]}&quot;; \
-  end; rescue; puts \
-  &quot;no candidate drives found&quot;; end; }'
-    swift-storage02
-            device sdb1
-    swift-storage03
-            device sdb1
-    swift-account01
-            device sdb1
-    swift-account02
-            device sdb1
-    swift-account03
-            device sdb1
-    swift-storage01
-            device sdb1
-</code></pre>
-
-<p>swift-manage ノードにて chef-client を実行し
-/etc/swift/ring-workspace/generate-rings.sh を更新する。</p>
-
-<pre><code class="language-bash">swift-manage% sudo chef-client
-</code></pre>
-
-<p>generate-rings.sh の &lsquo;exit 0&rsquo; 行をコメントアウトし実行</p>
-
-<pre><code class="language-bash">swift-manage% sudo ${EDITOR} /etc/swift/ring-workspace/generage-rings.sh
-swift-manage% sudo /etc/swift/ring-workspace/generate-rings.sh
-</code></pre>
-
-<p>この操作で /etc/swift/ring-workspace/rings 配下に account, container, object
-用の Rings ファイル群が生成されたことを確認出来るはずである。これらを
-swift-manage 上で既に稼働している git サーバに push し管理する。</p>
-
-<pre><code class="language-bash">swift-manage# cd /etc/swift/ring-workspace/rings
-swift-manage# git add account.builder container.builder object.builder
-swift-manage# git add account.ring.gz container.ring.gz object.ring.gz
-swift-manage# git commit -m &quot;initial commit&quot;
-swift-manage# git push
-</code></pre>
-
-<p>各々のノードにて chef-client を実行することで git サーバ上の Rings ファイル群
-を取得し、swift プロセスを稼働させる。</p>
-
-<pre><code class="language-bash">swift-proxy01# chef-client
-swift-proxy02# chef-client
-swift-storage01# chef-client
-swift-storage02# chef-client
-swift-storage03# chef-client
-swift-account01# chef-client
-swift-account02# chef-client
-swift-account03# chef-client
-</code></pre>
-
-<p>3台のノードが登録されたかどうかを下記の通り確認行う。</p>
-
-<pre><code class="language-bash">swift-proxy01% sudo swift-recon --md5
-[sudo] password for thirai:
-===============================================================================
---&gt; Starting reconnaissance on 3 hosts
-===============================================================================
-[2013-10-18 11:14:43] Checking ring md5sums
-3/3 hosts matched, 0 error[s] while checking hosts.
-===============================================================================
-</code></pre>
-
-<h2 id="動作確認">動作確認</h2>
-
-<pre><code class="language-bash">swift-storage01# source swift-openrc
-swift-storage01# swift post container01
-swift-storage01# echo &quot;test&quot; &gt; test
-swift-storage01# swift upload container01 test
-swift-storage01# swift list
-swift-storage01# swift list container01
-</code></pre>
-
-<h2 id="ノードの追加方法">ノードの追加方法</h2>
-
-<p>次にノードの追加方法を記します。</p>
-
-<p>gdisk にて /dev/sdb1 等のパーティションを作成する。</p>
-
-<p>下記の通り knife bootstrap する。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;storage04_ip_addr&gt; -N swift-storage04 -r 'role[base]','role[swift-object-server]' -E swift --sudo -x thirai
-% knife bootstrap &lt;account04_ip_addr&gt; -N swift-account04 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift --sudo -x thirai
-</code></pre>
-
-<p>zone 番号を付与する。</p>
-
-<pre><code class="language-bash">% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage04') {|n| n.set['swift']['zone'] = '4'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account04') {|n| n.set['swift']['zone'] = '4'; n.save }&quot;
-</code></pre>
-
-<p>zone 番号が付与されたことを確認する。</p>
-
-<p>account-server の確認</p>
-
-<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-account-server&quot;) \
-  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
-  [swift-account-server] and is in swift zone #{z}&quot;; }'
-swift-account01 has the role       [swift-account-server] and is in swift zone 1
-swift-account02 has the role       [swift-account-server] and is in swift zone 2
-swift-account03 has the role       [swift-account-server] and is in swift zone 3
-swift-account04 has the role       [swift-account-server] and is in swift zone 4
-</code></pre>
-
-<p>container-server の確認</p>
-
-<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-container-server&quot;) \
-  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
-  [swift-container-server] and is in swift zone #{z}&quot;; }'
-swift-account01 has the role       [swift-container-server] and is in swift zone 1
-swift-account02 has the role       [swift-container-server] and is in swift zone 2
-swift-account03 has the role       [swift-container-server] and is in swift zone 3
-swift-account04 has the role       [swift-container-server] and is in swift zone 4
-</code></pre>
-
-<p>object-server の確認</p>
-
-<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-object-server&quot;) \
-  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
-  [swift-object-server] and is in swift zone #{z}&quot;; }'
-swift-storage01 has the role   [swift-object-server] and is in swift zone 1
-swift-storage02 has the role   [swift-object-server] and is in swift zone 2
-swift-storage03 has the role   [swift-object-server] and is in swift zone 3
-swift-storage04 has the role   [swift-object-server] and is in swift zone 4
-</code></pre>
-
-<p>swift-manage ノードにて chef-client を実行し
-/etc/swift/ring-workspace/generate-rings.sh を更新する。</p>
-
-<pre><code class="language-bash">swift-manage% sudo chef-client
-</code></pre>
-
-<p>generate-rings.sh の &lsquo;exit 0&rsquo; 行をコメントアウトし実行</p>
-
-<pre><code class="language-bash">swift-manage% sudo ${EDITOR} /etc/swift/ring-workspace/generage-rings.sh
-swift-manage% sudo /etc/swift/ring-workspace/generate-rings.sh
-</code></pre>
-
-<p>この操作で /etc/swift/ring-workspace/rings 配下に account, container, object
-用の Rings ファイル群が生成されたことを確認出来るはずである。これらを
-swift-manage 上で既に稼働している git サーバに push し管理する。</p>
-
-<pre><code class="language-bash">swift-manage# cd /etc/swift/ring-workspace/rings
-swift-manage# git add account.builder container.builder object.builder
-swift-manage# git add account.ring.gz container.ring.gz object.ring.gz
-swift-manage# git commit -m &quot;added zone 4 nodes&quot;
-swift-manage# git push
-</code></pre>
-
-<p>各々のノードにて chef-client を実行することで git サーバ上の Rings ファイル群
-を取得し、swift プロセスを稼働させる。</p>
-
-<pre><code class="language-bash">swift-proxy01# chef-client
-swift-proxy02# chef-client
-swift-storage01# chef-client
-swift-storage02# chef-client
-swift-storage03# chef-client
-swift-storage04# chef-client
-swift-account01# chef-client
-swift-account02# chef-client
-swift-account03# chef-client
-swift-account04# chef-client
-</code></pre>
-
-<p>4台のノードが登録されたかどうかを下記の通り確認行う。</p>
-
-<pre><code class="language-bash">swift-proxy01% sudo swift-recon --md5
-[sudo] password for thirai:
-===============================================================================
---&gt; Starting reconnaissance on 4 hosts
-===============================================================================
-[2013-10-18 11:14:43] Checking ring md5sums
-4/4 hosts matched, 0 error[s] while checking hosts.
-===============================================================================
-</code></pre>
-
-<p>proxy ノードの swift プロセスを停止・起動する</p>
-
-<pre><code class="language-bash">swift-proxy01# swift-init all stop
-swift-proxy01# swift-init all start
-swift-proxy02# swift-init all stop
-swift-proxy02# swift-init all start
-</code></pre>
-
-<h2 id="ノード削除方法">ノード削除方法</h2>
-
-<p>次にノードの削除方法を記します。</p>
-
-<p>disk 障害等のzone4 のノード swift-storage04, swift-account04 を削除する前提で記す。</p>
-
-<pre><code class="language-bash">swift-manage# swift-ring-builder /etc/swift/ring-workspace/rings/account.builder remove 10.200.9.109
-swift-manage# swift-ring-builder /etc/swift/ring-workspace/rings/container.builder remove 10.200.9.109
-swift-manage# swift-ring-builder /etc/swift/ring-workspace/rings/object.builder remove 10.200.9.110
-</code></pre>
-
-<p>swift-manage 上で既に稼働している git サーバに push し管理する。</p>
-
-<pre><code class="language-bash">swift-manage# cd /etc/swift/ring-workspace/rings
-swift-manage# git add account.builder container.builder object.builder
-swift-manage# git add account.ring.gz container.ring.gz object.ring.gz
-swift-manage# git commit -m &quot;added zone 4 nodes&quot;
-swift-manage# git push
-</code></pre>
-
-<p>全てのノードで chef-client を実行する。この操作で rings ファイルの配布が行える。</p>
-
-<pre><code class="language-bash">swift-proxy01# chef-client
-swift-proxy02# chef-client
-swift-storage01# chef-client
-swift-storage02# chef-client
-swift-storage03# chef-client
-swift-storage04# chef-client
-swift-account01# chef-client
-swift-account02# chef-client
-swift-account03# chef-client
-swift-account04# chef-client
-</code></pre>
-
-<p>proxy ノードの swift プロセスを停止・起動する</p>
-
-<pre><code class="language-bash">swift-proxy01# swift-init all stop
-swift-proxy01# swift-init all start
-swift-proxy02# swift-init all stop
-swift-proxy02# swift-init all start
-</code></pre>
-
-<h2 id="まとめと考察">まとめと考察</h2>
-
-<p>MySQL のリカバリは単純にダンプからのリストアが良かったのでシングル構成に出来て
-よかった。また、通常のシングルスター・マルチスレーブの構成に変えても OK かと思
-いますが、Cookbooks を修正する必要がありそう。まぁ Keystone のデータのみを管理
-している MySQL なので負荷は無いですしシングル構成が良いと個人的には思います。
-また Swift-Proxy は 2 台構成の HA になります。VRRP プロトコルの仕組み、また
-haproxy の構成上 3 台以上でも OK でありますが、Cookbooks 的に NG でした。これ
-は修正する価値が大いにありそう。</p>
-
-<p>またこの構成を Chef で管理し始めると大量のノードで Chef-Client を実行すること
-になるので Gnu Prallel や pssh を使った方が良さそう&hellip;。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/10/27/swift-chef/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
 
         
 <ul class="actions pagination">
@@ -1521,6 +1318,20 @@ haproxy の構成上 3 台以上でも OK でありますが、Cookbooks 的に 
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/">GCP ロードバランサと GKE クラスタを Terraform を使って構築する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-04-13'>
+                                    April 13, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
                                 
                                     
@@ -1550,20 +1361,6 @@ haproxy の構成上 3 台以上でも OK でありますが、Cookbooks 的に 
                         <article>
                             <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-12-29'>
-                                    December 29, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/">Google Cloud CDN を使ってみた</a></h3>
                                 
                                     
                                 
@@ -1608,7 +1405,7 @@ haproxy の構成上 3 台以上でも OK でありますが、Cookbooks 的に 
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">107</span>
+                                <span style="float:right;">108</span>
                             </header>
                         </article>
                     </li>

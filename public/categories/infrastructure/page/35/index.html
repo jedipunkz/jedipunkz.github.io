@@ -18,7 +18,7 @@
 
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="generator" content="Hugo 0.18" />
+        <meta name="generator" content="Hugo 0.17" />
         
 
 
@@ -36,7 +36,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/categories/infrastructure/" />
 
 
-<meta property="og:updated_time" content="2012-04-14T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2012-04-28T00:00:00&#43;00:00"/>
 
 
 
@@ -198,6 +198,10 @@ ga('send', 'pageview');
 
                 
                     <li>
+                        <a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/"><p>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</p></a>
+                    </li>
+                
+                    <li>
                         <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
                     </li>
                 
@@ -207,10 +211,6 @@ ga('send', 'pageview');
                 
                     <li>
                         <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
-                    </li>
-                
-                    <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/"><p>Google Cloud CDN を使ってみた</p></a>
                     </li>
                 
             </ul>
@@ -224,6 +224,205 @@ ga('send', 'pageview');
     <div id="main">
         <h1>infrastructure</h1>
         
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2012/04/28/vyattarouter/">vyatta で自宅ルータ構築</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2012-04-28'>
+            April 28, 2012</time>
+        <span class="author"></span>
+        
+            <p>3 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>自宅ルータを Vyatta で構築してみたくなり、秋葉原の ark でマシンを調達しました。
+Broadcom の BCM57780 チップが搭載された NIC がマザーボード J&amp;W MINIX™
+H61M-USB3 だったのですが、Vyatta.org によると Broadcom の NIC が Certificated
+Hardware に載っていなくて心配でした。まぁ定評のある NIC メーカだから動くだろう
+と楽観視していたのですけど、案の定動きました。vyatta.org の Certificated
+Hardware にコミットしたら &ldquo;user tested&rdquo; として掲載してもらえました。</p>
+
+<p><a href="http://www.vyatta.org/hardware/interfaces">http://www.vyatta.org/hardware/interfaces</a></p>
+
+<p>こんな感じに見えています。</p>
+
+<pre><code># dmesg | grep Broadcom
+[    3.284646] tg3 0000:03:00.0: eth0: attached PHY driver [Broadcom BCM57780](mii_bus:phy_addr=300:01)
+[    3.524122] tg3 0000:05:00.0: eth1: attached PHY driver [Broadcom BCM57780](mii_bus:phy_addr=500:01)
+</code></pre>
+
+<p>今回は、基本的な設定 (PPPoE, NAT, DHCP) 周りを記していきます。</p>
+
+<p>環境は&hellip;</p>
+
+<pre><code>+--------+
+|  Modem |
++--------+
+|
+| pppoe0
++--eth0--+
+| vyatta |
++--eth1--+
+|           192.168.1.0/24
++----------+
+|          |192.168.1.10
++--------+ +--------+
+|  CPE   | |  DNS   |
++--------+ +--------+
+</code></pre>
+
+<p>として記します。</p>
+
+<p>まずインストール。<a href="http://www.vyatta.org/downloads">http://www.vyatta.org/downloads</a> から 64bit VC6.3 Live CD iso
+をダウンロードしてきます。(2012/04/28現在最新). インストール対象のマシンに挿入
+して CDROM ブートすると Vyatta が立ち上がるので、ユーザ vyatta, パスワード
+vyatta でログインし</p>
+
+<pre><code># install-system
+</code></pre>
+
+<p>します。インタラクティブに問い合わせられるので答えていってください。インストールが
+終わったらマシンを再起動します。</p>
+
+<p>eth1 にプライベート IP アドレスを振ります。IP アドレスは適当に読み替えてくださ
+い。また基本的な設定も行います。</p>
+
+<pre><code># set service ssh port 10022 # firewall 設定するまではこうしたほうが安心です
+# set system host-name ${HOSTNAME}
+# set system time-zone Asia/Tokyo
+# set system name-server 8.8.8.8
+# set interface ethernet eth1 address 192.168.1.254
+</code></pre>
+
+<p>eth0 を PPPoE デバイスとして利用して PPPoE 接続を実際にします。</p>
+
+<pre><code># set interface ethernet eth0 pppoe 0
+# set interface ethernet eth0 pppoe 0 user-id ${PPPoE_username}
+# set interface ethernet eth0 pppoe 0 password ${PPPoE_password}
+# set interface ethernet eth0 pppoe 0 name-server auto
+# set interface ethernet eth0 pppoe 0 defaultroute auto
+# set interface ethernet eth0 pppoe 0 local-address XXX.XXX.XXX.XXX # 固定IPがある場合
+# commit
+</code></pre>
+
+<p>ここまでで vyatta ノードからインターネットに接続出来るようになります。</p>
+
+<p>次に、ローカルネットワーク上の CPE だったりサーバノードからのインターネット接
+続のために NAT 設定をします。</p>
+
+<pre><code># set service nat rule 1
+# set service nat rule 1 type masquerade
+# set service nat rule 1 source address 192.168.1.0/24
+# set service nat rule 1 outbound-interface pppoe0
+# commit
+</code></pre>
+
+<p>CPE からのインターネットへの接続が出来るようになりました。</p>
+
+<p>あとは自宅ルータなので DHCP サービスがあったほうが便利だよね、とうことで。</p>
+
+<pre><code># set service dhcp-server shared-network-name HOME subnet 198.168.1.0/24 start 192.168.1.100 stop 192.168.1.150
+# set service dhcp-server shared-network-name HOME subnet 192.168.1.0/24 default-router 192.168.1.254
+# set service dhcp-server shared-network-name HOME subnet 198.168.1.0/24 dns-server 8.8.8.8
+# set service dhcp-server shared-network-name HOME subnet 198.168.1.0/24 dns-server 8.8.4.4
+# commit
+</code></pre>
+
+<p>ローカルネットワーク上の CPE から DHCP リクエストを出してみてください。IP が取得できると思います。</p>
+
+<p>ここまでで基本的な有線自宅ルータとしての構築はほぼ完了ですが、最後にローカルネットワーク上のサーバ
+を DNS サーバとして稼働させるための NAT 設定方法を記しておきます。</p>
+
+<pre><code># set service nat rule 2
+# set service nat rule 2 destination
+# set service nat rule 2 type destination
+# set service nat rule 2 type destination
+# set service nat rule 2 inbound-interface pppoe0
+# set service nat rule 2 protocol udp
+# set service nat rule 2 destination port 53
+# set service nat rule 2 inside-address address 192.168.1.10
+# commit
+</code></pre>
+
+<p>DNS は稀に TCP にフォールバックするので同様に TCP ようの NAT ルールも追記します。</p>
+
+<pre><code># set service nat rule 3
+# set service nat rule 3 destination
+# set service nat rule 3 type destination
+# set service nat rule 3 type destination
+# set service nat rule 3 inbound-interface pppoe0
+# set service nat rule 3 protocol tcp
+# set service nat rule 3 destination port 53
+# set service nat rule 3 inside-address address 192.168.1.10
+</code></pre>
+
+<p>set service nat rule 3 destinationset service nat rule 3 destination    # commit</p>
+
+<p>最後に設定を保存するために&hellip;</p>
+
+<pre><code># save
+</code></pre>
+
+<p>して終わりです。次回は UPnP な設定方法を書いて行きたいと思います。</p>
+
+<p>ちなみに、私の自宅ルータはこんなモノを使いました。</p>
+
+<p><img src="http://jedipunkz.github.com/pix/vyatta.jpg" width="200"></p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2012/04/28/vyattarouter/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+
         
             <article class="post">
     <header>
@@ -561,125 +760,6 @@ dist を使えば、こんな操作は必要無いのだけど、自分でやら
 
 
         
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2012/03/07/openflow-mian-qiang-hui/">OpenFlow 勉強会</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2012-03-07'>
-            March 7, 2012</time>
-        <span class="author"></span>
-        
-            <p>1 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>2012年2月6日、西新宿にある株式会社ニフティさんで行われた &ldquo;OpenFlow 勉強会&rdquo; に参加したので簡単なレポメモを書いておきます。</p>
-
-<p>まずは OpenFlow の基本動作。
-* メッセージの切り出し
-* ハンドシェイク
-* コネクションの維持
-* スイッチから送られてくるメッセージへの応答</p>
-
-<p>構成は
-* OpenFlow コントローラ, スイッチから成る
-* コントローラは通信制御
-* スイッチはフロールールをコントローラに問い合わせ通信を受け流し(packet/frame 転送)
-* コントローラは L2 - L4 フィールドを見て制御する</p>
-
-<p>そしてコントローラ、スイッチは各社・団体から提供されている。今月も Nicira Networks さんが自社システムの構成を抽象的ではありますが公開され、HP さんも OpenFlow 対応スイッチを12製品ほど発表されました。</p>
-
-<p>コントローラの種別、
-* Beacon (Java)
-* NOX (Python)
-* Ryu
-* NodeFlow
-* Trema (C/ruby)
-* Nicira Networks
-* Big Switch Networks
-* Midokura
-* NTT Data</p>
-
-<p>スイッチの種別、
-* cisco nexus 3000
-* IBM BNT rackSwitch G8264
-* NEC Univerge PF5240/PF5820
-* Pronto Systems <sup>3240</sup>&frasl;<sub>3290</sub>
-* HP <sup>3500</sup>&frasl;<sub>5400</sub>
-* HP OpenFlow 化 firmware
-* Reference Implementation (Software)
-* Open vSwitch (Software)</p>
-
-<p>NEC さんの PF ほにゃららは、GUI なインターフェースと API を持った製品で OpenFlow 1.0.0 仕様に準拠。スイッチ25台までを管理するコントローラ。価格は、コントローラ : 1000万, スイッチ : 250万 だそうです。スイッチ25台はあくまでもソフトリミットらしいです。</p>
-
-<p>Trema は開発者が日本人で OpenFlow 1.1.0 に準拠。Ruby / C を使ってフロールールが掛けるフレームワーク型のソフトウェアで、github にある Wiki を見ても分かりますが、とても簡潔なルール記述が可能です。あと、特徴なのがテストフレームワーク(シュミレータ)が付いているので、OpenFlow 対応スイッチを購入しなくても自分で書いたルールがテスト出来ます。これはとても大きな意味がある。自宅でもあれこれルールを書けて動作を知るにはとても良い機能です。</p>
-
-<p>Nicira Networks の NVP (Nacira Virtual Platform) はハイパーバイザ上の OpenvSwitch やアプライアンスなスイッチを管理するコントローラから成ると今月公開されました。ただ抽象的な言葉ばかりが並んでいて ( web, datasheet 共に ) まだまだ、仕組みを理解するには情報が足らないのかなぁと感じています。特に distributed controller はどう冗長取れている？など。software designed network の ML が日本でも管理され始めて議論されていますが、ハイパーバイザ上の OpenvSwitch で、カプセル化時のオーバーヘッドをどう攻略するか？が問題じゃないかと話し合われています。</p>
-
-<p>Midokura さんも会場にいらっしゃったのですが、印象的な言葉は &ldquo;OpenFlow は夢の技術ではないし、既存のネットワーク技術を置き換えるものでもない&rdquo; でした。サービスを形成するサーバファーム周りで OpenFlow を使ったシステムを組むには良いですけどね。</p>
-
-<p>最後に参考 URL を記しておきます。</p>
-
-<ul>
-<li><a href="https://groups.google.com/group/sdnstudy">sdnstudy google group</a></li>
-<li><a href="https://github.com/trema/trema/wiki/Trema-%E3%83%81%E3%83%A5%E3%83%BC%E3%83%88%E3%83%AA%E3%82%A2%E3%83%AB">trema</a></li>
-<li><a href="http://nicira.com/en/network-virtualization-platform">Nicira Virtual Platform</a></li>
-</ul>
-</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2012/03/07/openflow-mian-qiang-hui/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-
-        
 
         
 <ul class="actions pagination">
@@ -796,6 +876,20 @@ dist を使えば、こんな操作は必要無いのだけど、自分でやら
                     <li>
                         <article>
                             <header>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/">GCP ロードバランサと GKE クラスタを Terraform を使って構築する</a></h3>
+                                
+                                    
+                                
+                                <time class="published" datetime=
+                                    '2017-04-13'>
+                                    April 13, 2017</time>
+                            </header>
+                        </article>
+                    </li>
+                
+                    <li>
+                        <article>
+                            <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
                                 
                                     
@@ -825,20 +919,6 @@ dist を使えば、こんな操作は必要無いのだけど、自分でやら
                         <article>
                             <header>
                                 <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
-                                
-                                    
-                                
-                                <time class="published" datetime=
-                                    '2016-12-29'>
-                                    December 29, 2016</time>
-                            </header>
-                        </article>
-                    </li>
-                
-                    <li>
-                        <article>
-                            <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/">Google Cloud CDN を使ってみた</a></h3>
                                 
                                     
                                 
@@ -883,7 +963,7 @@ dist を使えば、こんな操作は必要無いのだけど、自分でやら
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">107</span>
+                                <span style="float:right;">108</span>
                             </header>
                         </article>
                     </li>

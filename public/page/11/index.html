@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2014-01-29T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2014-04-22T00:00:00&#43;00:00"/>
 
 
 
@@ -196,19 +196,19 @@ ga('send', 'pageview');
 
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/"><p>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
             </ul>
@@ -230,7 +230,7 @@ ga('send', 'pageview');
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/">Ceph のプロセス配置ベストプラクティス</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2014/04/22/geard-port-mapping/">Geard のポートマッピングについて調べてみた</a></h2>
         
         
     </div>
@@ -240,11 +240,11 @@ ga('send', 'pageview');
         
 
         <time class="published"
-            datetime='2014-01-29'>
-            January 29, 2014</time>
+            datetime='2014-04-22'>
+            April 22, 2014</time>
         <span class="author"></span>
         
-            <p>3 minute read</p>
+            <p>2 minute read</p>
         
         
     </div>
@@ -253,158 +253,148 @@ ga('send', 'pageview');
     
 
     
-    <p>Ceph はブロック型の分散ストレージファイルシステムです。POSIX のファイルシステ
-ムとしてマウント出来ます。Linux の Kernel ドライバや FUSE ドライバを用いてマウ
-ントします。またブロックデバイスとしてマウントする方法もあります。</p>
+    <p>こんにちは。@jedipunkz です。</p>
 
-<p>だいぶ前ですが、Ceph に関する記事を以前下記の通り書きました。</p>
-
-<ul>
-<li><a href="http://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/">http://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/</a></li>
-<li><a href="http://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/">http://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/</a></li>
-</ul>
-
-<p>Ceph の構築方法について記したブログだったのですが、今まで mon, osd, mds の各プ
-ロセスをそれぞれ何台のノードに対して配置し、またそれぞれのプロセス幾つを何に対
-して配置するのか？という疑問が付きまとわっていました。node, disk, process のそ
-れぞれの数の関係について知りたいなぁと思っていました。幾つかのドキュメントを読
-んでいて、ぼんやり見えてきた事があるのでそれを今回はまとめたいと思います。</p>
-
-<p>また、皆さん気になるトコロだと思われる容量設計についても軽く触れたいと思います。</p>
+<p>今週 Redhat が &lsquo;Redhat Enterprise Linux Atomic Host&rsquo; しましたよね。Docker を特
+徴としたミニマムな OS だとのこと。その内部で用いられている技術 Geard について
+少し調べてみました。複数コンテナの関連付けが可能なようです。ここでは調べた結果
+について簡単にまとめていきます。</p>
 
 <h2 id="参考資料">参考資料</h2>
 
+<p><a href="http://openshift.github.io/geard/deploy_with_geard.html">http://openshift.github.io/geard/deploy_with_geard.html</a></p>
+
+<h2 id="利用方法">利用方法</h2>
+
+<p>ここではホスト OS に Fedora20 を用意します。</p>
+
+<p>まず Geard をインストール</p>
+
+<pre><code class="language-bash">% sudo yum install --enablerepo=updates-testing geard
+</code></pre>
+
+<p>下記の json ファイルを作成します。ここにはコンテナをデプロイするための情報と関
+連付けのための情報を記します。</p>
+
+<pre><code class="language-json">$ ${EDITOR} rockmongo_mongodb.json
+{
+  &quot;containers&quot;:[
+    {
+      &quot;name&quot;:&quot;rockmongo&quot;,
+      &quot;count&quot;:1,
+      &quot;image&quot;:&quot;derekwaynecarr/rockmongo&quot;,
+      &quot;publicports&quot;:[{&quot;internal&quot;:80,&quot;external&quot;:6060}],
+      &quot;links&quot;:[{&quot;to&quot;:&quot;mongodb&quot;}]
+    },
+    {
+      &quot;name&quot;:&quot;mongodb&quot;,
+      &quot;count&quot;:1,
+      &quot;image&quot;:&quot;ccoleman/ubuntu-mongodb&quot;,
+      &quot;publicports&quot;:[{&quot;internal&quot;:27017}]
+    }
+  ]
+}
+</code></pre>
+
+<p>上記のファイルの解説。</p>
+
 <ul>
-<li><a href="http://ceph.com/docs/master/rados/configuration/mon-config-ref/">http://ceph.com/docs/master/rados/configuration/mon-config-ref/</a></li>
-<li><a href="http://www.sebastien-han.fr/blog/2013/12/02/ceph-performance-interesting-things-going-on/">http://www.sebastien-han.fr/blog/2013/12/02/ceph-performance-interesting-things-going-on/</a></li>
+<li>コンテナ &lsquo;rockmongo&rsquo; と &lsquo;mongodb&rsquo; を作成</li>
+<li>それぞれ1個ずつコンテナを作成</li>
+<li>&lsquo;image&rsquo; パラメータにて docker イメージの指定</li>
+<li>&lsquo;publicports&rsquo; パラメータにてコンテナ内部とホスト側のポートマッピングを行う</li>
+<li>&lsquo;links&rsquo; パラメータで &lsquo;rockmongo&rsquo; を &lsquo;mongodb&rsquo; に関連付け</li>
 </ul>
 
-<h2 id="各要素の数の関係">各要素の数の関係</h2>
+<p>では、デプロイ開始します。</p>
 
-<p>ハードウェア要素である node, disk(hdd), ssd そしてソフトウェア要素である mon,
-osd, mds の数の関係はどのようにするべきか？基本となる関係は</p>
+<pre><code class="language-bash">$ sudo gear deploy rockmongo_mongo.json
+2014/04/22 07:21:12 Deploying rockmongo_mongo.json.20140422-072112
+2014/04/22 07:21:12 appending 27017 on rockmongo-1: &amp;{PortPair:{Internal:27017 External:0} Target:127.0.0.1:27017} &amp;{Id:rockmongo-1 Image:derekwaynecarr/rockmongo From:rockmongo On:0xc2100bb980 Ports:[{PortPair:{Internal:80 External:6060} Target::0}] add:true remove:false container:0xc21000be00 links:[]}
+2014/04/22 07:21:12 ports: Releasing
+2014/04/22 07:21:12 systemd: Reloading daemon
+local PortMapping: 80 -&gt; 6060
+local Container rockmongo-1 is installed
+2014/04/22 07:21:12 ports: Releasing
+2014/04/22 07:21:12 systemd: Reloading daemon
+local PortMapping: 27017 -&gt; 4000
+local Container mongodb-1 is installed
+linking rockmongo: 127.0.0.1:27017 -&gt; localhost:4000
+local Links set on local
+local Container rockmongo-1 starting
+local Container mongodb-1 starting
+</code></pre>
+
+<p>ブラウザにてホスト OS に接続することで rockmongo の管理画面にアクセスが可能。</p>
+
+<pre><code>http://&lt;ホストOSのIP:6060&gt;/
+</code></pre>
+
+<h2 id="ポートマッピング管理">ポートマッピング管理</h2>
+
+<p>デプロイが完了して、実際に RockMongo の管理画面にアクセス出来たと思います。
+関連付けが特徴と言えそうなのでその解析をしてみました。</p>
+
+<p>Geard のコンテナ関連付けはホストとコンテナのポート管理がキモとなっていることが
+解ります。これを紐解くことで geard のコンテナ管理を理解します。</p>
+
+<pre><code>                        'rockmongo' コンテナ             'mongodb' コンテナ
++----------+        +--------------------------+        +-------------------+
+|  Client  |-&gt;6060-&gt;|-&gt;80-&gt; RockMongo -&gt;27017-&gt;|-&gt;4000-&gt;|-&gt;27017-&gt; Mongodb  |
++----------+        +--------------------------+        +-------------------+
+                    |-------------------- docker ホスト --------------------|
+</code></pre>
+
+<p>上記 &lsquo;gear deploy&rsquo; コマンド発行時のログと json ファイルにより上図のような構成
+になっていることが理解できます。一つずつ読み解いていきましょう。</p>
 
 <ul>
-<li>1 mds process / node</li>
-<li>1 mon process / node</li>
-<li>1 osd process / disk</li>
-<li>n jornal ssd device / disk / node</li>
+<li>&lsquo;rockmongo&rsquo; コンテナの内部でリスンしている 80 番ポートはホスト OS の 6060 番へ変換</li>
+<li>&lsquo;rockmongo&rsquo; コンテナ内で稼働する RockMongo の config.php から &lsquo;127.0.0.1:27017&rsquo; でリスンしていることが解る</li>
 </ul>
 
-<p>だと考えられます。僕が今のところ理想かなぁと思っている構成をまとめたいと思いま
-す。</p>
+<p>試しに &lsquo;derekwaynecarr/rockmongo:latest&rsquo; に /bin/bash でログインし config.php を確認。</p>
 
-<p>下記の図がそれです。</p>
-
-<pre><code>+------------------------+
-|         client         |
-+------------------------+
-|
-+--------------------------+--------------------------+-------------------------------+-------------------------
-|                          |                          |                               |            public network
-+------------------------+ +------------------------+ +------------------------+      +------------------------+
-|          mon           | |          mon           | |          mon           |      |          mds           |
-+------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+      +------------------------+
-| osd  | | osd  | | osd  | | osd  | | osd  | | osd  | | osd  | | osd  | | osd  |      |                        |
-+------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+      |                        |
-| disk | | disk | | disk | | disk | | disk | | disk | | disk | | disk | | disk |....&gt; |                        |
-+------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+scale |          node          |
-|          ssd           | |          ssd           | |          ssd           |      |                        |
-+------------------------+ +------------------------+ +------------------------+      |                        |
-|          node          | |          node          | |          node          |      |                        |
-+------------------------+ +------------------------+ +------------------------+      +------------------------+
-|                          |                          |                               |
-+--------------------------+--------------------------+-------------------------------+-------------------------
-                                                                                                  cluster network
+<pre><code class="language-bash">$ sudo docker run -i -t derekwaynecarr/rockmongo:latest /bin/bash
+bash-4.1# grep mongo_host /var/www/html/config.php
+$MONGO[&quot;servers&quot;][$i][&quot;mongo_host&quot;] = &quot;127.0.0.1&quot;;//mongo host
+$MONGO[&quot;servers&quot;][$i][&quot;mongo_host&quot;] = &quot;127.0.0.1&quot;;
 </code></pre>
 
-<h4 id="mds-と-node-の関係">mds と node の関係</h4>
+<ul>
+<li>デプロイ時のログと json ファイルの &lsquo;links&rsquo; パラメータより、ホストのポートに動的に(ここでは 4000番ポート) に変換されることが解ります。</li>
+</ul>
 
-<p>mds はリモートクライアントへのファイルシステムサービスの提供を行うことや特性が
-全く異なることから別ノードに切り出しました。また mds は幾つかのノードで稼働さ
-せる事も可能。が、mds はそれぞれのサービスを HA 組む仕組みは持っていないので
-どれか一方の mds をクライアントは指し示す必要があり、その mds が停止すれば直
-ちに障害に発展します。</p>
-
-<h4 id="mon-と-node-の関係">mon と node の関係</h4>
-
-<p>mon は比較的少量のリソースで稼働します。今回 osd と同じノードの搭載しましたが
-別ノードに切り出すことも勿論可能です。mon は CRUSH Maps アルゴリズムの元に連携
-が取れますので複数のプロセスを稼働することが推奨されていることからも、比較的少
-ないノード数のクラスタの場合は osd と同ノードに搭載するのが容易かなと考えまし
-た。</p>
-
-<h4 id="osd-と-node-の関係">osd と node の関係</h4>
-
-<p>1 osd プロセスに対して 1 disk が基本となります。osd は実データのレプリケーショ
-ンを行うことからコンフィギュレーションに対して上図の様にクラスタ用のネットワー
-クを紐付け、高トラヒックに対応する必要があります。また osd 用の disk device で
-すが RAID を組まないことが推奨されています。CEPH 自体に HA の仕組みがあること、
-また RAID 構成にもよりますがディスクアクセスが遅くなることは Ceph にとってボト
-ルネックを早く招くことになりますし、小さいディスク容量しか扱えなくなることは
-Ceph にとって不利になると思います。</p>
-
-<h4 id="journal-用の-ssd-device-と-disk-node-の関係">journal 用の ssd device と disk, node の関係</h4>
-
-<p>現在の Stable Release 版の Ceph は journal を用いてメタデータを管理します。各
-osd の disk 単位に journal 用の disk device を指定出来るようになっています。メ
-タデータですので実データ用の disk よりだいぶ小さな容量で構わないこと、また比較
-的高速なアクセスを要求されることからも SSD を選択することが推奨されつつあるよ
-うです。実際にストアされるデータの特性にもよりますが 1 node に対して 1 ssd
-device を配置すれば十分かと思います。また osd のプロセスの数 (disk の数) に対
-して一つのパーティションを切ることで対応出来るかと思います。</p>
-
-<p>設定方法の例を記します。ここに ceph01-03 の3台のノードがありそれぞれ 2 disk, 1
-ssd が搭載されているとします。/dev/ssd は gdisk 等を用いて2つ以上のパーティショ
-ンに切り分けます。</p>
-
-<p>下記のように /dev/sdb (hdd) に対して /dev/ssd1 (ssd), /dev/sdc (hdd) に対して /dev/ssd2 (ssd)
-を割り当てることが出来ます。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 osd create ceph01:sdb:/dev/ssd1 ceph02:sdb:/dev/ssd1 ceph03:sdb:/dev/ssd1
-% ceph-deploy --cluster cluster01 osd create ceph01:sdc:/dev/ssd2 ceph02:sdc:/dev/ssd2 ceph03:sdc:/dev/ssd2
+<pre><code>linking rockmongo: 127.0.0.1:27017 -&gt; localhost:4000
 </code></pre>
 
-<h2 id="ceph-ストレージ全体の容量設計と-mon-の-ratio-の関係">Ceph ストレージ全体の容量設計と mon の ratio の関係</h2>
+<ul>
+<li>ホストの 4000 番ポートは動的に &lsquo;mongodb&rsquo; コンテナの内部ポート 27017 にマッピングされる</li>
+</ul>
 
-<p>3TB のディスクを持ったノードが 33 台並んでいるとします。各ノードには osd プロ
-セスが1つ稼働します。合計容量は 99 TB となりますが mon が持っているコンフィギュ
-レーションである full ratio というパラメータがありデフォルト値が 0.95 となって
-います。よってこのクラスタで扱える全体のディスク容量は 95TB となります。</p>
+<p>これらのポートマッピングによりそれぞれのコンテナの連携が取れている。</p>
 
-<p>また、ラックに数台のノードを積むのが通常ですが、電源故障等で一気にラック単位で
-障害が発生したとします。この場合 Ceph はすべてのデータに関してレプリカを取り復
-旧作業を行います。しかしながら停止するノード数によってはストレージ全体の扱える
-容量をオーバーすることも懸念されます。これに対応するために先ほど登場した ratio
-パラメータを調整することが出来ます。</p>
+<h2 id="まとめと考察">まとめと考察</h2>
 
-<pre><code>[global]
+<p>Geard は下記の2つを特徴とした技術だと言えるとことがわかりました。</p>
 
-mon osd full ratio = .80
-mon osd nearfull ratio = .70
-</code></pre>
+<ul>
+<li>コンテナを json で管理しデプロイする仕組みを提供する</li>
+<li>コンテナ間の関連付けをホスト OS のポートを動的に管理・マッピングすることで行う
+<br /></li>
+</ul>
 
-<p>上記の例では full ステートの ratio が 0.80, nearfull ステートの ratio が 0.70
-となります。想定の障害ノード数を考慮し ratio パラメータにてその台数分を減算す
-れば良いわけです。</p>
+<p>同じような OS に CoreOS <a href="https://coreos.com/">https://coreos.com/</a> がありますが、こちらも docker,
+sytemd 等を特徴としています。さらに etcd を使ってクラスタの構成等が可能になっ
+ていますが、Geard はホストのポートを動的に管理することで関連付けが可能なことが
+わかりました。</p>
 
-<h2 id="まとめ">まとめ</h2>
-
-<p>前述した通り上図は比較的少ないノード数のクラスタを組む場合を想定しています。ノー
-ド数が増える場合は mon は mds, osd とも必要とするリソースの特性が異なりますの
-で別ノードに切り出すことも考えたほうが良さそうです。2014年の2月には Firefly と
-いう新しいリリース版が出ます。ここでのブループリント(設計書)を確認すると&hellip;</p>
-
-<p><a href="http://wiki.ceph.com/Planning/Blueprints/Firefly/osd%3A_new_key%2F%2Fvalue_backend">http://wiki.ceph.com/Planning/Blueprints/Firefly/osd%3A_new_key%2F%2Fvalue_backend</a></p>
-
-<p>journal に変わる新たなメタデータ管理方法として KVS データベースを扱うことも視
-野に入っているようです。上記の URL 見る限りでは Facebook がオープンソースにし
-た rocksdb や fusionio の nvmkv, seagate の kinetic 等が挙がっています。2月に
-期待しましょう！</p>
+<p>実際に触ってみた感覚から言えば、まだまだ実用化は厳しい状況に思えますが、今後へ
+の展開に期待したい技術です。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2014/04/22/geard-port-mapping/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -443,7 +433,7 @@ mon osd nearfull ratio = .70
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2014/01/21/17th-openstack-study/">第17回 OpenStack 勉強会で話してきました</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2014/04/04/openstack-havana-cinder-glance-ceph/">OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携</a></h2>
         
         
     </div>
@@ -453,11 +443,11 @@ mon osd nearfull ratio = .70
         
 
         <time class="published"
-            datetime='2014-01-21'>
-            January 21, 2014</time>
+            datetime='2014-04-04'>
+            April 4, 2014</time>
         <span class="author"></span>
         
-            <p>1 minute read</p>
+            <p>4 minute read</p>
         
         
     </div>
@@ -466,55 +456,280 @@ mon osd nearfull ratio = .70
     
 
     
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+    <p>こんにちは！<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 
-<p>昨晩、第17回 OpenStack 勉強会が開催されました</p>
+<p>今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ
+る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。</p>
 
-<p><a href="http://connpass.com/event/4545/">http://connpass.com/event/4545/</a></p>
+<p><a href="https://ceph.com/docs/master/rbd/rbd-openstack/">https://ceph.com/docs/master/rbd/rbd-openstack/</a></p>
 
-<p>ここで発表をしてきましたぁ！発表タイトルは &ldquo;rcbops/chef-cookbooks&rdquo; です。</p>
-
-<script async class="speakerdeck-embed"
-data-id="27a2739063d601314bce6a232911c4f0" data-ratio="1.33333333333333"
-src="//speakerdeck.com/assets/embed.js"></script>
-
-<p>何を発表したかと言うと詳しくは上記のスライドを見ていただくとして、簡単に言うと
-&ldquo;RackSpace 社のエンジニアが管理している Chef Cookbooks でOpenStack 構成を作ろ
-う&rdquo; ってことです。</p>
-
-<p>今日知ったのですがどうも昨晩は初心者向けの勉強会という位置付けだったらしく..少
-しだけディープな話題を話してしまったかもしれません！すいません！＞＜</p>
-
-<p>でもとても楽しく発表出来ましたし、逆に質問のコーナーで最新の情報も教えてもらえ
-たり！なんと Havana 対応の v4.2.0 以降では Swift の Cookbooks が消えてしまった
-とか！&hellip; 皆 Swift 好きくないの？&hellip;; ;</p>
-
-<p>rcbops/chef-cookbooks はずっと追っていますが、ものすごいスピードで開発進んでい
-るので、今後ぜひみなさん使ってみて下さいー。</p>
-
-<p>最後に詳しい利用方法を記した僕のブログの URL を貼り付けておきます。</p>
+<p>この手順から下記の変更を行って、ここでは記していきます。</p>
 
 <ul>
-<li>OpenStack Havana を Chef でデプロイ</li>
+<li>Nova + Ceph 連携させない</li>
+<li>cinder-backup は今のところ動作確認出来ていないので省く</li>
+<li>諸々の手順がそのままでは実施出来ないので補足を入れていく。</li>
 </ul>
+
+<p>cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ
+上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ
+クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ
+の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の
+Ceph 連携は意味が大きくなってくると思います。</p>
+
+<h2 id="構成">構成</h2>
+
+<p>下記の通りの物理ネットワーク6つの構成です。
+OpenStack, Ceph 共に最小構成を前提にします。</p>
+
+<pre><code>                  +--------------------------------------------------------------------- external
+                  |
++--------------+--(-----------+--------------+------------------------------------------ public
+|              |  |           |              |
++------------+ +------------+ +------------+ +------------+ +------------+ +------------+
+| controller | |  network   | |  compute   | |   ceph01   | |   ceph02   | |   ceph03   |
++------------+ +------------+ +------------+ +------------+ +------------+ +------------+
+|  |           |  |           |  |  |        |  |  |        |  |  |        |  |  |
++--------------+--(-----------+--(-----------+--(--(--------+--(--(--------+--(--(------- management
+   |              |              |  |           |  |           |  |           |  |
+   |              +--------------+--(-----------(--(-----------(--(-----------(--(------- guest
+   |                                |           |  |           |  |           |  |
+   +--------------------------------+-----------+--(-----------+--(-----------+--(------- storage
+                                                   |              |              |
+                                                   +--------------+--------------+------- cluster
+</code></pre>
+
+<p>特徴</p>
+
+<ul>
+<li>最小構成 controller x 1 + network x 1 + compute x 1 + ceph x 3</li>
+<li>OpenStack API の相互通信は management ネットワーク</li>
+<li>OpenStack VM 間通信は guest ネットワーク</li>
+<li>OpenStack 外部通信は public ネットワーク</li>
+<li>OpenStack VM の floating-ip (グローバル) 通信は external ネットワーク</li>
+<li>Ceph と OpenStack 間の通信は storage ネットワーク</li>
+<li>Ceph の OSD 間通信は cluster ネットワーク</li>
+<li>ここには記されていないホスト &lsquo;workstation&rsquo; から OpenStack, Ceph をデプロイ</li>
+</ul>
+
+<h2 id="前提の構成">前提の構成</h2>
+
+<p>前提構成の OpenStack と Ceph ですが、ここでは構築方法は割愛します。OpenStack
+は rcbops/chef-cookbooks を。Ceph は ceph-deploy を使って自分は構築しました。
+下記の自分のブログに構築手順が載っているので参考にしてみてください。</p>
+
+<p>OpenStack 構築方法</p>
 
 <p><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/">http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/</a></p>
 
+<p>Ceph 構築方法</p>
+
+<p><a href="http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/">http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/</a></p>
+
+<h2 id="openstack-ceph-連携手順">OpenStack + Ceph 連携手順</h2>
+
+<p>では実際に連携するための手順を記していきます。</p>
+
+<h4 id="rbd-pool-の作成">rbd pool の作成</h4>
+
+<p>Ceph ノードの何れかで下記の手順を実施し rbd pool を作成する。</p>
+
+<pre><code class="language-bash">ceph01% sudo ceph osd pool create volumes 128
+ceph01% sudo ceph osd pool create images 128
+ceph01% sudo ceph osd pool create backups 128
+</code></pre>
+
+<h4 id="ssh-鍵の配置">ssh 鍵の配置</h4>
+
+<p>Ceph ノードから OpenStack の controller, compute ノードへ接続出来るよう鍵を配
+布します。</p>
+
+<pre><code class="language-bash">ceph01% ssh-copy-id &lt;username&gt;@&lt;controller_ip&gt;
+ceph01% ssh-copy-id &lt;username&gt;@&lt;compute_ip&gt;
+</code></pre>
+
+<h4 id="sudoers-の設定">sudoers の設定</h4>
+
+<p>controller, compute ノード上で sudoers の設定を予め実施する。
+/etc/sudoers.d/<username> として保存する。</p>
+
+<pre><code class="language-bash">&lt;username&gt; ALL = (root) NOPASSWD:ALL
+</code></pre>
+
+<h4 id="ceph-パッケージのインストール">ceph パッケージのインストール</h4>
+
+<p>controller ノード, compute ノード上で Ceph パッケージをインストールする。</p>
+
+<pre><code class="language-bash">controller% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add -
+controller% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list
+controller% sudo apt-get update &amp;&amp; sudo apt-get install -y python-ceph ceph-common
+
+compute% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add -
+compute% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list
+compute% sudo apt-get update &amp;&amp; sudo apt-get install -y python-ceph ceph-common
+</code></pre>
+
+<p>controller ノード, compute ノード上でディレクトリを作成する。</p>
+
+<pre><code class="language-bash">controller% sudo mkdir /etc/ceph
+compute   % sudo mkdir /etc/ceph
+</code></pre>
+
+<p>ceph.conf を controller, compute ノードへ配布する。</p>
+
+<pre><code class="language-bash">ceph01% sudo -i
+ceph01# ssh &lt;controller_ip&gt; sudo tee /etc/ceph/ceph.conf &lt;/etc/ceph/ceph.conf
+ceph01# ssh &lt;compute_ip&gt; sudo tee /etc/ceph/ceph.conf &lt;/etc/ceph/ceph.conf
+</code></pre>
+
+<h4 id="ceph-上にユーザを作成">ceph 上にユーザを作成</h4>
+
+<p>Ceph 上に cinder, glance 用の新しいユーザを作成する。</p>
+
+<pre><code class="language-bash">ceph auth get-or-create client.cinder mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=volumes, allow rx pool=images'
+ceph auth get-or-create client.glance mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=images'
+ceph auth get-or-create client.cinder-backup mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=backups'
+</code></pre>
+
+<h4 id="キーリングの作成と配置">キーリングの作成と配置</h4>
+
+<p>client.cinder, client.glance, client.cinder-backup のキーリングを作成する。また作成したキーリングを
+controller ノードに配布する。</p>
+
+<pre><code class="language-bash">ceph01% sudo ceph auth get-or-create client.glance | ssh {your-glance-api-server} sudo tee /etc/ceph/ceph.client.glance.keyring
+ceph01% ssh {your-glance-api-server} sudo chown glance:glance /etc/ceph/ceph.client.glance.keyring
+ceph01% sudo ceph auth get-or-create client.cinder | ssh {your-volume-server} sudo tee /etc/ceph/ceph.client.cinder.keyring
+ceph01% ssh {your-cinder-volume-server} sudo chown cinder:cinder /etc/ceph/ceph.client.cinder.keyring
+ceph01% sudo ceph auth get-or-create client.cinder-backup | ssh {your-cinder-backup-server} sudo tee /etc/ceph/ceph.client.cinder-backup.keyring
+ceph01% ssh {your-cinder-backup-server} sudo chown cinder:cinder /etc/ceph/ceph.client.cinder-backup.keyring
+</code></pre>
+
+<p>client.cinder のキーリングを compute ノードに配置する。</p>
+
+<pre><code class="language-bash">ceph01% sudo ceph auth get-key client.cinder | ssh {your-compute-node} tee client.cinder.key
+</code></pre>
+
+<h4 id="libvirt-への-secret-キー追加">libvirt への secret キー追加</h4>
+
+<p>compute ノード上で secret キーを libvirt に追加する。</p>
+
+<pre><code class="language-bash">compute% uuidgen
+457eb676-33da-42ec-9a8c-9293d545c337
+
+cat &gt; secret.xml &lt;&lt;EOF
+&lt;secret ephemeral='no' private='no'&gt;
+  &lt;uuid&gt;457eb676-33da-42ec-9a8c-9293d545c337&lt;/uuid&gt;
+  &lt;usage type='ceph'&gt;
+    &lt;name&gt;client.cinder secret&lt;/name&gt;
+  &lt;/usage&gt;
+&lt;/secret&gt;
+EOF
+compute % sudo virsh secret-define --file secret.xml
+Secret 457eb676-33da-42ec-9a8c-9293d545c337 created
+compute% sudo virsh secret-set-value --secret 457eb676-33da-42ec-9a8c-9293d545c337 --base64 $(cat client.cinder.key) &amp;&amp; rm client.cinder.key secret.xml
+</code></pre>
+
+<h4 id="glance-連携手順">glance 連携手順</h4>
+
+<p>controller ノードの /etc/glance/glance-api.conf に下記を追記。
+default_store=file と標準ではなっているので下記の通り rbd に書き換える。</p>
+
+<pre><code>default_store=rbd
+rbd_store_user=glance
+rbd_store_pool=images
+</code></pre>
+
+<h4 id="cinder-連携手順">cinder 連携手順</h4>
+
+<p>controller ノードの /etc/cinder/cinder.conf に下記を追記。
+volume_driver は予め LVM の設定が入っていると思われるので書き換える。
+また rbd_secret_uuid は先ほど生成した uuid を記す。</p>
+
+<pre><code>volume_driver=cinder.volume.drivers.rbd.RBDDriver
+rbd_pool=volumes
+rbd_ceph_conf=/etc/ceph/ceph.conf
+rbd_flatten_volume_from_snapshot=false
+rbd_max_clone_depth=5
+glance_api_version=2
+rbd_user=cinder
+rbd_secret_uuid=457eb676-33da-42ec-9a8c-9293d545c337
+</code></pre>
+
+<h4 id="ceph-conf-への追記">ceph.conf への追記</h4>
+
+<p>上記で配布した ceph.conf にはキーリングのパスが記されていない。controller ノー
+ド上の /etc/ceph/ceph.conf に下記の通り追記する。</p>
+
+<p>ここは公式サイトには印されていないのでハマりました。ポイントです。</p>
+
+<pre><code>[client.keyring]
+  keyring = /etc/ceph/ceph.client.cinder.keyring
+</code></pre>
+
+<h4 id="openstack-のそれぞれのコンポーネントを再起動かける">OpenStack のそれぞれのコンポーネントを再起動かける</h4>
+
+<pre><code class="language-bash">controller% sudo glance-control api restart
+compute   % sudo service nova-compute restart
+controller% sudo service cinder-volume restart
+controller% sudo service cinder-backup restart
+</code></pre>
+
+<h2 id="動作確認">動作確認</h2>
+
+<p>では動作確認を。Glance に OS イメージを登録。その後そのイメージを元にインスタ
+ンスを作成。Cinder 上に仮想ディスクを作成。その後先ほど作成したインスタンスに
+接続しマウント。そのマウントした仮想ディスク上で書き込みが行えるか確認をします。</p>
+
+<p>テストで Ubuntu Precise 12.04 のイメージを glance を用いて登録する。</p>
+
+<pre><code class="language-bash">controller% wget http://cloud-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64-disk1.img
+controller% glance image-create --name precise-image --is-public true --container-format bare --disk-format qcow2 &lt; precise-server-cloudimg-amd64-disk1.img
+</code></pre>
+
+<p>テスト VM を稼働する。</p>
+
+<pre><code class="language-bash">controller% nova boot --nic net-id=&lt;net_id&gt; --flavor 2 --image precise-image --key_name novakey01 vm01
+controller% cinder create --display-name vol01 1
+controller% nova volume-attach &lt;instance_id&gt; &lt;volume_id&gt; auto
+</code></pre>
+
+<p>テスト VM へログインしファイルシステムを作成後、マウントする。</p>
+
+<pre><code class="language-bash">controller% ssh -i &lt;key_file_path&gt; -l ubuntu &lt;instance_ip&gt;
+vm01% sudo mkfs -t ext4 /dev/vdb
+vm01% sudo mount -t ext4 /dev/vdb /mnt
+</code></pre>
+
+<p>マウントした仮想ディスク上でデータを書き込んでみる。</p>
+
+<pre><code class="language-bash">vm01% sudo dd if=/dev/zero of=/mnt/500M bs=1M count=5000
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>Ceph, Cinder の Ceph 連携が出来ました！</p>
+
+<p>OpenStack Grizzly 版時代に Ceph 連携は取っていたのですが Havana では</p>
+
 <ul>
-<li>Swift HA 構成を Chef でデプロイ</li>
+<li>cinder-bacup の Ceph 連携</li>
+<li>nova の Ceph 連携</li>
 </ul>
 
-<p><a href="http://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/">http://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/</a></p>
+<p>が追加されていました。Nova 連携をとるとインスタンスを稼働させる際に通常は
+controller ノードの /var/lib/nova 配下にファイルとしてインスタンスイメージが作
+成されますが、これが Ceph 上に作成されるとのことです。Nova 連携は是非とってみ
+たいのですが、今のところ動いていません。引き続き調査を行います。</p>
 
-<ul>
-<li>実用的な Swift 構成を Chef でデプロイ</li>
-</ul>
-
-<p><a href="http://jedipunkz.github.io/blog/2013/10/27/swift-chef/">http://jedipunkz.github.io/blog/2013/10/27/swift-chef/</a></p>
+<p>cinder-backup も少し連携取ってみましたが backup_driver に Ceph ドライバの指定
+をしているにも関わらず Swift に接続しにいってしまう有り様でした..。こちらも引
+き続き調査します。またステートが &lsquo;in-use&rsquo; の場合バックアップが取れず
+&lsquo;available&rsquo; なステートでないといけないようです。確かに書き込み中に操作が行われ
+てしまってもバックアップの整合性が取れないですし、ここは仕方ないところですね。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/01/21/17th-openstack-study/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2014/04/04/openstack-havana-cinder-glance-ceph/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -532,7 +747,7 @@ src="//speakerdeck.com/assets/embed.js"></script>
                     
 
                     
-                        Categories
+                        Category
                     
                 
             </li>
@@ -542,8 +757,6 @@ src="//speakerdeck.com/assets/embed.js"></script>
     
     
         <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-        <li><a href='/categoriesreport'>report</a></li>
     
 </ul>
 
@@ -555,7 +768,7 @@ src="//speakerdeck.com/assets/embed.js"></script>
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2013/12/09/chef-autonoumous-cluster/">Chef で自律的クラスタを考える</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0/">rcbops/chef-cookbooks で Keystone 2013.2.2(Havana) &#43; Swift 1.10.0 を構築</a></h2>
         
         
     </div>
@@ -565,11 +778,11 @@ src="//speakerdeck.com/assets/embed.js"></script>
         
 
         <time class="published"
-            datetime='2013-12-09'>
-            December 9, 2013</time>
+            datetime='2014-03-16'>
+            March 16, 2014</time>
         <span class="author"></span>
         
-            <p>2 minute read</p>
+            <p>6 minute read</p>
         
         
     </div>
@@ -580,130 +793,396 @@ src="//speakerdeck.com/assets/embed.js"></script>
     
     <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 
-<p>Serf の登場があったり、ここ最近オーケストレーションについて考える人が増えた気
-がします。システムをデプロイしてその後各ノード間の連結だったりも同じ Chef,
-Puppet 等のコンフィギュレーションツールで行うのか？全く別のツールで？..</p>
+<h4 id="追記">追記</h4>
 
-<p>最近 Serf というツールの登場がありました。</p>
+<p>2014/03/20 : 一旦削除していた記事なのですが、無事動作が確認出来たので再度アッ
+プします！</p>
 
-<p>僕も Serf を触ってつい先日ブログに書きました。有用なツールだと思います。シ
-ンプルだからこそ応用が効きますし、リアルタイム性もあり、将来的に異なるネットワー
-クセグメント上のノードとも連結出来るようになりそうですし、とても期待です。</p>
+<p>第17回 OpenStack 勉強会で rcbops/chef-cookbooks の話をしてきたのですが会場から
+質問がありました。「Havana の Swift 構成を作る Cookbooks はどこにありますか？」
+と。私が試したのが Grizzly 時代のモノで、よく rcbops/chef-cookbooks を見てみる
+と Havana ブランチ又は Havana に対応したリリースタグのファイル構成に Swift が
+綺麗サッパリ消えているではありませんか・・！下記の Swift の Cookbooks は幸い
+github 上に残っていました。</p>
 
-<p>話が少し飛びますが..</p>
+<p><a href="https://github.com/rcbops-cookbooks/swift">https://github.com/rcbops-cookbooks/swift</a></p>
 
-<p>いつも Rebuild.fm を楽しく聞いているのですが Immutable Infrastructure の話題の
-時にオーケストレーションの話題になって、どうも &lsquo;Chef でも自律的なクラスタを組
-むことが認知されていないのでは？&rsquo; と思うようになりました。もちろん Chef でやる
-べき！とは言い切りませんし、今後どうなるかわかりません。Opscode の中の人も &lsquo;オー
-ケストレーションは自分でやってね&rsquo; というスタンスだったとずいぶん前ですが聞きま
-した。Serf を等のオーケストレーションツールを使う使わないの話は今回はしないの
-ですが Chef でも自律的クラスタを組むことは出来ますよ〜というのが今回の話題。</p>
+<p>が rcbops/chef-cookbooks との関連付けが切れています・・。ぐあぁ。</p>
 
-<p>まえがきが長くなりました。</p>
-
-<p>今回は Chef で自律的クラスタを構成する方法を記したいと思います。</p>
-
-<p>haproxy 等を利用すれば尚良いと思いますが、よりクラスタを組むのが簡単な nginx
-を今回は利用したいと思います。</p>
-
-<p><a href="https://github.com/opscode-cookbooks/nginx">https://github.com/opscode-cookbooks/nginx</a></p>
+<p>ということで Havana 構成の Keystone 2013.2.2 と Swift 1.10.0 の構成を Chef で
+作らねば！と思い色々試していたら結構あっさりと出来ました。今回はその方法を書い
+ていきたいと思います！</p>
 
 <h2 id="構成">構成</h2>
 
-<p>&lsquo;web&rsquo; という Role 名と &lsquo;lb&rsquo; という Role 名で単純な HTTP サーバとしての nginx
-ノードを複数台と、ロードバランサとしての nginx ノードを1台でクラスタを構成しま
-す。また共に environment 名は同じものを利用します。別の environment 名の場合は
-別クラスタという区切りです。</p>
+<p>構成は&hellip;以前の記事 <a href="http://jedipunkz.github.io/blog/2013/10/27/swift-chef/">http://jedipunkz.github.io/blog/2013/10/27/swift-chef/</a> と同じです。</p>
 
-<ul>
-<li>&lsquo;lb&rsquo; node x 1 + &lsquo;web&rsquo; node x n (&lsquo;foo&rsquo; environment)</li>
-<li>&lsquo;lb&rsquo; node x 1 + &lsquo;web&rsquo; node x n (&lsquo;bar&rsquo; environment)</li>
-</ul>
-
-<h2 id="lb-nginx-ロードバランサのレシピ">&lsquo;lb&rsquo; nginx ロードバランサのレシピ</h2>
-
-<p>下記が &lsquo;lb&rsquo; Role の recipes/cmomnos_conf.rb の修正した内容です。</p>
-
-<pre><code class="language-ruby">environment = node.chef_environment
-webservers = search(:node, &quot;role:web AND chef_environment:#{environment}&quot;)
- 
-template &quot;#{node['nginx']['dir']}/sites-available/default&quot; do
-  source &quot;default-site.erb&quot;
-  owner &quot;root&quot;
-  group &quot;root&quot;
-  mode 00644
-  notifies :reload, 'service[nginx]'
-    variables ({
-      :webservers =&gt; webservers
-    })
-end
+<pre><code>+-----------------+
+|  load balancer  |
++-----------------+
+|
++-------------------+-------------------+-------------------+-------------------+---------------------- proxy network
+|                   |                   |                   |                   |                   
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+
+|   chef server   | | chef workstation| |   swift-mange   | |  swift-proxy01  | |  swift-proxy02  | 
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ ...&gt; scaling
+|                   |                   |                   |                   |                   
++-------------------+-------------------+-------------------+-------------------+-------------------+-- storage network
+|                   |                   |                   |                   |                   |
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ 
+| swift-storage01 | | swift-storage02 | | swift-storage03 | | swift-account01 | | swift-account02 | | swift-account03 |
++-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ ..&gt; scaling
 </code></pre>
 
-<p>何をやっているかと言うと、environment という変数に自ノードの environment 名を。
-webservers という変数に role 名が &lsquo;web&rsquo; で尚且つ自ノードと同じ environment 名
-が付いたノード名を入れています。これで自分と同じ environment に所属している
-&lsquo;web&rsquo; Role なノードを Chef サーバに対して検索しています。また、template 内で
-webservers という変数をそのまま利用できるように variables で渡しています。</p>
+<h2 id="手順">手順</h2>
 
-<h2 id="lb-nginx-ロードバランサのテンプレート">&lsquo;lb&rsquo; nginx ロードバランサのテンプレート</h2>
+<p>では早速手順を記していきますね。毎回なのですが Chef ワークステーション・Chef
+サーバの環境構築については割愛します。オムニバスインストーラを使えば Chef サー
+バの構築は簡単ですし、ワークステーションの構築も Ruby インストール -&gt; gem で
+Chef をインストール -&gt; .chef 配下を整える、で出来ます。</p>
 
-<p>下記が webservers 変数を受け取った後の template 内の処理です。</p>
+<p>rcbops/chef-cookbooks の取得。現在 Stable バージョンの refs/tags/v4.2.1 を用いる。</p>
 
-<pre><code class="language-ruby">&lt;% if @webservers and ( @webservers != [] ) %&gt;
-upstream backend {
-&lt;% @webservers.each do |hostname| -%&gt;
-  server &lt;%= hostname['ipaddr'] -%&gt;;
-&lt;% end -%&gt;
-}
-&lt;% end %&gt;
-  
-server {
-  listen   80;
-  server_name  &lt;%= node['hostname'] %&gt;;
-    
-  access_log  &lt;%= node['nginx']['log_dir'] %&gt;/localhost.access.log;
-    
-  location / {
-    &lt;% if @webservers and ( @webservers != [] ) %&gt;
-    proxy_pass http://backend;
-    &lt;% else %&gt;
-    root   /var/www/nginx-default;
-    index  index.html index.htm;
-    &lt;% end %&gt;
+<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ./chef-cookbooks-4.2.1
+% cd ./chef-cookbooks-4.2.1
+% git checkout -b v4.2.1 refs/tags/v4.2.1
+% git submodule init
+% git submodule sync
+% git submodule update
+</code></pre>
+
+<p>ここで本家 rcbops/chef-cookbooks と関連付けが消えている rcbops-cookbooks/swift
+を cookbooks ディレクトリ配下にクローンします。あと念のため &lsquo;havana&rsquo; ブランチ
+を指定します。コードを確認したところ何も変化はありませんでしたが。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops-cookbooks/swift.git cookbooks/swift
+% cd cookbooks/swift
+% git checkout -b havana remotes/origin/havana
+% cd ../..
+</code></pre>
+
+<p>cookbooks, roles の Chef サーバへのアップロードを行います。</p>
+
+<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
+% knife role from file role/*.rb
+</code></pre>
+
+<p>今回の構成 (1クラスタ) 用の environments/swift-havana.json を作成します。json
+ファイルの名前は任意です。</p>
+
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;swift-havana&quot;,
+  &quot;description&quot;: &quot;&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;package_component&quot;: &quot;havana&quot;,
+    &quot;osops_networks&quot;: {
+      &quot;management&quot;: &quot;10.200.9.0/24&quot;,
+      &quot;public&quot;: &quot;10.200.10.0/24&quot;,
+      &quot;swift&quot;: &quot;10.200.9.0/24&quot;
+    },
+    &quot;keystone&quot;: {
+      &quot;pki&quot;: {
+        &quot;enabled&quot;: false
+      },
+      &quot;admin_port&quot;: &quot;35357&quot;,
+      &quot;admin_token&quot;: &quot;admin&quot;,
+      &quot;admin_user&quot;: &quot;admin&quot;,
+      &quot;tenants&quot;: [
+        &quot;admin&quot;,
+        &quot;service&quot;
+      ],
+      &quot;users&quot;: {
+        &quot;admin&quot;: {
+          &quot;password&quot;: &quot;secrete&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [
+              &quot;admin&quot;
+            ]
+          }
+        },
+        &quot;demo&quot;: {
+          &quot;password&quot;: &quot;demo&quot;,
+          &quot;default_tenant&quot; : &quot;service&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [ &quot;admin&quot; ]
+          }
+        }
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;keystone&quot;
+      }
+    },
+    &quot;mysql&quot;: {
+      &quot;root_network_acl&quot;: &quot;%&quot;,
+      &quot;allow_remote_root&quot;: true,
+      &quot;server_root_password&quot;: &quot;secrete&quot;,
+      &quot;server_repl_password&quot;: &quot;secrete&quot;,
+      &quot;server_debian_password&quot;: &quot;secrete&quot;
+    },
+    &quot;monitoring&quot;: {
+      &quot;procmon_provider&quot;: &quot;monit&quot;,
+      &quot;metric_provider&quot;: &quot;collectd&quot;
+    },
+    &quot;vips&quot;: {
+      &quot;keystone-admin-api&quot;: &quot;10.200.9.11&quot;,
+      &quot;keystone-service-api&quot;: &quot;10.200.9.11&quot;,
+      &quot;keystone-internal-api&quot;: &quot;10.200.9.11&quot;,
+      &quot;swift-proxy&quot;: &quot;10.200.9.11&quot;,
+      &quot;config&quot;: {
+        &quot;10.200.9.112&quot;: {
+          &quot;vrid&quot;: 12,
+          &quot;network&quot;: &quot;management&quot;
+        }
+      }
+    },
+    &quot;developer_mode&quot;: false,
+    &quot;swift&quot;: {
+      &quot;swift_hash&quot;: &quot;307c0568ea84&quot;,
+      &quot;authmode&quot;: &quot;keystone&quot;,
+      &quot;authkey&quot;: &quot;20281b71-ce89-4b27-a2ad-ad873d3f2760&quot;
+    }
   }
 }
 </code></pre>
 
-<p>upstream backend { &hellip; は皆さん見慣れた記述だと思うのですが、バックエンドの
-HTTP サーバの IP アドレスを一覧化します。each で回しているので台数分だけ
-server <ip_addr>; の記述が入ります。</p>
+<p>作成した environment ファイル environments/swift-havana.json を chef-server へアップ
+ロードする。</p>
 
-<p>chef-client をデーモン稼働しておけば、新規に Chef サーバに登録された &lsquo;web&rsquo;
-Role の HTTP サーバを自動で &lsquo;lb&rsquo; Role のロードバランサが組み込む、つまり自律的
-なクラスタが組めることになります。もちろんこの間の手作業は一切ありません。</p>
-
-<p>ちなみに chef-client をデーモン稼働するには</p>
-
-<pre><code>recipe[chef-client::service]
+<pre><code class="language-bash">% knife environment from file environments/swift-havana.json
 </code></pre>
 
-<p>というレシピをノードに割り当てることで可能です。</p>
+<h2 id="cookbooks-の修正">Cookbooks の修正</h2>
+
+<p>swift cookbooks を修正します。havana からは keystone を扱うクライアントは
+keystone.middleware.auth_token でなく keystoneclient.middleware.auth_token を
+使うように変更掛かっていますので、下記のように修正しました。</p>
+
+<pre><code class="language-bash">% cd cookbooks/swift/templates/default
+% diff -u proxy-server.conf.erb.org proxy-server.conf.erb
+--- proxy-server.conf.erb.org   2014-03-20 16:28:28.000000000 +0900
++++ proxy-server.conf.erb       2014-03-20 16:28:13.000000000 +0900
+@@ -243,7 +243,8 @@
+ use = egg:swift#keystoneauth
+ 
+ [filter:authtoken]
+-paste.filter_factory = keystone.middleware.auth_token:filter_factory
++#paste.filter_factory = keystone.middleware.auth_token:filter_factory
++paste.filter_factory = keystoneclient.middleware.auth_token:filter_factory
+ auth_host = &lt;%= @keystone_api_ipaddress %&gt;
+ auth_port = &lt;%= @keystone_admin_port %&gt;
+ auth_protocol = &lt;%= @keystone_admin_protocol %&gt;
+% cd ../../../..
+</code></pre>
+
+<h2 id="デプロイ">デプロイ</h2>
+
+<p>かきのとおり knife bootstrap する。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;manage_ip_addr&gt; -N swift-manage -r 'role[base]','role[mysql-master]','role[keystone]','role[swift-management-server]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;proxy01_ip_addr&gt; -N swift-proxy01 -r &quot;role[base]&quot;,&quot;role[swift-proxy-server]&quot;,'role[swift-setup]','role[openstack-ha]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;proxy02_ip_addr&gt; -N swift-proxy02 -r &quot;role[base]&quot;,&quot;role[swift-proxy-server]&quot;,'role[openstack-ha]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;storage01_ip_addr&gt; -N swift-storage01 -r 'role[base]','role[swift-object-server]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;storage02_ip_addr&gt; -N swift-storage02 -r 'role[base]','role[swift-object-server]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;storage03_ip_addr&gt; -N swift-storage03 -r 'role[base]','role[swift-object-server]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;account01_ip_addr&gt; -N swift-account01 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;account02_ip_addr&gt; -N swift-account02 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift-havana --sudo -x thirai
+% knife bootstrap &lt;account03_ip_addr&gt; -N swift-account03 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift-havana --sudo -x thirai
+</code></pre>
+
+<p>ここでバグ対策。Swift 1.10.0 にはバグがあるので下記の通り対処します。</p>
+
+<p>keystone.middleware.s3_token に既知のバグがあり、下記のように対処します。この
+状態ではバグにより swift-proxy が稼働してない状態ですが後の各ノードでの
+chef-client 実行時に稼働する予定です。</p>
+
+<pre><code class="language-python">% diff /usr/lib/python2.7/dist-packages/keystone/exception.py.org /usr/lib/python2.7/dist-packages/keystone/exception.py 
+--- exception.py.org    2014-03-12 16:45:00.181420694 +0900
++++ exception.py        2014-03-12 16:44:47.173177081 +0900
+@@ -18,6 +18,7 @@
+
+ from keystone.common import config
+ from keystone.openstack.common import log as logging
++from keystone.openstack.common.gettextutils import _
+ from keystone.openstack.common import strutils
+</code></pre>
+
+<p>上記のバグ報告は下記の URL にあります。</p>
+
+<p><a href="https://bugs.launchpad.net/ubuntu/+source/swift/+bug/1231339">https://bugs.launchpad.net/ubuntu/+source/swift/+bug/1231339</a></p>
+
+<p>zone 番号を付与します。</p>
+
+<pre><code class="language-bash">% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
+% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
+</code></pre>
+
+<p>zone 番号が付与されたこと下記の通りを確認します</p>
+
+<p>account-server の確認</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-account-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-account-server] and is in swift zone #{z}&quot;; }'
+swift-account01 has the role       [swift-account-server] and is in swift zone 1
+swift-account02 has the role       [swift-account-server] and is in swift zone 2
+swift-account03 has the role       [swift-account-server] and is in swift zone 3
+</code></pre>
+
+<p>container-server の確認</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-container-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-container-server] and is in swift zone #{z}&quot;; }'
+swift-account01 has the role       [swift-container-server] and is in swift zone 1
+swift-account02 has the role       [swift-container-server] and is in swift zone 2
+swift-account03 has the role       [swift-container-server] and is in swift zone 3
+</code></pre>
+
+<p>object-server の確認</p>
+
+<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-object-server&quot;) \
+  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
+  [swift-object-server] and is in swift zone #{z}&quot;; }'
+swift-storage01 has the role   [swift-object-server] and is in swift zone 1
+swift-storage02 has the role   [swift-object-server] and is in swift zone 2
+swift-storage03 has the role   [swift-object-server] and is in swift zone 3
+</code></pre>
+
+<p>Chef が各々のノードに搭載された Disk を検知出来るか否かを確認する。</p>
+
+<pre><code class="language-ruby">% knife exec -E \
+  'search(:node,&quot;role:swift-object-server OR \
+  role:swift-account-server \
+  OR role:swift-container-server&quot;) \
+  { |n| puts &quot;#{n.name}&quot;; \
+  begin; n[:swift][:state][:devs].each do |d| \
+  puts &quot;\tdevice #{d[1][&quot;device&quot;]}&quot;; \
+  end; rescue; puts \
+  &quot;no candidate drives found&quot;; end; }'
+    swift-storage02
+            device sdb1
+    swift-storage03
+            device sdb1
+    swift-account01
+            device sdb1
+    swift-account02
+            device sdb1
+    swift-account03
+            device sdb1
+    swift-storage01
+            device sdb1
+</code></pre>
+
+<p>swift-manage ノードにて chef-client を実行し
+/etc/swift/ring-workspace/generate-rings.sh を更新します。</p>
+
+<pre><code class="language-bash">swift-manage% sudo chef-client
+</code></pre>
+
+<p>generate-rings.sh の &lsquo;exit 0&rsquo; 行をコメントアウトし実行します。</p>
+
+<pre><code class="language-bash">swift-manage% sudo ${EDITOR} /etc/swift/ring-workspace/generage-rings.sh
+swift-manage% sudo /etc/swift/ring-workspace/generate-rings.sh
+</code></pre>
+
+<p>この操作で /etc/swift/ring-workspace/rings 配下に account, container, object
+用の Rings ファイル群が生成されたことを確認出来るはずです。これらを
+swift-manage 上で既に稼働している git サーバに push し管理します。</p>
+
+<pre><code class="language-bash">swift-manage# cd /etc/swift/ring-workspace/rings
+swift-manage# git add account.builder container.builder object.builder
+swift-manage# git add account.ring.gz container.ring.gz object.ring.gz
+swift-manage# git commit -m &quot;initial commit&quot;
+swift-manage# git push
+</code></pre>
+
+<p>各々のノードにて chef-client を実行することで git サーバ上の Rings ファイル群
+を取得し、swift プロセスを稼働させます。</p>
+
+<pre><code class="language-bash">swift-proxy01# chef-client
+swift-proxy02# chef-client
+swift-storage01# chef-client
+swift-storage02# chef-client
+swift-storage03# chef-client
+swift-account01# chef-client
+swift-account02# chef-client
+swift-account03# chef-client
+</code></pre>
+
+<p>3台のノードが登録されたかどうかを下記の通り確認行います。</p>
+
+<pre><code class="language-bash">swift-proxy01% sudo swift-recon --md5
+[sudo] password for thirai:
+===============================================================================
+--&gt; Starting reconnaissance on 3 hosts
+===============================================================================
+[2013-10-18 11:14:43] Checking ring md5sums
+3/3 hosts matched, 0 error[s] while checking hosts.
+===============================================================================
+</code></pre>
+
+<h2 id="動作確認">動作確認</h2>
+
+<p>構築が出来ました！ということで動作の確認をしてみましょう。</p>
+
+<p>テストコンテナ &lsquo;container01&rsquo; にテストファイル &lsquo;test&rsquo; をアップロードしてみる。</p>
+
+<pre><code class="language-bash">swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete stat
+swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete post container01
+swift-storage01% echo &quot;test&quot; &gt; test
+swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete upload container01 test
+swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete list
+container01
+swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete list container01 test
+</code></pre>
 
 <h2 id="まとめ">まとめ</h2>
 
-<p>Chef でも自律的なクラスタが組めました。もちろん chef-client の稼働間隔があるの
-でリアルタイム性はありません。chef-client の稼働間隔は &lsquo;chef-client&rsquo; レシピの
-attributes で調整出来ます。その点は serf のほうが確実に勝っていると見るべきで
-しょう。冒頭に記したようにこの辺りの操作を Chef で行うのか別のツールを使うのか
-はまだまだ模索が必要そう。ただ、私がいつも使っている &lsquo;OpenStack を Chef で構成
-する Cookbooks&rsquo; 等は複数台構成を Chef で構成しています。なので僕にとってはこの
-辺りの話は当たり前だと思っていたのだけど、どうも勉強会に出たりすると &ldquo;Chef は
-複数台構成を作るのが苦手だ&rdquo; って話があがってくるので気になっていました。</p>
+<p>前回「実用的な Swift 構成を Chef でデプロイ」の記事で記した内容とほぼ手順は変
+わりませんでした。rcbops-cookbooks/rcbops-utils 内にソフトウェアの取得先レポジ
+トリを記すレシピが下記の場所にあります。</p>
+
+<p><a href="https://github.com/rcbops-cookbooks/osops-utils/blob/master/recipes/packages.rb">https://github.com/rcbops-cookbooks/osops-utils/blob/master/recipes/packages.rb</a></p>
+
+<p>そして havana ブランチの attributes を確認すると Ubuntu Cloud Archive の URL
+が記されていることが確認出来ます。下記のファイルです。</p>
+
+<p><a href="https://github.com/rcbops-cookbooks/osops-utils/blob/havana/attributes/repos.rb">https://github.com/rcbops-cookbooks/osops-utils/blob/havana/attributes/repos.rb</a></p>
+
+<p>ファイルの中身の抜粋です。</p>
+
+<pre><code class="language-json">    &quot;havana&quot; =&gt; {
+      &quot;uri&quot; =&gt; &quot;http://ubuntu-cloud.archive.canonical.com/ubuntu&quot;,
+      &quot;distribution&quot; =&gt; &quot;precise-updates/havana&quot;,
+      &quot;components&quot; =&gt; [&quot;main&quot;],
+      &quot;keyserver&quot; =&gt; &quot;hkp://keyserver.ubuntu.com:80&quot;,
+      &quot;key&quot; =&gt; &quot;EC4926EA&quot;
+    },
+</code></pre>
+
+<p>これらのことより、rcbops-utils の attibutes で havana (実際には
+&lsquo;havana-proposed&rsquo;) をレポジトリ指定するように Cookbooks 構成を管理してあげれば
+Havana 構成の Keystone, Swift が構築出来ることになります。ちなみに
+havana-proposed で Swift や Keystone のどのバージョンがインストールされるかは、
+下記の Packages ファイルを確認すると判断出来ます。</p>
+
+<p><a href="http://ubuntu-cloud.archive.canonical.com/ubuntu/dists/precise-proposed/havana/main/binary-amd64/Packages">http://ubuntu-cloud.archive.canonical.com/ubuntu/dists/precise-proposed/havana/main/binary-amd64/Packages</a></p>
+
+<p>以上です。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/12/09/chef-autonoumous-cluster/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -854,13 +1333,13 @@ attributes で調整出来ます。その点は serf のほうが確実に勝っ
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/">GCP ロードバランサと GKE クラスタを Terraform を使って構築する</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
+                                    '2017-04-13'>
+                                    April 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -868,13 +1347,13 @@ attributes で調整出来ます。その点は serf のほうが確実に勝っ
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -882,13 +1361,13 @@ attributes で調整出来ます。その点は serf のほうが確実に勝っ
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-03'>
-                                    November 3, 2016</time>
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -896,13 +1375,13 @@ attributes で調整出来ます。その点は serf のほうが確実に勝っ
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-07-25'>
-                                    July 25, 2016</time>
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
                             </header>
                         </article>
                     </li>
@@ -941,7 +1420,7 @@ attributes で調整出来ます。その点は serf のほうが確実に勝っ
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">104</span>
+                                <span style="float:right;">108</span>
                             </header>
                         </article>
                     </li>

@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2014-03-16T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2014-05-29T00:00:00&#43;00:00"/>
 
 
 
@@ -196,19 +196,19 @@ ga('send', 'pageview');
 
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/"><p>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
             </ul>
@@ -230,7 +230,7 @@ ga('send', 'pageview');
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0/">rcbops/chef-cookbooks で Keystone 2013.2.2(Havana) &#43; Swift 1.10.0 を構築</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2014/05/29/fog-aws-ec2-elb/">クラウドライブラリ Fog で AWS を操作！..のサンプル</a></h2>
         
         
     </div>
@@ -240,461 +240,8 @@ ga('send', 'pageview');
         
 
         <time class="published"
-            datetime='2014-03-16'>
-            March 16, 2014</time>
-        <span class="author"></span>
-        
-            <p>6 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<h4 id="追記">追記</h4>
-
-<p>2014/03/20 : 一旦削除していた記事なのですが、無事動作が確認出来たので再度アッ
-プします！</p>
-
-<p>第17回 OpenStack 勉強会で rcbops/chef-cookbooks の話をしてきたのですが会場から
-質問がありました。「Havana の Swift 構成を作る Cookbooks はどこにありますか？」
-と。私が試したのが Grizzly 時代のモノで、よく rcbops/chef-cookbooks を見てみる
-と Havana ブランチ又は Havana に対応したリリースタグのファイル構成に Swift が
-綺麗サッパリ消えているではありませんか・・！下記の Swift の Cookbooks は幸い
-github 上に残っていました。</p>
-
-<p><a href="https://github.com/rcbops-cookbooks/swift">https://github.com/rcbops-cookbooks/swift</a></p>
-
-<p>が rcbops/chef-cookbooks との関連付けが切れています・・。ぐあぁ。</p>
-
-<p>ということで Havana 構成の Keystone 2013.2.2 と Swift 1.10.0 の構成を Chef で
-作らねば！と思い色々試していたら結構あっさりと出来ました。今回はその方法を書い
-ていきたいと思います！</p>
-
-<h2 id="構成">構成</h2>
-
-<p>構成は&hellip;以前の記事 <a href="http://jedipunkz.github.io/blog/2013/10/27/swift-chef/">http://jedipunkz.github.io/blog/2013/10/27/swift-chef/</a> と同じです。</p>
-
-<pre><code>+-----------------+
-|  load balancer  |
-+-----------------+
-|
-+-------------------+-------------------+-------------------+-------------------+---------------------- proxy network
-|                   |                   |                   |                   |                   
-+-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+
-|   chef server   | | chef workstation| |   swift-mange   | |  swift-proxy01  | |  swift-proxy02  | 
-+-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ ...&gt; scaling
-|                   |                   |                   |                   |                   
-+-------------------+-------------------+-------------------+-------------------+-------------------+-- storage network
-|                   |                   |                   |                   |                   |
-+-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ 
-| swift-storage01 | | swift-storage02 | | swift-storage03 | | swift-account01 | | swift-account02 | | swift-account03 |
-+-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ ..&gt; scaling
-</code></pre>
-
-<h2 id="手順">手順</h2>
-
-<p>では早速手順を記していきますね。毎回なのですが Chef ワークステーション・Chef
-サーバの環境構築については割愛します。オムニバスインストーラを使えば Chef サー
-バの構築は簡単ですし、ワークステーションの構築も Ruby インストール -&gt; gem で
-Chef をインストール -&gt; .chef 配下を整える、で出来ます。</p>
-
-<p>rcbops/chef-cookbooks の取得。現在 Stable バージョンの refs/tags/v4.2.1 を用いる。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git ./chef-cookbooks-4.2.1
-% cd ./chef-cookbooks-4.2.1
-% git checkout -b v4.2.1 refs/tags/v4.2.1
-% git submodule init
-% git submodule sync
-% git submodule update
-</code></pre>
-
-<p>ここで本家 rcbops/chef-cookbooks と関連付けが消えている rcbops-cookbooks/swift
-を cookbooks ディレクトリ配下にクローンします。あと念のため &lsquo;havana&rsquo; ブランチ
-を指定します。コードを確認したところ何も変化はありませんでしたが。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/rcbops-cookbooks/swift.git cookbooks/swift
-% cd cookbooks/swift
-% git checkout -b havana remotes/origin/havana
-% cd ../..
-</code></pre>
-
-<p>cookbooks, roles の Chef サーバへのアップロードを行います。</p>
-
-<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
-% knife role from file role/*.rb
-</code></pre>
-
-<p>今回の構成 (1クラスタ) 用の environments/swift-havana.json を作成します。json
-ファイルの名前は任意です。</p>
-
-<pre><code class="language-json">{
-  &quot;name&quot;: &quot;swift-havana&quot;,
-  &quot;description&quot;: &quot;&quot;,
-  &quot;cookbook_versions&quot;: {
-  },
-  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
-  &quot;chef_type&quot;: &quot;environment&quot;,
-  &quot;default_attributes&quot;: {
-  },
-  &quot;override_attributes&quot;: {
-    &quot;package_component&quot;: &quot;havana&quot;,
-    &quot;osops_networks&quot;: {
-      &quot;management&quot;: &quot;10.200.9.0/24&quot;,
-      &quot;public&quot;: &quot;10.200.10.0/24&quot;,
-      &quot;swift&quot;: &quot;10.200.9.0/24&quot;
-    },
-    &quot;keystone&quot;: {
-      &quot;pki&quot;: {
-        &quot;enabled&quot;: false
-      },
-      &quot;admin_port&quot;: &quot;35357&quot;,
-      &quot;admin_token&quot;: &quot;admin&quot;,
-      &quot;admin_user&quot;: &quot;admin&quot;,
-      &quot;tenants&quot;: [
-        &quot;admin&quot;,
-        &quot;service&quot;
-      ],
-      &quot;users&quot;: {
-        &quot;admin&quot;: {
-          &quot;password&quot;: &quot;secrete&quot;,
-          &quot;roles&quot;: {
-            &quot;admin&quot;: [
-              &quot;admin&quot;
-            ]
-          }
-        },
-        &quot;demo&quot;: {
-          &quot;password&quot;: &quot;demo&quot;,
-          &quot;default_tenant&quot; : &quot;service&quot;,
-          &quot;roles&quot;: {
-            &quot;admin&quot;: [ &quot;admin&quot; ]
-          }
-        }
-      },
-      &quot;db&quot;: {
-        &quot;password&quot;: &quot;keystone&quot;
-      }
-    },
-    &quot;mysql&quot;: {
-      &quot;root_network_acl&quot;: &quot;%&quot;,
-      &quot;allow_remote_root&quot;: true,
-      &quot;server_root_password&quot;: &quot;secrete&quot;,
-      &quot;server_repl_password&quot;: &quot;secrete&quot;,
-      &quot;server_debian_password&quot;: &quot;secrete&quot;
-    },
-    &quot;monitoring&quot;: {
-      &quot;procmon_provider&quot;: &quot;monit&quot;,
-      &quot;metric_provider&quot;: &quot;collectd&quot;
-    },
-    &quot;vips&quot;: {
-      &quot;keystone-admin-api&quot;: &quot;10.200.9.11&quot;,
-      &quot;keystone-service-api&quot;: &quot;10.200.9.11&quot;,
-      &quot;keystone-internal-api&quot;: &quot;10.200.9.11&quot;,
-      &quot;swift-proxy&quot;: &quot;10.200.9.11&quot;,
-      &quot;config&quot;: {
-        &quot;10.200.9.112&quot;: {
-          &quot;vrid&quot;: 12,
-          &quot;network&quot;: &quot;management&quot;
-        }
-      }
-    },
-    &quot;developer_mode&quot;: false,
-    &quot;swift&quot;: {
-      &quot;swift_hash&quot;: &quot;307c0568ea84&quot;,
-      &quot;authmode&quot;: &quot;keystone&quot;,
-      &quot;authkey&quot;: &quot;20281b71-ce89-4b27-a2ad-ad873d3f2760&quot;
-    }
-  }
-}
-</code></pre>
-
-<p>作成した environment ファイル environments/swift-havana.json を chef-server へアップ
-ロードする。</p>
-
-<pre><code class="language-bash">% knife environment from file environments/swift-havana.json
-</code></pre>
-
-<h2 id="cookbooks-の修正">Cookbooks の修正</h2>
-
-<p>swift cookbooks を修正します。havana からは keystone を扱うクライアントは
-keystone.middleware.auth_token でなく keystoneclient.middleware.auth_token を
-使うように変更掛かっていますので、下記のように修正しました。</p>
-
-<pre><code class="language-bash">% cd cookbooks/swift/templates/default
-% diff -u proxy-server.conf.erb.org proxy-server.conf.erb
---- proxy-server.conf.erb.org   2014-03-20 16:28:28.000000000 +0900
-+++ proxy-server.conf.erb       2014-03-20 16:28:13.000000000 +0900
-@@ -243,7 +243,8 @@
- use = egg:swift#keystoneauth
- 
- [filter:authtoken]
--paste.filter_factory = keystone.middleware.auth_token:filter_factory
-+#paste.filter_factory = keystone.middleware.auth_token:filter_factory
-+paste.filter_factory = keystoneclient.middleware.auth_token:filter_factory
- auth_host = &lt;%= @keystone_api_ipaddress %&gt;
- auth_port = &lt;%= @keystone_admin_port %&gt;
- auth_protocol = &lt;%= @keystone_admin_protocol %&gt;
-% cd ../../../..
-</code></pre>
-
-<h2 id="デプロイ">デプロイ</h2>
-
-<p>かきのとおり knife bootstrap する。</p>
-
-<pre><code class="language-bash">% knife bootstrap &lt;manage_ip_addr&gt; -N swift-manage -r 'role[base]','role[mysql-master]','role[keystone]','role[swift-management-server]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;proxy01_ip_addr&gt; -N swift-proxy01 -r &quot;role[base]&quot;,&quot;role[swift-proxy-server]&quot;,'role[swift-setup]','role[openstack-ha]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;proxy02_ip_addr&gt; -N swift-proxy02 -r &quot;role[base]&quot;,&quot;role[swift-proxy-server]&quot;,'role[openstack-ha]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;storage01_ip_addr&gt; -N swift-storage01 -r 'role[base]','role[swift-object-server]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;storage02_ip_addr&gt; -N swift-storage02 -r 'role[base]','role[swift-object-server]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;storage03_ip_addr&gt; -N swift-storage03 -r 'role[base]','role[swift-object-server]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;account01_ip_addr&gt; -N swift-account01 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;account02_ip_addr&gt; -N swift-account02 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift-havana --sudo -x thirai
-% knife bootstrap &lt;account03_ip_addr&gt; -N swift-account03 -r 'role[base]','role[swift-account-server]','role[swift-container-server]' -E swift-havana --sudo -x thirai
-</code></pre>
-
-<p>ここでバグ対策。Swift 1.10.0 にはバグがあるので下記の通り対処します。</p>
-
-<p>keystone.middleware.s3_token に既知のバグがあり、下記のように対処します。この
-状態ではバグにより swift-proxy が稼働してない状態ですが後の各ノードでの
-chef-client 実行時に稼働する予定です。</p>
-
-<pre><code class="language-python">% diff /usr/lib/python2.7/dist-packages/keystone/exception.py.org /usr/lib/python2.7/dist-packages/keystone/exception.py 
---- exception.py.org    2014-03-12 16:45:00.181420694 +0900
-+++ exception.py        2014-03-12 16:44:47.173177081 +0900
-@@ -18,6 +18,7 @@
-
- from keystone.common import config
- from keystone.openstack.common import log as logging
-+from keystone.openstack.common.gettextutils import _
- from keystone.openstack.common import strutils
-</code></pre>
-
-<p>上記のバグ報告は下記の URL にあります。</p>
-
-<p><a href="https://bugs.launchpad.net/ubuntu/+source/swift/+bug/1231339">https://bugs.launchpad.net/ubuntu/+source/swift/+bug/1231339</a></p>
-
-<p>zone 番号を付与します。</p>
-
-<pre><code class="language-bash">% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account01') {|n| n.set['swift']['zone'] = '1'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account02') {|n| n.set['swift']['zone'] = '2'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-storage03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
-% knife exec -E &quot;nodes.find(:name =&gt; 'swift-account03') {|n| n.set['swift']['zone'] = '3'; n.save }&quot;
-</code></pre>
-
-<p>zone 番号が付与されたこと下記の通りを確認します</p>
-
-<p>account-server の確認</p>
-
-<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-account-server&quot;) \
-  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
-  [swift-account-server] and is in swift zone #{z}&quot;; }'
-swift-account01 has the role       [swift-account-server] and is in swift zone 1
-swift-account02 has the role       [swift-account-server] and is in swift zone 2
-swift-account03 has the role       [swift-account-server] and is in swift zone 3
-</code></pre>
-
-<p>container-server の確認</p>
-
-<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-container-server&quot;) \
-  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
-  [swift-container-server] and is in swift zone #{z}&quot;; }'
-swift-account01 has the role       [swift-container-server] and is in swift zone 1
-swift-account02 has the role       [swift-container-server] and is in swift zone 2
-swift-account03 has the role       [swift-container-server] and is in swift zone 3
-</code></pre>
-
-<p>object-server の確認</p>
-
-<pre><code class="language-bash">% knife exec -E 'search(:node,&quot;role:swift-object-server&quot;) \
-  { |n| z=n[:swift][:zone]||&quot;not defined&quot;; puts &quot;#{n.name} has the role \
-  [swift-object-server] and is in swift zone #{z}&quot;; }'
-swift-storage01 has the role   [swift-object-server] and is in swift zone 1
-swift-storage02 has the role   [swift-object-server] and is in swift zone 2
-swift-storage03 has the role   [swift-object-server] and is in swift zone 3
-</code></pre>
-
-<p>Chef が各々のノードに搭載された Disk を検知出来るか否かを確認する。</p>
-
-<pre><code class="language-ruby">% knife exec -E \
-  'search(:node,&quot;role:swift-object-server OR \
-  role:swift-account-server \
-  OR role:swift-container-server&quot;) \
-  { |n| puts &quot;#{n.name}&quot;; \
-  begin; n[:swift][:state][:devs].each do |d| \
-  puts &quot;\tdevice #{d[1][&quot;device&quot;]}&quot;; \
-  end; rescue; puts \
-  &quot;no candidate drives found&quot;; end; }'
-    swift-storage02
-            device sdb1
-    swift-storage03
-            device sdb1
-    swift-account01
-            device sdb1
-    swift-account02
-            device sdb1
-    swift-account03
-            device sdb1
-    swift-storage01
-            device sdb1
-</code></pre>
-
-<p>swift-manage ノードにて chef-client を実行し
-/etc/swift/ring-workspace/generate-rings.sh を更新します。</p>
-
-<pre><code class="language-bash">swift-manage% sudo chef-client
-</code></pre>
-
-<p>generate-rings.sh の &lsquo;exit 0&rsquo; 行をコメントアウトし実行します。</p>
-
-<pre><code class="language-bash">swift-manage% sudo ${EDITOR} /etc/swift/ring-workspace/generage-rings.sh
-swift-manage% sudo /etc/swift/ring-workspace/generate-rings.sh
-</code></pre>
-
-<p>この操作で /etc/swift/ring-workspace/rings 配下に account, container, object
-用の Rings ファイル群が生成されたことを確認出来るはずです。これらを
-swift-manage 上で既に稼働している git サーバに push し管理します。</p>
-
-<pre><code class="language-bash">swift-manage# cd /etc/swift/ring-workspace/rings
-swift-manage# git add account.builder container.builder object.builder
-swift-manage# git add account.ring.gz container.ring.gz object.ring.gz
-swift-manage# git commit -m &quot;initial commit&quot;
-swift-manage# git push
-</code></pre>
-
-<p>各々のノードにて chef-client を実行することで git サーバ上の Rings ファイル群
-を取得し、swift プロセスを稼働させます。</p>
-
-<pre><code class="language-bash">swift-proxy01# chef-client
-swift-proxy02# chef-client
-swift-storage01# chef-client
-swift-storage02# chef-client
-swift-storage03# chef-client
-swift-account01# chef-client
-swift-account02# chef-client
-swift-account03# chef-client
-</code></pre>
-
-<p>3台のノードが登録されたかどうかを下記の通り確認行います。</p>
-
-<pre><code class="language-bash">swift-proxy01% sudo swift-recon --md5
-[sudo] password for thirai:
-===============================================================================
---&gt; Starting reconnaissance on 3 hosts
-===============================================================================
-[2013-10-18 11:14:43] Checking ring md5sums
-3/3 hosts matched, 0 error[s] while checking hosts.
-===============================================================================
-</code></pre>
-
-<h2 id="動作確認">動作確認</h2>
-
-<p>構築が出来ました！ということで動作の確認をしてみましょう。</p>
-
-<p>テストコンテナ &lsquo;container01&rsquo; にテストファイル &lsquo;test&rsquo; をアップロードしてみる。</p>
-
-<pre><code class="language-bash">swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete stat
-swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete post container01
-swift-storage01% echo &quot;test&quot; &gt; test
-swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete upload container01 test
-swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete list
-container01
-swift-storage01% swift -V 2 -A http://&lt;ip_addr_keystone&gt;:5000/v2.0/ -U admin:admin -K secrete list container01 test
-</code></pre>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>前回「実用的な Swift 構成を Chef でデプロイ」の記事で記した内容とほぼ手順は変
-わりませんでした。rcbops-cookbooks/rcbops-utils 内にソフトウェアの取得先レポジ
-トリを記すレシピが下記の場所にあります。</p>
-
-<p><a href="https://github.com/rcbops-cookbooks/osops-utils/blob/master/recipes/packages.rb">https://github.com/rcbops-cookbooks/osops-utils/blob/master/recipes/packages.rb</a></p>
-
-<p>そして havana ブランチの attributes を確認すると Ubuntu Cloud Archive の URL
-が記されていることが確認出来ます。下記のファイルです。</p>
-
-<p><a href="https://github.com/rcbops-cookbooks/osops-utils/blob/havana/attributes/repos.rb">https://github.com/rcbops-cookbooks/osops-utils/blob/havana/attributes/repos.rb</a></p>
-
-<p>ファイルの中身の抜粋です。</p>
-
-<pre><code class="language-json">    &quot;havana&quot; =&gt; {
-      &quot;uri&quot; =&gt; &quot;http://ubuntu-cloud.archive.canonical.com/ubuntu&quot;,
-      &quot;distribution&quot; =&gt; &quot;precise-updates/havana&quot;,
-      &quot;components&quot; =&gt; [&quot;main&quot;],
-      &quot;keyserver&quot; =&gt; &quot;hkp://keyserver.ubuntu.com:80&quot;,
-      &quot;key&quot; =&gt; &quot;EC4926EA&quot;
-    },
-</code></pre>
-
-<p>これらのことより、rcbops-utils の attibutes で havana (実際には
-&lsquo;havana-proposed&rsquo;) をレポジトリ指定するように Cookbooks 構成を管理してあげれば
-Havana 構成の Keystone, Swift が構築出来ることになります。ちなみに
-havana-proposed で Swift や Keystone のどのバージョンがインストールされるかは、
-下記の Packages ファイルを確認すると判断出来ます。</p>
-
-<p><a href="http://ubuntu-cloud.archive.canonical.com/ubuntu/dists/precise-proposed/havana/main/binary-amd64/Packages">http://ubuntu-cloud.archive.canonical.com/ubuntu/dists/precise-proposed/havana/main/binary-amd64/Packages</a></p>
-
-<p>以上です。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2014/03/05/sensu-chef-openstack-fog-autoscaler/">Sensu,Chef,OpenStack,Fog を使ったオレオレオートスケーラを作ってみた！</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2014-03-05'>
-            March 5, 2014</time>
+            datetime='2014-05-29'>
+            May 29, 2014</time>
         <span class="author"></span>
         
             <p>2 minute read</p>
@@ -706,106 +253,221 @@ havana-proposed で Swift や Keystone のどのバージョンがインスト�
     
 
     
-    <p>こんにちは。@jedipunkz です。</p>
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 
-<p>今まで監視システムの Sensu やクラウドプラットフォームの OpenStack、コンフィギュ
-レーションマネージメントツールの Chef やクラウドライブラリの Fog 等使ってきま
-したが、これらを組み合わせるとオレオレオートスケーラ作れるんじゃないか？と思い、
-ちょろっと作ってみました。</p>
+<p>最近 OpenStack でサービスを開発！.. じゃなくて AWS でプロトタイプサービス作っ
+ているのですが、Ruby で開発したかったので Fog を使っています。EC2 と ELB の
+API を叩くコードになりつつあるのですが、サンプルコードって世の中に中々無いと気
+がついたので、このブログ記事にサンプルコードを載せたいと思います。</p>
 
-<p>ちなみに自分はインフラエンジニアでしかも運用の出身なので Ruby に関しては初心者
-レベルです。Chef で扱っているのと Rails アプリを作った経験はありますが、その程
-度。Fog というクラウドライブラリにコントリビュートしたことはアリますが..。ちな
-みに Fog のコントリビュート内容は OpenStack Neutron(当時 Quantum) の仮想ルータ
-の操作を行う実装です。</p>
+<h2 id="fog-とは">Fog とは ?</h2>
 
-<p>そんな自分ですが&hellip;設計1周間・実装1周間でマネージャと CLI が出来ました。
-また暫く放置していたマネージャと CLI に WebUI くっつけようかなぁ？と思って
-sinatra の学習を始めたのですが、学習を初めて 1.5 日で WebUI が動くところまで行
-きました。何故か？Ruby には有用な技術が揃っているから・・！(´；ω；｀)ﾌﾞﾜｯ</p>
+<p>Fog <a href="http://fog.io/">http://fog.io/</a> はクラウドライブラリソフトウェアです。AWS, Rackspace,
+CloudStack, OpenStack .. と数ある世の中のクラウドプラットフォームを扱うために
+用意されたソフトウェアです。対応しているプラットフォームの種別は下記を見ると参
+考になります。</p>
 
-<h2 id="オレオレオートスケーラ-sclman-の置き場所">オレオレオートスケーラ &lsquo;sclman&rsquo; の置き場所</h2>
+<p><a href="http://fog.io/about/provider_documentation.html">http://fog.io/about/provider_documentation.html</a></p>
 
-<p><a href="https://github.com/jedipunkz/sclman">https://github.com/jedipunkz/sclman</a></p>
+<p>ドキュメントがまだまだ揃っていなく、Fog のコードを覗きながら実装するしかない状
+況です。なので「こう使えば良い！」というお手本があまりネット上にも無い気がしま
+す。</p>
 
-<p>スクリーンショット
-+++</p>
+<p>ドキュメントは一応下記にあります。
+が使い方がよくわからない・・！(´；ω；｀)ﾌﾞﾜｯ</p>
 
-<p><img src="https://raw.github.com/jedipunkz/sclman/master/pix/sclman.png" width="600"></p>
+<p><a href="http://rubydoc.info/gems/fog/frames/index">http://rubydoc.info/gems/fog/frames/index</a></p>
 
-<h2 id="構成は">構成は？</h2>
+<h2 id="ec2-インスタンスを使ってみる">EC2 インスタンスを使ってみる</h2>
 
-<pre><code>+-------------- public network                  +-------------+
-|                                               |sclman-api.rb|
-+----+----+---+                                 |  sclman.rb  |
-| vm | vm |.. |                                 |sclman-cli.rb|
-+-------------+ +-------------+ +-------------+ +-------------+
-|  openstack  | | chef server | | sensu server| | workstation |
-+-------------+ +-------------+ +-------------+ +-------------+
-|               |               |               |
-+---------------+---------------+---------------+--------------- management network
+<p>まずは AWS EC2 の API を叩いて t1.micro インスタンスを立ち上げてみましょう。</p>
+
+<pre><code class="language-ruby">require 'fog'
+
+compute = Fog::Compute.new({
+  :provider =&gt; 'AWS',
+  :aws_access_key_id =&gt; '....',
+  :aws_secret_access_key =&gt; '....',
+  :region =&gt; 'ap-northeast-1'
+})
+
+server = compute.servers.create(
+  :image_id =&gt; 'ami-cedaa2bc',
+  :flavor_id =&gt; 't1.micro',
+  :key_name =&gt; 'test_key',
+  :tags =&gt; {'Name' =&gt; 'test'},
+  :groups =&gt; 'ssh-secgroup'
+)
+
+server.wait_for { print &quot;.&quot;; ready? }
+
+puts &quot;created instance name :&quot;, server.dns_name
 </code></pre>
 
-<p>&lsquo;sclman&rsquo; っていう名前です。上図の workstation ノードで稼働します。処理の流れは</p>
-
-<h2 id="処理の流れ">処理の流れ</h2>
+<h4 id="解説">解説</h4>
 
 <ul>
-<li>1) sclman-cli.rb もしくは WebUI から HTTP クラスタのセットを OpenStack 上に生成</li>
-<li>2) 生成された VM に対して Chef で nginx をインストール</li>
-<li>3) Chef の Roles である &lsquo;LB&rsquo; と &lsquo;Web&rdquo; が同一 Envrionment になるようにブートストラップ</li>
-<li>4) LB VM のバックエンドに Web VM が指し示される</li>
-<li>5) bootstrap と同時に sensu-client をインストール</li>
-<li>6) Web VM の load を sensu で監視</li>
-<li>7) sclman.rb (マネージャ) は Sensu AP を定期的に叩いて Web VM の load を監視</li>
-<li>8) load が高い environment があれが該当 environment の HTTP クラスタに VM を追加</li>
-<li>9) LB VM は追加された VM へのリクエストを追加<br /></li>
-<li>10) 引き続き監視し一定期間 load が上がらなけれ Web VM を削除</li>
-<li>11) LB VM は削除された VM へのリクエストを削除</li>
+<li>compute = &hellip; とあるところで接続情報を記しています。</li>
 </ul>
 
-<p>といった感じです。要約すると CLI/WebUI から HA クラスタを作成。その時に LB,
-Web ミドルウェアと同時に sensu クライアントを VM に放り込む。監視を継続して負
-荷が上昇すれば Web インスタンスの数を増加させ LB のリクエスト振り先にもその追
-加した VM のアドレスを追加。逆に負荷が下がれば VM 削除と共にリクエスト振り先も
-削除。この間、人の手を介さずに処理してくれる。です。</p>
-
-<h2 id="使い方">使い方</h2>
-
-<p>詳細な使い方は github の README.md を見て下さい。ここには簡単な説明だけ書いて
-おきます。</p>
+<p>&ldquo;ACCESS_KEY_ID&rdquo; や &ldquo;SECRET_ACCESS_KEY&rdquo; はみなさん接続する時にお持ちですよね。それ
+とリージョン名やプロバイダ名 (ここでは AWS) を記して AWS の API に接続します。</p>
 
 <ul>
-<li>sclman を github から取得して bundler で必要な gems をインストールします。</li>
-<li>chef-repo に移動して Berkshelf で必要な cookbooks をインストールします。</li>
-<li>cookbooks を用いて sensu をデプロイします。</li>
-<li>Omnibus インストーラーを使って chef サーバをインストールします。</li>
-<li>OpenStack をインストールします。</li>
-<li>sclman.conf を環境に合わせて修正します。</li>
-<li>sclman.rb (マネージャ) を稼働します。</li>
-<li>sclman-api.rb (WebUI/API) を稼働します。</li>
-<li>sclman-cli.rb (CLI) もしくは WebUI から最小構成の HTTP クラスタを稼働します。</li>
-<li>この状態で &lsquo;Web&rsquo; Role のインスタンスに負荷が掛かると &lsquo;Web&rsquo; Role のインスタンスの数が増加します。</li>
-<li>また逆に負荷が下がるとインスタンス数が減ります。</li>
+<li>server = &hellip; とあるところで実際にインスタンスを作成しています。</li>
 </ul>
 
-<p>負荷の増減のシビアさは sclman.conf のパラメータ &lsquo;man_sensitivity&rsquo; で決定します。
-値が長ければ長いほど増減のし易さは低下します。</p>
+<p>ここではインスタンス生成に必要な情報を盛り込んでいます。Flavor 名や AMI イメー
+ジ名・SSH 鍵の名前・セキュリティグループ名等です。</p>
 
-<p>まとめ
+<h2 id="便利なメソッド">便利なメソッド</h2>
+
+<p>server = &hellip; でインスタンスを生成すると便利なメソッドを扱って情報を読み込むこ
+とが出来ます。</p>
+
+<pre><code class="language-ruby">server.dns_name # =&gt; public な DNS 名を取得
+server.private_dns_name # =&gt; private な DNS 名を取得
+server.id # =&gt; インスタンス ID を取得
+server.availability_zone # =&gt; Availability Zone を取得
+server.public_ip_address # =&gt; public な IP アドレスを取得
+server.private_ip_address # =&gt; private な IP アドレスを取得
+</code></pre>
+
+<p>これは便利&hellip;</p>
+
+<p>モジュール化して利用
 +++</p>
 
-<p>こんな僕でも Ruby の周辺技術使ってなんとなくの形が出来ましたー。ただまだまだ課
-題はあって、インフラを制御するアプリってエラーハンドリングが難しいっていうこと
-です。帰ってくるエラーの一覧などがクラウドプラットフォーム・クラウドライブラリ
-のドキュメントにあればいいのだけど、まだそこまで行ってない。Fog もまだまだ絶賛
-開発中と言うかクラウドプラットフォームの進化に必死で追いついている状態なので、
-僕らがアプリを作るときには自分でエラーを全部洗い出す等の作業が必要になるかもし
-れない。大変だけど面白い所でもありますよね！これからも楽しみです。</p>
+<p>毎回コードの中でこれらの接続情報を書くのはしんどいので、Ruby のモジュールを作
+りましょう。</p>
+
+<pre><code class="language-ruby">module AWSCompute
+  def self.connect()
+    conn = Fog::Compute.new({
+      :provider =&gt; 'AWS',
+      :aws_access_key_id =&gt; '...',
+      :aws_secret_access_key =&gt; '...',
+      :region =&gt; '...'
+    })
+    begin
+      yield conn
+    ensure
+      # conn.close
+    end
+  rescue Errno::ECONNREFUSED
+  end
+end
+</code></pre>
+
+<p>こう書いておくと例えば&hellip;</p>
+
+<h4 id="インスタンスのターミネイト">インスタンスのターミネイト</h4>
+
+<pre><code class="language-ruby">AWSCompute.connect() do |sock|
+  server = sock.servers.get(instance_id)
+  server.destroy
+  return server.id
+end
+</code></pre>
+
+<h4 id="インスタンスの起動">インスタンスの起動</h4>
+
+<pre><code class="language-ruby">AWSCompute.connect() do |sock|
+  server = sock.servers.get(instance_id)
+  server.start
+  return server.id
+end
+</code></pre>
+
+<h4 id="インスタンスの停止">インスタンスの停止</h4>
+
+<pre><code class="language-ruby">AWSCompute.connect() do |sock|
+  server = sock.servers.get(instance_id)
+  server.stop
+  return server.id
+end
+</code></pre>
+
+<p>等と出来ます。</p>
+
+<h2 id="elb-elastic-loadbalancer-を使ってみる">ELB (Elastic LoadBalancer) を使ってみる</h2>
+
+<p>同様に ELB を扱うコードのサンプルも載せておきます。同じくモジュール化して書くと</p>
+
+<pre><code class="language-ruby">module AWSELB
+  def self.connect()
+    conn = Fog::AWS::ELB.new(
+      :aws_access_key_id =&gt; '...',
+      :aws_secret_access_key =&gt; '...',
+      :region =&gt; '...',
+    )
+    begin
+      yield conn
+    ensure
+      # conn.close
+    end
+  rescue Errno::ECONNREFUSED
+  end
+end
+</code></pre>
+
+<p>としておいて&hellip;</p>
+
+<h4 id="elb-の新規作成">ELB の新規作成</h4>
+
+<p>下記のコードで ELB を新規作成出来ます。</p>
+
+<pre><code class="language-ruby">AWSELB.connect() do |sock|
+  availability_zone = '...'
+  elb_name = '...'
+  listeners = [{ &quot;Protocol&quot; =&gt; &quot;HTTP&quot;, &quot;LoadBalancerPort&quot; =&gt; 80, &quot;InstancePort&quot; =&gt; 80, &quot;InstanceProtocol&quot; =&gt; &quot;HTTP&quot; }]
+  result = sock.create_load_balancer(availability_zone, elb_name, listeners)
+  p result
+end
+</code></pre>
+
+<p>この状態では ELB に対してインスタンスが紐付けられていないので使えません。下記の操作で
+インスタンスを紐付けてみましょう。</p>
+
+<pre><code class="language-ruby">AWSELB.connect() do |sock|
+  insntance_id = '...'
+  elb_name = '...'
+  result = sock.register_instances_with_load_balancer(instance_id, elbname)
+  p result
+end
+</code></pre>
+
+<p>insntance_id には紐付けたいインスタンスの ID を、elb_name には先ほど作成した ELB の名前を
+入力します。 この操作を繰り返せば AWS 上にクラスタが構成出来ます。</p>
+
+<p>逆にクラスタからインスタンスの削除したい場合は下記の通り実行します。</p>
+
+<pre><code class="language-ruby">AWSELB.connect() do |sock|
+  result = sock.deregister_instances_from_load_balancer(instance_id, elbname)
+  p result
+end
+</code></pre>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>今回は Fog を紹介しましたが Python 使いの方には libcloud をおすすめします。</p>
+
+<p><a href="https://libcloud.apache.org/">https://libcloud.apache.org/</a></p>
+
+<p>Apache ファウンデーションが管理しているクラウドライブラリです。こちらも複数の
+クラウドプラットフォームに対応しているようです。</p>
+
+<p>Fog で OpenStack も操作したことがあるのですが、AWS 用のコードの方が完成度が高
+いのか、戻り値などが綺麗に整形されていて扱いやすかったり、メソッドも豊富に用意
+されていたりという印象でした。これは&hellip; OpenStack 用の Fog コードにコントリビュー
+トするチャンス・・！</p>
+
+<p>皆さんもサンプルコードお持ちでしたら、ブログ等で公開していきましょうー。
+ではでは。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/03/05/sensu-chef-openstack-fog-autoscaler/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2014/05/29/fog-aws-ec2-elb/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -844,7 +506,7 @@ Web ミドルウェアと同時に sensu クライアントを VM に放り込�
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/">Journal 用 SSD を用いた Ceph 構成の構築</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2014/04/25/stackforge-openstack-chef-repo-icehouse-deploy/">stackforge/openstack-chef-repo で OpenStack Icehouse デプロイ</a></h2>
         
         
     </div>
@@ -854,11 +516,11 @@ Web ミドルウェアと同時に sensu クライアントを VM に放り込�
         
 
         <time class="published"
-            datetime='2014-02-27'>
-            February 27, 2014</time>
+            datetime='2014-04-25'>
+            April 25, 2014</time>
         <span class="author"></span>
         
-            <p>4 minute read</p>
+            <p>9 minute read</p>
         
         
     </div>
@@ -867,260 +529,969 @@ Web ミドルウェアと同時に sensu クライアントを VM に放り込�
     
 
     
-    <p>こんにちは、@jedipunkz です。</p>
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 
-<p>前回、&rsquo;Ceph のプロセス配置ベストプラクティス&rsquo; というタイトルで記事を書きました。</p>
+<p>またまた OpenStack のデプロイをどうするか？についてです。</p>
 
-<p><a href="http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/">http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/</a></p>
+<p>今まで自分の中では Rackspace Private Cloud で使われている Rackspace 管理の
+rcbops/chef-cookbooks が今現在使うならベストの選択だと思っていました。これは内
+部で Chef が使われていてしかも Cookbooks が Github 上で公開されています。
+Apache ライセンスで使えるので、サービス構築にも使えちゃうというモノ。</p>
 
-<p>今回はこの記事にあるポリシに従って下記のような特徴を持った構成を作る手順を具体
-的に書いていきたいと思います。</p>
+<p>先日、ある OpenStack コアデベロッパーの方から「jedipunkz さん、やっぱり rcbops
+がいいですか？運営とかどうなっているんでしょう？マージの規準とかどうなのかな？」
+と質問受けました。確かにマージの基準は Rackspace Private Cloud がベースになり
+ますし、管理しているエンジニアの一覧を見ていると Rackspace 社のエンジニアがメ
+インですし、今後どうなるのか分からない&hellip;。</p>
+
+<p>逃げ道は用意したほうが良さそう。</p>
+
+<p>ということで、以前自分も暑かったことのある StackForge の openstack-chef-repo
+を久々に使ってみました。Icehouse 構成がこの時点で既に組めるようになっていて、
+以前よりだい〜ぶ完成度増した感があります。今回は nova-network 構成を作ってみた
+のですが、Neutron 構成ももちろん出来そうなので後に調べてまた公開したいです。</p>
+
+<h2 id="stackforge-とは">StackForge とは</h2>
+
+<p>StackForge は OpenStack のデプロイ・CI の仕組みとして公式に用いられているもの。
+公式サイトは下記の場所にある。</p>
+
+<p><a href="http://ci.openstack.org/stackforge.html">http://ci.openstack.org/stackforge.html</a></p>
+
+<p>StackForge の openstack-chef-repo は下記の場所にある。</p>
+
+<p><a href="https://github.com/stackforge/openstack-chef-repo">https://github.com/stackforge/openstack-chef-repo</a></p>
+
+<p>openstack-chef-repo はまだ &lsquo;stable/icehouse&rsquo; ブランチが生成されていない。が直
+ちに master からブランチが切られる様子。</p>
+
+<h2 id="目的">目的</h2>
+
+<p>StackForge の openstack-chef-repo を用いて Icehouse リリース版の OpenStack を
+デプロイするための方法を記す。今回は未だ &lsquo;stable/icehouse&rsquo; ブランチが無いので
+master ブランチを用いて Icehouse リリース版 OpenStack を構築する。</p>
+
+<h2 id="構成">構成</h2>
+
+<p>構成はこんな感じ。</p>
+
+<pre><code>   +-----------------+
+   |    GW Router    |
++--+-----------------+
+|  |
+|  +-------------------+-------------------+--------------------------------------
+|  |eth0               |eth0               |eth0                      VM Network (fixed)
+|  +-----------------+ +-----------------+ +-----------------+ +-----------------+ 
+|  | Controller Node | |  Compute Node   | |  Compute Node   | | Chef Workstation|
+|  +-----------------+ +-----------------+ +-----------------+ +-----------------+ 
+|  |eth1               |eth1               |eth1               |  
++--+-------------------+-------------------+-------------------+------------------
+                                                                 API/Management Network
+</code></pre>
 
 <ul>
-<li>ceph01 - ceph04 の4台構成</li>
-<li>ノードに HDD 2台搭載されていることを前提 (/dev/sdb, /dev/sdc)</li>
-<li>ノードに Journal 用 SSD 1台搭載されていることを前提 (/dev/ssd)</li>
-<li>ceph04 は mds サービス稼働</li>
-<li>ceph05 は ceph-deploy を実行するためのワークステーション</li>
-<li>最終的に ceph04 から Ceph をマウントする</li>
-<li>mon は ノード単位で稼働</li>
-<li>osd は HDD 単位で稼働</li>
-<li>mds は ceph04 に稼働</li>
+<li>Nova-Network 構成</li>
+<li>今回は fixed network 用の NIC を eth0(物理 NIC) にアサイン</li>
+<li>fixed network 用のネットワークをパブリックにする</li>
+<li>API/Management Network 側に全ての API を出す。またここから The Internet に迂回出来るようにする</li>
+<li>VM Network も GW を介して The Internet へ迂回出来るようにする</li>
+<li>全ての操作は &lsquo;Chef Workstaion&rsquo; から行う</li>
+<li>Compute ノードはキャパシティの許す限り何台でも可</li>
 </ul>
 
-<h2 id="構成-ハードウェアとノードとネットワークの関係">構成 : ハードウェアとノードとネットワークの関係</h2>
-
-<pre><code>                                                                                      public network
-         +-------------------+-------------------+-------------------+-------------------+---------
-         |                   |                   |                   |                   |
-+--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+
-|      ceph01     | |      ceph02     | |      ceph03     | |      ceph04     | |      ceph05     |
-| +-----+ +-----+ | | +-----+ +-----+ | | +-----+ +-----+ | |                 | |                 |
-| | sdb | | sdc | | | | sdb | | sdc | | | | sdb | | sdc | | |                 | |                 |
-| +-----+-+-----+ | | +-----+-+-----+ | | +-----+-+-----+ | |                 | |                 |
-| |     ssd     | | | |     ssd     | | | |     ssd     | | |                 | |                 |
-| +-------------+ | | +-------------+ | | +-------------+ | |                 | |                 |
-+--------+--------+ +--------+--------+ +--------+--------+ +-----------------+ +-----------------+
-         |                   |                   |                                    cluster network
-         +-------------------+-------------------+-------------------------------------------------
-</code></pre>
-
-<h2 id="構成-プロセスとノードとネットワークの関係">構成 : プロセスとノードとネットワークの関係</h2>
-
-<pre><code>                                                                                      public network
-         +-------------------+-------------------+-------------------+-------------------+---------
-         |                   |                   |                   |                   |
-+--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+
-|      ceph01     | |      ceph02     | |      ceph03     | |      ceph04     | |      ceph05     |
-| +-----+ +-----+ | | +-----+ +-----+ | | +-----+ +-----+ | | +-------------+ | |                 |
-| | osd | | osd | | | | osd | | osd | | | | osd | | osd | | | |     mds     | | |                 |
-| +-----+-+-----+ | | +-----+-+-----+ | | +-----+-+-----+ | | +-------------+ | |                 |
-| |     mon     | | | |     mon     | | | |     mon     | | |                 | |                 |
-| +-------------+ | | +-------------+ | | +-------------+ | |                 | |                 |
-+--------+--------+ +--------+--------+ +--------+--------+ +-----------------+ +-----------------+
-         |                   |                   |                                    cluster network
-         +-------------------+-------------------+-------------------------------------------------
-</code></pre>
-
-<p>注意 : 上記の図だと ssd : mon が対に見えますが、そうではありません。</p>
-
-<p>では構築方法について書いていきます。</p>
-
-<h2 id="作業用ホストの準備">作業用ホストの準備</h2>
-
-<p>ノンパスフレーズの SSH 公開鍵・秘密鍵を生成する。</p>
-
-<pre><code class="language-bash">% ssh-keygen
-</code></pre>
-
-<p>公開鍵をターゲットホスト (ceph01-03) に配置</p>
-
-<pre><code class="language-bash">% ssh-copy-id ceph@ceph01
-% ssh-copy-id ceph@ceph02
-% ssh-copy-id ceph@ceph03
-</code></pre>
-
-<p>ceph-deploy の取得を行う。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/ceph/ceph-deploy.git ~/ceph-deploy
-</code></pre>
-
-<p>&lsquo;python-virtualenv&rsquo; パッケージをインストールする。</p>
-
-<pre><code class="language-bash">% sudo apt-get update ; sudo apt-get -y install python-virtualenv
-</code></pre>
-
-<p>ceph-deploy をブートストラップする</p>
-
-<pre><code class="language-bash">% cd ~/ceph-deploy
-% ./bootstrap
-</code></pre>
-
-<p>PATH を通す。下記は例。</p>
-
-<pre><code class="language-bash">% ${EDITOR} ~/.zshrc
-export PATH=$HOME/ceph-deploy:$PATH
-</code></pre>
-
-<p>ホスト名の解決を行う。IP アドレスは例。</p>
-
-<pre><code class="language-bash">% sudo ${EDITOR} /etc/hosts
-10.200.10.11    ceph01
-10.200.10.12    ceph02
-10.200.10.13    ceph03
-10.200.10.14    ceph04
-10.200.10.15    ceph05
-</code></pre>
-
-<h2 id="上記の構成の構築方法">上記の構成の構築方法</h2>
-
-<p>以前の記事同様に ceph-deploy をデプロイツールとして用いる。</p>
-
-<p>ceph-deploy に関しては下記の URL を参照のこと。</p>
-
-<p><a href="https://github.com/ceph/ceph-deploy">https://github.com/ceph/ceph-deploy</a></p>
-
-<p>下記の手順でコンフィギュレーションと鍵の生成を行う。またこれからの操作はすべて public network
-上の ceph-deploy 専用 node からの操作とする。</p>
-
-<pre><code class="language-bash">% mkdir ~/ceph-work
-% cd ~/ceph-work
-% ceph-deploy --cluster cluster01 new ceph01 ceph02 ceph03 ceph04
-</code></pre>
-
-<p>~/ceph-work ディレクトリ上に cluster01.conf が生成されているので下記の通り
-cluster network を扱う形へと追記を行う。</p>
-
-<pre><code class="language-bash">public network = &lt;public_network_addr&gt;/&lt;netmask&gt;
-cluster network = &lt;cluster_network_addr&gt;/&lt;netmask&gt;
-
-[mon.a]
-    host = ceph01
-    mon addr = &lt;ceph01_ip_addr&gt;:6789
-
-[mon.b]
-    host = ceph02
-    mon addr = &lt;ceph02_ip_addr&gt;:6789
-
-[mon.c]
-    host = ceph03
-    mon addr = &lt;ceph03_ip_addr&gt;:6789
-
-[osd.0]
-    public addr = &lt;ceph01_public_ip_addr&gt;
-    cluster addr = &lt;ceph01_cluster_ip_addr&gt;
-
-[osd.1]
-    public addr = &lt;ceph01_public_ip_addr&gt;
-    cluster addr = &lt;ceph01_cluster_ip_addr&gt;
-
-[osd.2]
-    public addr = &lt;ceph01_public_ip_addr&gt;
-    cluster addr = &lt;ceph01_cluster_ip_addr&gt;
-
-[mds.a]
-    host = ceph04
-</code></pre>
-
-<p>ceph の各 nodes へのインストールを行う。ceph はワークステーションである ceph05 にも
-インストールしておきます。後に Ceph ストレージをマウントするためです。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 install ceph01 ceph02 ceph03 ceph04 ceph04
-</code></pre>
-
-<p>mon プロセスを各 nodes で稼働する。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 mon create ceph01 ceph02 ceph03
-</code></pre>
-
-<p>鍵の配布を各 nodes に行う。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 gatherkeys ceph01 ceph02 ceph03 ceph04 ceph05
-</code></pre>
-
-<p>disk のリストを確認。</p>
-
-<p>各 node 毎に用いることが可能は disk の一覧を確認する。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 disk list ceph01
-% ceph-deploy --cluster cluster01 disk list ceph02
-% ceph-deploy --cluster cluster01 disk list ceph03
-</code></pre>
-
-<p>disk の初期化を行う。この作業を行うと指定ディスク上のデータは消去される。</p>
-
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 disk zap ceph01:/dev/sdb ceph01:/dev/sdc
-% ceph-deploy --cluster cluster01 disk zap ceph02:/dev/sdb ceph02:/dev/sdc
-% ceph-deploy --cluster cluster01 disk zap ceph03:/dev/sdb ceph03:/dev/sdc
-</code></pre>
-
-<p>journal 用の ssd のパーティションを切る。ここでは 10GB 毎に切った
-/dev/ssd1, /dev/ssd2 が存在することを前提に記す。ceph と同時にインストールされた
-gdisk を用いる。</p>
-
-<pre><code class="language-bash">% sudo gdisk /dev/ssd
-</code></pre>
-
-<p>(注意) 下記の公式ドキュメントでは osd prepare, osc activate の手順が掲載されて
-いるがその後の osd create のコマンドにて prepare が実行されるようでこれら2つの
-手順を行うと正常に osd create コマンドが実行できなかった。よってこのタイミング
-にて osd create を行うものとする。</p>
+<p>IP 一覧 (この記事での例)</p>
 
 <ul>
-<li><a href="http://ceph.com/docs/master/rados/deployment/ceph-deploy-osd/#prepare-osds">http://ceph.com/docs/master/rados/deployment/ceph-deploy-osd/#prepare-osds</a></li>
-<li><a href="http://ceph.com/docs/dumpling/start/quick-ceph-deploy/">http://ceph.com/docs/dumpling/start/quick-ceph-deploy/</a></li>
+<li>Controller : 10.200.9.46 (eth0), 10.200.10.46 (eth1)</li>
+<li>Compute    : 10.200.9.47 (eth0), 10.200.10.47 (eth1)</li>
+<li>Compute    : 10.200.9.48 (eth0), 10.200.10.48 (eth1)</li>
 </ul>
 
-<p>2 つの disk に対してそれぞれ osd を稼働させる。</p>
+<h2 id="手順">手順</h2>
 
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 osd create ceph01:sdb:/dev/ssd1 ceph02:sdb:/dev/ssd1 ceph03:sdb:/dev/ssd1
-% ceph-deploy --cluster cluster01 osd create ceph01:sdc:/dev/ssd2 ceph02:sdc:/dev/ssd2 ceph03:sdc:/dev/ssd2
+<p>openstack-chef-repo をワークステーションノード上で取得する。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/stackforge/openstack-chef-repo.git
+% cd openstack-chef-repo
 </code></pre>
 
-<p>mds の稼働を行う。ここでは1号機にのみ稼働を行う。</p>
+<p>Berksfile があるのでこれを用いて Chef Cookbooks を取得する。</p>
 
-<pre><code class="language-bash">% ceph-deploy --cluster cluster01 mds create ceph04
+<pre><code class="language-bash">% berks install --path=./cookbooks
 </code></pre>
 
-<h2 id="クライアントからのマウント方法各種">クライアントからのマウント方法各種</h2>
+<p>Roles, Cookbooks を Chef サーバにアップロードする。</p>
 
-<p>上記で構築した Ceph ストレージを利用する方法を3つ説明する。先に述べたように
-POSIX 互換 filesystem として利用が可能。それぞれ mds が稼働しているホストに対
-して接続を行う。</p>
-
-<h4 id="block-device-としてマウントする方法">Block Device としてマウントする方法</h4>
-
-<p>ストレージ上に block device を生成しそれをマウントする</p>
-
-<pre><code class="language-bash">cephclient% rbd create foo --size 4096
-cephclient% sudo modprobe rbd
-cephclient% sudo rbd map foo --pool rbd --name client.admin
-cephclient% sudo mkfs.ext4 -m0 /dev/rbd/rbd/foo
-cephclient% sudo mkdir /mnt/myrbd
-cephclinet% sudo mount /dev/rbd/rbd/foo /mnt/myrbd
+<pre><code class="language-bash">% knife cookbook upload -o cookbooks -a
+% knife role from file roles/*.rb
 </code></pre>
 
-<h4 id="kernel-driver-を用いてマウントする方法">Kernel Driver を用いてマウントする方法</h4>
+<p>1 Environment に対して 1 OpenStack クラスタである。今回構築するクラスタのため
+の Environment を作成する。</p>
 
-<p>kernel Driver を用いてストレージをマウントする</p>
+<p>下記を environments/icehouse-nova-network.rb として生成する。</p>
 
-<pre><code class="language-bash">cephclient% sudo mkdir /mnt/mycephfs
-cephclient% sudo mount -t ceph 10.200.10.26:6789:/ /mnt/mycephfs -o \
-            name=admin,secret=`sudo ceph-authtool -p /etc/ceph/cluster01.client.admin.keyring`
+<pre><code class="language-json">name &quot;icehouse-nova-network&quot;
+description &quot;separated nodes environment&quot;
+
+override_attributes(
+    &quot;release&quot; =&gt; &quot;icehouse&quot;,
+    &quot;osops_networks&quot; =&gt; {
+      &quot;management&quot; =&gt; &quot;10.200.10.0/24&quot;,
+      &quot;public&quot; =&gt; &quot;10.200.10.0/24&quot;,
+      &quot;nova&quot; =&gt; &quot;10.200.10.0/24&quot;
+    },
+    &quot;mysql&quot; =&gt; {
+      &quot;bind_address&quot; =&gt; &quot;0.0.0.0&quot;,
+      &quot;root_network_acl&quot; =&gt; &quot;%&quot;,
+      &quot;allow_remote_root&quot; =&gt; true,
+      &quot;server_root_password&quot; =&gt; &quot;secrete&quot;,
+      &quot;server_repl_password&quot; =&gt; &quot;secrete&quot;,
+      &quot;server_debian_password&quot; =&gt; &quot;secrete&quot;
+    },
+    &quot;nova&quot; =&gt; {
+      &quot;network&quot; =&gt; {
+        &quot;fixed_range&quot; =&gt; &quot;172.18.0.0/24&quot;,
+        &quot;public_interface&quot; =&gt; &quot;eth0&quot;
+      }
+    },
+    &quot;rabbitmq&quot; =&gt; {
+      &quot;address&quot; =&gt; &quot;10.200.10.46&quot;,
+      &quot;port&quot; =&gt; &quot;5672&quot;
+    },
+    &quot;openstack&quot; =&gt; {
+      &quot;developer_mode&quot; =&gt; true,
+      &quot;compute&quot; =&gt; {
+        &quot;rabbit&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;
+        },
+        &quot;novnc_proxy&quot; =&gt; {
+          &quot;bind_interface&quot; =&gt; &quot;eth1&quot;
+        },
+        &quot;libvirt&quot; =&gt; {
+          &quot;bind_interface&quot; =&gt; &quot;eth1&quot;
+        },
+        &quot;network&quot; =&gt; {
+          &quot;fixed_range&quot; =&gt; &quot;10.200.9.0/24&quot;
+        },
+        &quot;rabbit_server_chef_role&quot; =&gt; &quot;os-ops-messaging&quot;,
+        &quot;networks&quot; =&gt; [
+        {
+          &quot;label&quot; =&gt; &quot;private&quot;,
+          &quot;ipv4_cidr&quot; =&gt; &quot;10.200.9.0/24&quot;,
+          &quot;num_networks&quot; =&gt; &quot;1&quot;,
+          &quot;network_size&quot; =&gt; &quot;255&quot;,
+          &quot;bridge&quot; =&gt; &quot;br200&quot;,
+          &quot;bridge_dev&quot; =&gt; &quot;eth0&quot;,
+          &quot;dns1&quot; =&gt; &quot;8.8.8.8&quot;,
+          &quot;dns2&quot; =&gt; &quot;8.8.4.4&quot;,
+          &quot;multi_host&quot; =&gt; &quot;T&quot;
+        }
+        ]
+      },
+      &quot;identity&quot; =&gt; {
+        &quot;bind_interface&quot; =&gt; &quot;eth1&quot;,
+        &quot;users&quot; =&gt; {
+          &quot;demo&quot; =&gt; {
+            &quot;password&quot; =&gt; &quot;demo&quot;,
+            &quot;default_tenant&quot; =&gt; &quot;service&quot;,
+            &quot;roles&quot; =&gt; {
+              &quot;Member&quot; =&gt; [ &quot;Member&quot; ]
+            }
+          }
+        }
+      },
+      &quot;image&quot; =&gt; {
+        &quot;api&quot; =&gt; {
+          &quot;bind_interface&quot; =&gt; &quot;eth1&quot;
+        },
+        &quot;debug&quot; =&gt; true,
+        &quot;identity_service_chef_role&quot; =&gt; &quot;os-identity&quot;,
+        &quot;rabbit_server_chef_role&quot; =&gt; &quot;os-ops-messaging&quot;,
+        &quot;registry&quot; =&gt; {
+          &quot;bind_interface&quot; =&gt; &quot;eth1&quot;
+        },
+        &quot;syslog&quot; =&gt; {
+          &quot;use&quot; =&gt; false
+        },
+        &quot;upload_image&quot; =&gt; {
+          &quot;cirros&quot; =&gt; &quot;http://hypnotoad/cirros-0.3.0-x86_64-disk.img&quot;,
+        },
+        &quot;upload_images&quot; =&gt; [
+          &quot;cirros&quot;
+        ]
+      },
+      &quot;network&quot; =&gt; {
+        &quot;api&quot; =&gt; {
+          &quot;bind_interface&quot; =&gt; &quot;eth1&quot;,
+        }
+      },
+      &quot;db&quot; =&gt; {
+        &quot;bind_interface&quot; =&gt; &quot;eth1&quot;,
+        &quot;compute&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;
+        },
+        &quot;identity&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;
+        },
+        &quot;image&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;
+        },
+        &quot;network&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;
+        },
+        &quot;volume&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;
+        },
+        &quot;dashboard&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;
+        }
+      },
+      &quot;mq&quot; =&gt; {
+        &quot;bind_interface&quot; =&gt; &quot;eth1&quot;,
+        &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+        &quot;user&quot; =&gt; &quot;guest&quot;,
+        &quot;vhost&quot; =&gt; &quot;/nova&quot;,
+        &quot;servers&quot; =&gt; &quot;10.200.10.46&quot;,
+        &quot;compute&quot; =&gt; {
+          &quot;service_type&quot; =&gt; &quot;rabbitmq&quot;,
+          &quot;rabbit&quot; =&gt; {
+            &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+            &quot;port&quot; =&gt; &quot;5672&quot;
+          }
+        },
+        &quot;block-storage&quot; =&gt; {
+          &quot;service_type&quot; =&gt; &quot;rabbitmq&quot;,
+          &quot;rabbit&quot; =&gt; {
+            &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+            &quot;port&quot; =&gt; &quot;5672&quot;
+          }
+        }
+      },
+      &quot;endpoints&quot; =&gt; {
+        &quot;compute-api-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8774&quot;,
+          &quot;path&quot; =&gt; &quot;/v2/%(tenant_id)s&quot;
+        },
+        &quot;compute-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8774&quot;,
+          &quot;path&quot; =&gt; &quot;/v2/%(tenant_id)s&quot;
+        },
+        &quot;compute-ec2-admin-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8773&quot;,
+          &quot;path&quot; =&gt; &quot;/services/Admin&quot;
+        },
+        &quot;compute-ec2-admin&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8773&quot;,
+          &quot;path&quot; =&gt; &quot;/services/Admin&quot;
+        },
+        &quot;compute-ec2-api-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8773&quot;,
+          &quot;path&quot; =&gt; &quot;/services/Cloud&quot;
+        },
+        &quot;compute-ec2-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8773&quot;,
+          &quot;path&quot; =&gt; &quot;/services/Cloud&quot;
+        },
+        &quot;compute-xvpvnc-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;6081&quot;,
+          &quot;path&quot; =&gt; &quot;/console&quot;
+        },
+        &quot;compute-xvpvnc&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;6081&quot;,
+          &quot;path&quot; =&gt; &quot;/console&quot;
+        },
+        &quot;compute-novnc-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;6080&quot;,
+          &quot;path&quot; =&gt; &quot;/vnc_auto.html&quot;
+        },
+        &quot;compute-novnc&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;6080&quot;,
+          &quot;path&quot; =&gt; &quot;/vnc_auto.html&quot;
+        },
+        &quot;compute-vnc&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;0.0.0.0&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;6080&quot;,
+          &quot;path&quot; =&gt; &quot;/vnc_auto.html&quot;
+        },
+        &quot;image-api-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;9292&quot;,
+          &quot;path&quot; =&gt; &quot;/v2&quot;
+        },
+        &quot;image-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;9292&quot;,
+          &quot;path&quot; =&gt; &quot;/v2&quot;
+        },
+        &quot;image-registry-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;9191&quot;,
+          &quot;path&quot; =&gt; &quot;/v2&quot;
+        },
+        &quot;image-registry&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;9191&quot;,
+          &quot;path&quot; =&gt; &quot;/v2&quot;
+        },
+        &quot;identity-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;5000&quot;,
+          &quot;path&quot; =&gt; &quot;/v2.0&quot;
+        },
+        &quot;identity-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;5000&quot;,
+          &quot;path&quot; =&gt; &quot;/v2.0&quot;
+        },
+        &quot;identity-admin&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;35357&quot;,
+          &quot;path&quot; =&gt; &quot;/v2.0&quot;
+        },
+        &quot;volume-api-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8776&quot;,
+          &quot;path&quot; =&gt; &quot;/v1/%(tenant_id)s&quot;
+        },
+        &quot;block-storage-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8776&quot;,
+          &quot;path&quot; =&gt; &quot;/v1/%(tenant_id)s&quot;
+        },
+        &quot;telemetry-api-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8777&quot;,
+          &quot;path&quot; =&gt; &quot;/v1&quot;
+        },
+        &quot;telemetry-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8777&quot;,
+          &quot;path&quot; =&gt; &quot;/v1&quot;
+        },
+        &quot;network-api-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;9696&quot;,
+          &quot;path&quot; =&gt; &quot;/v2&quot;
+        },
+        &quot;network-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;9696&quot;,
+          &quot;path&quot; =&gt; &quot;/v2&quot;
+        },
+        &quot;orchestration-api-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8004&quot;,
+          &quot;path&quot; =&gt; &quot;/v1/%(tenant_id)s&quot;
+        },
+        &quot;orchestration-api&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8004&quot;,
+          &quot;path&quot; =&gt; &quot;/v1/%(tenant_id)s&quot;
+        },
+        &quot;orchestration-api-cfn-bind&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8000&quot;,
+          &quot;path&quot; =&gt; &quot;/v1&quot;
+        },
+        &quot;orchestration-api-cfn&quot; =&gt; {
+          &quot;host&quot; =&gt; &quot;10.200.10.46&quot;,
+          &quot;scheme&quot; =&gt; &quot;http&quot;,
+          &quot;port&quot; =&gt; &quot;8000&quot;,
+          &quot;path&quot; =&gt; &quot;/v1&quot;
+        },
+        &quot;mq&quot; =&gt; {
+          &quot;port&quot; =&gt; &quot;5672&quot;
+        }
+      }
+    }
+)
 </code></pre>
 
-<h4 id="fuse-driver-ユーザランド-を用いてマウントする方法">Fuse Driver (ユーザランド) を用いてマウントする方法</h4>
+<p>生成した environment を Chef サーバにアップロードする。</p>
 
-<p>ユーザランドソフトウェア FUSE を用いてマウントする方法</p>
-
-<pre><code class="language-bash">cephclient% sudo mkdir /home/&lt;username&gt;/cephfs
-cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
+<pre><code class="language-bash">% knife environment from file environments/icehouse-nova-network.rb
 </code></pre>
-</p>
+
+<p>Spiceweasel をインストールする。Spiceweasel は yml ファイルを元に knife の操作
+を書き出して、またそれを一気に実行することが出来るツールです。</p>
+
+<pre><code class="language-bash">% gem install spiceweasel --no-ri --no-rdoc
+% rbenv rehash
+</code></pre>
+
+<p>infrastructure.yml を下記の通り修正する。</p>
+
+<pre><code class="language-bash">berksfile:
+    options: '--no-freeze --halt-on-frozen'
+
+cookbooks:
+- apache2:
+- apt:
+- aws:
+- build-essential:
+- chef_handler:
+- database:
+- dmg:
+- erlang:
+- git:
+- homebrew:
+- iptables:
+- logrotate:
+- memcached:
+- mysql:
+- openssl:
+- openstack-block-storage:
+- openstack-common:
+- openstack-compute:
+- openstack-dashboard:
+- openstack-identity:
+- openstack-image:
+- openstack-network:
+- openstack-object-storage:
+- openstack-ops-messaging:
+- openstack-ops-database:
+- openstack-orchestration:
+- openstack-telemetry:
+- pacman:
+- postgresql:
+- python:
+- rabbitmq:
+- runit:
+- selinux:
+- statsd:
+- windows:
+- xfs:
+- yum:
+- yum-epel:
+- yum-erlang_solutions:
+
+roles:
+- allinone-compute:
+- os-compute-single-controller:
+- os-base:
+- os-ops-caching:
+- os-ops-messaging:
+- os-ops-database:
+- os-block-storage:
+- os-block-storage-api:
+- os-block-storage-scheduler:
+- os-block-storage-volume:
+- os-client:
+- os-compute-api:
+- os-compute-api-ec2:
+- os-compute-api-metadata:
+- os-compute-api-os-compute:
+- os-compute-cert:
+- os-compute-conductor:
+- os-compute-scheduler:
+- os-compute-setup:
+- os-compute-vncproxy:
+- os-compute-worker:
+- os-dashboard:
+- os-identity:
+- os-image:
+- os-image-api:
+- os-image-registry:
+- os-image-upload:
+- os-telemetry-agent-central:
+- os-telemetry-agent-compute:
+- os-telemetry-api:
+- os-telemetry-collector:
+- os-network:
+- os-network-server:
+- os-network-l3-agent:
+- os-network-dhcp-agent:
+- os-network-metadata-agent:
+- os-network-openvswitch:
+- os-object-storage:
+- os-object-storage-account:
+- os-object-storage-container:
+- os-object-storage-management:
+- os-object-storage-object:
+- os-object-storage-proxy:
+
+environments:
+- icehouse-nova-network:
+
+nodes:
+- 10.200.10.46:
+    run_list: role[os-compute-single-controller]
+    options: -N opstall01 -E icehouse-nova-network --sudo -x thirai
+- 10.200.10.47:
+    run_list: role[os-compute-worker]
+    options: -N opstall02 -E icehouse-nova-network --sudo -x thirai
+- 10.200.10.48:
+    run_list: role[os-compute-worker]
+    options: -N opstall03 -E icehouse-nova-network --sudo -x thirai
+</code></pre>
+
+<p>※ nodes: 項にはデプロイしたいノードと Roles を割り当て列挙する。</p>
+
+<p>spiceweasel を実行する。この時点ではこれから実行されるコマンドの一覧が表示され
+るのみである。</p>
+
+<pre><code class="language-bash">% spiceweasel infrastructure.yml
+berks upload --no-freeze --halt-on-frozen -b ./Berksfile
+knife cookbook upload apache2 apt aws build-essential chef_handler database dmg erlang git homebrew iptables logrotate memcached mysql openssl openstack-block-storage openstack-common openstack-compute openstack-dashboard openstack-identity openstack-image openstack-network openstack-object-storage openstack-ops-messaging openstack-ops-database openstack-orchestration openstack-telemetry pacman postgresql python rabbitmq runit selinux statsd windows xfs yum yum-epel yum-erlang_solutions
+knife environment from file separated.rb
+knife role from file allinone-compute.rb os-base.rb os-block-storage-api.rb os-block-storage-scheduler.rb os-block-storage-volume.rb os-block-storage.rb os-client.rb os-compute-api-ec2.rb os-compute-api-metadata.rb os-compute-api-os-compute.rb os-compute-api.rb os-compute-cert.rb os-compute-conductor.rb os-compute-scheduler.rb os-compute-setup.rb os-compute-single-controller.rb os-compute-vncproxy.rb os-compute-worker.rb os-dashboard.rb os-identity.rb os-image-api.rb os-image-registry.rb os-image-upload.rb os-image.rb os-network-dhcp-agent.rb os-network-l3-agent.rb os-network-metadata-agent.rb os-network-openvswitch.rb os-network-server.rb os-network.rb os-object-storage-account.rb os-object-storage-container.rb os-object-storage-management.rb os-object-storage-object.rb os-object-storage-proxy.rb os-object-storage.rb os-ops-caching.rb os-ops-database.rb os-ops-messaging.rb os-telemetry-agent-central.rb os-telemetry-agent-compute.rb os-telemetry-api.rb os-telemetry-collector.rb
+knife bootstrap 10.200.10.46 -N opstall01 -E separated --sudo -x thirai -r 'role[os-compute-single-controller]'
+knife bootstrap 10.200.10.47 -N opstall02 -E separated --sudo -x thirai -r 'role[os-compute-worker]'
+knife bootstrap 10.200.10.48 -N opstall03 -E separated --sudo -x thirai -r 'role[os-compute-worker]'
+</code></pre>
+
+<p>-e オプションを付与すると実際にこれらのコマンドが実行される。実行してデプロイを行う。</p>
+
+<pre><code class="language-bash">% spiceweasel -e infrastructure.yml
+</code></pre>
+
+<p>この時点で、下記の操作も行われる。</p>
+
+<ul>
+<li>Nova-Network 上に仮想ネットワークの生成</li>
+<li>OS イメージのダウンロードと登録 (Environment に記したモノ)</li>
+</ul>
+
+<h2 id="cinder-の設定">Cinder の設定</h2>
+
+<p>デプロイ完了したところで cinder-volume プロセスは稼働しているが物理ディスクの
+アサインが済んでいない。これは Chef では指定出来ないので手動で行う。</p>
+
+<p>予め Cinder 用の物理ディスクを Controller ノードに付与する。(ここでは /dev/sdb1)</p>
+
+<pre><code class="language-bash">controller% sudo -i
+controller# pvcreate /dev/sdb1
+controller# vgcreate cinder-volumes /dev/sdb1
+controller# service cinder-volume restart
+</code></pre>
+
+<p>これで完了。</p>
+
+<h2 id="使ってみる">使ってみる</h2>
+
+<p>ではデプロイした OpenStack を使って仮想マシンを作ってみる。</p>
+
+<pre><code class="language-bash">controller% sudo -i
+controller# source openrc
+controller# nova keypair-add novakey01 &gt; novakey01
+controller# chmod 400 novakey01
+controller# nova boot --image cirros --flavor 1 --key_name novakey01 cirros01
+controller# nova list 
++--------------------------------------+----------+--------+------------+-------------+--------------------+
+| ID                                   | Name     | Status | Task State | Power State | Networks           |
++--------------------------------------+----------+--------+------------+-------------+--------------------+
+| e6687359-1aef-4105-a8db-894600001610 | cirros01 | ACTIVE | -          | Running     | private=10.200.9.2 |
++--------------------------------------+----------+--------+------------+-------------+--------------------+
+controller# ssh -i novakey01 -l cirros 10.200.9.2
+vm# ping www.goo.ne.jp
+</code></pre>
+
+<p>仮想マシンが生成され The Internet に対して通信が行えたことを確認。</p>
+
+<p>次に仮想ディスクを生成して上記で作成した仮想マシンに付与する。</p>
+
+<pre><code class="language-bash">controller# cinder create --display-name vol01 1
++--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+
+|                  ID                  |  Status   | Display Name | Size | Volume Type | Bootable |             Attached to              |
++--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+
+| 0f3726a0-c2f5-45bc-bcf2-1f6eb746f5c8 | available |    vol02     |  1   |     None    |  false   | b286387c-2311-4134-ab59-850fee3e4650 |
++--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+
+controller# nova volume-attach e6687359-1aef-4105-a8db-894600001610 0f3726a0-c2f5-45bc-bcf2-1f6eb746f5c8 auto
+controller# ssh -i novakey01 -l cirros 10.200.9.2
+vm# mkfs.ext4 /dev/vdb
+vm# mount -t ext4 /dev/vdb /mnt
+vm# df -h | grep mnt
+/dev/vdb        976M  1.3M  908M   1% /mnt
+</code></pre>
+
+<p>仮想ディスクを仮想マシンに付与しマウントできることを確認出来た。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>今回は Nova-Network 構成の Icehouse を構築出来た。Nova-Network は Havana でサポート終了との話が延期
+になっていることは聞いていたが Icehouse でもしっかり動いている。また後に Neutron 構成も調査を行う。
+Neutron 構成は下記の Environments を参考にすると動作するかもしれない。</p>
+
+<p><a href="https://github.com/stackforge/openstack-chef-repo/blob/master/environments/vagrant-multi-neutron.json">https://github.com/stackforge/openstack-chef-repo/blob/master/environments/vagrant-multi-neutron.json</a></p>
+
+<p>キーとなるのは、</p>
+
+<pre><code class="language-json">    &quot;network&quot;: {
+      &quot;debug&quot;: &quot;True&quot;,
+      &quot;dhcp&quot;: {
+        &quot;enable_isolated_metadata&quot;: &quot;True&quot;
+      },
+      &quot;metadata&quot;: {
+        &quot;nova_metadata_ip&quot;: &quot;192.168.3.60&quot;
+      },
+      &quot;openvswitch&quot;: {
+        &quot;tunnel_id_ranges&quot;: &quot;1:1000&quot;,
+        &quot;enable_tunneling&quot;: &quot;True&quot;,
+        &quot;tenant_network_type&quot;: &quot;gre&quot;,
+        &quot;local_ip_interface&quot;: &quot;eth2&quot;
+      },
+      &quot;api&quot;: {
+        &quot;bind_interface&quot;: &quot;eth1&quot;
+      }
+    },
+</code></pre>
+
+<p>この辺り。</p>
+
+<h2 id="残っている問題点">残っている問題点</h2>
+
+<p>VNC コンソールにアクセス出来ない。調べたのですが、environment の修正で直せる問
+題ではないように見えました。</p>
+
+<p>cookbooks/openstack-compute/templates/default/nova.conf.rb を確認すると下記の
+ようになっています。</p>
+
+<pre><code class="language-ruby">##### VNCPROXY #####
+novncproxy_base_url=&lt;%= @novncproxy_base_url %&gt;
+xvpvncproxy_base_url=&lt;%= @xvpvncproxy_base_url %&gt;
+
+# This is only required on the server running xvpvncproxy
+xvpvncproxy_host=&lt;%= @xvpvncproxy_bind_host %&gt;
+xvpvncproxy_port=&lt;%= @xvpvncproxy_bind_port %&gt;
+
+# This is only required on the server running novncproxy
+novncproxy_host=&lt;%= @novncproxy_bind_host %&gt;
+novncproxy_port=&lt;%= @novncproxy_bind_port %&gt;
+
+vncserver_listen=&lt;%= @vncserver_listen %&gt;
+vncserver_proxyclient_address=&lt;%= @vncserver_proxyclient_address %&gt;
+</code></pre>
+
+<p>vncserver_listen, vncserver_proxyclient_address はそれぞれ</p>
+
+<ul>
+<li>@vncserver_listen</li>
+<li>@vncserver_proxyclient_address</li>
+</ul>
+
+<p>という変数が格納されることになっている。</p>
+
+<p>では cookbooks/openstack-compute/recipes/nova-common.rb を確認すると、</p>
+
+<pre><code class="language-ruby">template '/etc/nova/nova.conf' do
+  source 'nova.conf.erb'
+  owner node['openstack']['compute']['user']
+  group node['openstack']['compute']['group']
+  mode 00644
+  variables(
+    sql_connection: sql_connection,
+    novncproxy_base_url: novnc_endpoint.to_s,
+    xvpvncproxy_base_url: xvpvnc_endpoint.to_s,
+    xvpvncproxy_bind_host: xvpvnc_bind.host,
+    xvpvncproxy_bind_port: xvpvnc_bind.port,
+    novncproxy_bind_host: novnc_bind.host,
+    novncproxy_bind_port: novnc_bind.port,
+    vncserver_listen: vnc_endpoint.host,
+    vncserver_proxyclient_address: vnc_endpoint.host,
+    以下略
+</code></pre>
+
+<p>となっている。vncserver_listen, vncserver_proxyclient_address 共に
+vnc_endpoint.host が格納されることになっている。vnc_endpont.host は</p>
+
+<pre><code class="language-ruby">vnc_endpoint = endpoint 'compute-vnc' || {}
+</code></pre>
+
+<p>となっており、Attributes の</p>
+
+<pre><code class="language-json">    &quot;compute-vnc&quot; =&gt; {
+      &quot;host&quot; =&gt; &quot;0.0.0.0&quot;,
+      &quot;scheme&quot; =&gt; &quot;http&quot;,
+      &quot;port&quot; =&gt; &quot;6080&quot;,
+      &quot;path&quot; =&gt; &quot;/vnc_auto.html&quot;
+    },
+</code></pre>
+
+<p>の設定が入ることになる。つまり上記のような Attributes だと vncserver_listen, vncserver_proxyclient_address 共に
+&lsquo;0.0.0.0&rsquo; のアドレスが controller, compute ノードの双方に入ってしまい、NoVNC が正しく格納しないことになる。</p>
+
+<p>解決したらまたここに更新版を載せたいと思いまーす！</p>
+
+<p>以上です。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2014/04/25/stackforge-openstack-chef-repo-icehouse-deploy/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2014/04/23/mirantis-openstack/">Mirantis OpenStack (Neutron GRE)を組んでみた！</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2014-04-23'>
+            April 23, 2014</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>皆さん、Mirantis OpenStack はご存知ですか？ OpenStack ディストリビューションの
+1つです。以下、公式サイトです。</p>
+
+<p><a href="http://software.mirantis.com/main/">http://software.mirantis.com/main/</a></p>
+
+<p>この Mirantis OpenStack を使って OpenStack Havana (Neutron GRE) 構成を作ってみ
+ました。その時のメモを書いていきたいと思います。</p>
+
+<h2 id="構成は">構成は?</h2>
+
+<p>構成は下記の通り。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/mirantis_gre.jpg"></p>
+
+<p>※ CreativeCommon</p>
+
+<p>特徴は</p>
+
+<ul>
+<li>Administrative Network : Fuel Node, DHCP + PXE ブート用</li>
+<li>Management Network : 各コンポーネント間 API 用</li>
+<li>Public/Floating IP Network : パブリック API, VM Floating IP 用</li>
+<li>Storage Network : Cinder 配下ストレージ &lt;-&gt; インスタンス間用</li>
+<li>要インターネット接続 : Public/Floating Networks</li>
+<li>Neutron(GRE) 構成</li>
+</ul>
+
+<p>です。タグ VLAN 使って物理ネットワークの本数を減らすことも出来るはずですが、僕
+の環境では何故かダメだったので上記の4つの物理ネットワークを別々に用意しました。</p>
+
+<h2 id="fuel-ノードの構築">Fuel ノードの構築</h2>
+
+<p>Fuel ノードとは、OpenStack の各ノードをデプロイするための管理ノードのことです。
+DHCP + PXE を管理する Cobbler やデプロイツールの Puppet が内部で稼働し、
+Administrative Network 上で稼働したノードを管理・その後デプロイします。</p>
+
+<p>構築方法は&hellip;</p>
+
+<p>下記の URL より ISO ファイルをダウンロード。</p>
+
+<p><a href="http://software.mirantis.com/main/">http://software.mirantis.com/main/</a></p>
+
+<p>Administrative Network に NIC を出したノードを上記の ISO から起動。</p>
+
+<p>Grub メニューが表示されたタイミングで &ldquo;Tab&rdquo; キーを押下。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/grub.png"></p>
+
+<p>上記画面にてカーネルオプションにて hostname, ip, gw, dns を修正。下記は例。</p>
+
+<pre><code class="language-bash">vmlinuz initrd=initrd.img biosdevname=0 ks=cdrom:/ks.cfg ip=10.200.10.76
+gw=10.200.10.1 dns1=8.8.8.8 netmask=255.255.255.0 hostname=fuel.cpi.ad.jp
+showmenu=no_
+</code></pre>
+
+<p>ブラウザで <a href="http://10.200.10.76:8080">http://10.200.10.76:8080</a> (上記例)にアクセスし、新しい &lsquo;OpenStack
+Environment&rsquo; を作成する。</p>
+
+<pre><code>Name : 任意
+OpenStack Release : Havana on CentOS6.4
+</code></pre>
+
+<p>なお、Ubuntu 構成も組めるが、私の環境では途中でエラーが出力した。</p>
+
+<p>Next を押下し、ネットワーク設定を行う。今回は &lsquo;Nuetron GRE&rsquo; を選択。</p>
+
+<p><img src="http://jedipunkz.github.io/pix/mirantis_network.png"></p>
+
+<p>&lsquo;Save Settings&rsquo; を押下し設定を保存。この時点では &lsquo;Verify Networks&rsquo; は行えない。
+少なくとも 2 ノードが必要。次のステップで2ノードの追加を行う。</p>
+
+<h2 id="ノードの追加">ノードの追加</h2>
+
+<p>下記の4つのネットワークセグメントに NIC を出したノードを用意し、起動する。起動
+すると Administrative Network 上で稼働している Cobbler によりノードが PXE 起動
+しミニマムな OS がインストールされる。これは後に Fuel ノードよりログインがされ、
+各インターフェースの Mac アドレス等の情報を知るためです。ネットワークベリファ
+イ等もこのミニマムな OS 越しに実施されます。</p>
+
+<ul>
+<li>Administrative Network</li>
+<li>Public/Floating IP Network</li>
+<li>Storage Network</li>
+<li>Management Network</li>
+</ul>
+
+<p>ノードが稼働した時点で Fuel によりノードが認識されるので、ここでは2つのノード
+をそれぞれ</p>
+
+<ul>
+<li>Controller ノード</li>
+<li>Compute ノード</li>
+</ul>
+
+<p>として画面上で割り当てます。</p>
+
+<h2 id="インターフェースの設定">インターフェースの設定</h2>
+
+<p><img src="http://jedipunkz.github.io/pix/mirantis_mac.png"></p>
+
+<p><a href="http://10.200.10.76:8000/#cluster/1/nodes">http://10.200.10.76:8000/#cluster/1/nodes</a> にログインし作成した Environment
+を選択。その後、&rsquo;Nodes&rsquo; タブを押下。ノードを選択し、&rsquo;Configure Interfaces&rsquo; を
+選択。各ノードのインターフェースの Mac アドレスを確認し、各々のネットワークセ
+グメントを紐付ける。尚、Fuel ノードから &lsquo;root&rsquo; ユーザで SSH(22番ポート) にノン
+パスフレーズで公開鍵認証ログインが可能となっている。Fuel ノードに対しては SSH
+(22番ポート) にて下記のユーザにてログインが可能です。</p>
+
+<pre><code>username : root
+password : r00tme
+</code></pre>
+
+<h2 id="ネットワークの確認">ネットワークの確認</h2>
+
+<p><a href="http://10.200.10.76:8000/#cluster/1/network">http://10.200.10.76:8000/#cluster/1/network</a> にて &lsquo;Networks&rsquo; タブを開き、&rsquo;Verify
+Networks&rsquo; を押下。ネットワーク設定が正しく行われているか否かを確認。</p>
+
+<h2 id="デプロイ">デプロイ</h2>
+
+<p><a href="http://10.200.10.76:8000/#cluster/1/nodes">http://10.200.10.76:8000/#cluster/1/nodes</a> にて &lsquo;Deploy Changes&rsquo; を押下しデプ
+ロイ開始。kickstart にて OS が自動でインストールされ puppet にて fuel ノードか
+ら自動で OpenStack がインストールされます。</p>
+
+<h2 id="openstack-へのアクセス">OpenStack へのアクセス</h2>
+
+<p>SSH では下記のステップで OpenStack コントローラノードにログイン。</p>
+
+<p>fuel ノード (SSH) -&gt; node-1 (OpenStack コントローラノード)(SSH)</p>
+
+<p>ブラウザで Horizon にアクセスするには</p>
+
+<p><a href="http://10.200.10.2">http://10.200.10.2</a></p>
+
+<p>にアクセス。これは例。Administrative Network に接続している NIC の IP アドレス
+へ HTTP でログイン。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>Mirantis OpenStack Neutron (GRE) 構成が組めた。上記構成図を見て疑問に思ってい
+た &ldquo;VM 間通信のネットワークセグメント&rdquo; であるが、Administrative Network のセグ
+メントを用いている事が判った。これは利用者が意図しているとは考えづらいので、正
+直、あるべき姿では無いように思える。が、上記構成図に VM ネットワークが無い理由
+はこれにて判った。</p>
+
+<p>下記はノード上で ovs-vsctl show コマンドを打った結果の抜粋です。</p>
+
+<pre><code class="language-bash">    Bridge &quot;br-eth1&quot;
+        Port &quot;br-eth1&quot;
+            Interface &quot;br-eth1&quot;
+                type: internal
+        Port &quot;br-eth1--br-fw-admin&quot;
+            trunks: [0]
+            Interface &quot;br-eth1--br-fw-admin&quot;
+                type: patch
+                options: {peer=&quot;br-fw-admin--br-eth1&quot;}
+        Port &quot;eth1&quot;
+            Interface &quot;eth1&quot;
+</code></pre>
+
+<p>今回の構成は eth1 は Administrative Network に割り当てていました。</p>
+
+<p>一昔前は OS のディストリビュータが有料サポートをビジネスにしていました。Redhat
+がその代表格だと思いますが、今は OS 上で何かを実現するにもソフトウェアの完成度
+が高く、エンジニアが困るシチュエーションがそれほど無くなった気がします。そこで
+その OS の上で稼働する OpenStack のサポートビジネスが出てきたか！という印象で
+す。OpenStack はまだまだエンジニアにとって敷居の高いソフトウェアです。自らクラ
+ウドプラットフォームを構築出来るのは魅力的ですが、サポート無しに構築・運用する
+には、まだ難しい技術かもしれません。こういったディストリビューションが出てくる
+辺りが時代だなぁと感じます。</p>
+
+<p>尚、ISO をダウンロードして利用するだけでしたら無償で OK です。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2014/04/23/mirantis-openstack/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -1271,13 +1642,13 @@ cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/">GCP ロードバランサと GKE クラスタを Terraform を使って構築する</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
+                                    '2017-04-13'>
+                                    April 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -1285,13 +1656,13 @@ cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -1299,13 +1670,13 @@ cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-03'>
-                                    November 3, 2016</time>
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -1313,13 +1684,13 @@ cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-07-25'>
-                                    July 25, 2016</time>
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
                             </header>
                         </article>
                     </li>
@@ -1358,7 +1729,7 @@ cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">104</span>
+                                <span style="float:right;">108</span>
                             </header>
                         </article>
                     </li>

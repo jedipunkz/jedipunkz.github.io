@@ -34,7 +34,7 @@
 <meta property="og:url" content="http://jedipunkz.github.io/" />
 
 
-<meta property="og:updated_time" content="2013-10-13T00:00:00&#43;00:00"/>
+<meta property="og:updated_time" content="2013-11-17T00:00:00&#43;00:00"/>
 
 
 
@@ -196,19 +196,19 @@ ga('send', 'pageview');
 
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/"><p>coreos の etcd operator を触ってみた</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/"><p>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/20/helm/"><p>Helm を使って Kubernetes を管理する</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/"><p>Serverless on Kubernetes : Fission を使ってみた</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/"><p>kubernetes1.4 で実装された ScheduledJob を試してみた！</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/"><p>Kubernetes Deployments を使ってみた！</p></a>
                     </li>
                 
                     <li>
-                        <a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/"><p>Minikube で簡易 kubernetes 環境構築</p></a>
+                        <a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/"><p>fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</p></a>
                     </li>
                 
             </ul>
@@ -230,7 +230,7 @@ ga('send', 'pageview');
     <header>
     <div class="title">
         
-            <h2><a href="http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/">test-kitchen と OpenStack で Chef Cookbooks テスト(前篇)</a></h2>
+            <h2><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/">OpenStack Havana を Chef でデプロイ</a></h2>
         
         
     </div>
@@ -240,11 +240,11 @@ ga('send', 'pageview');
         
 
         <time class="published"
-            datetime='2013-10-13'>
-            October 13, 2013</time>
+            datetime='2013-11-17'>
+            November 17, 2013</time>
         <span class="author"></span>
         
-            <p>2 minute read</p>
+            <p>4 minute read</p>
         
         
     </div>
@@ -255,698 +255,919 @@ ga('send', 'pageview');
     
     <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 
-<p>test-kitchen + Vagrant を利用して複数環境で Chef Cookbooks のテストを行う方法は
-結構皆さん利用されていると思うのですが Vagrant だと手元のマシンに仮想マシンが
-バシバシ立ち上げるので僕はあまり好きではないです。そこで、OpenStack のインスタ
-ンスをその代替で使えればいいなぁと結構前から思っていたのですが、今回うまくいっ
-たのでその方法を記します。</p>
-
-<h2 id="用意するモノ">用意するモノ</h2>
-
-<ul>
-<li>OpenStack 環境一式</li>
-<li>Chef がインストールされた OS イメージとその ID</li>
-<li>test-kitchen を実行するワークステーション (お手持ちの Macbook 等)</li>
-</ul>
-
-<p>OS イメージの作成ですが Veewee などで自動構築できますし、インスタンス上で Chef
-のインストールを行った後にスナップショットを作成してそれを利用しても構いません。</p>
-
-<h2 id="test-kitchen-のインストール">test-kitchen のインストール</h2>
-
-<p>test-kitchen をインストールします。versoin 1.0.0 はまだリリースされていないの
-で github から master ブランチを取得してビルドします。直近で OpenStack に関連
-する不具合の修正等が入っているのでこの方法を取ります。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/opscode/test-kitchen.git
-% cd test-kitchen
-% bundle install
-% rake build # &lt;--- gem をビルド
-% gen install ./pkg/test-kitchen-1.0.0.dev.gem
-</code></pre>
-
-<p>現時点 (2013/10/13) で berkshelf の利用しているソフトウェアと衝突を起こす問題
-があるので bundle で解決します。下記のように Gemfile に gem
-&lsquo;kitchen-openstack&rsquo; と記述します。</p>
-
-<pre><code class="language-ruby">source 'https://rubygems.org'
-gemspec
-
-gem 'kitchen-openstack' # &lt;--- 追記
-
-group :guard do
-  gem 'rb-inotify', :require =&gt; false
-  gem 'rb-fsevent', :require =&gt; false
-  gem 'rb-fchange', :require =&gt; false
-  gem 'guard-minitest', '~&gt; 1.3'
-  gem 'guard-cucumber', '~&gt; 1.4'
-end
-</code></pre>
-
-<h2 id="kitchen-openstack-のインストール">kitchen-openstack のインストール</h2>
-
-<p>kitchen-openstack をインストールします。こちらも gem をビルドしてインストール
-します。</p>
-
-<pre><code class="language-bash">% git clone https://github.com/RoboticCheese/kitchen-openstack.git
-% cd kitchen-openstack
-% bundle insatll #&lt;---- 関連ソフトウェアインストール
-% rake build     #&lt;---- gem をビルド
-% gem install ./pkg/kitchen-openstack-0.5.1.gem
-</code></pre>
-
-<h2 id="kitchen-yml-の作成">.kitchen.yml の作成</h2>
-
-<p>.kitchen.yml を用意します。test-kitchen のディレクトリに移動し .kitchen.yml を
-下記の例に従って作成します。今回は Ubuntu OS, CentOS にてテストを実行します。</p>
-
-<pre><code class="language-bash">% cd /path/to/test-kitchen
-% ${EDITOR} .kitchen.yml
-</code></pre>
-
-<pre><code class="language-ruby">+++
-driver_plugin: openstack
-
-suites:
-- name: default
-  run_list:
-  - recipe[ntp::default]
-  attributes: {}
-
-platforms:
-- name: ubuntu-12.04
-  driver_config:
-    openstack_username: &lt;openstac_username&gt;
-    openstack_api_key: &lt;openstack_password&gt;
-    openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens
-    image_ref: &lt;image_id&gt;
-    flavor_ref: 1
-    key_name: &lt;key_name&gt;
-    openstack_tenant: service
-    username: ubuntu
-    private_key_path: &lt;path_to_secretkey&gt;
-
-- name: centos-64
-  driver_config:
-    openstack_username: &lt;openstac_username&gt;
-    openstack_api_key: &lt;openstack_password&gt;
-    openstack_auth_url: http://&lt;openstack_ip_addr&gt;:5000/v2.0/tokens
-    image_ref: &lt;image_id&gt;
-    flavor_ref: 1
-    key_name: &lt;key_name&gt;
-    openstack_tenant: service
-    username: root
-    private_key_path: &lt;path_to_secretkey&gt;
-</code></pre>
-
-<p>ファイルの内容について解説します。</p>
-
-<ul>
-<li>suites:</li>
-</ul>
-
-<p>実行したい Chef Cookbooks のレシピ名を指定します。attriutes などをここで上書き
-することも出来ます。</p>
-
-<ul>
-<li>platforms:</li>
-</ul>
-
-<p>テストに用いたい OS を列挙していけます。ここでは例として Ubuntu, CentOS を記し
-ました。</p>
-
-<ul>
-<li>openstack_username, openstack_api_key</li>
-</ul>
-
-<p>OpenStack にログインするためのユーザ名とパスワードです。keystone で作成します。</p>
-
-<ul>
-<li>openstack_auth_url</li>
-</ul>
-
-<p>Keystone の URL です。最後に /tokens と付けるのを忘れずに。</p>
-
-<ul>
-<li>image_ref</li>
-</ul>
-
-<p>それぞれの OS イメージの ID を記します。前述したとおりインスタンスでオペレーショ
-ン後にスナップショットを作成しそれを記すことも可能です。</p>
-
-<ul>
-<li>flavor_ref</li>
-</ul>
-
-<p>Flavor ID を記します。ここでは一番小さい Flavor である m1.tiny を記しました。</p>
-
-<ul>
-<li>key_name</li>
-</ul>
-
-<p>インスタンス作成時に選択する Nova のキーペア名です。OpenStack コマンドラインで
-言う &ndash;key_name です。</p>
-
-<ul>
-<li>openstack_tenant</li>
-</ul>
-
-<p>どのテナントにインスタンスを作成するか？を記します。</p>
-
-<ul>
-<li>username</li>
-</ul>
-
-<p>インスタンスにログインする際のユーザ名を記します。</p>
-
-<ul>
-<li>private_key_path</li>
-</ul>
-
-<p>インスタンスにログインするための SSH 秘密鍵のパスを記します。ここではノンパス
-ワードでログイン出来るよう鍵を生成してあげる必要があります。</p>
-
-<h2 id="cookbooks-の配置">Cookbooks の配置</h2>
-
-<p>カレントディレクトリ配下に &lsquo;cookbooks&rsquo; という名前のディレクトリを用意し
-テストで用いたい Cookbooks を配置します。Berkshelf を用いれば簡単です。が、
-現時点で Berkshelf の用いているソフトウェア test-kitchen のそれが衝突を起こす
-のでテスト実行前には Berkshelf ファイルを退避してください。</p>
-
-<pre><code class="language-bash">% ${EDITOR} Berksfile
-site :opscode
-    
-cookbook 'ntp;
-% berks install --path=./cookbooks
-% mv Berksfile Berksfile.old
-</code></pre>
-
-<h2 id="テスト実行">テスト実行</h2>
-
-<p>いよいよテストを実行します。上記の例では Ubuntu OS, Debian OS に対して ntp の
-Chef Cookbooks を実際にデプロイしテストを行います。</p>
-
-<pre><code class="language-bash">% bundle exec kitchen test
-</code></pre>
-
-<p>&lsquo;test&rsquo; を引数で渡すと</p>
-
-<ul>
-<li>インスタンス作成</li>
-<li>Chef のインストール</li>
-<li>Cookbooks のアップロード</li>
-<li>chef-solo の実行</li>
-<li>Cookbooks 中に &lsquo;test&rsquo; ディレクトリがある場合はテスト実行</li>
-</ul>
-
-<p>を行ってくれます。それぞれ別々に実行したい場合は</p>
-
-<pre><code class="language-bash">% bundle exec kitchen create   # &lt;---- インスタンスの作成
-% bundle exec kitchen setup    # &lt;---- chef のインストールと初回の converge
-% bundle exec kitchen converge # &lt;---- chef-solo を再度実行
-% bundle exec kitchen verify   # &lt;---- 'test' ディレクトリに従いテスト実行
-% bundle exec kitchen destroy  # &lt;---- インスタンスの削除
-</code></pre>
-
-<p>と行えば良いです。converge, verify は何度でも繰り返し実行が可能。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>前述したとおり Vagrant を使うと手元のマシンのリソースを大量に消費してしまうの
-で OpenStack を利用する価値は結構あるのかなぁと思っています。バージョン 1.0.0
-がリリースされる時期も近いと思うので今のうちに知っておくと良いかと思います。</p>
-
-<p>また、テストと言っても test-kitchen の場合2つの意味があると思います。実際に
-Cookbooks をインスタンスにインストールするテスト、と Cookbooks 自体のテストと
-いう意味です。後者についてはまた後ほど記したいと思います。</p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/10/12/glusterfs-install/">GlusterFS の各クラスタタイプ構築</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-10-12'>
-            October 12, 2013</time>
-        <span class="author"></span>
-        
-            <p>2 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。@jedipunkz です。</p>
-
-<p>GlusterFS をちょっと前に調べてました。何故かと言うと OpenStack Havana がもうす
-ぐリリースされるのですが、Havana から GlusterFS がサポートされる予定だからです。</p>
-
-<p>この辺りに色々情報が載っています。</p>
-
-<p><a href="http://www.gluster.org/category/openstack/">http://www.gluster.org/category/openstack/</a></p>
-
-<p>その前に GlusterFS を構築出来ないといけないので、今回はその方法を書いていきま
-す。各クラスタタイプ毎に特徴や構築方法が異なるのでその辺りを重点的に。</p>
-
-<h2 id="環境">環境</h2>
-
-<ul>
-<li>Ubuntu Server 12.04.3 LTS</li>
-<li>PPA レポジトリ利用</li>
-<li>/dev/sdb を OS 領域とは別の disk としてサーバに追加する</li>
-</ul>
-
-<h2 id="用いる-ppa-レポジトリ">用いる PPA レポジトリ</h2>
-
-<p>Ubuntu 12.04.3 LTS の GlusterFS バージョンは 3.2 です。3.4 系が今回使いたかっ
-たので下記の PPA レポジトリを利用させてもらいます。ちゃんと構築するなら自分で
-パッケージを作成することをオススメします。</p>
-
-<p><a href="https://launchpad.net/~semiosis/+archive/ubuntu-glusterfs-3.4">https://launchpad.net/~semiosis/+archive/ubuntu-glusterfs-3.4</a></p>
-
-<h1 id="準備">準備</h1>
-
-<p>ここからの手順は全てのサーバで操作します。</p>
-
-<h2 id="レポジトリの利用方法">レポジトリの利用方法</h2>
-
-<pre><code class="language-bash">% sudo aptitude install python-software-properties
-% sudo add-apt-repository ppa:semiosis/ubuntu-glusterfs-3.4
-% sudo apt-get update
-</code></pre>
-
-<h2 id="glusterfs3-4-のインストール">GlusterFS3.4 のインストール</h2>
-
-<pre><code class="language-bash">% sudo apt-get install glusterfs-server gluserfs-client
-</code></pre>
-
-<h2 id="xfsprogs-のインストール">xfsprogs のインストール</h2>
-
-<p>glusterfs は xfs を扱うため xfsprogs をインストールする。</p>
-
-<pre><code class="language-bash">% sudo apt-get install xfsprogs
-</code></pre>
-
-<h2 id="ディスクの準備">ディスクの準備</h2>
-
-<pre><code class="language-bash">% sudo mkfs.xfs -i size=512 /dev/sdb
-% sudo mkdir -p /export/brick1
-% sudo vim /etc/fstab
-/dev/sdb /export/brick1 xfs defaults 1 2 # &lt;- 追記
-% sudo mount -a
-% mount
-</code></pre>
-
-<h1 id="各クラスタタイプでのマウント方法">各クラスタタイプでのマウント方法</h1>
-
-<p>ここからの手順はどこか一台のノードで行えば OK です。</p>
-
-<h2 id="distributed-タイプ">distributed タイプ</h2>
-
-<p>まずはデフォルトとなる distributed のマウント方法。</p>
-
-<pre><code class="language-bash">% sudo gluster peer probe &lt;other_node_ip_addr&gt; ...
-% sudo gluster volume create gv0 &lt;mine_ip_addr&gt;:/export/brick1/sdb &lt;another_node_ip_addr&gt;:/export/brick1/sdb
-% sudo gluster volume start gv0
-% sudo gluster volume info
-Volume Name: gv0
-Type: Distribute
-Volume ID: 803fdd46-4735-444a-99c8-83d1cee172e6
-Status: Started
-Number of Bricks: 2
-Transport-type: tcp
-Bricks:
-Brick1: &lt;mine_ip_addr&gt;:/export/brick1/sdb
-Brick2: &lt;other_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>マウント行う。どちらのノードに対して行うことが出来る。</p>
-
-<pre><code class="language-bash">% sudo mount -t glusterfs &lt;mine_ip_addr&gt;:/gv0 /mnt
-</code></pre>
-
-<h2 id="その他のクラスタタイプのマウント方法">その他のクラスタタイプのマウント方法</h2>
-
-<p>replicated の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create gv0 replica 2 &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_node_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>striped の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create gv0 stripe 2 &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_node_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>distributed replicated の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create dist-repl replica 2 \
-  &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>striped replicated の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create strip-repl stripe 2 replica 2 \
-  &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<p>distributed striped replicated の場合&hellip;</p>
-
-<pre><code class="language-bash">% sudo gluster volume create dist-strip-repl stripe 2 replica 2 \
-  &lt;mine_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb \
-  &lt;other_ip_addr&gt;:/export/brick1/sdb
-</code></pre>
-
-<h2 id="各クラスタタイプの特徴">各クラスタタイプの特徴</h2>
-
-<ul>
-<li>distributed</li>
-</ul>
-
-<p>1つのオブジェクトを GlusterFS 上に保管するとオブジェクト単位でどれかのノードに
-対して保管する。よって &lsquo;ノード上の disk x ノード数&rsquo; が合計容量として扱うことが
-出来る。ノード障害の場合にはその該当ノード上の disk に保管されているオブジェク
-トの読み書きは NG 。その他のノード上 disk に保管されているオブジェクトに対して
-は読み書きが正常に行える。</p>
-
-<ul>
-<li>stripe</li>
-</ul>
-
-<p>1つのオブジェクトをブロック単位で分割し各ノードに保管する。扱える合計容量は
-distributed と同じく &lsquo;ノード上の disk x ノード数&rsquo; となる。障害がどこかのノード
-で発生した場合、全てのオブジェクトの読み書きが行えなくなる。</p>
-
-<ul>
-<li>replicated</li>
-</ul>
-
-<p>1つのオブジェクトを 2 台のノードに対してミラーリングを行い保管する。障害系の対
-応が可能になる。その分、扱える合計容量は distrubuted/stripe に比べ半分となる。</p>
-
-<ul>
-<li>distributed replicated</li>
-</ul>
-
-<p>構成イメージ図&hellip;</p>
-
-<pre><code>+--------+
-| client |
-+--------+
-|
-+---------------------+
-|                     |
-+----------+          +----------+
-|          |          |          |
-+--------+ +--------+ +--------+ +--------+
-| node1  | | node2  | | node3  | | node4  |
-+--------+ +--------+ +--------+ +--------+
-</code></pre>
-
-<p>node1, 2 と 3, 4 にて replicated しそれぞれに対して distributed を組む。扱える
-disk 容量は node の持っている disk 容量 x ノード数 / 2 となる。distributed は
-実質、障害系の対応が良くないので distributed を扱うのであれば、この volume
-type が推奨されるものと思われる。</p>
-
-<ul>
-<li>striped replicated</li>
-</ul>
-
-<p>distributed replicated と同等の構成だがブロック単位でのオブジェクトの保管とな
-る。</p>
-
-<h2 id="まとめ">まとめ</h2>
-
-<p>GlusterFS には一貫性の問題 (disk 容量の一貫性を保つ必要がある) と思っていたが、
-昔の話しらしい。容量のことなる disk をノードに追加しても、それをうまく合計容量
-に合算されるのを確認した。また分散ファイルシステムの美味しいところと冗長性を兼
-ねた構成を組むのが良いと思うので distributed replicated もしくは striped
-replicated を選択するのがオススメ。今回は TCP で扱ったがバージョン 3.4 からは
-Infiniband と組み合わせて RDMA を扱うことが可能。下記の URL が参考になる。</p>
-
-<p><a href="http://gluster.org/community/documentation/index.php/Gluster_3.2:_Configuring_GlusterFS_to_work_over_InfiniBand">http://gluster.org/community/documentation/index.php/Gluster_3.2:_Configuring_GlusterFS_to_work_over_InfiniBand</a></p>
-
-    <footer>
-        <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/10/12/glusterfs-install/" class="button big">Continue Reading</a></li>
-        </ul>
-        <ul class="stats">
-    
-        
-
-        
-        
-            <li>
-                
-                
-                    
-
-                    
-
-                    
-
-                    
-                        Category
-                    
-                
-            </li>
-        
-    
-
-    
-    
-        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
-    
-</ul>
-
-    </footer>
-</article>
-
-        
-            <article class="post">
-    <header>
-    <div class="title">
-        
-            <h2><a href="http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/">Methos アーキテクチャ #2 (Docker on Mesos)</a></h2>
-        
-        
-    </div>
-    <div class="meta">
-        
-            
-        
-
-        <time class="published"
-            datetime='2013-10-01'>
-            October 1, 2013</time>
-        <span class="author"></span>
-        
-            <p>3 minute read</p>
-        
-        
-    </div>
-</header>
-
-    
-
-    
-    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
-
-<p>Mesos アーキテクチャについて2つめの記事です。</p>
-
-<p><a href="http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/">http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/</a></p>
-
-<p>上記の前回の記事で Mesos 自体のアーキテクチャについて触れましたが、今回は
-Mesos + Marathon + Docker の構成について理解したことを書いていこうと思います。</p>
-
-<p>mesos クラスタは 幾つかの mesos masters と沢山の mesos slaves から成っており、
-mesos slaves の上では docker を操作する executor が稼働している。marathon は
-mesos master の上で稼働する mesos framework である。init や upstart の様な存在
-であることが言え、REST API を持ち container の動作を制御する。marathon には
-ruby の client 等も存在する。下記がそれ。</p>
-
-<p><a href="https://github.com/mesosphere/marathon_client">https://github.com/mesosphere/marathon_client</a></p>
+<p>毎度お馴染みになった OpenStack の Chef によるデプロイですが、今回は OpenStack
+Havana 構成を Chef でデプロイする方法についてです。使用するのは今回も
+rcbops/chef-cookbooks です。ブランチは &lsquo;havana&rsquo; を用います。</p>
+
+<p>早速ですが構成について。4.1.2 辺りからだと思うのですが構成の前提が物理ネットワー
+ク4つを前提にし始めました。public, external (VM) を別ける必要が出てきました。
+通信の特性も異なるので (public は public API を。external は VM 用) 、別けるの
+が得策かもしれません。</p>
 
 <h2 id="構成">構成</h2>
 
-<pre><code>+-----------------+
-| docker registry | index.docker.io (もしくは local registry)
-+-----------------+
-|
-+----------------+
-|                |
-+--------------+ +--------------+
-| mesos master | | mesos master |
-+--------------+ +--------------+
-|                |
-|----------------+-----------------------------------|
-
-+--------------+ +--------------+     +--------------+
-| mesos slave  | | mesos slave  | ... | mesos slave  | 
-+--------------+ +--------------+     +--------------+
-|                |                    |
-+--------------+ +--------------+     +--------------+
-| mesos slave  | | mesos slave  | ... | mesos slave  | 
-+--------------+ +--------------+     +--------------+
-.                .                    .
-.                .                    .
-.                .                    .
-+--------------+ +--------------+     +--------------+
-| mesos slave  | | mesos slave  | ... | mesos slave  |
-+--------------+ +--------------+     +--------------+
+<pre><code>                  +--------------+------------------------------------------------------- external
+                  |              |
++--------------+--(-----------+--(-----------+--------------+---------------------------- public
+|              |  |           |  |           |              |
++------------+ +------------+ +------------+ +------------+ +------------+ +------------+
+| controller | |  network   | |  network   | |  compute   | |  compute   | | workstation|
++------------+ +------------+ +------------+ +------------+ +------------+ +------------+
+|              |  |           |  |           |  |           |  |           |
++--------------+--(-----------+--(-----------+--(-----------+--(-----------+------------- management
+                  |              |              |              |
+                  +--------------+--------------+--------------+------------------------- guest
 </code></pre>
 
-<h2 id="オファから-docker-が稼働するまでの流れ">オファから docker が稼働するまでの流れ</h2>
-
-<p>上記の構成の図を見ながら理解していきましょう。</p>
+<h4 id="上記の構成の特徴">上記の構成の特徴</h4>
 
 <ul>
-<li>HTTP API もしくは web UI で marathon がリクエストを受ける</li>
-<li>marathon はリソースリクエストを作成しオファが受け付けられるのを待つ</li>
-<li>オファが受け付けられた後、mesos master は slave に task の仕様を送信する</li>
-<li>slave では docker コマンドラインツールを実行する mesos docker を mesos slave デーモンが呼び出す</li>
-<li>docker コマンドラインツールはローカルの docker デーモンと image cache, lxc ツールにより通信する</li>
-<li>もし image cache が存在すればそれを、無ければ docker registry から pull する。</li>
-<li>その時、index.docker.io の代わりにローカルの docker registry を稼働させることも可能</li>
-<li>docker デーモンが container を稼働させる</li>
+<li>4つの物理ネットワークを前提</li>
+<li>public ネットワーク : 外部 API 用ネットワーク</li>
+<li>external ネットワーク : インスタンス外部接続用ネットワーク</li>
+<li>guest ネットワーク : インスタンス内部用ネットワーク</li>
+<li>management ネットワーク : 各コンポーネント接続用ネットワーク</li>
+<li>public, external のみグローバルネットワーク</li>
+<li>controller : 2 nics, network : 4 nics, compute : 3nics の構成</li>
+<li>controller はシングル構成</li>
+<li>network ノードは台数拡張可能, agent 単位でノード間移動可能</li>
+<li>compute ノードも台数拡張可能</li>
+<li>workstation は chef-repo の所在地, management ネットワークに所属</li>
 </ul>
 
-<h2 id="marathon-のクラスタとしての動作">marathon のクラスタとしての動作</h2>
+<h2 id="各ノードの準備">各ノードの準備</h2>
 
-<p>marathon は init や upstart のようなモノだと上記で説明しましたが、図を交えて説明して
-いきましょう。</p>
+<p>OS インストール後、各ノードのネットワークインターフェースの設定を下記の通り行っ
+てください。また LVM を使うのであれば cinder ボリュームの設定も必要になってきます。</p>
 
-<p>marathon が &lsquo;serarch service&rsquo; と &lsquo;docker&rsquo; を稼働させている状態だとする。</p>
+<h4 id="controller-ノード">controller ノード</h4>
 
-<pre><code>+----------+ +----------+ +----------+
-|          | |          | |          | 
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
+<p>2 nics を下記の通り設定します。</p>
 
-+----------+ +----------+ +----------+
-|          | |          | |          | 
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
+<ul>
+<li>eth0 を public ネットワークに。gateway をこのインターフェースに設定</li>
+<li>eth1 を guest ネットワークに。gateway はなし</li>
+</ul>
 
-+----------+ +----------+ +----------+
-|          | |          | |          | 
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
+<p>/etc/network/interfaces の例</p>
+
+<pre><code>auto eth0
+iface eth0 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    gateway &lt;gateway&gt;
+    dns-nameservers &lt;dns_cache_server&gt;
+    dns-search &lt;domain&gt;
+
+auto eth1
+iface eth1 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
 </code></pre>
 
-<p>サービスの状況によりオファが立て込んでくると下記のように docker をスケールアウ
-トが発生する。</p>
+<p>/dev/sdb を cinder 用ディスクデバイスとします。</p>
 
-<pre><code>+----------+ +----------+ +----------+
-| |docker| | | |docker| | |          | 
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
-
-+----------+ +----------+ +----------+
-|          | | |docker  | | |docker| | 
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
-
-+----------+ +----------+ +----------+
-| |docker| | | |docker| | | |docker| |
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
+<pre><code class="language-bash">% sudo pvcreate /dev/sdb
+% sudo vgcreate cinder-volumes /dev/sdb
 </code></pre>
 
-<p>システムに異常がありノードが落ちた場合、下記のように marathon は serach
-service と docker をノード間で移動させる処置を行う。</p>
+<h4 id="network-ノード">network ノード</h4>
 
-<pre><code>             +----------+ +----------+
-             | |docker| | | |search| | 
-             | |docker| | | |docker| |
-             +----------+ +----------+
+<p>4 nics を下記の通り設定します。up route で仮想ネットワークへのルーティングを書
+いてあげると、network ノードから直接仮想ネットワーク上のインスタンスへ通信する
+ことが可能です。最初は書かなくても OK です。</p>
 
-+----------+ +----------+ +----------+
-| |docker|   | |docker| | | |docker| | 
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
+<pre><code>auto eth0
+iface eth0 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    dns-nameservers &lt;dns_cache_server&gt;
+    dns-search &lt;domain&gt;
 
-+----------+ +----------+ +----------+
-| |docker| | | |docker| | | |docker| |
-| |search| | | |docker| | | |docker| |
-+----------+ +----------+ +----------+
+auto eth1
+iface eth1 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+
+auto eth2
+iface eth2 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    gateway 10.200.10.1
+    dns-nameservers 8.8.8.8 8.8.4.4
+    dns-search cpi.ad.jp
+
+auto eth3
+iface eth3 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    # 仮想ネットワークへのルーティング
+    # up route add -net &lt;virtual_net_cidr&gt; gw &lt;neutron_gw&gt;
+    # up route add -net &lt;virtual_net_cidr&gt; gw &lt;neutron_gw&gt;
 </code></pre>
 
-<h2 id="まとめ">まとめ</h2>
+<h4 id="compute-ノード">compute ノード</h4>
 
-<p>mesos と docker, marathon の関係について記していきました。今度、実際にこの構成
-を組んでみて障害系のテストしてみたいです。あとは framework について理解してい
-く必要がありそう。あとは chronos についても。chronos については下記の URL が公
-式らしい。これは cron 代替な仕組みらしいです。</p>
+<p>3 nics を下記の通り設定します。</p>
 
-<p><a href="https://github.com/airbnb/chronos">https://github.com/airbnb/chronos</a></p>
+<pre><code>auto eth0
+iface eth0 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    dns-nameservers &lt;dns_cache_server&gt;
+    dns-search &lt;domain&gt;
 
-<p>まだまだ理解できていないことだらけだ&hellip;。</p>
+auto eth1
+iface eth1 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    
+auto eth2
+iface eth2 inet static
+    address &lt;ip_addr&gt;
+    netmask &lt;netmask&gt;
+    gateway &lt;gateway&gt;
+    dns-nameservers &lt;dns_cache_server&gt;
+    dns-search &lt;domain&gt;
+</code></pre>
+
+<h2 id="cookbooks-roles-environments-等の準備">Cookbooks, Roles, Environments 等の準備</h2>
+
+<p>下記の操作は全て workstation ノードからの操作です。
+また chef のインストールや chef サーバの構築方法については割愛します。</p>
+
+<p>rcbops/chef-cookbooks を取得します。</p>
+
+<pre><code class="language-bash">% git clone https://github.com/rcbops/chef-cookbooks.git
+% cd chef-cookbooks
+% git checkout -b havana remotes/origin/havana
+% # .chef 配下の準備割愛。各 Chef サーバ環境に合わせる
+% git submodule init
+% git submodule sync
+% git submodule update
+% knife cookbook upload -o cookbooks -a
+% knife role from file roles/*.rb
+</code></pre>
+
+<p>今回の構成用の environment を生成します。それぞれの環境に合わせて作成してくだ
+さい。生成のコツは各 Cookbooks の attributes を見ながら設定することです。
+生成した json ファイルを environments ディレクトリ配下に配置します。</p>
+
+<pre><code class="language-json">{
+  &quot;name&quot;: &quot;havana-neutron&quot;,
+  &quot;description&quot;: &quot;&quot;,
+  &quot;cookbook_versions&quot;: {
+  },
+  &quot;json_class&quot;: &quot;Chef::Environment&quot;,
+  &quot;chef_type&quot;: &quot;environment&quot;,
+  &quot;default_attributes&quot;: {
+  },
+  &quot;override_attributes&quot;: {
+    &quot;package_component&quot;: &quot;havana&quot;,
+    &quot;osops_networks&quot;: {
+      &quot;management&quot;: &quot;10.200.10.0/24&quot;,
+      &quot;public&quot;: &quot;10.200.9.0/24&quot;,
+      &quot;nova&quot;: &quot;10.200.10.0/24&quot;
+    },
+    &quot;nova&quot;: {
+      &quot;config&quot;: {
+        &quot;use_single_default_gateway&quot;: false,
+        &quot;ram_allocation_ratio&quot;: &quot;1&quot;,
+        &quot;cpu_allocation_ratio&quot;: &quot;16&quot;
+      },
+      &quot;network&quot;: {
+        &quot;provider&quot;: &quot;neutron&quot;,
+        &quot;network_type&quot;: &quot;vlan&quot;
+      },
+      &quot;apply_patches&quot;: true,
+      &quot;libvirt&quot;: {
+        &quot;vncserver_listen&quot;: &quot;0.0.0.0&quot;,
+        &quot;virt_type&quot;: &quot;kvm&quot;
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;nova&quot;
+      },
+      &quot;services&quot;: {
+        &quot;novnc-proxy&quot;: {
+          &quot;network&quot;: &quot;public&quot;
+        },
+        &quot;ec2-admin&quot;: {
+          &quot;network&quot;: &quot;management&quot;
+        }
+      }
+    },
+    &quot;cinder&quot;: {
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;cinder&quot;
+      }
+    },
+    &quot;keystone&quot;: {
+      &quot;admin_user&quot;: &quot;admin&quot;,
+      &quot;tenants&quot;: [
+        &quot;admin&quot;,
+        &quot;service&quot;
+      ],
+      &quot;users&quot;: {
+        &quot;admin&quot;: {
+          &quot;password&quot;: &quot;secrete&quot;,
+          &quot;roles&quot;: {
+            &quot;admin&quot;: [
+              &quot;admin&quot;
+            ]
+          }
+        },
+        &quot;demo&quot;: {
+          &quot;password&quot;: &quot;demo&quot;,
+          &quot;default_tenant&quot; : &quot;service&quot;,
+          &quot;roles&quot;: {
+            &quot;service&quot;: [ &quot;service&quot; ]
+          }
+        }
+      },
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;keystone&quot;
+      }
+    },
+    &quot;horizon&quot;: {
+      &quot;theme&quot;: &quot;Rackspace&quot;,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;horizon&quot;
+      },
+      &quot;endpoint_type&quot; : &quot;publicURL&quot;,
+      &quot;endpoint_scheme&quot; : &quot;http&quot;
+    },
+    &quot;mysql&quot;: {
+      &quot;root_network_acl&quot;: &quot;%&quot;,
+      &quot;allow_remote_root&quot;: true,
+      &quot;server_root_password&quot;: &quot;secrete&quot;,
+      &quot;server_repl_password&quot;: &quot;secrete&quot;,
+      &quot;server_debian_password&quot;: &quot;secrete&quot;
+    },
+    &quot;monitoring&quot;: {
+      &quot;procmon_provider&quot;: &quot;monit&quot;,
+      &quot;metric_provider&quot;: &quot;collectd&quot;
+    },
+    &quot;glance&quot;: {
+      &quot;images&quot;: [
+        &quot;precise&quot;, &quot;cirros&quot;
+      ],
+      &quot;image&quot;: {
+      },
+      &quot;image_upload&quot;: false,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;glance&quot;
+      }
+    },
+    &quot;neutron&quot;: {
+      &quot;service_pass&quot;: &quot;neutron&quot;,
+      &quot;db&quot;: {
+        &quot;password&quot;: &quot;neutron&quot;
+      }
+    },
+    &quot;developer_mode&quot;: false
+  }
+}
+</code></pre>
+
+<p>environment ファイルの chef サーバへのアップロード。</p>
+
+<pre><code class="language-bash">% knife environment from file environments/havana-neutron.json
+</code></pre>
+
+<h2 id="knife-bootstrap-によるデプロイ">knife bootstrap によるデプロイ</h2>
+
+<p>下記の通り knife bootstrap することで各ノードをデプロイします。</p>
+
+<p>controller ノードのデプロイ。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;controller_ipaddr&gt; -N &lt;controller_name&gt; \
+  -r 'role[single-controller]','role[cinder-volume]' \
+  -E havana-neutron -x &lt;username&gt; --sudo
+</code></pre>
+
+<p>network ノードのデプロイ。台数分デプロイしてください。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;network_ipaddr&gt; -N &lt;network_name&gt; \
+  -r 'role[single-network-node]','recipe[nova-network::neutron-l3-agent]' \
+  -E neutron-havana -x &lt;username&gt; --sudo
+</code></pre>
+
+<p>compute ノードのデプロイ。台数分デプロイしてください。</p>
+
+<pre><code class="language-bash">% knife bootstrap &lt;compute_ipaddr&gt; -N &lt;compute_name&gt; \
+  -r 'role[single-compute]' \
+  -E havana-neutron -x &lt;username&gt; --sudo
+</code></pre>
+
+<h2 id="openvswitch-の物理-nic-とブリッジインタフェースマッピング作業">openvswitch の物理 NIC とブリッジインタフェースマッピング作業</h2>
+
+<p>各ノードで下記の通り物理 NIC とブリッジのマッピング作業を行ってください。操作
+は必ず management ネットワークを介して行うようにしましょう。その他のネットワー
+クから操作すると通信が途絶える可能性があります。</p>
+
+<p>network ノード</p>
+
+<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
+% sudo ovs-vsctl add-port br-ex eth3
+</code></pre>
+
+<p>compute ノード</p>
+
+<pre><code class="language-bash">% sudo ovs-vsctl add-port br-eth1 eth1
+</code></pre>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>havana の roles にはコアプロジェクトのコンポーネントが入っています。つまり
+ceilometer と heat も上記のデプロイで入ってきます。ceilometer に関して公式のド
+キュメントではデータ格納用 DB として mongodb が記されていますが、ここでは
+mysqld 上に格納する構成になっていました。これは個人的には非常に助かります。
+また、compute ノードから controller ノードの public api を叩く必要が出てきて、
+compute ノードにも public ネットワーク用の NIC を足しましたが、こうするべきな
+のかどうかは今後考えてみます。理想は management ネットワークを介することですが
+attributes の調整でけではうまくいきませんでした。&rsquo;havana&rsquo; ブランチはまだ開発が
+進んでいるので改善されるかもしれません。コントリビュートするのも手だと思います。</p>
 
     <footer>
         <ul class="actions">
-            <li><a href="http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/" class="button big">Continue Reading</a></li>
+            <li><a href="http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/">第2回 Elasticsearch 勉強会参加レポート</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-11-13'>
+            November 13, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>第2回 Elasticsearch 勉強会に参加してきました。箇条書きですが参加レポートを記し
+ておきます。</p>
+
+<pre><code>開催日 : 2013/11/12
+場所 : 東京駅 グラントウキョウサウスタワー リクルートテクノロジーズさま
+URL : http://elasticsearch.doorkeeper.jp/events/6532
+</code></pre>
+
+<h2 id="routing-周りの話">Routing 周りの話</h2>
+
+<pre><code>株式会社シーマーク　大谷純さん (@johtani)
+</code></pre>
+
+<h4 id="index-構成">Index 構成</h4>
+
+<ul>
+<li>cluster の中に index -&gt; type が作成される</li>
+<li>index は shard という部分的な index の集まり</li>
+<li>shard 数は生成時のみ指定可能</li>
+<li>node ごとに replica, primary を別ける</li>
+<li>replica 数は後に変えられる</li>
+<li>doc -&gt; hash 値を shard 数で割って replica, primary に登録</li>
+<li>doc の id の ハッシュ値を利用</li>
+<li>type も含める場合はかの設定を true に</li>
+<li>クライアントはどのノードに対してクエリを投げても OK</li>
+</ul>
+
+<h4 id="routing">routing</h4>
+
+<ul>
+<li>id の代わりに routing (URL パラメータ) で登録</li>
+<li>url リクエストパラメータとして登録時にルーティングパラメータを登録</li>
+<li>id の代わりにパラメータで指定された値のハッシュ値を計算して利用</li>
+<li>検索時 routing 指定で関係のある shard のみを指定出来る</li>
+</ul>
+
+<h4 id="スケールアウト">スケールアウト</h4>
+
+<ul>
+<li>sharding によるスケールアウト数 = インデックス作成時に指定</li>
+<li>shard によるインデックスの分割以外にインデックス自体を複数持つことによるスケール</li>
+<li>複数のドキュメントをエイリアス書けることが可能</li>
+</ul>
+
+<h4 id="所感">所感</h4>
+
+<p>個人的には非常に興味のあるところでした。mongodb のような sharding をイメージし
+てよいのか？そうでないのか？すら理解出来ていなかったので。sharding を理解する
+前提知識の話もあって非常に参考になりました。</p>
+
+<h2 id="elasticsearchを使ったbaas基盤の開発">ElasticSearchを使ったBaaS基盤の開発</h2>
+
+<pre><code>株式会社富士通ソフトウェアテクノロジーズ 滝田聖己さん（@pisatoshi）
+</code></pre>
+
+<p>運用の話。これは貴重&hellip;。</p>
+
+<ul>
+<li>shard 数 : 10 , replica : 1 で運用している</li>
+<li>データは業務データ , トラッキングデータ</li>
+<li>マルチテナント, 更新の即時反映, ルーティングによる性能向上 が要件</li>
+<li>登録更新 -&gt; 検索結果反映までタイムラグがある -&gt; replica 完了まで待つので高コスト</li>
+<li>replica 数を減らすことで性能向上</li>
+</ul>
+
+<h4 id="routing-id-を指定することで">routing id を指定することで&hellip;</h4>
+
+<ul>
+<li>doc id の has から shard 自動選択がデフォルト</li>
+<li>-&gt; hash key を指定して格納シャードを制御出来る</li>
+<li>-&gt; doc 登録性能向上</li>
+<li>-&gt; 検索対象の shard を絞りこみえる</li>
+<li>-&gt; 不可を軽減</li>
+</ul>
+
+<h4 id="バックアップ-リストア">バックアップ/リストア</h4>
+
+<ul>
+<li>mysql にもデータ格納 -&gt; backup</li>
+<li>elasticsearch の index はバックアップ取らず -&gt; bug を踏みたくないのが理由</li>
+</ul>
+
+<h4 id="dynamic-mapping-の問題">dynamic mapping の問題</h4>
+
+<ul>
+<li>入力データから型を推測 -&gt; 自動マッピング登録</li>
+<li>-&gt; マッピング定義が肥大化</li>
+<li>-&gt; データ型のコンフリクト</li>
+</ul>
+
+<h4 id="mapping-の肥大化">mapping の肥大化</h4>
+
+<ul>
+<li>mapping 定義は type, field の数に応じてサイズが増加</li>
+<li>-&gt; index 性能低下</li>
+<li>-&gt; mapping を伴う doc 登録 3sec (mapping size 80MB)</li>
+<li>-&gt; 各 node への mapping 定義の同期</li>
+<li>大量のデータを一気に登録するときは 1 node が速い</li>
+<li>-&gt; その後シャード再配置したことがある</li>
+</ul>
+
+<p>=&gt; dynamic mapping を使うのをやめた -&gt; app で指定</p>
+
+<h4 id="よく利用するツール">よく利用するツール</h4>
+
+<ul>
+<li>bigdesk</li>
+<li>elasticsearch-head</li>
+<li>sense (chrome extention)</li>
+</ul>
+
+<h4 id="unit-test">unit test</h4>
+
+<p>unit test はどうする？</p>
+
+<ul>
+<li>nodeClient テスト開始時に起動</li>
+<li>テストデータを配置して起動, 終了時に削除</li>
+<li>memoryIndex で高速に実行</li>
+<li>elasticsearch-test が便利</li>
+</ul>
+
+<h4 id="所感-1">所感</h4>
+
+<p>運用の話はどの技術でも重要!!! 実際に困った話、トラブル等聞けて貴重な時間でした。
+よく使うツールの話も意外と参考になるので聞けてよかった。</p>
+
+<h2 id="kibana">Kibana</h2>
+
+<pre><code>Cookpad 水戸祐介さん (@y_310)
+</code></pre>
+
+<ul>
+<li>作った dashboard は elasticsearch に保存される</li>
+<li>db 要らず , web サーバのみ, クライアントサイドの技術のみで実装されている</li>
+<li>term, trends, map, table, column&hellip; それぞれ図形式がある
+title = &ldquo;test&rdquo;, -title</li>
+<li>1つの index に異なるスキーマを持つデータを入れられる</li>
+<li>1つの index に入れることでグラフを重ねて比較出来る</li>
+<li>やはり dynamic mapping は使わないほうが良い</li>
+<li>m1.large x 1 : 1日のインデックスサイズが10GB 超えるあたりで ES が詰まる</li>
+</ul>
+
+<p>下記が当日の資料です。</p>
+
+<script async class="speakerdeck-embed"
+data-id="3d0776802ddb0131fdd042970ce72c15" data-ratio="1.33333333333333" src="//speakerdeck.com/assets/embed.js"></script>
+
+<h4 id="所感-2">所感</h4>
+
+<p>Cookpad さんで実際に利用されているとか。運用の話と同じくやはり dynamic routing
+でのトラブルの話があった。また Cookpad さんでのトラブル例の話もあってよかった。</p>
+
+<h2 id="elasticsearch-kibana-v3を利用する際の運用ノウハウ">ElasticSearch＋Kibana v3を利用する際の運用ノウハウ</h2>
+
+<pre><code>株式会社リブセンス Y.Kentaro さん (@yoshi_ken)
+</code></pre>
+
+<p>下記が発表資料。</p>
+
+<p><iframe src="http://www.slideshare.net/slideshow/embed_code/28165189"
+width="597" height="486" frameborder="0" marginwidth="0" marginheight="0"
+scrolling="no" style="border:1px solid #CCC;border-width:1px 1px
+0;margin-bottom:5px" allowfullscreen> </iframe> <div
+style="margin-bottom:5px"> <strong> <a
+href="https://www.slideshare.net/y-ken/elasticsearch-kibnana-fluentd-management-tips"
+title="ElasticSearch+Kibanaでログデータの検索と視覚化を実現するテクニックと運
+用ノウハウ" target="_blank">ElasticSearch+Kibanaでログデータの検索と視覚化を実
+現するテクニックと運用ノウハウ</a> </strong> from <strong><a
+href="http://www.slideshare.net/y-ken" target="_blank">Kentaro
+Yoshida</a></strong> </div></p>
+
+<ul>
+<li>nginx の basic 認証等でアクセス制限を掛ける例</li>
+</ul>
+
+<p>等など&hellip; ごめんなさい！メモが取れてなかった！&hellip;汗</p>
+
+<h2 id="fluentd-as-a-kibana">Fluentd as a Kibana</h2>
+
+<pre><code>@repeatedly さん
+</code></pre>
+
+<p>fluentd-plugin-kibana-server  というkibana をダウンロードしてくるのがめんどい
+ので fluentd の中で kibana を動かすプラグインを作った話。下記が発表資料。</p>
+
+<p><a href="https://gist.github.com/repeatedly/7427856">https://gist.github.com/repeatedly/7427856</a></p>
+
+<ul>
+<li>fluentd input plugin として実装</li>
+<li>logstash 版もあるらしい</li>
+</ul>
+
+<h4 id="所感-3">所感</h4>
+
+<p>さすが&hellip;。確かにサーバをいちいち作るのめんどいです。fluentd plugin の中で
+kibana を動かすって発想が&hellip;。</p>
+
+<h2 id="auth-プラグインでアクセスコントロール">auth プラグインでアクセスコントロール</h2>
+
+<pre><code>株式会社エヌツーエスエム 菅谷信介さん (@shinsuke_sugaya)
+</code></pre>
+
+<ul>
+<li>elasticsearch のアクセス制御をしたい</li>
+<li>rest api をアクセス制御する</li>
+<li>ユーザ管理, REST API のアクセス管理, ログイン・ログアウト・トーケン</li>
+<li>ユーザ管理は elasticsearch 内に格納</li>
+<li>path, http method, role の組み合わせで制御</li>
+</ul>
+
+<p>インストールは下記の通り elasticsearch plugin コマンドで。</p>
+
+<pre><code>% ./bin/plugin --install org.codelibs/elasticsearch-auth/1.0.0
+</code></pre>
+
+<ul>
+<li>ユーザ作成は POST で可能</li>
+</ul>
+
+<h2 id="所感とまとめ">所感とまとめ</h2>
+
+<p>箇条書きのざっくりしたまとめでしたが&hellip;。個人的には sharding の話はとても聞き
+たかったので貴重な時間でした。また、運用の話もとてもおもしろかったし plugin 作っ
+てみた話も「すごい..」って感じでした。僕はこれからアプリも書くけどインフラエン
+ジニアなのでアーキテクチャをまず知りたいかなぁという印象。と言うかスケールさせ
+るときにも横に並べて shard するだけの様な話に聞こえましたが、まだぼんやり感が
+あります。特に shard 周り。mongo の sharding と同じ様なものを想像していますが。
+またモチベーション上がったので週末やってみますー！</p>
+
+<p>kibana3 は一回使いました。javascript, html で実装されているのでクライアントか
+ら elasticsearch まで直接アクセス出来なければならないとなって、構成的にどうな
+のかな？と思っていたら菅谷さんの &lsquo;auth プラグイン&rsquo; の話があったりしたので、良
+かったです。使ってみます！</p>
+
+<p>主催の方々、発表者の方々、当日はありがとうございましたー。また参加させてもらい
+ます。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/" class="button big">Continue Reading</a></li>
+        </ul>
+        <ul class="stats">
+    
+        
+
+        
+        
+            <li>
+                
+                
+                    
+
+                    
+
+                    
+
+                    
+                        Category
+                    
+                
+            </li>
+        
+    
+
+    
+    
+        <li><a href='/categoriesinfrastructure'>infrastructure</a></li>
+    
+</ul>
+
+    </footer>
+</article>
+
+        
+            <article class="post">
+    <header>
+    <div class="title">
+        
+            <h2><a href="http://jedipunkz.github.io/blog/2013/11/10/serf/">Serf を使ってみた</a></h2>
+        
+        
+    </div>
+    <div class="meta">
+        
+            
+        
+
+        <time class="published"
+            datetime='2013-11-10'>
+            November 10, 2013</time>
+        <span class="author"></span>
+        
+            <p>2 minute read</p>
+        
+        
+    </div>
+</header>
+
+    
+
+    
+    <p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
+
+<p>僕は Chef 使いなのですが、Chef はオーケストレーションまで踏み込んだツールでは
+ないように思います。せいぜいインテグレーションが出来る程度なのかなぁと。
+しかもインテグレーションするにも Cookbooks の工夫が必要です。以前聞いたことの
+ある話ですが Opscode 社のエンジニア曰く「オーケストレーション等へのアプローチ
+はそれぞれ好きにやってね」だそうです。</p>
+
+<p>個人的にオーケストレーションをテーマに色々調べようかと考えているのですが、
+Serf という面白いツールが出てきました。&rsquo;Serf&rsquo; はオーケストレーションを手助けし
+てくれるシンプルなツールになっています。</p>
+
+<p>もう既にいろんな方が Serf について調べていますが、どのような動きをするのかを自
+分なりに理解した点を記しておこうと思います。</p>
+
+<h2 id="参考にしたサイト">参考にしたサイト</h2>
+
+<ul>
+<li>公式サイト <a href="http://www.serfdom.io/">http://www.serfdom.io/</a></li>
+<li>クラスメソッド開発者ブログ <a href="http://dev.classmethod.jp/cloud/aws/serf_on_ec2/">http://dev.classmethod.jp/cloud/aws/serf_on_ec2/</a></li>
+<li>Glidenote さん <a href="http://blog.glidenote.com/blog/2013/10/30/serf-haproxy/">http://blog.glidenote.com/blog/2013/10/30/serf-haproxy/</a></li>
+</ul>
+
+<h2 id="serf-とは">Serf とは</h2>
+
+<p>Serf は gossip protocol をクラスタにブロードキャストする。gossip protocol は
+SWIM : Scalable Weakly-consistent Infecton-style process Group Membership
+Protocol” をベースとして形成されている。</p>
+
+<h2 id="swim-protocol-概略">SWIM Protocol 概略</h2>
+
+<p>serf は新しいクラスタとして稼働するか、既存のクラスタに ‘join’ する形で稼働
+するかのどちらかで起動する。</p>
+
+<p>新しいメンバは TCP で状態を &lsquo;full state sync&rsquo; され既存のクラスタ内にて
+‘gossipin (噂)される。この ’gosiping’ は UDP で通信されこれはネットワーク使
+用量はノード数に比例することになる。</p>
+
+<p>ランダムなノードとの &lsquo;full state sync&rsquo; は TCP で行われるけどこれは
+‘gossiping’ に比べて少い</p>
+
+<p>ある一定期間、あるノードが fails 状態の場合、迂回経路を使ってそのノードに対し
+てチェックを行う。両方の経路にて fails な場合ノードが ‘suspiciou&rsquo; (容疑者)
+状態になる。もし迂回経路のチェックが fails しなかった場合ネットワーク障害として
+判断される。</p>
+
+<h2 id="serf-の-swim-protocol-からの改修点">Serf の SWIM Protocol からの改修点</h2>
+
+<p>Serf は SWIM Protocol をベースにしていると記しましたが、どのような点を改修した
+のかまとめました。</p>
+
+<ul>
+<li>&lsquo;full state sync&rsquo; の TCP 化</li>
+</ul>
+
+<p>serf は ‘full state sync’ を TCP にて行う。これにより serf はネットワーセグ
+メントが分離されている状態でも通信出来る。</p>
+
+<ul>
+<li>gossip レイヤの分離</li>
+</ul>
+
+<p>serf は failure detection protocol から完全に gossip レイヤを分離。これでより
+高速にデータ増殖が行える。</p>
+
+<ul>
+<li>dead node の扱い
+<br /></li>
+</ul>
+
+<p>serf は デッドノードに対して回数を記憶している。これにより full state sync が
+実施された場合、逆に死んだノードの情報を受取る。SWIM では full state sync を行
+わないので死んだノードにを削除してしまう。これはクラスタに対する情報一点集中化
+に役立つ。</p>
+
+<h2 id="使ってみる">使ってみる</h2>
+
+<p>早速使ってみます。下記の URL にある demo 用スクリプトを少し改修して使ってみま
+した。</p>
+
+<p><a href="https://github.com/hashicorp/serf/tree/master/demo/web-load-balancer">https://github.com/hashicorp/serf/tree/master/demo/web-load-balancer</a></p>
+
+<ul>
+<li>2つノードを立ち上げる</li>
+</ul>
+
+<p>AWS でも OpenStack でもベアメタルでも何でも良いのでノードを2台用意する。</p>
+
+<ul>
+<li>下記のスクリプトを置いて両ノードで実行する。</li>
+</ul>
+
+<pre><code class="language-bash">#!/bin/sh
+set -e
+
+export SERF_ROLE=role01
+
+sudo apt-get install -y unzip
+
+# Download and install Serf
+cd /tmp
+until wget -O serf.zip https://dl.bintray.com/mitchellh/serf/0.2.1_linux_amd64.zip; do
+sleep 1
+done
+unzip serf.zip
+sudo mv serf /usr/local/bin/serf
+
+# The member join script is invoked when a member joins the Serf cluster.
+# Our join script simply adds the node to the load balancer.
+cat &lt;&lt;EOF &gt;/tmp/join.sh
+#!/bin/sh
+echo 'member joined' &gt;&gt; /tmp/serf_join.log
+EOF
+sudo mv /tmp/join.sh /usr/local/bin/serf_member_join.sh
+chmod +x /usr/local/bin/serf_member_join.sh
+
+# Configure the agent
+cat &lt;&lt;EOF &gt;/tmp/agent.conf
+description &quot;Serf agent&quot;
+
+start on runlevel [2345]
+stop on runlevel [!2345]
+
+exec /usr/local/bin/serf agent \\
+-event-handler &quot;member-join=/usr/local/bin/serf_member_join.sh&quot; \\
+-role=${SERF_ROLE} &gt;&gt;/var/log/serf.log 2&gt;&amp;1
+EOF
+sudo mv /tmp/agent.conf /etc/init/serf.conf
+
+# Start the agent!
+sudo start serf
+</code></pre>
+
+<p>実行すると &lsquo;role01&rsquo; という Role 名で serf agent が稼働しているはず。またスクリ
+プトを見てわかると思うが &ndash;event-handler &ldquo;member-join=&lt;スクリプト&gt;&rdquo; としている。
+これでクラスタに新しいメンバが join すると /tmp/serf_join.log に &lsquo;member
+joined&rsquo; というメッセージが出力されるはずだ。実際に実行してみる。</p>
+
+<pre><code class="language-bash">% sudo serf join &lt;もう片系ノードの IP&gt;
+% sudo serf members
+  vm01    10.0.2.1    alive    role01
+  vm02    10.0.2.3    alive    role01
+% tail /tmp/serf_join.log
+  ‘member joined
+  ‘member joined
+</code></pre>
+
+<p>イベントハンドラにはユーザ指定のものも扱える。</p>
+
+<pre><code>user:deploy=foo.sh
+</code></pre>
+
+<p>この場合のハンドラは下記のコマンドで発生出来る。</p>
+
+<pre><code class="language-bash">% serf event deploy
+</code></pre>
+
+<h2 id="コンフィギュレーションファイル">コンフィギュレーションファイル</h2>
+
+<p>今回は init 起動スクリプト内でイベントハンドラ発生時のスクリプト指定等を行った
+が、json 形式のコンフィギュレーションファイルにて記述することも可能。</p>
+
+<pre><code class="language-json">{
+  &quot;role&quot;: &quot;load-balancer&quot;,
+
+  &quot;event_handlers&quot;: [
+    &quot;member_join.sh&quot;,
+    &quot;user:deploy=foo.sh&quot;
+  ]
+}
+</code></pre>
+
+<p>上記ファイルを serf.conf とした場合、このコンフィグの指定は
+&ndash;config-file=serf.conf で行える。</p>
+
+<h2 id="ロードマップ">ロードマップ</h2>
+
+<p>最後に Serf の今後のロードマップについて記してあったので、まとめてみた。</p>
+
+<ul>
+<li>コンフィギュレーションファイル</li>
+</ul>
+
+<p>よりカスタマイズ可能なコンフィギュレーションファイルを扱えるようにする。</p>
+
+<ul>
+<li>SIGHUP</li>
+</ul>
+
+<p>SIGHUP 信号でリロード出来ないので、これに対応する。</p>
+
+<ul>
+<li>イベントハンドラライブラリ</li>
+</ul>
+
+<p>イベントハンドラを自作・シェアを容易に行えるようプラグイン化を進める。</p>
+
+<h2 id="まとめと考察">まとめと考察</h2>
+
+<p>冒頭にオーケストレーションについて触れましたが、このツールを使うだけでは自分の
+考えているオーケストレーションにはならないと思いました。当たり前ですね。。複数
+ノードを束ねて構成を形成する、またそれをトリガするのが人間であればそれはインテ
+グレーションの範囲かなぁと。その先にオーケストレーションがあるとすればトリガ自
+身もソフトウェアにさせる必要があるのでそのアルゴリズムを人間が書く必要があるの
+かなぁと。もちろんそのためにこのSerf は貴重なパーツとなってくれそう。</p>
+
+<p>あと、ロードマップにも記しましたが開発が盛んにされているようなので今後が楽しみ
+です。</p>
+
+    <footer>
+        <ul class="actions">
+            <li><a href="http://jedipunkz.github.io/blog/2013/11/10/serf/" class="button big">Continue Reading</a></li>
         </ul>
         <ul class="stats">
     
@@ -1097,13 +1318,13 @@ service と docker をノード間で移動させる処置を行う。</p>
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/">coreos の etcd operator を触ってみた</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/04/13/gke-lb/">GCP ロードバランサと GKE クラスタを Terraform を使って構築する</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-27'>
-                                    November 27, 2016</time>
+                                    '2017-04-13'>
+                                    April 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -1111,13 +1332,13 @@ service と docker をノード間で移動させる処置を行う。</p>
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/20/helm/">Helm を使って Kubernetes を管理する</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/">Serverless on Kubernetes : Fission を使ってみた</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-20'>
-                                    November 20, 2016</time>
+                                    '2017-02-12'>
+                                    February 12, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -1125,13 +1346,13 @@ service と docker をノード間で移動させる処置を行う。</p>
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/11/03/kubernetes-scheduledjob/">kubernetes1.4 で実装された ScheduledJob を試してみた！</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/">Kubernetes Deployments を使ってみた！</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-11-03'>
-                                    November 3, 2016</time>
+                                    '2017-01-13'>
+                                    January 13, 2017</time>
                             </header>
                         </article>
                     </li>
@@ -1139,13 +1360,13 @@ service と docker をノード間で移動させる処置を行う。</p>
                     <li>
                         <article>
                             <header>
-                                <h3><a href="http://jedipunkz.github.io/blog/2016/07/25/minikube/">Minikube で簡易 kubernetes 環境構築</a></h3>
+                                <h3><a href="http://jedipunkz.github.io/blog/2016/12/29/fluentd-sidecar-gcp/">fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging ログ転送</a></h3>
                                 
                                     
                                 
                                 <time class="published" datetime=
-                                    '2016-07-25'>
-                                    July 25, 2016</time>
+                                    '2016-12-29'>
+                                    December 29, 2016</time>
                             </header>
                         </article>
                     </li>
@@ -1184,7 +1405,7 @@ service と docker をノード間で移動させる処置を行う。</p>
                         <article>
                             <header>
                                 <a href="/categories/infrastructure/">infrastructure</a>
-                                <span style="float:right;">104</span>
+                                <span style="float:right;">108</span>
                             </header>
                         </article>
                     </li>
