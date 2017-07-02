@@ -5,7 +5,7 @@ if [ $# != 1 ]; then
     exit
 fi
 
-hugo -t hugo-future-imperfect
+hugo -t beautifulhugo
 
 git add .
 git commit -m "$1"

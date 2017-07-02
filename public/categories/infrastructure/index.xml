@@ -1,3163 +1,985 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes" ?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>ジェダイさんのブログ</title>
-    <link>http://jedipunkz.github.io/categories/infrastructure/index.xml</link>
-    <description>Recent content on ジェダイさんのブログ</description>
+    <title>Infrastructure on ジェダイさんのブログ</title>
+    <link>https://jedipunkz.github.io/categories/infrastructure/</link>
+    <description>Recent content in Infrastructure on ジェダイさんのブログ</description>
     <generator>Hugo -- gohugo.io</generator>
-    <language>en-us</language>
-    <atom:link href="http://jedipunkz.github.io/categories/infrastructure/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Thu, 13 Apr 2017 14:53:37 +0900</lastBuildDate>
+    
+	<atom:link href="https://jedipunkz.github.io/categories/infrastructure/index.xml" rel="self" type="application/rss+xml" />
+    
     
     <item>
       <title>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</title>
-      <link>http://jedipunkz.github.io/blog/2017/04/13/gke-lb/</link>
+      <link>https://jedipunkz.github.io/blog/2017/04/13/gke-lb/</link>
       <pubDate>Thu, 13 Apr 2017 14:53:37 +0900</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2017/04/13/gke-lb/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;少し前まで Google Cloud Platform (GCP) を使っていたのですが、今回はその時に得たノウハウを記事にしようと思います。&lt;/p&gt;
-
-&lt;p&gt;Google Container Engine (GKE) とロードバランサを組み合わせてサービスを立ち上げていました。手動でブラウザ上からポチポチして構築すると人的ミスや情報共有という観点でマズイと思ったので Terraform を使って GCP の各リソースを構築するよう仕掛けたのですが、まだまだ Terraform を使って GCP インフラを構築されている方が少ないため情報が無く情報収集や検証に時間が掛かりました。よって今回はまだネット上に情報が少ない GKE とロードバランサの構築を Terraform を使って行う方法を共有します。&lt;/p&gt;
-
-&lt;h2 id=&#34;構築のシナリオ&#34;&gt;構築のシナリオ&lt;/h2&gt;
-
-&lt;p&gt;構築するにあたって2パターンの構築の流れがあると思います。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;1) GKE クラスタとロードバランサを同時に構築する&lt;/li&gt;
-&lt;li&gt;2) GKE クラスタを予め構築しそのクラスタ向けにロードバランサを構築する&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;両方の方法を記していきます。&lt;/p&gt;
-
-&lt;h2 id=&#34;1-gke-クラスタとロードバランサを同時に構築する&#34;&gt;1) GKE クラスタとロードバランサを同時に構築する&lt;/h2&gt;
-
-&lt;p&gt;GKE クラスタとロードバランサを同時に作る方法です。&lt;/p&gt;
-
-&lt;p&gt;早速ですが下記に terraform ファイルを記しました。それぞれのシンタックスの意味については Terraform の公式ドキュメントをご覧になってください。&lt;/p&gt;
-
-&lt;p&gt;公式ドキュメント : &lt;a href=&#34;https://www.terraform.io/docs/providers/google/&#34;&gt;https://www.terraform.io/docs/providers/google/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;ここで特筆すべき点としては下記が挙げられます。&lt;/p&gt;
-
-&lt;h3 id=&#34;ロードバランサに紐付けるバックエンドの-id-取得のため-replace-element-的なことをしている&#34;&gt;ロードバランサに紐付けるバックエンドの ID 取得のため &amp;ldquo;${replace(element&amp;hellip;&amp;rdquo; 的なことをしている&lt;/h3&gt;
-
-&lt;p&gt;ロードバランサのバックエンドサービスに対して GKE クラスタを作成した際に自動で作成されるインスタンスグループの URI を紐付ける必要があります。ユーザとしては URI ではなく &amp;ldquo;インスタンスグループ名&amp;rdquo; であると扱いやすいのですが、URI が必要になります。この情報は下記のサイトを参考にさせていただきました。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;参考サイト : GKEでkubernetesのnodesをロードバランサーのバックエンドとして使いたいとき with terraform&lt;/li&gt;
-&lt;li&gt;URL : &lt;a href=&#34;http://qiita.com/techeten/items/b2ec5f11f4a70dd21d70&#34;&gt;http://qiita.com/techeten/items/b2ec5f11f4a70dd21d70&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h3 id=&#34;ロードバランサ一つ作るために-6-個ものインフラリソースを作っている&#34;&gt;ロードバランサ一つ作るために 6 個ものインフラリソースを作っている&lt;/h3&gt;
-
-&lt;p&gt;一つのロードバランサを作るために6つのインフラリソースが必要になるというのも驚きですが公式ドキュメントを読むとなかなかその感覚がつかめませんでした。それぞれの簡単な意味を下記に記しておきます。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;google_compute_http_health_check : ヘルスチェック&lt;/li&gt;
-&lt;li&gt;google_compute_backend_service : バックエンドサービス&lt;/li&gt;
-&lt;li&gt;google_compute_url_map : ロードバランサ名となるリソース&lt;/li&gt;
-&lt;li&gt;google_compute_target_http_proxy : プロキシ&lt;/li&gt;
-&lt;li&gt;google_compute_global_address : グローバル IP アドレス&lt;/li&gt;
-&lt;li&gt;google_compute_global_forwarding_rule : ポートマッピングによるフォワーディングルール&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;それでは実際の Terraform コードです&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;# 共通変数
-variable &amp;quot;credentials&amp;quot; {default = &amp;quot;/path/to/credentials.json&amp;quot;}
-variable &amp;quot;project&amp;quot; {default = &amp;quot;test01&amp;quot;}
-variable &amp;quot;region&amp;quot; {default = &amp;quot;asia-northeast&amp;quot;}
-variable &amp;quot;zone&amp;quot; {default = &amp;quot;asia-northeast1-b&amp;quot;}
-# GKE クラスタ用の変数
-variable &amp;quot;gke_name&amp;quot; {default = &amp;quot;gke-terraform-test&amp;quot;}
-variable &amp;quot;machine_type&amp;quot; {default = &amp;quot;n1-standard-1&amp;quot;}
-variable &amp;quot;disk_size_gb&amp;quot; {default = &amp;quot;50&amp;quot;}
-variable &amp;quot;node_count&amp;quot; {default = &amp;quot;2&amp;quot;}
-variable &amp;quot;network&amp;quot; {default = &amp;quot;default&amp;quot;}
-variable &amp;quot;subnetwork&amp;quot; {default = &amp;quot;default&amp;quot;}
-variable &amp;quot;cluster_ipv4_cidr&amp;quot; {default = &amp;quot;10.0.10.0/14&amp;quot;}
-variable &amp;quot;username&amp;quot; {default = &amp;quot;username&amp;quot;}
-variable &amp;quot;password&amp;quot; {default = &amp;quot;password&amp;quot;}
-# ロードバランサ用の変数
-variable &amp;quot;lb_name&amp;quot; {default = &amp;quot;lb-terraform-test&amp;quot;}
-variable &amp;quot;healthcheck_name&amp;quot; {default = &amp;quot;healthcheck-terraform-test&amp;quot;}
-variable &amp;quot;healthcheck_host&amp;quot; {default = &amp;quot;test.example.com&amp;quot;}
-variable &amp;quot;healthcheck_port&amp;quot; {default = &amp;quot;30300&amp;quot;}
-variable &amp;quot;backend_name&amp;quot; {default = &amp;quot;backend-terraform-test&amp;quot;}
-variable &amp;quot;http_proxy_name&amp;quot; {default = &amp;quot;terraform-proxy&amp;quot;}
-variable &amp;quot;global_address_name&amp;quot; {default = &amp;quot;terraform-global-address&amp;quot;}
-variable &amp;quot;global_forwarding_rule_name&amp;quot; {default = &amp;quot;terraform-global-forwarding-rule&amp;quot;}
-variable &amp;quot;global_forwarding_rule_port&amp;quot; {default =&amp;quot;80&amp;quot;}
-variable &amp;quot;port_name&amp;quot; {default = &amp;quot;port-test&amp;quot;}
-variable &amp;quot;enable_cdn&amp;quot; {default = false}
-
-provider &amp;quot;google&amp;quot; {
-  credentials = &amp;quot;${file(&amp;quot;${var.credentials}&amp;quot;)}&amp;quot;
-  project     = &amp;quot;${var.project}&amp;quot;
-  region      = &amp;quot;${var.region}&amp;quot;
-}
-
-resource &amp;quot;google_container_cluster&amp;quot; &amp;quot;cluster-terraform&amp;quot; {
-  name                = &amp;quot;${var.gke_name}&amp;quot;
-  zone                = &amp;quot;${var.zone}&amp;quot;
-  initial_node_count  = &amp;quot;${var.node_count}&amp;quot;
-  network             = &amp;quot;${var.network}&amp;quot;
-  subnetwork          = &amp;quot;${var.subnetwork}&amp;quot;
-  cluster_ipv4_cidr   = &amp;quot;${var.cluster_ipv4_cidr}&amp;quot;
-
-  master_auth {
-    username = &amp;quot;${var.username}&amp;quot;
-    password = &amp;quot;${var.password}&amp;quot;
-  }
-
-  node_config {
-	machine_type = &amp;quot;${var.machine_type}&amp;quot;
-	disk_size_gb = &amp;quot;${var.disk_size_gb}&amp;quot;
-    oauth_scopes = [
-      &amp;quot;https://www.googleapis.com/auth/compute&amp;quot;,
-      &amp;quot;https://www.googleapis.com/auth/devstorage.read_only&amp;quot;,
-      &amp;quot;https://www.googleapis.com/auth/logging.write&amp;quot;,
-      &amp;quot;https://www.googleapis.com/auth/monitoring&amp;quot;
-    ]
-  }
-  addons_config {
-    http_load_balancing {
-      disabled = true
-    }
-    horizontal_pod_autoscaling {
-      disabled = true
-    }
-  }
-}
-
-resource &amp;quot;google_compute_http_health_check&amp;quot; &amp;quot;healthcheck-terraform&amp;quot; {
-  name                = &amp;quot;${var.healthcheck_name}&amp;quot;
-  project             = &amp;quot;${var.project}&amp;quot;
-  request_path        = &amp;quot;/&amp;quot;
-  host                = &amp;quot;${var.healthcheck_host}&amp;quot;
-  check_interval_sec  = 5
-  timeout_sec         = 5
-  port                = &amp;quot;${var.healthcheck_port}&amp;quot;
-}
-resource &amp;quot;google_compute_backend_service&amp;quot; &amp;quot;backend-terraform&amp;quot; {
-  name          = &amp;quot;${var.backend_name}&amp;quot;
-
-  port_name     = &amp;quot;${var.port_name}&amp;quot;
-  protocol      = &amp;quot;HTTP&amp;quot;
-  timeout_sec   = 10
-  enable_cdn    = &amp;quot;${var.enable_cdn}&amp;quot;
-  region        = &amp;quot;${var.region}&amp;quot;
-  project       = &amp;quot;${var.project}&amp;quot;
-  backend {
-    group = &amp;quot;${replace(element(google_container_cluster.cluster-terraform.instance_group_urls, 1), &amp;quot;Manager&amp;quot;,&amp;quot;&amp;quot;)}&amp;quot;
-  }
-  health_checks = [&amp;quot;${google_compute_http_health_check.healthcheck-terraform.self_link}&amp;quot;]
-}
-resource &amp;quot;google_compute_url_map&amp;quot; &amp;quot;lb-terraform&amp;quot; {
-  name            = &amp;quot;${var.lb_name}&amp;quot;
-  default_service = &amp;quot;${google_compute_backend_service.backend-terraform.self_link}&amp;quot;
-  project         = &amp;quot;${var.project}&amp;quot;
-}
-resource &amp;quot;google_compute_target_http_proxy&amp;quot; &amp;quot;http_proxy-terraform&amp;quot; {
-  name        = &amp;quot;${var.http_proxy_name}&amp;quot;
-  url_map     = &amp;quot;${google_compute_url_map.lb-terraform.self_link}&amp;quot;
-}
-resource &amp;quot;google_compute_global_address&amp;quot; &amp;quot;ip-terraform&amp;quot; {
-  name    = &amp;quot;${var.global_address_name}&amp;quot;
-  project = &amp;quot;${var.project}&amp;quot;
-}
-resource &amp;quot;google_compute_global_forwarding_rule&amp;quot; &amp;quot;forwarding_rule-terraform&amp;quot; {
-  name        = &amp;quot;${var.global_forwarding_rule_name}&amp;quot;
-  target      = &amp;quot;${google_compute_target_http_proxy.http_proxy-terraform.self_link}&amp;quot;
-  ip_address  = &amp;quot;${google_compute_global_address.ip-terraform.address}&amp;quot;
-  port_range  = &amp;quot;${var.global_forwarding_rule_port}&amp;quot;
-  project     = &amp;quot;${var.project}&amp;quot;
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;2-gke-クラスタを予め構築しそのクラスタ向けにロードバランサを構築する&#34;&gt;2) GKE クラスタを予め構築しそのクラスタ向けにロードバランサを構築する&lt;/h2&gt;
-
-&lt;p&gt;次に GKE クラスタとロードバランサを別々のタイミングに構築する方法です。
-実際には GKE クラスタの上には多数のコンテナが起動されるのですでにクラスタが存在する状態でロードバランサを別サービスのために作成したいというケースが一般的なように思います。&lt;/p&gt;
-
-&lt;h3 id=&#34;gke-クラスタのインスタンスグループ-uri-を取得し設定&#34;&gt;GKE クラスタのインスタンスグループ URI を取得し設定&lt;/h3&gt;
-
-&lt;p&gt;既存 GKE クラスタを用いる場合、インスタンスグループ URI がいずれにせよ必要になります。
-インスタンスグループ URI を取得するには gcloud CLI を使って下記のように知ることができます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ gcloud compute instance-groups managed describe | grep -rin URI
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ここで得たインスタンスグループ URI は下記のように variable &amp;ldquo;backend_group&amp;rdquo; に記します。&lt;/p&gt;
-
-&lt;h3 id=&#34;port-マッピングを手動で設定&#34;&gt;Port マッピングを手動で設定&lt;/h3&gt;
-
-&lt;p&gt;ここは残念なのですが &lt;sup&gt;2017&lt;/sup&gt;&amp;frasl;&lt;sub&gt;04&lt;/sub&gt; 現在、Port マッピングの設定を WebUI 上から行う必要があります。UI から GKE クラスタのインスタンスグループを選択し、Port マッピングの設定を行い名前を記します。ここでは &amp;ldquo;port-test&amp;rdquo; として作成したとし説明します。&lt;/p&gt;
-
-&lt;h3 id=&#34;terraform-のコードを記述&#34;&gt;Terraform のコードを記述&lt;/h3&gt;
-
-&lt;p&gt;ここでロードバランサ単独で構築する際の Terraform コードを見てみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;variable &amp;quot;credentials&amp;quot; {default = &amp;quot;/path/to/credentials.json&amp;quot;}
-variable &amp;quot;project&amp;quot; {default = &amp;quot;test01&amp;quot;}
-variable &amp;quot;region&amp;quot; {default = &amp;quot;asia-northeast1&amp;quot;}
-variable &amp;quot;lb_name&amp;quot; {default = &amp;quot;lb-terraform-test&amp;quot;}
-variable &amp;quot;healthcheck_name&amp;quot; {default = &amp;quot;healthcheck-terraform-test&amp;quot;}
-variable &amp;quot;healthcheck_host&amp;quot; {default = &amp;quot;test.example.com&amp;quot;}
-variable &amp;quot;healthcheck_port&amp;quot; {default = &amp;quot;30300&amp;quot;}
-variable &amp;quot;backend_name&amp;quot; {default = &amp;quot;backend-terraform-test&amp;quot;}
-variable &amp;quot;backend_group&amp;quot; {default = &amp;quot;https://www.googleapis.com/compute/v1/projects/test01/zones/asia-northeast1-b/instanceGroups/gke-gke-terraform-test-default-pool-c001020e-grp&amp;quot;}
-variable &amp;quot;http_proxy_name&amp;quot; {default = &amp;quot;terraform-proxy&amp;quot;}
-variable &amp;quot;global_address_name&amp;quot; {default = &amp;quot;terraform-global-address&amp;quot;}
-variable &amp;quot;global_forwarding_rule_name&amp;quot; {default = &amp;quot;terraform-global-forwarding-rule&amp;quot;}
-variable &amp;quot;global_forwarding_rule_port&amp;quot; {default =&amp;quot;80&amp;quot;}
-variable &amp;quot;port_name&amp;quot; {default = &amp;quot;port-test&amp;quot;}
-variable &amp;quot;enable_cdn&amp;quot; {default = false}
-
-provider &amp;quot;google&amp;quot; {
-  credentials = &amp;quot;${file(&amp;quot;${var.credentials}&amp;quot;)}&amp;quot;
-  project     = &amp;quot;${var.project}&amp;quot;
-  region      = &amp;quot;${var.region}&amp;quot;
-}
-resource &amp;quot;google_compute_http_health_check&amp;quot; &amp;quot;healthcheck-terraform-test&amp;quot; {
-  name                = &amp;quot;${var.healthcheck_name}&amp;quot;
-  project             = &amp;quot;${var.project}&amp;quot;
-  request_path        = &amp;quot;/&amp;quot;
-  host                = &amp;quot;${var.healthcheck_host}&amp;quot;
-  check_interval_sec  = 5
-  timeout_sec         = 5
-  port                = &amp;quot;${var.healthcheck_port}&amp;quot;
-}
-resource &amp;quot;google_compute_backend_service&amp;quot; &amp;quot;backend-terraform-test&amp;quot; {
-  name          = &amp;quot;${var.backend_name}&amp;quot;
-  port_name     = &amp;quot;${var.port_name}&amp;quot;
-  protocol      = &amp;quot;HTTP&amp;quot;
-  timeout_sec   = 10
-  enable_cdn    = &amp;quot;${var.enable_cdn}&amp;quot;
-  region        = &amp;quot;${var.region}&amp;quot;
-  project       = &amp;quot;${var.project}&amp;quot;
-  backend {
-    group = &amp;quot;${var.backend_group}&amp;quot;
-  }
-  health_checks = [&amp;quot;${google_compute_http_health_check.healthcheck-terraform-test.self_link}&amp;quot;]
-}
-resource &amp;quot;google_compute_url_map&amp;quot; &amp;quot;lb-terraform-test&amp;quot; {
-  name            = &amp;quot;${var.lb_name}&amp;quot;
-  default_service = &amp;quot;${google_compute_backend_service.backend-terraform-test.self_link}&amp;quot;
-  project         = &amp;quot;${var.project}&amp;quot;
-}
-resource &amp;quot;google_compute_target_http_proxy&amp;quot; &amp;quot;http_proxy-terraform-test&amp;quot; {
-  name        = &amp;quot;${var.http_proxy_name}&amp;quot;
-  url_map     = &amp;quot;${google_compute_url_map.lb-terraform-test.self_link}&amp;quot;
-}
-resource &amp;quot;google_compute_global_address&amp;quot; &amp;quot;ip-terraform-test&amp;quot; {
-  name    = &amp;quot;${var.global_address_name}&amp;quot;
-  project = &amp;quot;${var.project}&amp;quot;
-}
-resource &amp;quot;google_compute_global_forwarding_rule&amp;quot; &amp;quot;forwarding_rule-terraform-test&amp;quot; {
-  name        = &amp;quot;${var.global_forwarding_rule_name}&amp;quot;
-  target      = &amp;quot;${google_compute_target_http_proxy.http_proxy-terraform-test.self_link}&amp;quot;
-  ip_address  = &amp;quot;${google_compute_global_address.ip-terraform-test.address}&amp;quot;
-  port_range  = &amp;quot;${var.global_forwarding_rule_port}&amp;quot;
-  project     = &amp;quot;${var.project}&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;GCP のロードバランサが特徴的な構築方法が必要になることが分かったと思います。将来的に URI で記す箇所を名前で記せれば構築がもっと簡単になると思いますので GCP 側の API バージョンアップを期待します。また今回は記しませんでしたが SSL (HTTPS) 証明書をロードバランサに紐付けることも Terraform を使えば容易に出来ます。試してみてください。一旦 Terraform 化すればパラメータを変更するだけで各ロードバランサが一発で構築できるので自動化は是非しておきたいところです。私は以前、この構築を Terraform + Hubot により ChatOps 化していました。作業の見える化と、メンバ間のコードレビューが可能になるからです。&lt;/p&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2017/04/13/gke-lb/</guid>
+      <description>こんにちは。@jedipunkz です。 少し前まで Google Cloud Platform (GCP) を使っていたのですが、今回はその時に得たノウハウを記事にしようと思います。 Google Container Engine (GKE) と</description>
     </item>
     
     <item>
       <title>Serverless on Kubernetes : Fission を使ってみた</title>
-      <link>http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/</link>
+      <link>https://jedipunkz.github.io/blog/2017/02/12/serverless-fission/</link>
       <pubDate>Sun, 12 Feb 2017 14:55:01 +0900</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2017/02/12/serverless-fission/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。 @jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;今日は Kubernetes を使って Serverless を実現するソフトウェア Fission を紹介します。&lt;/p&gt;
-
-&lt;p&gt;AWS の Lambda とよく似た動きをします。Lambda も内部では各言語に特化したコンテナが起動してユーザが開発した Lambda Function を実行してくれるのですが、Fission も各言語がインストールされた Docker コンテナを起動しユーザが開発したコードを実行し応答を返してくれます。&lt;/p&gt;
-
-&lt;p&gt;それでは早速なのですが、Fission を動かしてみましょう。&lt;/p&gt;
-
-&lt;h2 id=&#34;動作させるための環境&#34;&gt;動作させるための環境&lt;/h2&gt;
-
-&lt;p&gt;macOS か Linux を前提として下記の環境を用意する必要があります。また Kubernetes 環境は minikube が手っ取り早いので用いますが、もちろん minikube 以外の kubernetes 環境でも動作します。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;macOS or Linux&lt;/li&gt;
-&lt;li&gt;minikube or kubernetes&lt;/li&gt;
-&lt;li&gt;kubectl&lt;/li&gt;
-&lt;li&gt;fission&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h2 id=&#34;ソフトウェアのインストール方法&#34;&gt;ソフトウェアのインストール方法&lt;/h2&gt;
-
-&lt;p&gt;簡単にですが、ソフトウェアのインストール方法を書きます。&lt;/p&gt;
-
-&lt;h4 id=&#34;os&#34;&gt;OS&lt;/h4&gt;
-
-&lt;p&gt;私は Linux で動作させましたが筆者の方は macOS を使っている方が多数だと思いますので、この手順では macOS を使った利用方法を書いていきます。&lt;/p&gt;
-
-&lt;h4 id=&#34;minikube&#34;&gt;minikube&lt;/h4&gt;
-
-&lt;p&gt;ここでは簡単な手順で kubernetes 環境を構築できる minikube をインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.16.0/minikube-darwin-amd64 &amp;amp;&amp;amp; chmod +x minikube &amp;amp;&amp;amp; sudo mv minikube /usr/local/bin/fission
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h4 id=&#34;kubectl&#34;&gt;kubectl&lt;/h4&gt;
-
-&lt;p&gt;直接必要ではありませんが、kubectl があると minikube で構築した kubernetes 環境を操作できますのでインストールしておきます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;curl -Lo kubectl https://storage.googleapis.com/kubernetes-release/release/v1.5.2/bin/linux/amd64/kubectl &amp;amp;&amp;amp; chmod +x kubectl &amp;amp;&amp;amp; sudo mv kubectl /usr/local/bin/
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h4 id=&#34;fission&#34;&gt;Fission&lt;/h4&gt;
-
-&lt;p&gt;Fission のインストールです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;curl http://fission.io/linux/fission &amp;gt; fission &amp;amp;&amp;amp; chmod +x fission &amp;amp;&amp;amp; sudo mv fission /usr/local/bin/fission
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;kubernetes-の起動&#34;&gt;kubernetes の起動&lt;/h2&gt;
-
-&lt;p&gt;ソフトウェアのインストールが完了したら minikube を使って kubernetes を起動します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ minikube start
-$ minikube status
-minikubeVM: Running
-localkube: Running
-$ kubectl get nodes
-NAME       STATUS    AGE
-minikube   Ready     1h
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;fission-の起動と環境変数の設定&#34;&gt;Fission の起動と環境変数の設定&lt;/h2&gt;
-
-&lt;p&gt;Fission を起動します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl create -f http://fission.io/fission.yaml
-$ kubectl create -f http://fission.io/fission-nodeport.yaml
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に環境変数を設定します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ export FISSION_URL=http://$(minikube ip):31313
-$ export FISSION_ROUTER=$(minikube ip):31314
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;fission-を使って-python-のコードを実行する&#34;&gt;Fission を使って Python のコードを実行する&lt;/h2&gt;
-
-&lt;p&gt;例として Python の Hello World を用意します。hello.py として保存します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;def main():
-        return &amp;quot;Hello, world!\n&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ではいよいよ、kubernetes と Fission を使って上記の Hello World を実行させます。&lt;/p&gt;
-
-&lt;p&gt;まず Fission が用意してくれている Docker コンテナを扱うように &amp;lsquo;env&amp;rsquo; を作ります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ fission env create --name python-env --image fission/python-env
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に Fission で Function を作ります。その際に上記の env と python コードを指定します。つまり、hello.py を fission/python-env という Docker コンテナで稼働する、という意味です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ fission function create --name python-hello -env python-env --code ./hello.py
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に Router を作ります。クエリの Path に対して Fuction を関連付けることができます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ fission route add --function python-hello --url /python-hello
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Function を実行する環境ができました。実際に curl を使ってアクセスしてみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ curl http://$FISSION_ROUTER/python-hello
-Hello, world!
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;hello.py の実行結果が得られました。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
-
-&lt;p&gt;結果から Fission は &amp;ldquo;各言語の実行環境として Docker コンテナを用いていて、ユーザが開発したコードをそのコンテナ上で起動し実行結果を得られる。また各コード毎に URL パスが指定することができ、それをルータとして関係性を持たせられる&amp;rdquo; ということが分かりました。AWS の Lambda とほぼ同じことが実現出来ていることが分かると思います。&lt;/p&gt;
-
-&lt;p&gt;AWS には Lambda の実行結果を応答するための API Gateway があり、このマネージド HTTP サーバと併用することで API 環境を用意出来るのですが Fission の場合には HTTP サーバも込みで提供されていることも分かります。&lt;/p&gt;
-
-&lt;p&gt;あとは、この Fission を提供している元が &amp;ldquo;Platform9&amp;rdquo; という企業なのですが、この企業は OpenStack や kubernetes を使ったホスティングサービスを提供しているようです。開発元が一企業ということと、完全な OSS 開発体制になっていない可能性があって、万が一この企業に何かあった場合にこの Fission を使い続けられるのか問題がしばらくはありそうです。Fission 同等のソフトウェアを kubernetes が取り込むという話題は&amp;hellip;あるのかなぁ？&lt;/p&gt;
-
-&lt;p&gt;kubernetes の Job Scheduler が同等の機能を提供してくれるかもしれませんが、まだ Job Scheduler は利用するには枯れていない印象があります。Fission と Job Scheduler 、どちらがいち早く完成度を上げられるのでしょうか。&lt;/p&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2017/02/12/serverless-fission/</guid>
+      <description>こんにちは。 @jedipunkz です。 今日は Kubernetes を使って Serverless を実現するソフトウェア Fission を紹介します。 AWS の Lambda とよく似た動きをします。Lambda も内部では各言語に特化</description>
     </item>
     
     <item>
       <title>Kubernetes Deployments を使ってみた！</title>
-      <link>http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/</link>
+      <link>https://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/</link>
       <pubDate>Fri, 13 Jan 2017 20:29:07 +0900</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。 @jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;いま僕らは職場では GKE 上に Replication Controller と Services を使って Pod を起動しているのですが最近の Kubernetes 関連のドキュメントを拝見すると Deployments を使っている記事をよく見掛けます。Kubernetes 1.2 から実装されたようです。今回は Kubernetes の Replication Controller の次世代版と言われている Deployments について調べてみましたので理解したことを書いていこうかと思います。&lt;/p&gt;
-
-&lt;h2 id=&#34;参考資料&#34;&gt;参考資料&lt;/h2&gt;
-
-&lt;p&gt;今回は Kubernetes 公式の下記のドキュメントに記されているコマンドを一通り実行していきます。追加の情報もあります。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;&lt;a href=&#34;https://kubernetes.io/docs/user-guide/deployments/&#34;&gt;https://kubernetes.io/docs/user-guide/deployments/&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h2 id=&#34;deployments-を使って-nginx-pod-を起動&#34;&gt;Deployments を使って nginx Pod を起動&lt;/h2&gt;
-
-&lt;p&gt;nginx をデプロイするための Yaml ファイルを用意します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;apiVersion: extensions/v1beta1
-kind: Deployment
-metadata:
-  name: nginx-deployment
-spec:
-  replicas: 2
-  template:
-    metadata:
-      labels:
-        app: nginx
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:1.7.9
-        ports:
-        - containerPort: 80
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;作成した yaml ファイルを指定して Pod を作ります。
-下記の通りここで &amp;ldquo;&amp;ndash;record&amp;rdquo; と記しているのは、後に Deployments の履歴を表示する際に &amp;ldquo;何を行ったか&amp;rdquo; を出力するためです。このオプションを指定しないと &amp;ldquo;何を行ったか&amp;rdquo; の出力が &amp;ldquo;NONE&amp;rdquo; となります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl create -f nginx.yaml --record
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ここで&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;deployments&lt;/li&gt;
-&lt;li&gt;replica set&lt;/li&gt;
-&lt;li&gt;pod&lt;/li&gt;
-&lt;li&gt;rollout&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;の状態をそれぞれ確認してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl get deployments
-NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
-nginx-deployment   2         2         2            2           8s
-
-$ kubectl get rs
-NAME                          DESIRED   CURRENT   READY     AGE
-nginx-deployment-4087004473   2         2         2         10s
-
-$ kubectl get pods --show-labels
-NAME                                READY     STATUS    RESTARTS   AGE       LABELS
-nginx-deployment-4087004473-6csa7   1/1       Running   0          21s       app=nginx,pod-template-hash=4087004473
-nginx-deployment-4087004473-teyzc   1/1       Running   0          21s       app=nginx,pod-template-hash=4087004473
-
-$ kubectl rollout status deployment/nginx-deployment
-deployment nginx-deployment successfully rolled out
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;結果から、下記の事が分かります。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;yaml に記した通り &amp;ldquo;nginx-deployment&amp;rdquo; という名前で deployment が生成された&lt;/li&gt;
-&lt;li&gt;&amp;ldquo;nginx-deployment-4087004473&amp;rdquo; という名前の rs (レプリカセット) が生成された&lt;/li&gt;
-&lt;li&gt;yaml に記した通り2つの Pod が起動した&lt;/li&gt;
-&lt;li&gt;&amp;ldquo;nginx-deployment&amp;rdquo; が正常に Rollout された&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;Replication Controller でデプロイした際には作られない replica set, rollout というモノが出てきました。後に Deployments を使うメリットに繋がっていきます。&lt;/p&gt;
-
-&lt;h2 id=&#34;nginx-イメージの-tag-を更新してみる&#34;&gt;nginx イメージの Tag を更新してみる&lt;/h2&gt;
-
-&lt;p&gt;ここで yaml ファイル内で指定していた &amp;ldquo;image: nginx:1.7.9&amp;rdquo; を &amp;ldquo;image: nginx:1.9.1&amp;rdquo; と更新してみます。
-Replication Controller で言う Rolling-Update になります。後に述べますが他にも更新方法があります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ここで先ほどと同様に状態を確認してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl get deployments
-NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
-nginx-deployment   2         2         2            2           2m
-
-$ kubectl get rs
-NAME                          DESIRED   CURRENT   READY     AGE
-nginx-deployment-3599678771   2         2         2         39s
-nginx-deployment-4087004473   0         0         0         2m
-
-$ kubectl get pods
-NAME                                READY     STATUS    RESTARTS   AGE
-nginx-deployment-3599678771-0vj9m   1/1       Running   0          53s
-nginx-deployment-3599678771-t1y62   1/1       Running   0          53s
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ここで&amp;hellip;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;新しい Replica Set &amp;ldquo;nginx-deployment-3599678771&amp;rdquo; が作成された&lt;/li&gt;
-&lt;li&gt;古い Replica Set &amp;ldquo;nginx-deployment-4087004473&amp;rdquo; の Pod は 0 個になった&lt;/li&gt;
-&lt;li&gt;Pod 内コンテナが更新された (NAME より判断)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;となったことが分かります。
-Replication Controller と異なり、Deployments では以前の状態が Replica Set として保存されていて状態の履歴が追えるようになっています。&lt;/p&gt;
-
-&lt;p&gt;ここで Rollout の履歴を確認してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl rollout history deployment/nginx-deployment
-deployments &amp;quot;nginx-deployment&amp;quot;
-REVISION        CHANGE-CAUSE
-1               kubectl create -f nginx.yaml --record
-2               kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;REVISION という名前で履歴番号が付き、どの様な作業を行ったか CHANGE-CAUSE という項目で記されていることがわかります。作業の履歴がリビジョン管理されています。&lt;/p&gt;
-
-&lt;p&gt;下記のように REVSION 番号を付与して履歴内容を表示することも可能です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl rollout history deployment/nginx-deployment --revision=2
-deployments &amp;quot;nginx-deployment&amp;quot; with revision #2
-  Labels:       app=nginx
-        pod-template-hash=3599678771
-  Annotations:  kubernetes.io/change-cause=kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
-  Containers:
-   nginx:
-    Image:      nginx:1.9.1
-    Port:       80/TCP
-    Volume Mounts:      &amp;lt;none&amp;gt;
-    Environment Variables:      &amp;lt;none&amp;gt;
-  No volumes.
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;作業を切り戻してみる&#34;&gt;作業を切り戻してみる&lt;/h2&gt;
-
-&lt;p&gt;先程 nginx の Image Tag を更新しましたが、ここで Deployments の機能を使って作業を切り戻してみます。下記の様に実行します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl rollout undo deployment/nginx-deployment
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;状態を確認します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl get deployments
-NAME               DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
-nginx-deployment   2         2         2            2           5m
-
-$ kubectl rollout history deployment/nginx-deployment
-deployments &amp;quot;nginx-deployment&amp;quot;
-REVISION        CHANGE-CAUSE
-2               kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
-3               kubectl create -f nginx.yaml --record
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ここでは&amp;hellip;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;コンテナが2個、正常に起動した&lt;/li&gt;
-&lt;li&gt;REVISION 番号 3 として初期構築の状態 (kubectl create ..) が新たに保存&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;ということが分かります。注意したいのは REVSION 番号 1 が削除され 3 が生成されたことです。1 と 3 は同じ作業ということと推測します。&lt;/p&gt;
-
-&lt;p&gt;念のため &amp;lsquo;nginx&amp;rsquo; コンテナの Image Tag が切り戻っているか確認してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl describe pod nginx-deployment-4087004473-nq35u | grep &amp;quot;Image:&amp;quot;
-    Image:              nginx:1.7.9
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;最初の Yaml ファイルに記した &amp;lsquo;nginx&amp;rsquo; イメージ Tag &amp;ldquo;1.7.9&amp;rdquo; となっていることが確認できました。set image &amp;hellip; でイメージ更新をした作業が正常に切り戻ったことになります。&lt;/p&gt;
-
-&lt;h2 id=&#34;レプリカ数を-2-3-へスケールしてみる&#34;&gt;レプリカ数を 2-&amp;gt;3 へスケールしてみる&lt;/h2&gt;
-
-&lt;p&gt;更に replicas の数値を 2 から 3 へスケールしてみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl scale deployment nginx-deployment --replicas 3
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;同様に状態を確認してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;kubectl get pods
-NAME                                READY     STATUS    RESTARTS   AGE
-nginx-deployment-4087004473-esj5l   1/1       Running   0          6s
-nginx-deployment-4087004473-nq35u   1/1       Running   0          4m
-nginx-deployment-4087004473-tyibo   1/1       Running   0          4m
-
-kubectl get rs
-NAME                          DESIRED   CURRENT   READY     AGE
-nginx-deployment-3599678771   0         0         0         9m
-nginx-deployment-4087004473   3         3         3         11m
-
-kubectl rollout history deployment/nginx-deployment
-deployments &amp;quot;nginx-deployment&amp;quot;
-REVISION        CHANGE-CAUSE
-2               kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
-3               kubectl scale deployment nginx-deployment --replicas 3
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ここで気になるのは REVISION 3 が上書きされたことです。REVSION 番号 4 が新たに作成されると思っていたからです。先程 REVISION 番号 3 として保存されていた下記の履歴が消えてしまいました。この点については引き続き検証してみます。今の自分には理解できませんでした。ご存知の方いましたら、コメントお願いします！&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;3               kubectl create -f nginx.yaml --record
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;puase-resume-機能を使ってみる&#34;&gt;Puase, Resume 機能を使ってみる&lt;/h2&gt;
-
-&lt;p&gt;次は deployments の機能を使って Image Tag を更に 1.9.1 へ変更し、その処理をポーズしてみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1; kubectl
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;同様に状態を確認してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl get rs
-NAME                          DESIRED   CURRENT   READY     AGE
-nginx-deployment-3599678771   2         2         2         10m
-nginx-deployment-4087004473   2         2         2         12m
-
-$ kubectl rollout status deployment/nginx-deployment
-Waiting for rollout to finish: 2 out of 3 new replicas have been updated...
-Ctrl-C #&amp;lt;--- キー入力
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;rollout status で deployment &amp;ldquo;deployment/nginx-deployment&amp;rdquo; を確認すると &amp;ldquo;waiting for rollout to finish&amp;rdquo; と表示され処理がポーズされていることが確認できました。また古い Deployment &amp;ldquo;nginx-deployment-4087004473&amp;rdquo; 上に未だコンテナが残り、新しい Deployment もコンテナが生成中であることが分かります。&lt;/p&gt;
-
-&lt;p&gt;では Resume します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl rollout resume deployment/nginx-deployment
-deployment &amp;quot;nginx-deployment&amp;quot; resumed
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;この時点の状態を確認しましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl rollout status deployment/nginx-deployment
-deployment nginx-deployment successfully rolled out
-
-$ kubectl get rs
-NAME                          DESIRED   CURRENT   READY     AGE
-nginx-deployment-3599678771   3         3         3         11m
-nginx-deployment-4087004473   0         0         0         14m
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ここからは&amp;hellip;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;正常に Deployment &amp;ldquo;nginx-deployment&amp;rdquo; が Rollout されたこと&lt;/li&gt;
-&lt;li&gt;古い Deployment 上のコンテナ数が 0 に、新しい Deployment 上のコンテナ数が 3 になった&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;ということが分かります。&lt;/p&gt;
-
-&lt;h2 id=&#34;rolling-update-相当の作業を行う方法&#34;&gt;Rolling-Update 相当の作業を行う方法&lt;/h2&gt;
-
-&lt;p&gt;前述した通り、Replication Controller 時代にあった Rolling-Update 作業 (イメージタグ・レプリカ数等の更新) ですが、Deployments では下記の方法をとることが出来ます。&lt;/p&gt;
-
-&lt;h4 id=&#34;set-オプションを付与する場合&#34;&gt;set オプションを付与する場合&lt;/h4&gt;
-
-&lt;p&gt;set オプションを付与して Key 項目に対して新しい Value を渡します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl set image deployment/nginx-deployment nginx=nginx:1.9.1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h4 id=&#34;yaml-ファイルを修正する場合&#34;&gt;yaml ファイルを修正する場合&lt;/h4&gt;
-
-&lt;p&gt;yaml ファイルの内容を更新して適用したい場合、下記のように apply オプションを付与します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl apply -f &amp;lt;新しいYamlファイル&amp;gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
-
-&lt;p&gt;REVISION の履歴が上書きされる点など、まだ未完成な感が否めませんでしたが(自分の勘違いかもしれません！)、Replication Controller と比べると作業の切り戻しや、履歴が保存され履歴内容も確認できる点など機能が追加されていることが分かりました。公式ドキュメントを読んでいてもコマンド結果等怪しい点があって流石に API バージョンが &amp;ldquo;v1beta1&amp;rdquo; だなぁという感じではありますが、機能が整理されていて利便性が上がっているので Replication Controller を使っているユーザは自然と今後、Deployments に移行していくのではないかと感じました。&lt;/p&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2017/01/13/kubernetes-deployments/</guid>
+      <description>こんにちは。 @jedipunkz です。 いま僕らは職場では GKE 上に Replication Controller と Services を使って Pod を起動しているのですが最近の Kubernetes 関連のドキュメントを拝見すると Deployments を使っている記事</description>
     </item>
     
     <item>
       <title>Google Cloud CDN を使ってみた</title>
-      <link>http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/</link>
+      <link>https://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/</link>
       <pubDate>Thu, 29 Dec 2016 09:32:49 +0900</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;今回は Google Cloud Platform の Google CloudCDN について調べてみたので記したいと思います。&lt;/p&gt;
-
-&lt;p&gt;CloudCDN は GCP のロードバランサのバックエンドサービスに紐付けられるサービスです。このバックエンドサービスで CloudCDN を有効にしていると CDN サービスを機能させることが出来ます。先に書いておくとこの CloudCDN はとてもシンプルで扱いやすいサービスだと判りました。高機能な他の CDN サービスと比べると機能が足らない感ありますが、必要最低限なところを抑えているのと、価格がとても安いです。(価格は下記の URL 参照)&lt;/p&gt;
-
-&lt;p&gt;価格表 : &lt;a href=&#34;https://cloud.google.com/cdn/pricing&#34;&gt;https://cloud.google.com/cdn/pricing&lt;/a&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;構成&#34;&gt;構成&lt;/h2&gt;
-
-&lt;p&gt;構成と構成の特徴です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;+----------+                                    +---------+
-| instance |--+                               +-| EndUser |
-+----------+  |  +------------+  +----------+ | +---------+
-              +--|LoadBalancer|--| CloudCDN |-+-| EndUser |
-+----------+  |  +------------+  +----------+ | +---------+
-| instance |--+                               +-| EndUser |
-+----------+                                    +---------+
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;ul&gt;
-&lt;li&gt;コンテンツが初めてリクエストされた場合キャッシュミスする&lt;/li&gt;
-&lt;li&gt;キャッシュミスした際に近くにあるキャッシュからコンテンツを取得しようと試みる&lt;/li&gt;
-&lt;li&gt;近くのキャッシュがコンテンツがある場合、最初のキャッシュにコンテンツが送信される&lt;/li&gt;
-&lt;li&gt;近くのキャッシュにコンテンツがない場合、HTTP ロードバランサにリクエストが転送される&lt;/li&gt;
-&lt;li&gt;その後のリクエストはキャッシュが応答する(キャッシュヒット)&lt;/li&gt;
-&lt;li&gt;キャッシュ間のフィルは EndUser のリクエストに応じて実行される&lt;/li&gt;
-&lt;li&gt;キャッシュを事前に読み込むことできない&lt;/li&gt;
-&lt;li&gt;キャッシュは世界各地に配置されている&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h2 id=&#34;cloudcdn-を導入する方法&#34;&gt;CloudCDN を導入する方法&lt;/h2&gt;
-
-&lt;p&gt;導入する方法は簡単で下記のとおりです。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;新規 LB を WebUI で作成&lt;/li&gt;
-&lt;li&gt;バックエンドサービスを作成&lt;/li&gt;
-&lt;li&gt;右パネルの下にある [Cloud CDN を有効にする] チェックボックスをオンに&lt;/li&gt;
-&lt;li&gt;作成ボタンを押下&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;HTTPD サーバ側 (今回は Apache を使います) でキャッシュに関する設定を行います。
-下記は例です。3600秒、キャッシュさせる設定になります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;Header set Cache-control &amp;quot;public, max-age=3600&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;キャッシュされる条件は RFC7324 に規定されているとおりです。&lt;/p&gt;
-
-&lt;h2 id=&#34;特定のキャッシュを削除する方法&#34;&gt;特定のキャッシュを削除する方法&lt;/h2&gt;
-
-&lt;p&gt;Google Cloud SDK &lt;a href=&#34;https://cloud.google.com/sdk/&#34;&gt;https://cloud.google.com/sdk/&lt;/a&gt; を使うと CLI でコンテンツを指定してキャッシュのクリアが出来ます。また WebUI でもクリアは可能です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ gcloud compute url-maps invalidate-cdn-cache &amp;lt;url-map の名前&amp;gt; --path &amp;quot;コンテンツのパス&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;このときに &amp;ndash;path で指定できるコンテンツの記し方は下記のように指定することも可能です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;--path &amp;quot;/cat.png # &amp;lt;--- 1つのコンテンツキャッシュを削除
---path &amp;quot;/*&amp;quot;      # &amp;lt;--- 全てのコンテンツキャッシュを削除
---path &amp;quot;/pix/*&amp;quot;  # &amp;lt;--- ディレクトリ指定で削除
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;価格が低価格で必要最低限な機能に絞られている印象です。シンプルな分、理解し易いですしキャッシュクリアについても Hubot 化などすれば開発者の方に実行してもらいやすいのではないでしょうか。&lt;/p&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2016/12/29/cloud-cdn/</guid>
+      <description>こんにちは。@jedipunkz です。 今回は Google Cloud Platform の Google CloudCDN について調べてみたので記したいと思います。 CloudCDN は GCP のロードバランサのバックエンドサービ</description>
     </item>
     
     <item>
       <title>coreos の etcd operator を触ってみた</title>
-      <link>http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/</link>
+      <link>https://jedipunkz.github.io/blog/2016/11/27/etcd-operator/</link>
       <pubDate>Sun, 27 Nov 2016 21:00:45 +0900</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2016/11/27/etcd-operator/</guid>
-      <description>
-
-&lt;p&gt;こんにちは @jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;今日は某アドベントカレンダーに参加していて記事を書いています。
-記事だけ先出ししちゃいます..。&lt;/p&gt;
-
-&lt;p&gt;今日は最近 coreos がリリースした &amp;lsquo;etcd-operator&amp;rsquo; を触ってみようかと思います。ほぼ、README に書かれている手順通りに実施するのですが、所感を交えながら作業して記事にしてみたいと思います。&lt;/p&gt;
-
-&lt;p&gt;coreos が提供している etcd についてご存知ない方もいらっしゃると思いますが etcd は KVS ストレージでありながら Configuration Management Store として利用できる分散型ストレージです。Docker 等の環境を提供する coreos という軽量 OS 内でも etcd が起動していてクラスタで管理された情報をクラスタ内の各 OS が読み書きできる、といった機能を etcd が提供しています。
-詳細については公式サイトを御覧ください。&lt;/p&gt;
-
-&lt;p&gt;etcd 公式サイト : &lt;a href=&#34;https://coreos.com/etcd/docs/latest/&#34;&gt;https://coreos.com/etcd/docs/latest/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;etcd-operator はこの etcd クラスタを kubernetes 上でクラスタ管理するための簡単に運用管理するためのソフトウェアになります。&lt;/p&gt;
-
-&lt;p&gt;etcd-operator 公式アナウンス : &lt;a href=&#34;https://coreos.com/blog/introducing-the-etcd-operator.html&#34;&gt;https://coreos.com/blog/introducing-the-etcd-operator.html&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;後に実際に触れていきますが下記のような管理が可能になります。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;etcd クラスタの構築&lt;/li&gt;
-&lt;li&gt;etcd クラスタのスケールアップ・ダウン&lt;/li&gt;
-&lt;li&gt;etcd Pod の障害時自動復旧&lt;/li&gt;
-&lt;li&gt;etcd イメージをオンラインで最新のモノにアップグレード&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;では早速利用してみたいと思います。&lt;/p&gt;
-
-&lt;h2 id=&#34;必要な環境&#34;&gt;必要な環境&lt;/h2&gt;
-
-&lt;p&gt;下記の環境が事前に用意されている必要があります。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Docker&lt;/li&gt;
-&lt;li&gt;Kubernetes or minikube+kubernetes (&lt;a href=&#34;https://github.com/kubernetes/minikube&#34;&gt;https://github.com/kubernetes/minikube&lt;/a&gt;)&lt;/li&gt;
-&lt;li&gt;etcdctl : &lt;a href=&#34;https://github.com/coreos/etcd/tree/master/etcdctl&#34;&gt;https://github.com/coreos/etcd/tree/master/etcdctl&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h2 id=&#34;作業準備&#34;&gt;作業準備&lt;/h2&gt;
-
-&lt;p&gt;下記のレポジトリをクローンします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ git clone https://github.com/coreos/etcd-operator.git
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;operator-のデプロイ&#34;&gt;Operator のデプロイ&lt;/h2&gt;
-
-&lt;p&gt;下記のような内容のファイルが記さているファイルを利用します。中身を確認しましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ cat  example/deployment.yaml
-apiVersion: extensions/v1beta1
-kind: Deployment
-metadata:
-  name: etcd-operator
-spec:
-  replicas: 1
-  template:
-    metadata:
-      labels:
-        name: etcd-operator
-    spec:
-      containers:
-      - name: etcd-operator
-        image: quay.io/coreos/etcd-operator
-        env:
-        - name: MY_POD_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;kind: Deployment で etcd-operator のイメージを使ってレプリカ数1のポッドを起動しているのが分かると思います。実際にデプロイします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl create -f example/deployment.yaml
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;どんなポッドが起動したか確認します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;kubectl get pods
-NAME                                     READY     STATUS    RESTARTS   AGE
-etcd-operator-217127005-futo0            1/1       Running   0          1m
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;あと、これは自分も知りませんでしたがサードパーティリソースという枠があるらしく下記のように確認することができます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;kubectl get thirdpartyresources
-NAME                      DESCRIPTION             VERSION(S)
-etcd-cluster.coreos.com   Managed etcd clusters   v1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;replica数1 ですが、ポッドなのでポッド内のプロセスに問題があれば kubernetes が自動で修復 (場合によってポッドの再構築) されます。また replica 数を増やす運用も考えられそうです。&lt;/p&gt;
-
-&lt;h2 id=&#34;etcd-クラスタの構築&#34;&gt;etcd クラスタの構築&lt;/h2&gt;
-
-&lt;p&gt;下記の内容のファイルで etcd をデプロイします。中身を確認しましょう。
-API は coreos.com/v1 で kind: EtcdCluster という情報が記されています。また version でイメージバージョンが記されているのかなということが後に確認できます。また size でレプリカ数が記されているようです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ cat example/example-etcd-cluster.yaml
-apiVersion: &amp;quot;coreos.com/v1&amp;quot;
-kind: &amp;quot;EtcdCluster&amp;quot;
-metadata:
-  name: &amp;quot;etcd-cluster&amp;quot;
-spec:
-  size: 3
-  version: &amp;quot;v3.1.0-alpha.1&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;デプロイをしてみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl create -f example/example-etcd-cluster.yaml
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;クラスタがデプロイされたか見てみます。3つのポッドが確認できます。やはりファイル中 size: 3 はレプリカ数だったようです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl get pods --show-all
-NAME                                     READY     STATUS      RESTARTS   AGE
-etcd-cluster-0000                        1/1       Running     0          1m
-etcd-cluster-0001                        1/1       Running     0          36s
-etcd-cluster-0002                        1/1       Running     0          21s
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;同様に Service について確認します。etcd-cluster-000[012] の3つが今回作った etcd クラスタです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl get svc
-NAME                    CLUSTER-IP   EXTERNAL-IP   PORT(S)             AGE
-etcd-cluster            10.0.0.80    &amp;lt;none&amp;gt;        2379/TCP            1m
-etcd-cluster-0000       10.0.0.13    &amp;lt;none&amp;gt;        2380/TCP,2379/TCP   1m
-etcd-cluster-0001       10.0.0.111   &amp;lt;none&amp;gt;        2380/TCP,2379/TCP   1m
-etcd-cluster-0002       10.0.0.183   &amp;lt;none&amp;gt;        2380/TCP,2379/TCP   50s
-kubernetes              10.0.0.1     &amp;lt;none&amp;gt;        443/TCP             5d
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;etcd-クラスタをスケールアウト&#34;&gt;etcd クラスタをスケールアウト&lt;/h2&gt;
-
-&lt;p&gt;では etcd クラスタのレプリカ数を増やすことでスケールアウトしてみます。が、今現在 (&lt;sup&gt;2016&lt;/sup&gt;&amp;frasl;&lt;sub&gt;12&lt;/sub&gt;) 時点では一部不具合があるらしく回避策として下記の通り curl を用いてスケールアウトすることが可能なようです。&lt;/p&gt;
-
-&lt;p&gt;下記の内容で body.json ファイルを用意します。size: 5 になっていることが確認できて、レプリカ数5になるのだなと判断できます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ cat body.json
-{
-  &amp;quot;apiVersion&amp;quot;: &amp;quot;coreos.com/v1&amp;quot;,
-  &amp;quot;kind&amp;quot;: &amp;quot;EtcdCluster&amp;quot;,
-  &amp;quot;metadata&amp;quot;: {
-    &amp;quot;name&amp;quot;: &amp;quot;etcd-cluster&amp;quot;,
-    &amp;quot;namespace&amp;quot;: &amp;quot;default&amp;quot;
-  },
-  &amp;quot;spec&amp;quot;: {
-    &amp;quot;size&amp;quot;: 5
-  }
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ここで curl で実行するためプロキシを稼働します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl proxy --port=8080
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;curl で先程作った body.json を PUT してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;curl -H &#39;Content-Type: application/json&#39; -X PUT --data @body.json http://127.0.0.1:8080/apis/coreos.com/v1/namespaces/default/etcdclusters/etcd-cluster
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;クラスタがスケールアウトされたか確認しましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;kubectl get pods --show-all
-NAME                                     READY     STATUS    RESTARTS   AGE
-etcd-cluster-0000                        1/1       Running   0          5m
-etcd-cluster-0001                        1/1       Running   0          4m
-etcd-cluster-0002                        1/1       Running   0          4m
-etcd-cluster-0003                        1/1       Running   0          32s
-etcd-cluster-0004                        1/1       Running   0          17s
-etcd-operator-217127005-futo0            1/1       Running   0          9m
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;5台構成のクラスタにスケールアウトしたことが確認できます。&lt;/p&gt;
-
-&lt;h2 id=&#34;etcd-にアクセス&#34;&gt;etcd にアクセス&lt;/h2&gt;
-
-&lt;p&gt;5台構成の etcd クラスタがデプロイできたので etcd に etcdctl を使ってアクセスしてみましょう。事前に etcdctl をインストールする必要があります。また私の環境もそうだったのですがローカルの Mac に minikube を使って kubernetes 環境を構築しているので下記のように nodePort を作るため作業が必要です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl create -f example/example-etcd-cluster-nodeport-service.json
-$ export ETCDCTL_API=3
-$ export ETCDCTL_ENDPOINTS=$(minikube service etcd-cluster-client-service --url)
-$ etcdctl put foo bar
-$ etcdctl get foo
-foo
-bar
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;etcdctl でキー・値を入力・読み込みが可能であることが分かりました！&lt;/p&gt;
-
-&lt;h2 id=&#34;ポッドの自動復旧&#34;&gt;ポッドの自動復旧&lt;/h2&gt;
-
-&lt;p&gt;kubernetes を普段使っている方は分かると思うのですがポッドを落としても kubernetes が自動復旧してくれます。ここで一つポッドを削除してみようと思います。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$kubectl get pods
-NAME                                     READY     STATUS    RESTARTS   AGE
-etcd-cluster-0000                        1/1       Running   0          11m
-etcd-cluster-0001                        1/1       Running   0          11m
-etcd-cluster-0002                        1/1       Running   0          11m
-etcd-cluster-0003                        1/1       Running   0          6m
-etcd-cluster-0004                        1/1       Running   0          6m
-etcd-operator-217127005-futo0            1/1       Running   0          16m
-
-$kubect delete pod etcd-cluster-0004
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;しばらくすると下記の通り etcd-cluster-0004 に代わり etcd-cluster-0005 が稼働していることが確認できると思います。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl get pods
-NAME                                     READY     STATUS    RESTARTS   AGE
-etcd-cluster-0000                        1/1       Running   0          12m
-etcd-cluster-0001                        1/1       Running   0          12m
-etcd-cluster-0002                        1/1       Running   0          11m
-etcd-cluster-0003                        1/1       Running   0          7m
-etcd-cluster-0005                        1/1       Running   0          3s
-etcd-operator-217127005-futo0            1/1       Running   0          17m
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;kubernetes の上で構成することでうまく kubernetes のメリットを活かしつつ etcd クラスタを構成できていると言えると思います。記事執筆時ではまだ不具合が幾つかありました (上記の curl で実施した箇所や、イメージのアップグレード) が、etcd を手動で構築するより kubernetes で構成するほうがメリットが多いことは明らかです。また kubernetes のポッドから kubernetes dns を介してサービスネームに直接アクセスできるのでポッドから etcd に情報を読み書きすることも容易になりそうです。&lt;/p&gt;
-
-&lt;p&gt;ですが etcd に収めるデータの性質によっては運用面で厳しくなることも想定できます。coreos 内で etcd クラスタを介して互いのコンテナ間でコンフィグを共有し合う使い方は非常に意味があると思うのですが、coreos 外の独自のソフトウェアがいろんな種別のデータを etcd クラスタに外から入出力することの意味はそれほど無いように思えます。であれば高耐久性で運用のし易い軽量な KVS ソフトウェアを使うべきだからです。&lt;/p&gt;
-
-&lt;p&gt;また今回紹介した etcd-operator とは別に coreos が同時にアナウンスした(&lt;a href=&#34;https://coreos.com/blog/the-prometheus-operator.html&#34;&gt;https://coreos.com/blog/the-prometheus-operator.html&lt;/a&gt;) に関しても興味を持っているので後に触ってみたいと思います。&lt;/p&gt;
-
-&lt;p&gt;何と言うか所感として最後に述べるとサーバレスが叫ばれている中でわざわざクラスタソフトウェアを自前で管理するのか？と疑問も確かに残ります。それこそクラウドプラットフォームが提供すべき機能だと思うからです..。&lt;/p&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2016/11/27/etcd-operator/</guid>
+      <description>こんにちは @jedipunkz です。 今日は某アドベントカレンダーに参加していて記事を書いています。 記事だけ先出ししちゃいます..。 今日は最近 coreos がリリースした &amp;lsquo;etcd-operator&amp;rsquo;</description>
     </item>
     
     <item>
       <title>Helm を使って Kubernetes を管理する</title>
-      <link>http://jedipunkz.github.io/blog/2016/11/20/helm/</link>
+      <link>https://jedipunkz.github.io/blog/2016/11/20/helm/</link>
       <pubDate>Sun, 20 Nov 2016 11:27:00 +0900</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2016/11/20/helm/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;今回は Helm という kubernetes のパッケージマネージャ的なソフトウェアを使ってみたので記事にしたいと思います。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;公式サイト : &lt;a href=&#34;https://helm.sh/&#34;&gt;https://helm.sh/&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;Kubernetes を仕事で使っているのですが &amp;ldquo;レプリケーションコントローラ&amp;rdquo; や &amp;ldquo;サービス&amp;rdquo; といった単位を使って Pod, Service を管理しています。Helm を使うことでこれらの管理方法が変わるのか調べたいと思います。&lt;/p&gt;
-
-&lt;h2 id=&#34;依存するソフトウェア&#34;&gt;依存するソフトウェア&lt;/h2&gt;
-
-&lt;p&gt;今回は MacOS を使って環境を整えます。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;virtualbox&lt;/li&gt;
-&lt;li&gt;minikube&lt;/li&gt;
-&lt;li&gt;kubectl&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;これらのソフトウェアをインストールしていきます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ brew cask install virtualbo
-$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.12.2/minikube-darwin-amd64 &amp;amp;&amp;amp; chmod +x minikube &amp;amp;&amp;amp; sudo mv minikube /usr/local/bin/
-$ brew install kubectl
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;minikube を使って簡易的な kubernetes 環境を起動します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ minikube start
-$ eval $(minikube docker-env)
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;helm-を使ってみる&#34;&gt;Helm を使ってみる&lt;/h2&gt;
-
-&lt;p&gt;Helm は Charts という単位で Kubernetes をパッケージングします。Charts の一覧を見てみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ helm search
-NAME                    VERSION         DESCRIPTION
-stable/drupal           0.3.7           One of the most versatile open source content m...
-stable/factorio         0.1.1           Factorio dedicated server.
-stable/ghost            0.4.0           A simple, powerful publishing platform that all...
-stable/jenkins          0.1.1           A Jenkins Helm chart for Kubernetes.
-stable/joomla           0.4.0           PHP content management system (CMS) for publish...
-stable/mariadb          0.5.3           Chart for MariaDB
-stable/mediawiki        0.4.0           Extremely powerful, scalable software and a fea...
-stable/memcached        0.4.0           Chart for Memcached
-stable/minecraft        0.1.0           Minecraft server
-stable/mysql            0.2.1           Chart for MySQL
-stable/phpbb            0.4.0           Community forum that supports the notion of use...
-stable/postgresql       0.2.0           Chart for PostgreSQL
-stable/prometheus       1.3.1           A Prometheus Helm chart for Kubernetes. Prometh...
-stable/redis            0.4.1           Chart for Redis
-stable/redmine          0.3.5           A flexible project management web application.
-stable/spark            0.1.1           A Apache Spark Helm chart for Kubernetes. Apach...
-stable/spartakus        1.0.0           A Spartakus Helm chart for Kubernetes. Spartaku...
-stable/testlink         0.4.0           Web-based test management system that facilitat...
-stable/traefik          1.1.0-rc3-a     A Traefik based Kubernetes ingress controller w...
-stable/uchiwa           0.1.0           Dashboard for the Sensu monitoring framework
-stable/wordpress        0.3.2           Web publishing platform for building blogs and ...
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;各アプリケーションの名前で Charts が管理されていることが分かります。
-ここでは stable/mysql を使って kubernetes の中に MySQL 環境を作ってみます。まず stable/mysql に設定できるパラメータ一覧を取得します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ helm inspect stable/mysql
-Fetched stable/mysql to mysql-0.2.1.tgz
-description: Chart for MySQL
-engine: gotpl
-home: https://www.mysql.com/
-keywords:
-- mysql
-- database
-- sql
-maintainers:
-- email: viglesias@google.com
-  name: Vic Iglesias
-name: mysql
-sources:
-- https://github.com/kubernetes/charts
-- https://github.com/docker-library/mysql
-version: 0.2.1
-
----
-## mysql image version
-## ref: https://hub.docker.com/r/library/mysql/tags/
-##
-imageTag: &amp;quot;5.7.14&amp;quot;
-
-## Specify password for root user
-##
-## Default: random 10 character string
-# mysqlRootPassword: testing
-
-## Create a database user
-##
-# mysqlUser:
-# mysqlPassword:
-
-## Allow unauthenticated access, uncomment to enable
-##
-# mysqlAllowEmptyPassword: true
-
-## Create a database
-##
-# mysqlDatabase:
-
-## Specify a imagePullPolicy
-## &#39;Always&#39; if imageTag is &#39;latest&#39;, else set to &#39;IfNotPresent&#39;
-## ref: http://kubernetes.io/docs/user-guide/images/#pre-pulling-images
-##
-# imagePullPolicy:
-
-## Persist data to a persitent volume
-persistence:
-  enabled: true
-  storageClass: generic
-  accessMode: ReadWriteOnce
-  size: 8Gi
-
-## Configure resource requests and limits
-## ref: http://kubernetes.io/docs/user-guide/compute-resources/
-##
-resources:
-  requests:
-    memory: 256Mi
-    cpu: 100m
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;stable/mysql という Charts を構成するパラメータ一覧が取得できました。今回は DB 上のユーザを作ってパスワードを設定してみようと思います。上記のパラメータの中から &amp;lsquo;mysqlUser&amp;rsquo;, &amp;lsquo;mysqlPasswword&amp;rsquo; を編集してみます。下記の内容を config.yaml というファイル名で保存します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;mysqlUser: user1
-mysqlPassword: password1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;この config.yaml を使って stable/mysql を起動してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ helm install -f config.yaml stable/mysql
-$ helm ls # &amp;lt;--- 起動した環境を確認する
-NAME            REVISION        UPDATED                         STATUS          CHART
-dealing-ladybug 1               Sun Nov 20 10:44:00 2016        DEPLOYED        mysql-0.2.1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;&amp;lsquo;dealing-ladybug&amp;rsquo; という名前で mysql が起動したことが分かります。&lt;/p&gt;
-
-&lt;p&gt;kubectl をつかって Services を確認してみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl get svc
-NAME                    CLUSTER-IP   EXTERNAL-IP   PORT(S)    AGE
-dealing-ladybug-mysql   10.0.0.24    &amp;lt;none&amp;gt;        3306/TCP   33m
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;&amp;lsquo;dealing-ladybug-mysql&amp;rsquo; という Service が kubernetes 環境に作られました。この名前は Kubernetes 内のコンテナから DNS 名前解決できるアドレスとなります。&lt;/p&gt;
-
-&lt;p&gt;ここで mysql-client 環境を作るために下記のようなコンテナを起動して mysql-client をインストール、config.yaml で作成したユーザ・パスワードで mysql サーバにアクセス確認します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl run -i --tty ubuntu02 --image=ubuntu:16.04 --restart=Never -- bash -il
-# apt-get update; apt-get install -y mysql-client
-# mysql -h dealing-ladybug-mysql -u user1 -ppassword1
-&amp;lt;省略&amp;gt;
-mysql&amp;gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;config.yaml に記したユーザ情報で MySQL にアクセスできることを確認できました。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;Helm を使うことでレプリケーションコントローラやサービスを直接 yaml で作らなくても MySQL 環境構築と設定が行えました。Helm の Charts は自分で開発することも可能です。(参考 URL)&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/kubernetes/helm/blob/master/docs/charts.md&#34;&gt;https://github.com/kubernetes/helm/blob/master/docs/charts.md&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;パッケージングすることで他人の作った資源を有用に活用することもできるため、こういった何かを抽象化する技術を採用することにはとても意味があると思います。自動化を考える上でも抽象化できる技術は有用だと思います。&lt;/p&gt;
-
-&lt;p&gt;ですがレプリケーションコントローラを使っても Helm でも Yaml で管理することに変わりはなく、またレプリケーションコントローラで指定できる詳細なパラメータ (replicas や command, image など) を指定できないためすぐに実用するというわけにはいかないなぁと感じました。&lt;/p&gt;
-
-&lt;h2 id=&#34;参考-url&#34;&gt;参考 URL&lt;/h2&gt;
-
-&lt;ul&gt;
-&lt;li&gt;&lt;a href=&#34;https://github.com/kubernetes/helm/blob/master/docs/charts.md&#34;&gt;https://github.com/kubernetes/helm/blob/master/docs/charts.md&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a href=&#34;https://github.com/kubernetes/helm/blob/master/docs/quickstart.md&#34;&gt;https://github.com/kubernetes/helm/blob/master/docs/quickstart.md&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2016/11/20/helm/</guid>
+      <description>こんにちは。@jedipunkz です。 今回は Helm という kubernetes のパッケージマネージャ的なソフトウェアを使ってみたので記事にしたいと思います。 公式サイ</description>
     </item>
     
     <item>
       <title>Minikube で簡易 kubernetes 環境構築</title>
-      <link>http://jedipunkz.github.io/blog/2016/07/25/minikube/</link>
+      <link>https://jedipunkz.github.io/blog/2016/07/25/minikube/</link>
       <pubDate>Mon, 25 Jul 2016 23:18:16 +0900</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2016/07/25/minikube/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。@jedipunkz です。&lt;/p&gt;
-
-&lt;p&gt;kubernetes の環境を簡易的に作れる Minikube (&lt;a href=&#34;https://github.com/kubernetes/minikube&#34;&gt;https://github.com/kubernetes/minikube&lt;/a&gt;) が2ヶ月前ほどにリリースになっていました。簡単ですが少し触ってみたのでその際のメモを記したいと思います。VirtualBox もしくは VMware Fusion がインストールされていればすぐにでも稼働可能です。私は Kubernetes 初心者ですが何も考えずに kubernetes を動かすことが出来ました。&lt;/p&gt;
-
-&lt;h2 id=&#34;前提&#34;&gt;前提&lt;/h2&gt;
-
-&lt;p&gt;前提として下記の環境が必要になります。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Mac OSX がインストールされていること&lt;/li&gt;
-&lt;li&gt;VirtualBox もしくは VMware Fusion がインストールされていること&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h2 id=&#34;minikube-をインストール&#34;&gt;minikube をインストール&lt;/h2&gt;
-
-&lt;p&gt;minikube をインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ curl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.6.0/minikube-darwin-amd64 &amp;amp;&amp;amp; chmod +x minikube &amp;amp;&amp;amp; sudo mv minikube /usr/local/bin/
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;kubetl-をインストール&#34;&gt;kubetl をインストール&lt;/h2&gt;
-
-&lt;p&gt;次に kubectl をインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ curl -k -o kubectl https://kuar.io/darwin/kubectl &amp;amp;&amp;amp; chmod +x kubectl &amp;amp;&amp;amp; sudo mv kubectl /usr/local/bin/
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;minikube-で-kurbernates-を稼働&#34;&gt;Minikube で Kurbernates を稼働&lt;/h2&gt;
-
-&lt;p&gt;Minikube を使って Kubernetes を稼働してみます。下記のコマンドを実行すると Virtualbox 上で仮想マシンが稼働し Kubernetes 一式も立ち上がります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ minikube start
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;kurbernates-を使ってみる&#34;&gt;Kurbernates を使ってみる&lt;/h2&gt;
-
-&lt;p&gt;Pods を立ち上げてみましょう。下記の内容を redis-django.yaml ファイルに保存します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;apiVersion: v1
-kind: Pod
-metadata:
-  name: redis-django
-  labels:
-    app: web
-spec:
-  containers:
-    - name: key-value-store
-      image: redis
-      ports:
-        - containerPort: 6379
-    - name: frontend
-      image: django
-      ports:
-        - containerPort: 8000
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;kubectl コマンドで Pod を立ち上げます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl create -f ./redis-django.yaml
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Pod の様子を確認します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl get pods
-NAME           READY     STATUS             RESTARTS   AGE
-redis-django   1/2       CrashLoopBackOff   7          15m
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Minikube はクラスタといってもノードが1つなので READY &lt;sup&gt;1&lt;/sup&gt;&amp;frasl;&lt;sub&gt;2&lt;/sub&gt; となるようです。Nodes の様子を見てみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ kubectl get nodes
-NAME         LABELS                                                                                        STATUS
-minikubevm   beta.kubernetes.io/arch=amd64,beta.kubernetes.io/os=linux,kubernetes.io/hostname=minikubevm   Ready
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Docker ホスト上の様子を見てみましょう。Kubernetes を形成するコンテナと共に redis のコンテナが稼働していることが確認できます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ eval $(minikube docker-env)
-$ docker ps
-CONTAINER ID        IMAGE                                                  COMMAND                  CREATED             STATUS              PORTS               NAMES
-550285614e33        redis                                                  &amp;quot;docker-entrypoint.sh&amp;quot;   20 minutes ago      Up 20 minutes                           k8s_key-value-store.a3b8356e_redis-django_default_4440a1d8-5272-11e6-9f19-6e0006e7fb51_90c3fec8
-aba3a8c040d4        gcr.io/google_containers/pause-amd64:3.0               &amp;quot;/pause&amp;quot;                 20 minutes ago      Up 20 minutes                           k8s_POD.822b267d_redis-django_default_4440a1d8-5272-11e6-9f19-6e0006e7fb51_5bef1d2a
-9ea96a3f3e10        gcr.io/google-containers/kube-addon-manager-amd64:v2   &amp;quot;/opt/kube-addons.sh&amp;quot;    48 minutes ago      Up 48 minutes                           k8s_kube-addon-manager.a1c58ca2_kube-addon-manager-minikubevm_kube-system_48abed82af93bb0b941173334110923f_84f4fd38
-192e886a5795        gcr.io/google_containers/pause-amd64:3.0               &amp;quot;/pause&amp;quot;                 48 minutes ago      Up 48 minutes                           k8s_POD.d8dbe16c_kube-addon-manager-minikubevm_kube-system_48abed82af93bb0b941173334110923f_6c65b482
-7b005c68d9d4        gcr.io/google_containers/pause-amd64:3.0               &amp;quot;/pause&amp;quot;                 48 minutes ago      Up 48 minutes                           k8s_POD.2225036b_kubernetes-dashboard-pzdxy_kube-system_7005dce1-479a-11e6-a0ce-86b669e45864_c08bd009
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;Kubernetes のことを殆ど知らない私でもなんとなくですが稼働させて基本的な操作が出来ました。2016/5/31 にリリースされたツールなのでまだ安定しないところもありますが、より容易に Kubernetes が稼働できるようになったのでエンジニアの敷居が下がったのではないでしょうか。&lt;/p&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2016/07/25/minikube/</guid>
+      <description>こんにちは。@jedipunkz です。 kubernetes の環境を簡易的に作れる Minikube (https://github.com/kubernetes/minikube) が2ヶ月前ほどにリリースになっていました。簡単ですが少し触ってみたのでその</description>
     </item>
     
     <item>
       <title>Go言語とInfluxDBで監視のコード化</title>
-      <link>http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/</link>
+      <link>https://jedipunkz.github.io/blog/2016/07/23/influxdb-go/</link>
       <pubDate>Sat, 23 Jul 2016 02:40:11 +0900</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2016/07/23/influxdb-go/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;今日は Go 言語でサーバのメトリクスデータを InfluxDB に入れてリソース監視を行う方法について書きます。&lt;/p&gt;
-
-&lt;p&gt;Ansible, Terraform, Chef などのソフトウェアを使ってインフラを定義するのが当たり前になった現在ですが、本当の意味でのソフトウェアによるインフラの定義ってなんだろと最近考えています。aws-sdk や fog などを使ったネイティブな言語でインフラを定義することの意味もあるように感じているからです。某サービスプロバイダのエンジニアはこうした言語によるインフラの定義の一番大きなメリットとして &amp;ldquo;再利用性&amp;rdquo; をあげていました。こうしたソフトウェアによるインフラの定義や構成を行う上で監視についてもコード化できるのでは？と考えて今回の記事に至りました。&lt;/p&gt;
-
-&lt;h2 id=&#34;使うモノ&#34;&gt;使うモノ&lt;/h2&gt;
-
-&lt;ul&gt;
-&lt;li&gt;&lt;a href=&#34;https://github.com/influxdata/influxdb/tree/master/client&#34;&gt;https://github.com/influxdata/influxdb/tree/master/client&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;公式の InfluxDB Go Client です。InfluxDB 自体が Go 言語で書かれていますがクライアントも Go 言語で記述することができます。ここにあるサンプルコードをすこしいじって、今回の記事を書こうと思います。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;&lt;a href=&#34;https://github.com/shirou/gopsutil&#34;&gt;https://github.com/shirou/gopsutil&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;@shirou さんが作られた psutil の Go 言語版です。CPU, Mem などリソースをモニタするのに便利なので利用します。&lt;/p&gt;
-
-&lt;h2 id=&#34;環境構築&#34;&gt;環境構築&lt;/h2&gt;
-
-&lt;p&gt;環境を作っていきます。InfluxDB と Chronograf を構築するのですが Docker で構築するのが簡単なのでこれを利用します。Chronograf は InfluxDB 内のデータを可視化するためのソフトウェアです。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;InfluxDB の起動&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;InfluxDB のコンテナを起動します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;docker run -p 8083:8083 -p 8086:8086 \
-      -v $PWD:/var/lib/influxdb \
-      influxdb
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Chronograf の起動&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;Chronograf のコンテナを起動します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;docker run -p 10000:10000 chronograf
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;この時点で http://${DOCKER_HOST}:10000/ にアクセスすると Chronograf の UI を確認できます。&lt;/p&gt;
-
-&lt;h2 id=&#34;influxdb-にユーザ-データベースを作成する&#34;&gt;InfluxDB にユーザ・データベースを作成する&lt;/h2&gt;
-
-&lt;p&gt;InfluxDB 上にユーザとデータベースを作成します。言語の中でも作ることが出来ますが、今回は手動で。
-Mac OSX を使っている場合 homebrew で influxdb をインストールすることが簡単にできます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;brew install influxdb
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ユーザを作ります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;influx -host 192.168.99.100 -port 8086
-&amp;gt; create user foo with password &#39;foo&#39;
-&amp;gt; grant all privileges to foo
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;データベースを作ります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;influx -host 192.168.99.100 -port 8086
-&amp;gt; CREATE DATABASE IF NOT EXISTS square_holes;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;go言語で-cpu-時間を取得し-influxdb-にメトリクスデータを挿入&#34;&gt;Go言語で CPU 時間を取得し InfluxDB にメトリクスデータを挿入&lt;/h2&gt;
-
-&lt;p&gt;Go 言語でメモリー使用率を取得し得られたメトリクスデータを InfluxDB に挿入するコードを書きます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-golang&#34;&gt;package main
-
-import (
-    &amp;quot;log&amp;quot;
-    &amp;quot;time&amp;quot;
-
-    &amp;quot;github.com/influxdata/influxdb/client/v2&amp;quot;
-    &amp;quot;github.com/shirou/gopsutil/cpu&amp;quot;
-)
-
-const (
-    MyDB = &amp;quot;square_holes&amp;quot;
-    username = &amp;quot;foo&amp;quot;
-    password = &amp;quot;foo&amp;quot;
-)
-
-func main() {
-    for {
-        // Make client
-        c, err := client.NewHTTPClient(client.HTTPConfig{
-            Addr: &amp;quot;http://192.168.99.100:8086&amp;quot;,
-            Username: username,
-            Password: password,
-        })
-    
-        if err != nil {
-            log.Fatalln(&amp;quot;Error: &amp;quot;, err)
-        }
-    
-        // Create a new point batch
-        bp, err := client.NewBatchPoints(client.BatchPointsConfig{
-            Database:  MyDB,
-            Precision: &amp;quot;s&amp;quot;,
-        })
-    
-        if err != nil {
-            log.Fatalln(&amp;quot;Error: &amp;quot;, err)
-        }
-    
-        // get CPU info
-        cp, _ := cpu.Times(true)
-
-        // get CPU status info for each core
-        var user, system, idle float64 = 0, 0, 0
-        for _, sub_cpu := range cp {
-            user = user + sub_cpu.User
-            system = system + sub_cpu.System
-            idle = idle + sub_cpu.Idle
-        }
-    
-        // Create a point and add to batch
-        tags := map[string]string{&amp;quot;cpu&amp;quot;: &amp;quot;cpu&amp;quot;}
-        fields := map[string]interface{}{
-            &amp;quot;User&amp;quot;:     user / float64(len(cp)),
-            &amp;quot;System&amp;quot;:   system / float64(len(cp)),
-            &amp;quot;Idle&amp;quot;:     idle / float64(len(cp)),
-        }
-        pt, err := client.NewPoint(&amp;quot;cpu&amp;quot;, tags, fields, time.Now())
-    
-        if err != nil {
-            log.Fatalln(&amp;quot;Error: &amp;quot;, err)
-        }
-    
-        bp.AddPoint(pt)
-    
-        // Write the batch
-        c.Write(bp)
-        time.Sleep(1 * time.Second)
-    }
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ビルドして実行すると下記のように influxdb 上のデータベースにメトリクスデータが挿入されていることを確認できます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;influx -host 192.168.99.100 -port 8086 -execute &#39;SELECT * FROM cpu&#39; -database=square_holes -precision=s | head -8
-name: cpu
----------
-time            Idle            System          User            cpu
-1469342272      20831.04296875  3700.185546875  3544.90234375   cpu
-1469342273      20831.666015625 3700.302734375  3544.966796875  cpu
-1469342274      20832.2109375   3700.447265625  3545.068359375  cpu
-1469342275      20832.828125    3700.546875     3545.13671875   cpu
-1469342291      20841.728515625 3702.482421875  3546.806640625  cpu
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;Chronograf の UI で確認してみましょう。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/influx-go.png&#34; width=&#34;80%&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;得られた CPU に関するデータが可視化されていることが確認できます。変化に乏しいグラフですが&amp;hellip;。
-この辺りは CPU 時間から CPU 使用率を得るコードに書き換えるといいかもしれません。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
-
-&lt;p&gt;InfluxDB の提供元が出している Telegraf というメトリクスデータの送信エージェントがありますが、同じような動きを Go 言語で簡単に開発できることが分かりました。ネイティブな言語で開発するとより柔軟にデータの送信ができることも期待できます。また冒頭に述べた通り再利用も用意になるのではと思います。インフラの状態をメトリクスデータとして時系列 DB に挿入して可視化するということは監視のコード化とも言えると思います。ただし、フレームワークが出てきてもっと簡単に書ける仕組みが出てこないと厳しい気もしますが。果たしてこれらインフラを言語で記述していくことがどれだけ有用なのかまだわかりませんが、いつか現場で実践してみたいと思います。&lt;/p&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2016/07/23/influxdb-go/</guid>
+      <description>こんにちは。@jedipunkz です。 今日は Go 言語でサーバのメトリクスデータを InfluxDB に入れてリソース監視を行う方法について書きます。 Ansible, Terraform, Chef などの</description>
     </item>
     
     <item>
       <title>Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！</title>
-      <link>http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/</link>
+      <link>https://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/</link>
       <pubDate>Thu, 14 Jul 2016 09:10:57 +0900</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;私もインフラのプロビジョニングツールとして Chef ではなく Ansible を使うことが増えたのですが、Chef を使っていた頃に同じく利用していた test-kitchen が便利だったので ansible と併用できないかと思い試してみました。test-kitchen は Docker コンテナや EC2 等を起動して Chef, Ansible 等で構成をデプロイし serverspec 等のテストツールで構成をテストできるソフトウェアです。AWS EC2 でデプロイしてもいいのですが、EC2 を起動してデプロイして失敗したら削除してのサイクルを回すことを考えるとだいぶ面倒なので Docker + test-kitchen を使ってこのサイクルを高速に回す方がメリットが大きそうです。今回は Docker + test-kitchen を使って Ansible Role (Playbook) を開発するサイクルを高速化する方法を記したいと思います。&lt;/p&gt;
-
-&lt;h2 id=&#34;ソフトウェアの構成&#34;&gt;ソフトウェアの構成&lt;/h2&gt;
-
-&lt;p&gt;構成は、私の場合 Mac OSX を使っているので下記のとおりです。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;test-kitchen&lt;/li&gt;
-&lt;li&gt;kitchen-ansible (test-kitchen ドライバ)&lt;/li&gt;
-&lt;li&gt;kitchen-docker (test-kitchen ドライバ)&lt;/li&gt;
-&lt;li&gt;serverspec&lt;/li&gt;
-&lt;li&gt;ansible&lt;/li&gt;
-&lt;li&gt;docker (Docker-machine)&lt;/li&gt;
-&lt;li&gt;VirtualBox&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;Linux でネイティブな Docker を使っている方は以降、読み替えて下さい。読み替えるのはそれほど難しくないと思います。&lt;/p&gt;
-
-&lt;h2 id=&#34;ソフトウェアのインストール&#34;&gt;ソフトウェアのインストール&lt;/h2&gt;
-
-&lt;p&gt;今回は上記ソフトウェアのインストール方法は省きます。test-kitchen, kitchen-ansible, kitchen-docker, serverspec は Ruby で開発されたソフトウェアなので Gemfile 等で管理、ansible は pip 等でインストールしてください。&lt;/p&gt;
-
-&lt;h2 id=&#34;環境作成&#34;&gt;環境作成&lt;/h2&gt;
-
-&lt;p&gt;test-kitchen が稼働するように環境を作っていきます。
-作業ディレクトリで kitchen コマンドを使って初期設定を行います。今回は試しに nginx のデプロイを実施したいと思います。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ mkdir -p test-kitchen/nginx test-kitchen/roles
-$ cd test-kitchen/nginx
-$ kitchen init
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;また上記で作成した roles ディレクトリに ansible-galaxy で nginx の role を取得します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ ansible-galaxy install geerlingguy.nginx -p ../roles/nginx
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;下記の内容を .kitchen.local.yml として保存してください。
-Docker ホストの指定、Provisioner として ansible の指定、Platform として &amp;lsquo;ubuntu:16.04&amp;rsquo; の Docker コンテナの指定を行っています。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;---
-driver:
-  name: docker
-  binary: /usr/local/bin/docker
-  socker: tcp://192.168.99.100:2376
-
-provisioner:
-  name: ansible_playbook
-  playbook: ./site.yml
-  roles_path: ../roles
-  host_vars_path: ./host_vars
-  hosts: kitchen-deploy
-  require_ansible_omnibus: false
-  ansible_platform: ubuntu
-  require_chef_for_busser: true
-
-platforms:
-    - name: ubuntu
-      driver_config:
-        image: ubuntu:16.04
-        platform: ubuntu
-        require_chef_omnibus: false
-
-suites:
-  - name: default
-    run_list:
-    attributes:
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ここからは上記 .kitchen.local.yml ファイル内で指定したファイルの準備を行っていきます。&lt;/p&gt;
-
-&lt;p&gt;site.yml ファイルの内容を下記のように書いてください。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;---
-- hosts: kitchen-deploy
-  sudo: yes
-  roles:
-    - { role: geerlingguy.nginx, tags: nginx }
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;host_vars/hosts ファイルを作成します。&amp;rsquo;host_vars&amp;rsquo; ディレクトリは手動で作成してください。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;localhost              ansible_connection=local
-[kitchen-deploy]
-localhost
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に serverspec で行うテストの内容を作成します。
-serverspec-init コマンドではインタラクティブに回答しますが、SSH ではなく EXEC(Local) を選択することに注意してください。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ mkdir -p test/integration/default/serverspec
-$ cd test/integration/default/serverspec
-$ serverspec-init             # &amp;lt;--- インタラクティブに回答 : 1) UNIX, 2) EXEC(Local) を選択
-$ rm localhost/sample_spec.rb # &amp;lt;--- 必要ないので削除
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;test/integration/default/serverspec/localhost/nginx_spec.rb として下記の内容を試しに書いてみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;require &#39;spec_helper&#39;
-
-describe package(&#39;nginx&#39;) do
-    it { should be_installed }
-end
-
-describe service(&#39;nginx&#39;) do
-    it { should be_enabled }
-    it { should be_running }
-end
-
-describe file(&#39;/etc/nginx/nginx.conf&#39;) do
-    it { should be_file }
-end
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;下記のようなファイルとディレクトリ構成になっていることを確認しましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;.
-├── nginx
-│   ├── chefignore
-│   ├── host_vars
-│   │   └── hosts
-│   ├── site.yml
-│   └── test
-│       └── integration
-│           └── default
-│               ├── Rakefile
-│               └── serverspec
-│                   ├── localhost
-│                   │   └── nginx_spec.rb
-│                   └── spec_helper.rb
-└── roles
-    └── geerlingguy.nginx
-        ├── README.md
-        &amp;lt;省略&amp;gt;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;デプロイ-テストを実行する&#34;&gt;デプロイ・テストを実行する&lt;/h2&gt;
-
-&lt;p&gt;環境作成が完了したの Docker コンテナを起動し Ansible でデプロイ、その後 Serverspec でテストしてみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ cd test-kitchen
-$ kitchen create  # &amp;lt;--- Docker コンテナ起動
-$ kitchen setup   # &amp;lt;--- Ansible デプロイ
-$ kitchen verify  # &amp;lt;--- Serverspec テスト
-$ kitchen destroy # &amp;lt;--- コンテナ削除
-$ kitchen test    # &amp;lt;--- 上の4つのコマンドを一気に実行
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;Ansible でも test-kitchen を使ってデプロイ・テストが出来ることが分かりました。インスタンスを使ってデプロイ・テストを実施するよりコンテナを使うほうが失敗した際に削除・起動するのも一瞬で終わりますし Ansible 開発が高速化できることも実際に触っていただいてわかっていただけると思います。&lt;/p&gt;
-
-&lt;p&gt;ただ上記の手順ではコンテナの中に Ruby, Chef も一緒にインストールされてしまいます。
-test-kitchen 的には下記の記述を .kitchen.local.yml の provisioner: の欄に記述すると Chef のインストールは省けるはず (Ruby は Serverspec で用いる) のですが今現在 (2016/7中旬) では NG でした。これが正常に機能するようになるともっと高速にコンテナデプロイが完了すると思うので残念です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;require_chef_for_busser: false
-require_ruby_for_busser: true
-&lt;/code&gt;&lt;/pre&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/</guid>
+      <description>こんにちは。@jedipunkz です。 私もインフラのプロビジョニングツールとして Chef ではなく Ansible を使うことが増えたのですが、Chef を使っていた</description>
     </item>
     
     <item>
       <title>イベントドリブンな StackStorm で運用自動化</title>
-      <link>http://jedipunkz.github.io/blog/2016/07/02/stackstorm/</link>
+      <link>https://jedipunkz.github.io/blog/2016/07/02/stackstorm/</link>
       <pubDate>Sat, 02 Jul 2016 23:37:17 +0900</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2016/07/02/stackstorm/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;今回は StackStorm (&lt;a href=&#34;https://stackstorm.com/&#34;&gt;https://stackstorm.com/&lt;/a&gt;) というイベントドリブンオートメーションツールを使ってみましたので
-紹介したいと思います。&lt;/p&gt;
-
-&lt;p&gt;クラウドとプロビジョニングツールの登場で昨今はエンジニアがほぼ全ての操作を自動化出来るようになりました。
-ですが監視についてはどうでしょうか？監視システムを自動で構築することが出来ても障害発生時に対応を行う
-のは手動になっていませんでしょうか。もちろんクラスタ組んでいれば大抵のアラートは放置出来ますが、クラスタ
-を組むことが出来ないような箇所はクラウドを使ってもどうしても出てきます。&lt;/p&gt;
-
-&lt;p&gt;そこで登場するのが今回紹介する StackStorm のようなツールかなぁと考えるようになりました。&lt;/p&gt;
-
-&lt;h2 id=&#34;インストール&#34;&gt;インストール&lt;/h2&gt;
-
-&lt;p&gt;インストール手順は下記の URL にあります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://docs.stackstorm.com/install/index.html&#34;&gt;https://docs.stackstorm.com/install/index.html&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;自分は CentOS7 を使ったので下記のワンライナーでインストールできました。
-password は任意のものを入れてください。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;curl -sSL https://stackstorm.com/packages/install.sh | bash -s -- --user=st2admin --password=foo
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;MongoDB, postgreSQL が依存してインストールされます。&lt;/p&gt;
-
-&lt;p&gt;80番ポートで下記のような WEB UI も起動します。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/stackstorm.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;stackstorm-の基本&#34;&gt;StackStorm の基本&lt;/h2&gt;
-
-&lt;p&gt;基本を知るために幾つかの要素について説明していきます。&lt;/p&gt;
-
-&lt;p&gt;まず CLI で操作するために TOKEN を取得して環境変数にセットする必要があります。
-上記で設定したユーザ名・パスワードを入力してください。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;export ST2_AUTH_TOKEN=`st2 auth -t -p foo st2admin`
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Action&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;Action はイベントが発生した際に実行できるアクションになります。早速アクションの一覧を取得してみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ st2 action list
-+---------------------------------+---------+-------------------------------------------------------------+
-| ref                             | pack    | description                                                 |
-+---------------------------------+---------+-------------------------------------------------------------+
-| chatops.format_execution_result | chatops | Format an execution result for chatops                      |
-| chatops.post_message            | chatops | Post a message to stream for chatops                        |
-| chatops.post_result             | chatops | Post an execution result to stream for chatops              |
-&amp;lt;省略&amp;gt;
-| core.http                       | core    | Action that performs an http request.                       |
-| core.local                      | core    | Action that executes an arbitrary Linux command on the      |
-|                                 |         | localhost.                                                  |
-| core.local_sudo                 | core    | Action that executes an arbitrary Linux command on the      |
-|                                 |         | localhost.                                                  |
-| core.remote                     | core    | Action to execute arbitrary linux command remotely.         |
-| core.remote_sudo                | core    | Action to execute arbitrary linux command remotely.         |
-| core.sendmail                   | core    | This sends an email                                         |
-| core.windows_cmd                | core    | Action to execute arbitrary Windows command remotely.       |
-&amp;lt;省略&amp;gt;
-| linux.cp                        | linux   | Copy file(s)                                                |
-| linux.diag_loadavg              | linux   | Diagnostic workflow for high load alert                     |
-| linux.dig                       | linux   | Dig action                                                  |
-&amp;lt;省略&amp;gt;
-| st2.kv.get                      | st2     | Get value from datastore                                    |
-| st2.kv.set                      | st2     | Set value in datastore                                      |
-+---------------------------------+---------+-------------------------------------------------------------+
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;上記のように Linux のコマンドや ChatOps, HTTP でクエリを投げるもの、Key Value の読み書きを行うモノまであります。
-上記はかなり咲楽して貼り付けたので本来はもっと沢山のアクションがあります。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Trigger&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;Trigger は Action を実行する際のトリガになります。同様に一覧を見てみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ st2 trigger list
-+--------------------------------------+-------+----------------------------------------------------------------+
-| ref                                  | pack  | description                                                    |
-+--------------------------------------+-------+----------------------------------------------------------------+
-| core.st2.generic.actiontrigger       | core  | Trigger encapsulating the completion of an action execution.   |
-| core.st2.IntervalTimer               | core  | Triggers on specified intervals. e.g. every 30s, 1week etc.    |
-| core.st2.generic.notifytrigger       | core  | Notification trigger.                                          |
-| core.st2.DateTimer                   | core  | Triggers exactly once when the current time matches the        |
-|                                      |       | specified time. e.g. timezone:UTC date:2014-12-31 23:59:59.    |
-| core.st2.action.file_writen          | core  | Trigger encapsulating action file being written on disk.       |
-| core.st2.CronTimer                   | core  | Triggers whenever current time matches the specified time      |
-|                                      |       | constaints like a UNIX cron scheduler.                         |
-| core.st2.key_value_pair.create       | core  | Trigger encapsulating datastore item creation.                 |
-| core.st2.key_value_pair.update       | core  | Trigger encapsulating datastore set action.                    |
-| core.st2.key_value_pair.value_change | core  | Trigger encapsulating a change of datastore item value.        |
-| core.st2.key_value_pair.delete       | core  | Trigger encapsulating datastore item deletion.                 |
-| core.st2.sensor.process_spawn        | core  | Trigger indicating sensor process is started up.               |
-| core.st2.sensor.process_exit         | core  | Trigger indicating sensor process is stopped.                  |
-| core.st2.webhook                     | core  | Trigger type for registering webhooks that can consume         |
-|                                      |       | arbitrary payload.                                             |
-| linux.file_watch.line                | linux | Trigger which indicates a new line has been detected           |
-+--------------------------------------+-------+----------------------------------------------------------------+
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;CronTimer はその名の通り Cron であることが分かります。IntervalTimer は同じように一定時間間隔で実行するようです。
-その他 webhook や Key Value のペアが生成・削除・変更されたタイミング、等あります。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Rule&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;Rule は Trigger が発生して Action を実行する際のルールを記述するものになります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ st2 rule list
-+----------------+---------+-------------------------------------------------+---------+
-| ref            | pack    | description                                     | enabled |
-+----------------+---------+-------------------------------------------------+---------+
-| chatops.notify | chatops | Notification rule to send results of action     | True    |
-|                |         | executions to stream for chatops                |         |
-+----------------+---------+-------------------------------------------------+---------+
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;初期では上記の chatops.notify のみがあります。&lt;/p&gt;
-
-&lt;h2 id=&#34;実際に使ってみる&#34;&gt;実際に使ってみる&lt;/h2&gt;
-
-&lt;p&gt;core.local というアクションを実行してみました。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ st2 run core.local -- uname -a
-id: 5774c022e138230c66f2eefc
-status: succeeded
-parameters:
-  cmd: uname -a
-result:
-  failed: false
-  return_code: 0
-  stderr: &#39;&#39;
-  stdout: &#39;Linux localhost.localdomain 3.10.0-327.el7.x86_64 #1 SMP Thu Nov 19 22:10:57 UTC 2015 x86_64 x86_64 x86_64 GNU/Linux&#39;
-  succeeded: true
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;stdout に実行結果が出力されています。また下記のように実行結果の一覧を得ることが出来ます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;$ st2 execution list
-+----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
-| id                         | action.ref    | context.user | status                  | start_timestamp             | end_timestamp                 |
-+----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
-|   5774bdbee138230c66f2eeef | core.local    | st2admin     | succeeded (0s elapsed)  | Thu, 30 Jun 2016 06:35:42   | Thu, 30 Jun 2016 06:35:42 UTC |
-|                            |               |              |                         | UTC                         |                               |
-+----------------------------+---------------+--------------+-------------------------+-----------------------------+-------------------------------+
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;応用した使い方&#34;&gt;応用した使い方&lt;/h2&gt;
-
-&lt;p&gt;上記のように core.local, core.remote 等でホスト上のコマンドを実行できることが分かりました。
-ここで応用した使い方をしてみます。と言いますか、上記の基本的な使い方だけでは StackStorm を
-使うメリットが無いように思えます。&lt;/p&gt;
-
-&lt;p&gt;下記のような Rule を作成します。ファイル名は st2_sample_rule_webhook_remote_command.yaml とします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;---
-    name: &amp;quot;st2_sample_rule_webhook_remote_command&amp;quot;
-    pack: &amp;quot;examples&amp;quot;
-    description: &amp;quot;Sample rule of webhook.&amp;quot;
-    enabled: true
-
-    trigger:
-        type: &amp;quot;core.st2.webhook&amp;quot;
-        parameters:
-            url: &amp;quot;restart&amp;quot;
-
-    criteria:
-
-    action:
-        ref: &amp;quot;core.remote&amp;quot;
-        parameters:
-            hosts: &amp;quot;10.0.1.250&amp;quot;
-            username: &amp;quot;thirai&amp;quot;
-            private_key: &amp;quot;/root/.ssh/id_rsa&amp;quot;
-            cmd: &amp;quot;sudo service cron restart&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;StackStorm の基本要素 Action, Criteria(Rule の基準), Trigger から成っていることが分かります。
-Triger は webhoook です。url: &amp;ldquo;restart&amp;rdquo; となっているのは URL : https://&lt;stackstorm_ip_addr&gt;/api/v1/webhooks/restart という名前で
-アクセスを受けるようになるという意味です。criteria は今回は無条件で action を実行したいので空行にします。
-action では core.remote が選択されていて hosts: &amp;lsquo;10.0.1.250&amp;rsquo; に username で SSH してコマンドを実行しています。&lt;/p&gt;
-
-&lt;p&gt;要するに https://&lt;stackstorm_ip_addr&gt;/api/v1/webhooks/restart というアドレスでリクエストを受けると
-10.0.1.250 に &amp;lsquo;foo&amp;rsquo; というユーザで SSH してコマンドを実行する、というルールになっています。&lt;/p&gt;
-
-&lt;p&gt;下記のコマンドで上記の yaml ファイルをルールに読み込みます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;st2 rule create st2_sample_rule_webhook_remote_command.yaml
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;実際にリクエストを投げてみましょう。Token は読み替えてください。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;curl -k https://localhost/api/v1/webhooks/restart -d &#39;{}&#39; -H &#39;Content-Type: application/json&#39; -H &#39;X-Auth-Token: &amp;lt;Your_Token&amp;gt;&#39;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;するとリモートホストで &amp;lsquo;cron&amp;rsquo; プロセスの再起動が掛かります。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
-
-&lt;p&gt;StackStorm は紹介した以外にも沢山のアクションがあり応用が効きます。また監視ツールでアラートが発生した際に webhook 通知するようにして
-障害対応を自動で行うといった操作も可能な事がわかりました。ChatOps でも応用が可能なことが分かります。従来、ChatOps ではリモートホストで
-コマンドなどを実行しようとした場合には Hubot 等のプロセスが稼働しているホストもしくはそのホストから SSH 出来るホストで実行する必要がありましたが
-StackStorm を介すことで実行結果の閲覧やルールに従った実行等が可能になります。&lt;/p&gt;
-
-&lt;p&gt;自分はまだ少しのアクション・ルールを試用しただけなのですが、他に良い運用上の応用例がないか探してみようと思います。&lt;/p&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2016/07/02/stackstorm/</guid>
+      <description>こんにちは。@jedipunkz です。 今回は StackStorm (https://stackstorm.com/) というイベントドリブンオートメーションツールを使ってみましたので 紹介したいと思います。 クラウ</description>
     </item>
     
     <item>
       <title>Vagrant で Mesosphere DC/OS を構築</title>
-      <link>http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/</link>
+      <link>https://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/</link>
       <pubDate>Tue, 21 Jun 2016 17:05:25 +0900</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;今回は DC/OS (&lt;a href=&#34;https://dcos.io/&#34;&gt;https://dcos.io/&lt;/a&gt;) を Vagrant を使って構築し評価してみようと思います。
-DC/OS はその名の通りデータセンタ OS として利用されることを期待され開発された OS で内部で
-Docker と Mesos が稼働しています。&lt;/p&gt;
-
-&lt;p&gt;一昔前に Mesos のマルチノード構成は構築したことあったのですが、DC/OS はデプロイ方法が全く変わっていました。
-はじめに想定する構成から説明していきます。&lt;/p&gt;
-
-&lt;h2 id=&#34;想定する構成&#34;&gt;想定する構成&lt;/h2&gt;
-
-&lt;p&gt;本来 DC/OS は public, private ネットワーク構成ですが利用するレポジトリではこのような構成が想定されていました。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;+----+ +----+ +----+ +------+
-| m1 | | a1 | | p1 | | boot |
-+----+ +----+ +----+ +------+
-|      |      |      |
-+------+------+------+--------- 192.168.65/24
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;各ノードは下記の通り動作します。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;m1 : Mesos マスタ, Marathon&lt;/li&gt;
-&lt;li&gt;a1 : Mesos スレーブ(Private Agent)&lt;/li&gt;
-&lt;li&gt;p1 : Mesos スレーブ(Public Agent)&lt;/li&gt;
-&lt;li&gt;boot : DC/OS インストレーションノード&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h2 id=&#34;前提の環境&#34;&gt;前提の環境&lt;/h2&gt;
-
-&lt;p&gt;Vagrant が動作するマシンであれば問題ないと思いますが私は下記の構成で利用しました。
-比較的たくさんのマシンリソースを使うのでメモリ 8GB はほしいところです。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Mac OSX&lt;/li&gt;
-&lt;li&gt;Vagrant&lt;/li&gt;
-&lt;li&gt;Virtualbox&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h2 id=&#34;事前の準備&#34;&gt;事前の準備&lt;/h2&gt;
-
-&lt;p&gt;事前の手順を記します。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;予め用意された dcos-vagrant を取得する&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ git clone https://github.com/dcos/dcos-vagrant
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Mac OSX の hosts ファイルをダイナミック編集する Vagrant プラグインをインストール&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ vagrant plugin install vagrant-hostmanager
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;構築手順&#34;&gt;構築手順&lt;/h2&gt;
-
-&lt;p&gt;それでは構築手順です。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;DC/OS が利用する config を環境変数に指定指定&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ export DCOS_CONFIG_PATH=etc/config-1.7.yaml
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;ul&gt;
-&lt;li&gt;DC/OS をレポジトリのルートディレクトリに保存&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;DC/OS 1.7.0 (Early Access)(2016/06/21現在) をダウンロードしてレポジトリのルートディレクトリにインストール&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ cd dcos-vagrant
-$ wget https://downloads.dcos.io/dcos/EarlyAccess/dcos_generate_config.sh
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;ul&gt;
-&lt;li&gt;VagrantConfig を作成&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;&amp;lsquo;VagrantConfig.yaml.example&amp;rsquo; というファイルがレポジトリ内ルートディレクトリにあるのでこれを元に下記の通りファイルを生成。元のファイルのままだと比較的大きな CPU/Mem リソースが必要になるので環境に合わせてリソース量を指定。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-yaml&#34;&gt;m1:
-  ip: 192.168.65.90
-  cpus: 1
-  memory: 512
-  type: master
-a1:
-  ip: 192.168.65.111
-  cpus: 1
-  memory: 1024
-  memory-reserved: 512
-  type: agent-private
-p1:
-  ip: 192.168.65.60
-  cpus: 1
-  memory: 1024
-  memory-reserved: 512
-  type: agent-public
-  aliases:
-  - spring.acme.org
-  - oinker.acme.org
-boot:
-  ip: 192.168.65.50
-  cpus: 1
-  memory: 1024
-  type: boot
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;ul&gt;
-&lt;li&gt;デプロイを実施&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ vagrant up m1 a1 p1 boot
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;dc-os-の-ui&#34;&gt;DC/OS の UI&lt;/h2&gt;
-
-&lt;p&gt;インストールが完了すると下記のアドレスで DC/OS の UI にアクセスできます。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://m1.dcos/&#34;&gt;http://m1.dcos/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/dcos-mesos.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;marathon-の-ui&#34;&gt;Marathon の UI&lt;/h2&gt;
-
-&lt;p&gt;下記のアドレスで Marathon の UI にアクセスできます
-Marathon は分散型の Linux Init 機構のようなものです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://m1.dcos:8080/&#34;&gt;http://m1.dcos:8080/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/dcos-marathon.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;chronos-の-ui&#34;&gt;Chronos の UI&lt;/h2&gt;
-
-&lt;p&gt;下記のアドレスで Chronos の UI にアクセスできる
-Chronos は分散型のジョブスケジューラーであり cron のようなものです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://a1.dcos:1370/&#34;&gt;http://a1.dcos:1370/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/dcos-chronos.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;marathon-で-redis-サーバを立ち上げる&#34;&gt;Marathon で redis サーバを立ち上げる&lt;/h2&gt;
-
-&lt;p&gt;テストで redis サーバを立ち上げてみる。Mesos-Slave (今回の環境だと a1 ホスト) 上に Docker コンテナとして redis サーバが立ち上がることになる。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Marathon の UI にて &amp;ldquo;Create Application&amp;rdquo; を選択&lt;/li&gt;
-&lt;li&gt;General タブの ID に任意の名前を入力&lt;/li&gt;
-&lt;li&gt;General タブの Command 欄に &amp;lsquo;redis-server&amp;rsquo; を入力&lt;/li&gt;
-&lt;li&gt;Docker Container タブの Image 欄に &amp;lsquo;redis&amp;rsquo; を入力&lt;/li&gt;
-&lt;li&gt;&amp;lsquo;Create Application&amp;rsquo; を選択&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;結果、下記の通りアプリケーションが生成される&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/dcos-marathon-redis.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;※ 20160625 下記追記&lt;/p&gt;
-
-&lt;h2 id=&#34;構成&#34;&gt;構成&lt;/h2&gt;
-
-&lt;p&gt;ここからは Mesosphere DC/OS の内部構成を理解していきます。主となる mesos-master, mesos-slave の構成は下記の通り。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Mesos-Master Node 構成&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;+--------------+
-| mesos-master |
-+--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+
-|   zookeeper  | | mesos-dns | | marathon | | adminRouter | | minuteman | | exhibitor |
-+--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+
-|                  mesos-master node                                                  |
-+-------------------------------------------------------------------------------------+
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;ul&gt;
-&lt;li&gt;* * * * * * * Mesos-Slave (Mesos-Agent) Node 構成&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;+-------------+ +---+---+---+---+
-| m-executor  | | c | c | c | c |
-+-------------+ +---+---+---+---+
-| mesos-slave | | docker-daemon |
-+-------------------------------+
-|        mesos-slave node       |
-+-------------------------------+
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;各プロセスの役割&#34;&gt;各プロセスの役割&lt;/h2&gt;
-
-&lt;p&gt;上記の図の各要素を参考資料を元にまとめました。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;mesos-master&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;masos-slave node からの情報を受け取り mesos-slave へプロセスを分配する
-役割。mesos-master は zookeeper によってリーダー選出により冗長構成が保
-たれている。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;mesos-dns&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;mesos フレームワーク内での DNS 解決を行うプロセス。各 mesos-master ノー
-ド上に稼働している。通常の DNS でいうコンテンツ DNS (Authoritative
-DNS)になっており mesos-master からクラスタ情報を受け取って DNS レコー
-ド登録、それを mesos-slave が DNS 参照する。mesos-slave が内部レコード
-に無い DNS 名を解決しに来た際にはインターネット上の root DNS へ問い合
-わせ実施。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;marathon&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;コンテナオーケストレーションを司り mesos-slave へ支持を出しコンテナを
-稼働する役割。各 mesos-master 上で稼働し zookeeper 越しに mesos-master
-のカレントリーダを探しだしリクエストを創出。他に下記の機能を持っている。
-&amp;lsquo;HA&amp;rsquo;, &amp;lsquo;ロードバランス&amp;rsquo;, &amp;lsquo;アプリのヘルスチェック&amp;rsquo;, &amp;lsquo;Web UI&amp;rsquo;, &amp;lsquo;REST
-API&amp;rsquo;, &amp;lsquo;Metrics&amp;rsquo;。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;adminRouter&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;実態は nginx。各サービスの認証と Proxy の役割を担っている。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;minuteman&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;L4 レイヤのロードバランサ。各 mesos-master ノードで稼働。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;zookeeper&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;mesos-master プロセスを冗長構成させるためのソフトウェア。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;exhibitor&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;zookeeper のコンフィギュレーションを実施。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;mesos-slave&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;Task を実行する役割。内部で meosos-executor (上記 m-executor) を実行し
-ている。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;m-executor (mesos-executor)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;mesos-slave ノード上でサービスのための TASK を稼働させる。&lt;/p&gt;
-
-&lt;h2 id=&#34;起動シーケンス&#34;&gt;起動シーケンス&lt;/h2&gt;
-
-&lt;p&gt;ここからは mesos-master, mesos-slave の起動シーケンスについて、まとめてきます。&lt;/p&gt;
-
-&lt;p&gt;mesos-master&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;exhibitor が起動し zookeeper のコンフィギュレーションを実施し zookeeper を起動&lt;/li&gt;
-&lt;li&gt;mesos-master が起動。自分自身をレジスト後、他の mesos-master ノードを探索&lt;/li&gt;
-&lt;li&gt;mesos-dns が起動&lt;/li&gt;
-&lt;li&gt;mesos-dns が leader.mesos にカレントリーダの mesos-master を登録&lt;/li&gt;
-&lt;li&gt;marathon が起動し zookeeper 越しに mesos-master を探索。&lt;/li&gt;
-&lt;li&gt;adminRouter が起動し各 UI (mesos, marathon, exhibitor) が閲覧可能に。&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;mesos-slave&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;leader.mesos に ping を打って mesos-master のカレントリーダを見つけ出し mesos-slave 稼働。&lt;/li&gt;
-&lt;li&gt;mesos-master に対して自分自身を &amp;lsquo;agent&amp;rsquo; として登録。&lt;/li&gt;
-&lt;li&gt;mesos-master はその登録された IP アドレスを元に接続を試みる&lt;/li&gt;
-&lt;li&gt;mesos-slave が TASK 実行可能な状態に&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
-
-&lt;p&gt;一昔前の Mesos + Marathon + Chronos とはだいぶデプロイ方法が変わっていた。だが構成には大きな変化は見られない。
-AWS のような public, private ネットワークが別れたプラットフォームでは mesos-slave (DC/OS 的には Agent とも呼ぶ)は public agent, private agent として別けて管理される模様。public agent は AWS の ELB 等で分散され各コンテナ上のアプリにクエリがインターネットからのリクエストに応える。private agent はプライベートネットワーク上に配置されて public agent からのリクエストにも応える。また、mesos-master 達は別途 admin なネットワークに配置するのが Mesosphare の推奨らしい。&lt;/p&gt;
-
-&lt;p&gt;だがしかし public, private を別けずに DC/OS を構成することも可能なように思えた。下記のように p1 を削除して構成して物理・仮想ロードバランサでリクエストを private agent に送出することでも DC/OS は機能するので。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-shell&#34;&gt;$ vagrant up m1 a1 boot
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;ちなみに a2, a3, &amp;hellip; と数を増やすことで private agent ノードを増やすことが可能。&lt;/p&gt;
-
-&lt;p&gt;あとマニュアルインストール手順(公式)を実施してみて解ったが、pulic, private ネットワークを各ノードにアタッチして mesos-master, mesos-slave, またその他の各機能はプライベートネットワークを、外部からのリクエストに応えるためのパブリックネットワーク、といった構成も可能でした。&lt;/p&gt;
-
-&lt;h2 id=&#34;参考-url&#34;&gt;参考 URL&lt;/h2&gt;
-
-&lt;ul&gt;
-&lt;li&gt;手順は右記のものを利用。
-&lt;a href=&#34;https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md&#34;&gt;https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a href=&#34;https://docs.mesosphere.com/1.7/overview/architecture/&#34;&gt;https://docs.mesosphere.com/1.7/overview/architecture/&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a href=&#34;https://docs.mesosphere.com/1.7/overview/security/&#34;&gt;https://docs.mesosphere.com/1.7/overview/security/&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2016/06/21/mesos-dcos-vagrant/</guid>
+      <description>こんにちは。@jedipunkz です。 今回は DC/OS (https://dcos.io/) を Vagrant を使って構築し評価してみようと思います。 DC/OS はその名の通りデータセンタ OS として利用されるこ</description>
     </item>
     
     <item>
       <title>Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可視化する</title>
-      <link>http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/</link>
+      <link>https://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/</link>
       <pubDate>Mon, 28 Dec 2015 00:00:00 +0000</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;Influxdb が Influxdata (&lt;a href=&#34;https://influxdata.com/&#34;&gt;https://influxdata.com/&lt;/a&gt;) として生まれ変わり公式の
-メトリクス送信エージェント Telegraf と可視化ツール Chronograf をリリースしたので
-使ってみました。&lt;/p&gt;
-
-&lt;p&gt;3つのツールの役割は下記のとおりです。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Chronograf : 可視化ツール, Grafana 相当のソフトウェアです&lt;/li&gt;
-&lt;li&gt;Telegraf : メトリクス情報を Influxdb に送信するエージェント&lt;/li&gt;
-&lt;li&gt;Influxdb : メトリクス情報を格納する時系列データベース&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;以前に cAdvisor, influxdb, grafana を使って Docker コンテナのメトリクスを可視
-化する記事を書きましたが telegraf を使うとサーバ情報と合わせて Docker コンテナ
-のメトリクスも influxdb に送信することが出来ます。個人的にはそのコンテナ情報の
-扱いもサーバ情報と同様に扱ってくれる点に期待しつつ、評価してみました。&lt;/p&gt;
-
-&lt;h2 id=&#34;今回の環境&#34;&gt;今回の環境&lt;/h2&gt;
-
-&lt;p&gt;今回は Ubuntu 15.04 vivid64 を使ってテストしています。&lt;/p&gt;
-
-&lt;h2 id=&#34;influxdb-をインストールして起動&#34;&gt;influxdb をインストールして起動&lt;/h2&gt;
-
-&lt;p&gt;最新リリース版の deb パッケージが用意されていたのでこれを使いました。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;wget http://influxdb.s3.amazonaws.com/influxdb_0.9.5.1_amd64.deb
-sudo dpkg -i influxdb_0.9.5.1_amd64.deb
-sudo service influxdb start
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;telegraf-のインストールと起動&#34;&gt;telegraf のインストールと起動&lt;/h2&gt;
-
-&lt;p&gt;こちらも deb パッケージで。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;wget http://get.influxdb.org/telegraf/telegraf_0.2.4_amd64.deb
-sudo dpkg -i telegraf_0.2.4_amd64.deb
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;コンフィギュレーションですが今回は CPU, Disk, Net, Docker のメトリクス情報を送
-信するようにしました。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;[agent]
-    interval = &amp;quot;0.1s&amp;quot;
-
-[outputs]
-
-[outputs.influxdb]
-    urls = [&amp;quot;http://localhost:8086&amp;quot;]
-    database = &amp;quot;telegraf-test&amp;quot;
-    user_agent = &amp;quot;telegraf&amp;quot;
-
-[plugins]
-[[plugins.cpu]]
-  percpu = true
-  totalcpu = false
-  drop = [&amp;quot;cpu_time*&amp;quot;]
-
-[[plugins.disk]]
-  [plugins.disk.tagpass]
-    fstype = [ &amp;quot;ext4&amp;quot;, &amp;quot;xfs&amp;quot; ]
-    #path = [ &amp;quot;/home*&amp;quot; ]
-
-[[plugins.disk]]
-  pass = [ &amp;quot;disk_inodes*&amp;quot; ]
-  
-[[plugins.docker]]
-
-[[plugins.net]]
-  interfaces = [&amp;quot;eth0&amp;quot;]
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;他にも色々メトリクス情報を取得できそうです、下記のサイトを参考にしてみてください。
-&lt;a href=&#34;https://github.com/influxdb/telegraf/blob/0.3.0/CONFIGURATION.md&#34;&gt;https://github.com/influxdb/telegraf/blob/0.3.0/CONFIGURATION.md&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;telegraf を起動します。Docker コンテナのメトリクスを取得するために root ユーザ
-で起動する必要があります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;sudo telegraf -config telegraf.conf
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;chronograf-のインストールと起動&#34;&gt;chronograf のインストールと起動&lt;/h2&gt;
-
-&lt;p&gt;こちらも deb でインストールします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;wget https://s3.amazonaws.com/get.influxdb.org/chronograf/chronograf_0.4.0_amd64.deb
-sudo dpkg -i chronograf_0.4.0_amd64.deb
-sudo /opt/chronograf/chronograf -sample-config &amp;gt; /opt/chronograf/config.toml
-sudo service chronograf start
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;グラフの描画&#34;&gt;グラフの描画&lt;/h2&gt;
-
-&lt;p&gt;この状態でブラウザでアクセスしてみましょう。&lt;/p&gt;
-
-&lt;p&gt;http://&amp;lt;ホストのIPアドレス&amp;gt;:10000/&lt;/p&gt;
-
-&lt;p&gt;アクセスすると簡単なガイドが走りますのでここでは設定方法は省きます。Grafana を使った場合と
-同様に気をつけるポイントは下記のとおりです。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;&amp;lsquo;filter by&amp;rsquo;  に描画したいリソース名を選択(CPU,Disk,Net,Dockerの各リソース)&lt;/li&gt;
-&lt;li&gt;Database に telegraf.conf に記した &amp;lsquo;telegraf-test&amp;rsquo; を選択&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;すると下記のようなグラフやダッシュボードが作成されます。下記は CPU 使用率をグ
-ラフ化したものです。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/chronograf_cpu.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;こちらは Docker 関連のグラフ。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/chronograf_docker.png&#34; width=&#34;70%&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;複数のグラフを1つのダッシュボードにまとめることもできるようです。&lt;/p&gt;
-
-&lt;p&gt;まとめ
-+++&lt;/p&gt;
-
-&lt;p&gt;個人的には Grafana の UI はとてもわかりずらかったので公式の可視化ツールが出てきて良かった
-と思っています。操作もとても理解しやすくなっています。Telegraf についても公式のメトリクス
-情報送信エージェントということで安心感があります。また Grafana は別途 HTTP サー
-バが必要でしたが Chronograf は HTTP サーバも内包しているのでセットアップが簡単
-でした。&lt;/p&gt;
-
-&lt;p&gt;ただ configuration guide がまだまだ説明不十分なので凝ったことをしようすとする
-とソースを読まなくてはいけないかもしれません。&lt;/p&gt;
-
-&lt;p&gt;いずれにしてもサーバのメトリクス情報と共に cAdvisor 等のソフトウェアを用いなく
-てもサーバ上で稼働しているコンテナ周りの情報も取得できたので個人的にはハッピー。
-cAdvisor でしか取得できない情報もありそうですが今後、導入を検討する上で評価し
-ていきたいと思います。&lt;/p&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2015/12/28/chronograf-telegraf-influxdb/</guid>
+      <description>こんにちは。@jedipunkz です。 Influxdb が Influxdata (https://influxdata.com/) として生まれ変わり公式の メトリクス送信エージェント Telegraf と可視化ツール Chronograf をリリースしたので 使ってみ</description>
     </item>
     
     <item>
       <title>Weave を使った Docker ネットワーク</title>
-      <link>http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/</link>
+      <link>https://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/</link>
       <pubDate>Tue, 22 Dec 2015 00:00:00 +0000</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;今回は Weave というコンテナ間のネットワークを提供してくれる Docker のネットワークプラ
-グインを使ってみました。下記のような沢山の機能があるようです。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Fast Data Path&lt;/li&gt;
-&lt;li&gt;Docker Network Plugin&lt;/li&gt;
-&lt;li&gt;Security&lt;/li&gt;
-&lt;li&gt;Dynamic Netwrok Attachment&lt;/li&gt;
-&lt;li&gt;Service Binding&lt;/li&gt;
-&lt;li&gt;Fault Tolerance&lt;/li&gt;
-&lt;li&gt;etc &amp;hellip;&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;この記事では上から幾つか抜粋して、Weave ってどのように動かせるのか？を解説します。
-そこから Weave が一体ナニモノなのか理解できればなぁと思います。&lt;/p&gt;
-
-&lt;h2 id=&#34;vagrant-を使った構成&#34;&gt;Vagrant を使った構成&lt;/h2&gt;
-
-&lt;p&gt;この記事では下記の構成を作って色々と試していきます。使う技術は&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Vagrant&lt;/li&gt;
-&lt;li&gt;Docker&lt;/li&gt;
-&lt;li&gt;Weave&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;です。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;+---------------------+ +---------------------+ +---------------------+
-| docker container a1 | | docker container a2 | | docker container a3 |
-+---------------------+ +---------------------+ +---------------------+
-|    vagrant host 1   | |    vagrant host 2   | |    vagrant host 3   |
-+---------------------+-+---------------------+-+---------------------+
-|                          Mac or Windows                             |
-+---------------------------------------------------------------------+
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;特徴としては&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;作業端末(Mac or Windows or Linux)上で Vagrant を動作させる&lt;/li&gt;
-&lt;li&gt;各 Vagrant VM 同士はホスト OS のネットワークインターフェース上で疎通が取れる&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;です。&lt;/p&gt;
-
-&lt;h2 id=&#34;vagrantfile-の作成と-host1-2-3-の起動&#34;&gt;Vagrantfile の作成と host1,2,3 の起動&lt;/h2&gt;
-
-&lt;p&gt;上記の3台の構成を下記の Vagrantfile で構築します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;Vagrant.configure(2) do |config|
-  config.vm.box = &amp;quot;ubuntu/vivid64&amp;quot;
-
-  config.vm.define &amp;quot;host1&amp;quot; do |server|
-    server.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.11&amp;quot;
-  end
-
-  config.vm.define &amp;quot;host2&amp;quot; do |server|
-    server.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.12&amp;quot;
-  end
-
-  config.vm.define &amp;quot;host3&amp;quot; do |server|
-    server.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.13&amp;quot;
-  end
-
-  config.vm.provision :shell, inline: &amp;lt;&amp;lt;-SHELL
-apt-get update
-apt-get install -y libsqlite3-dev docker.io
-curl -L git.io/weave -o /usr/local/bin/weave
-chmod a+x /usr/local/bin/weave
-  SHELL
-end
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;vagrant コマンドを使って host1, host2, host3 を起動します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ vagrant up
-$ vagrant ssh host1 # &amp;lt;--- host1 に SSH する場合
-$ vagrant ssh host2 # &amp;lt;--- host2 に SSH する場合
-$ vagrant ssh host3 # &amp;lt;--- host3 に SSH する場合
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;物理ノードまたがったコンテナ間で通信をする&#34;&gt;物理ノードまたがったコンテナ間で通信をする&lt;/h2&gt;
-
-&lt;p&gt;weave でまず物理ノードをまたがったコンテナ間で通信をさせてみましょう。ここでは
-上図の host1, host2 を使います。通常、物理ノードまたがっていると各々のホストで
-稼働する Docker コンテナは通信し合えませんが weave を使うと通信しあうことが出
-来ます。&lt;/p&gt;
-
-&lt;p&gt;まず weave が用いる Docker コンテナを稼働します。下記のように /16 でレンジを切って
-更にそこからデフォルトのレンジを指定することが出来ます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24
-host1# eval $(weave env)
-host2# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
-host2# eval $(weave env)
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;この状態で下記のようなコンテナが稼働します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# docker ps
-CONTAINER ID        IMAGE                        COMMAND                CREATED             STATUS              PORTS               NAMES
-c55e96b4bdf9        weaveworks/weaveexec:1.4.0   &amp;quot;/home/weave/weavepr   4 seconds ago       Up 3 seconds                            weaveproxy
-394382c9c5d9        weaveworks/weave:1.4.0       &amp;quot;/home/weave/weaver    5 seconds ago       Up 4 seconds                            weave
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;host1, host2 でそれぞれテスト用コンテナを稼働させます。名前を &amp;ndash;name オプションで付けるのを
-忘れないようにしてください。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# docker run --name a1 -ti ubuntu
-host2# docker run --name a2 -ti ubuntu
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;どちらか一方から ping をもう一方に打ってみましょう。下記では a2 -&amp;gt; a1 の流れで
-ping を実行しています。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;root@a2:/# ping 10.2.1.1 -c 3
-PING 10.2.1.1 (10.2.1.1) 56(84) bytes of data.
-64 bytes from 10.2.1.1: icmp_seq=1 ttl=64 time=0.316 ms
-64 bytes from 10.2.1.1: icmp_seq=2 ttl=64 time=0.501 ms
-64 bytes from 10.2.1.1: icmp_seq=3 ttl=64 time=0.619 ms
-
---- 10.2.1.1 ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss, time 1999ms
-rtt min/avg/max/mdev = 0.316/0.478/0.619/0.127 ms
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;また docker コンテナを起動する時に指定した &amp;ndash;name a1, &amp;ndash;name a2 の名前で ping
-を実行してみましょう。これも weave の機能の１つで dns lookup が行えます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;root@b2:/# ping a1 -c 3
-PING b1.weave.local (10.2.1.1) 56(84) bytes of data.
-64 bytes from a1.weave.local (10.2.1.1): icmp_seq=1 ttl=64 time=1.14 ms
-64 bytes from a1.weave.local (10.2.1.1): icmp_seq=2 ttl=64 time=0.446 ms
-64 bytes from a1.weave.local (10.2.1.1): icmp_seq=3 ttl=64 time=0.364 ms
-
---- b1.weave.local ping statistics ---
-3 packets transmitted, 3 received, 0% packet loss, time 2001ms
-rtt min/avg/max/mdev = 0.364/0.653/1.149/0.352 ms
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;結果から、異なる物理ノード(今回は VM)上で動作させた Docker コンテナ同士が通信し合えた
-ことがわかります。またコンテナ名の DNS 的は名前解決も可能になりました。&lt;/p&gt;
-
-&lt;h2 id=&#34;ダイナミックにネットワークをアタッチ-デタッチする&#34;&gt;ダイナミックにネットワークをアタッチ・デタッチする&lt;/h2&gt;
-
-&lt;p&gt;次に weave のネットワークを動的(コンテナがオンラインのまま)にアタッチ・デタッ
-チすることが出来るので試してみます。&lt;/p&gt;
-
-&lt;p&gt;最初に weave のネットワークに属さない a1-1 という名前のコンテナを作ります。
-docker exec で IP アドレスを確認すると eth0, lo のインターフェースしか持っていない
-ことが判ります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# C=$(docker run --name a1-1 -e WEAVE_CIDR=none -dti ubuntu)
-host1# docker exec -it a1-1 ip a # &amp;lt;--- docker コンテナ内でコマンド実行
-1: lo: &amp;lt;LOOPBACK,UP,LOWER_UP&amp;gt; mtu 65536 qdisc noqueue state UNKNOWN group default
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    inet 127.0.0.1/8 scope host lo
-       valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host
-       valid_lft forever preferred_lft forever
-25: eth0: &amp;lt;BROADCAST,UP,LOWER_UP&amp;gt; mtu 1500 qdisc noqueue state UP group default
-    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
-    inet 172.17.0.5/16 scope global eth0
-       valid_lft forever preferred_lft forever
-    inet6 fe80::42:acff:fe11:5/64 scope link
-       valid_lft forever preferred_lft forever
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;では weave のネットワークを a1-1 コンテナにアタッチしてみましょう。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# weave attach $C
-10.2.1.1
-host1# docker exec -it a1-1 ip a
-1: lo: &amp;lt;LOOPBACK,UP,LOWER_UP&amp;gt; mtu 65536 qdisc noqueue state UNKNOWN group default
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    inet 127.0.0.1/8 scope host lo
-       valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host
-       valid_lft forever preferred_lft forever
-25: eth0: &amp;lt;BROADCAST,UP,LOWER_UP&amp;gt; mtu 1500 qdisc noqueue state UP group default
-    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
-    inet 172.17.0.5/16 scope global eth0
-       valid_lft forever preferred_lft forever
-    inet6 fe80::42:acff:fe11:5/64 scope link
-       valid_lft forever preferred_lft forever
-27: ethwe: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
-    link/ether aa:15:06:51:6a:3b brd ff:ff:ff:ff:ff:ff
-    inet 10.2.1.1/24 scope global ethwe
-       valid_lft forever preferred_lft forever
-    inet6 fe80::a815:6ff:fe51:6a3b/64 scope link
-       valid_lft forever preferred_lft forever
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;上記のようにインターフェース ethwe が付与され最初に指定したデフォルトのサブネッ
-ト上の IP アドレスが付きました。&lt;/p&gt;
-
-&lt;p&gt;次に weave ネットワークを複数アタッチしてみましょう。default, 10.2.2.0/24,
-10.2.3.0/24 のネットワーク(サブネット)をアタッチします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# weave attach net:default net:10.2.2.0/24 net:10.2.3.0/24 $C
-10.2.1.1 10.2.2.1 10.2.3.1
-root@vagrant-ubuntu-vivid-64:~# docker exec -it b3 ip a
-1: lo: &amp;lt;LOOPBACK,UP,LOWER_UP&amp;gt; mtu 65536 qdisc noqueue state UNKNOWN group default
-    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
-    inet 127.0.0.1/8 scope host lo
-       valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host
-       valid_lft forever preferred_lft forever
-25: eth0: &amp;lt;BROADCAST,UP,LOWER_UP&amp;gt; mtu 1500 qdisc noqueue state UP group default
-    link/ether 02:42:ac:11:00:05 brd ff:ff:ff:ff:ff:ff
-    inet 172.17.0.5/16 scope global eth0
-       valid_lft forever preferred_lft forever
-    inet6 fe80::42:acff:fe11:5/64 scope link
-       valid_lft forever preferred_lft forever
-33: ethwe: &amp;lt;BROADCAST,MULTICAST,UP,LOWER_UP&amp;gt; mtu 1410 qdisc pfifo_fast state UP group default qlen 1000
-    link/ether 9a:74:73:1b:24:a9 brd ff:ff:ff:ff:ff:ff
-    inet 10.2.1.1/24 scope global ethwe
-       valid_lft forever preferred_lft forever
-    inet 10.2.2.1/24 scope global ethwe
-       valid_lft forever preferred_lft forever
-    inet 10.2.3.1/24 scope global ethwe
-       valid_lft forever preferred_lft forever
-    inet6 fe80::9874:73ff:fe1b:24a9/64 scope link
-       valid_lft forever preferred_lft forever
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;結果、ethwe インターフェースに3つの IP アドレスが付与されました。
-この様にダイナミックにコンテナに対して weave ネットワークをアタッチすることが出来ます。&lt;/p&gt;
-
-&lt;h2 id=&#34;コンテナ外部から情報を取得する&#34;&gt;コンテナ外部から情報を取得する&lt;/h2&gt;
-
-&lt;p&gt;下記のようにコンテナを起動しているホスト上 (Vagrant VM) からコンテナの情報を取
-得する事もできます。シンプルですがオーケストレーション・自動化を行う上で重要な機能に
-なりそうな予感がします。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;host1# weave expose
-10.2.1.1
-host1# weave dns-lookup a2
-10.2.1.128
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;ダイナミックに物理ノードを追加し-weave-ネットワークへ&#34;&gt;ダイナミックに物理ノードを追加し weave ネットワークへ&lt;/h2&gt;
-
-&lt;p&gt;物理ノード(今回の場合 vagrant vm)を追加し上記で作成した weave ネットワークへ参
-加させることも可能です。なお、今回は上記の vagrant up の時点で追加分の vm (host3)
-を既に稼働させています。&lt;/p&gt;
-
-&lt;p&gt;host1 で新しい物理ノードを接続します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;host1# weave connect 192.168.33.12
-host1# weave status targets
-192.168.33.13
-192.168.33.12
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;host3 で weave コンテナ・テストコンテナを起動します。
-下記で指定している 192.168.33.11 は host1 の IP アドレスです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;host3# weave launch --ipalloc-range 10.2.0.0/16 --ipalloc-default-subnet 10.2.1.0/24 192.168.33.11
-host3# docker run --name a3 -ti ubuntu
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;host2 の a2 コンテナに ping を打ってみます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;roota3:/# ping a2 -c 3
-PING a2.weave.local (10.2.1.128) 56(84) bytes of data.
-64 bytes from a2.weave.local (10.2.1.128): icmp_seq=1 ttl=64 time=0.366 ms
-64 bytes from a2.weave.local (10.2.1.128): icmp_seq=2 ttl=64 time=0.709 ms
-64 bytes from a2.weave.local (10.2.1.128): icmp_seq=3 ttl=64 time=0.569 ms
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;host3 上の a3 コンテナが既存の weave ネットワークに参加し通信出来たことが確認
-できました。&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
-
-&lt;p&gt;コンフィギュレーションらしきモノを記述することなく Docker コンテナ間の通信
-が出来ました。これは自動化する際に優位になるでしょう。また今回紹介したのは
-&amp;lsquo;weave net&amp;rsquo; と呼ばれるモノですが他にも &amp;lsquo;weave scope&amp;rsquo;, &amp;lsquo;weave run&amp;rsquo; といったモノ
-があります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://weave.works/product/&#34;&gt;http://weave.works/product/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;また Docker Swarm, Compose と組み合わせる構成も組めるようです。試してみたい方
-がいましたら是非。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html&#34;&gt;http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;ですが結果、まだ weave をどう自分たちのサービスに組み込めるかは検討が付いてい
-ません。&amp;rsquo;出来る&amp;rsquo; と &amp;lsquo;運用できる&amp;rsquo; が別物であることと、コンテナまわりのネットワー
-ク機能全般に理解して選定する必要がありそうです。&lt;/p&gt;
-
-&lt;p&gt;参考サイト
-+++&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://weave.works/docs/&#34;&gt;http://weave.works/docs/&lt;/a&gt;&lt;/p&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2015/12/22/weave-docker-network/</guid>
+      <description>こんにちは。@jedipunkz です。 今回は Weave というコンテナ間のネットワークを提供してくれる Docker のネットワークプラ グインを使ってみました。下記</description>
     </item>
     
     <item>
       <title>CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ</title>
-      <link>http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/</link>
+      <link>https://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/</link>
       <pubDate>Sun, 15 Nov 2015 00:00:00 +0000</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;最近、業務で CircleCI を扱っていて、だいぶ &amp;ldquo;出来ること・出来ないこと&amp;rdquo; や &amp;ldquo;出来ないこと
-に対する回避方法&amp;rdquo; 等のノウハウが若干溜まってきたので共有したいなと思います。&lt;/p&gt;
-
-&lt;h2 id=&#34;この記事の前提&#34;&gt;この記事の前提&amp;hellip;&lt;/h2&gt;
-
-&lt;p&gt;ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ
-ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、
-それの回避方法等&amp;hellip;についてまとめています。&lt;/p&gt;
-
-&lt;h2 id=&#34;cirlceci-と併用するサービスについて&#34;&gt;CirlceCI と併用するサービスについて&lt;/h2&gt;
-
-&lt;p&gt;CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ
-スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た
-ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー
-トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ
-うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た
-らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが
-省けそう。ってことで&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;AWS S3 (&lt;a href=&#34;https://aws.amazon.com/jp/s3/&#34;&gt;https://aws.amazon.com/jp/s3/&lt;/a&gt;)&lt;/li&gt;
-&lt;li&gt;AWS CodeDeploy (&lt;a href=&#34;https://aws.amazon.com/jp/codedeploy/&#34;&gt;https://aws.amazon.com/jp/codedeploy/&lt;/a&gt;)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;を併用することを考えました。&lt;/p&gt;
-
-&lt;p&gt;S3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、
-ビルドした結果を格納します。私の務めている会社ではプログラミング言語として
-Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ
-ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り
-戻すことが出来そうです。&lt;/p&gt;
-
-&lt;p&gt;また CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ
-ロイが可能になるサービスです。東京リージョンでは &lt;sup&gt;2015&lt;/sup&gt;&amp;frasl;&lt;sub&gt;08&lt;/sub&gt; から利用が可能になり
-ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内
-のインスタンスに対してもデプロイが可能なところです。&lt;/p&gt;
-
-&lt;p&gt;Tips 的な情報として
-+++&lt;/p&gt;
-
-&lt;p&gt;circle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで
-CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい
-と思います。&lt;/p&gt;
-
-&lt;h2 id=&#34;git-push-からデプロイまでを自動で行う-circle-yml&#34;&gt;Git push からデプロイまでを自動で行う circle.yml&lt;/h2&gt;
-
-&lt;p&gt;Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の
-circle.yml を紹介します。全体の流れとしては&amp;hellip;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;レポジトリに git push, merge ことがトリガで処理が走る&lt;/li&gt;
-&lt;li&gt;circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る&lt;/li&gt;
-&lt;li&gt;S3 バケットにビルドされた結果が格納される&lt;/li&gt;
-&lt;li&gt;CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;となります。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-yml&#34;&gt;machine:
-  environment:
-    SBT_VERSION: 0.13.9
-    SBT_OPTS: &amp;quot;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&amp;quot;
-  services:
-    - docker
-
-dependencies:
-  pre:
-    - (事前に実行したいコマンド・スクリプトを記述)
-  cache_directories:
-    - &amp;quot;~/.sbt&amp;quot;
-
-test:
-  override:
-    - sbt compile
-
-deployment:
-  production:
-    branch: master
-    codedeploy:
-      codedeploy-sample:
-        application_root: /
-        region: ap-northeast-1
-        revision_location:
-          revision_type: S3
-          s3_location:
-            bucket: circleci-sample-bucket
-            key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip
-        deployment_group: codedeploy-sample-group
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h4 id=&#34;それぞれのパラメータの意味&#34;&gt;それぞれのパラメータの意味&lt;/h4&gt;
-
-&lt;p&gt;上記 circle.yml の重要なパラメータのみ説明していきます。
-私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに
-SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき
-ると思いますので読み替えてください。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;machine -&amp;gt; environment : 全体で適用できる環境変数を定義します&lt;/li&gt;
-&lt;li&gt;dependencies -&amp;gt; pre : 事前に実行したいコマンド等を定義できます&lt;/li&gt;
-&lt;li&gt;test -&amp;gt; overide : テストを実行するコマンドを書きます。&lt;/li&gt;
-&lt;li&gt;deployment -&amp;gt; production -&amp;gt; branch : 適用するブランチ名と本番環境であることを記述します。&lt;/li&gt;
-&lt;li&gt;&amp;lsquo;codedeploy-sample&amp;rsquo; : CodeDeploy 上にサンプルで作成した &amp;lsquo;Application&amp;rsquo; 名です&lt;/li&gt;
-&lt;li&gt;s3_location -&amp;gt; bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します&lt;/li&gt;
-&lt;li&gt;s3_location -&amp;gt; key_pattern : S3 バケットに収めるファイル名指定です&lt;/li&gt;
-&lt;li&gt;deployment_group : CodeDeploy で定義する &amp;lsquo;Deployment-Group&amp;rsquo; 名です&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;より詳細な説明を読みたい場合は下記の URL に描いてあります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://circleci.com/docs/configuration&#34;&gt;https://circleci.com/docs/configuration&lt;/a&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;s3-のみににデプロイする例&#34;&gt;S3 のみににデプロイする例&lt;/h2&gt;
-
-&lt;p&gt;上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて
-実行したい場面もありそうです。流れとしては&amp;hellip;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;レポジトリに git push, merge ことがトリガで処理が走る&lt;/li&gt;
-&lt;li&gt;circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る&lt;/li&gt;
-&lt;li&gt;S3 バケットにビルドされた結果が格納される&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の
-API を直接叩けば出来そうです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html&#34;&gt;http://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;このリファレンスにある &amp;ldquo;CreateDeployment&amp;rdquo; については後に例をあげます。&lt;/p&gt;
-
-&lt;p&gt;ただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが
-CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。&lt;/p&gt;
-
-&lt;p&gt;よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば
-上記の流れが組めそうです。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-yml&#34;&gt;machine:
-  environment:
-    SBT_VERSION: 0.13.9
-    SBT_OPTS: &amp;quot;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&amp;quot;
-  services:
-    - docker
-
-dependencies:
-  pre:
-    - sudo pip install awscli
-  cache_directories:
-    - &amp;quot;~/.sbt&amp;quot;
-
-test:
-  override:
-    - sbt compile
-
-deployment:
-  master:
-    branch: master
-    commands:
-      - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip .
-      - aws s3 cp
-        sample-code-${CIRCLE_PROJECT_REPONAME}-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip s3://&amp;lt;バケット名&amp;gt;/&amp;lt;ディレクトリ&amp;gt;/ --region ap-northeast-1
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;事前に awscli をインストールしているだけです。&lt;/p&gt;
-
-&lt;p&gt;S3 バケットに格納された成果物を CodeDeploy を使って手動でデプロイするには下記
-のコマンドで実施できます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ aws deploy create-deployment \
-  --application-name codedeploy-sample \
-  --deployment-config-name CodeDeployDefault.OneAtATime \
-  --deployment-group-name codedeploy-sample-group \
-  --description &amp;quot;deploy test&amp;quot; \
-  --s3-location bucket=&amp;lt;バケット名&amp;gt;,bundleType=zip,key=&amp;lt;ファイル名&amp;gt;
-  {
-    &amp;quot;deploymentId&amp;quot;: &amp;quot;d-2B4OAMT0B&amp;quot;
-   }
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;deploymentId は CodeDeploy 上の Application に紐付いた ID です。CodeDeploy の
-API を叩くか AWS コンソールで確認可能です。&lt;/p&gt;
-
-&lt;h4 id=&#34;circleci-の問題点とそれの回避方法&#34;&gt;CircleCI の問題点とそれの回避方法&lt;/h4&gt;
-
-&lt;ul&gt;
-&lt;li&gt;production と staging&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;1つのブランチで管理できる circle.yml は1つです。このファイルの中で定義できる &amp;lsquo;本番用&amp;rsquo;, &amp;lsquo;開発用&amp;rsquo; の定義は
-deployment -&amp;gt; production, staging の2種類になります。この2つで管理しきれない環境がある場合(例えば staging 以前の
-development 環境がある) は、レポジトリのブランチを別けて circle.yml を管理する方法があると思います。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;複数のデプロイ先があるレポジトリの運用&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;同一のレポジトリ内で管理しているコードのデプロイ先が複数ある場合は CodeDeploy 上で1つの Application に対して複数の
-Deployment-Group を作成することで対応できます。ただ、cirlce.yml で定義できるデプロイ先は deployment_group: の1つ(
-厳密に言うと production, staging の2つ) になるので、こちらもブランチによる circle.yml の別管理で回避できそうです。&lt;/p&gt;
-
-&lt;p&gt;こちらの問題については CircleCI 的にはおそらく「1つのレポジトリで管理するデプロイ先は1つに」というコンセプトなのかもしれません。&lt;/p&gt;
-
-&lt;h4 id=&#34;aws-iam-ユーザにアタッチする-policy-作成&#34;&gt;AWS IAM ユーザにアタッチする Policy 作成&lt;/h4&gt;
-
-&lt;p&gt;IAM ユーザを CircleCI に事前に設定しておくことで直接 AWS のリソースを操作出来るのですが、
-そのユーザにアタッチしておくべき Policy について例をあげておきます。&lt;/p&gt;
-
-&lt;p&gt;特定の S3 バケットにオブジェクト Put する Policy&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
-    &amp;quot;Version&amp;quot;: &amp;quot;2012-10-17&amp;quot;,
-    &amp;quot;Statement&amp;quot;: [
-        {
-            &amp;quot;Sid&amp;quot;: &amp;quot;Stmt1444196633000&amp;quot;,
-            &amp;quot;Effect&amp;quot;: &amp;quot;Allow&amp;quot;,
-            &amp;quot;Action&amp;quot;: [
-                &amp;quot;s3:PutObject&amp;quot;
-            ],
-            &amp;quot;Resource&amp;quot;: [
-                &amp;quot;arn:aws:s3:::&amp;lt;S3 バケット名&amp;gt;/*&amp;quot;
-            ]
-        }
-    ]
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;CodeDeploy の各 Action を実行する Policy&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-json&#34;&gt;{
-    &amp;quot;Version&amp;quot;: &amp;quot;2012-10-17&amp;quot;,
-    &amp;quot;Statement&amp;quot;: [
-        {
-            &amp;quot;Effect&amp;quot;: &amp;quot;Allow&amp;quot;,
-            &amp;quot;Action&amp;quot;: [
-                &amp;quot;codedeploy:RegisterApplicationRevision&amp;quot;,
-                &amp;quot;codedeploy:GetApplicationRevision&amp;quot;
-            ],
-            &amp;quot;Resource&amp;quot;: [
-                &amp;quot;*&amp;quot;
-            ]
-        },
-        {
-            &amp;quot;Effect&amp;quot;: &amp;quot;Allow&amp;quot;,
-            &amp;quot;Action&amp;quot;: [
-                &amp;quot;codedeploy:CreateDeployment&amp;quot;,
-                &amp;quot;codedeploy:GetDeployment&amp;quot;
-            ],
-            &amp;quot;Resource&amp;quot;: [
-                &amp;quot;*&amp;quot;
-            ]
-        },
-        {
-            &amp;quot;Effect&amp;quot;: &amp;quot;Allow&amp;quot;,
-            &amp;quot;Action&amp;quot;: [
-                &amp;quot;codedeploy:GetDeploymentConfig&amp;quot;
-            ],
-            &amp;quot;Resource&amp;quot;: [
-                &amp;quot;*&amp;quot;
-            ]
-        }
-    ]
-}
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;まとめ&#34;&gt;まとめ&lt;/h2&gt;
-
-&lt;p&gt;CodeDeploy, S3 を併用することで CircleCI を使っても VPC 内のプライベートインス
-タンスにデプロイできることが判りました。もし EC2 インスタンスを使っている場合
-は他の方法も取れることが判っています。circle.yml 内の pre: で指定出来るコマン
-ド・スクリプトで EC2 インスタンスに紐付いているセキュリティグループに穴あけ処
-理を記述すれば良さそうです。デプロイが終わったら穴を塞げばいいですね。この辺の
-例については国内でもブログ記事にされている方がいらっしゃいますので参考にしてくだ
-さい。&lt;/p&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2015/11/15/circleci-codedeploy/</guid>
+      <description>こんにちは。@jedipunkz です。 最近、業務で CircleCI を扱っていて、だいぶ &amp;ldquo;出来ること・出来ないこと&amp;rdquo; や &amp;ldquo;</description>
     </item>
     
     <item>
       <title>cAdvisor/influxDB/GrafanaでDockerリソース監視</title>
-      <link>http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/</link>
+      <link>https://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/</link>
       <pubDate>Sat, 12 Sep 2015 00:00:00 +0000</pubDate>
       
-      <guid>http://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/</guid>
-      <description>
-
-&lt;p&gt;こんにちは。&lt;a href=&#34;https://twitter.com/jedipunkz&#34;&gt;@jedipunkz&lt;/a&gt; です。&lt;/p&gt;
-
-&lt;p&gt;今回は Docker ネタです。Docker 導入するにしても監視はどうする？という話になる
-と思うのですが、各 Monitoring as a Service を使うにしてもエージェント入れない
-といけないしお金掛かることもあるし..で、調べていたら cAdvisor というキーワード
-が出てきました。今回は cAdvisor を使ってコンテナの監視が出来ないか、について書
-いていきたいと想います。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;cAdvisor とは ?&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;cAdvisor は Kubernates で用いられているコンポーネントで単体でも利用可能とのこ
-と。Google が開発しています。また Docker コンテナの監視においてこの cAdvisor
-は一般化しつつあるようです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://github.com/google/cadvisor&#34;&gt;https://github.com/google/cadvisor&lt;/a&gt;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;収集したメトリクスの保存&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;cAdvisor 自体も Docker で起動して、同ホスト上に起動している Docker コンテナの
-リソースをモニタリングしてくれます。そのメトリクスデータは幾つかの DB に保存出
-来るのですが、そのうちの一つが influxDB です。influxDB は時系列データベースで
-す。システムのメトリクスデータを収めるのにちょうどいいデータベースになります。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;https://influxdb.com/&#34;&gt;https://influxdb.com/&lt;/a&gt;&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;DB に収めたメトリクスの可視化&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;influxDB に収めたメトリクスデータを可視化するのが Grafana です。Grafana のデー
-タソースは influxDB の他にも幾つかあり Elasticsearch, KairosDB, Graphite 等が
-それです。&lt;/p&gt;
-
-&lt;p&gt;&lt;a href=&#34;http://grafana.org/&#34;&gt;http://grafana.org/&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;では早速試してみましょう。&lt;/p&gt;
-
-&lt;h2 id=&#34;前提の環境&#34;&gt;前提の環境&lt;/h2&gt;
-
-&lt;p&gt;今回は Vagrant を使います。また Vagrant 上で上記の3つのソフトウェアを Docker
-で稼働します。またどうせなので docker-compose を使って3つのコンテナを一斉に立
-ち上げてみましょう。&lt;/p&gt;
-
-&lt;h2 id=&#34;vagrantfile-の準備&#34;&gt;VagrantFile の準備&lt;/h2&gt;
-
-&lt;p&gt;下記のような VagrantFile を作成します。各ソフトウェアはそれぞれ WebUI を持って
-いて、そこに手元のコンピュータから接続するため forwarded_port しています。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;# -*- mode: ruby -*-
-# vi: set ft=ruby :
-
-Vagrant.configure(2) do |config|
-    config.vm.box = &amp;quot;ubuntu/trusty64&amp;quot;
-    config.vm.network &amp;quot;forwarded_port&amp;quot;, guest: 8080, host: 8080
-    config.vm.network &amp;quot;forwarded_port&amp;quot;, guest: 8083, host: 8083
-    config.vm.network &amp;quot;forwarded_port&amp;quot;, guest: 3000, host: 3000
-    config.vm.network &amp;quot;private_network&amp;quot;, ip: &amp;quot;192.168.33.10&amp;quot;
-end
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;docker-コンテナの起動と-docker-compose-yml-の準備&#34;&gt;Docker コンテナの起動と docker-compose.yml の準備&lt;/h2&gt;
-
-&lt;p&gt;Vagrant を起動し docker, docker-compose のインストールを行います。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code class=&#34;language-bash&#34;&gt;$ vagrant up
-$ vagrant ssh
-vagrant$ sudo apt-get update ; sudo apt-get -y install curl
-vagrant$ curl -sSL https://get.docker.com/ | sh
-vagrant$ sudo -i
-vagrant# export VERSION_NUM=1.4.0
-vagrant# curl -L https://github.com/docker/compose/releases/download/VERSION_NUM/docker-compose-`uname -s`-`uname -m` &amp;gt; /usr/local/bin/docker-compose
-vagrant# chmod +x /usr/local/bin/docker-compose
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;次に docker-compose.yml を作成します。上記3つのソフトウェアが稼働するコンテナ
-を起動するため下記のように記述しましょう。カレントディレクトリに作成します。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;InfluxSrv:
-    image: &amp;quot;tutum/influxdb:0.8.8&amp;quot;
-    ports:
-        - &amp;quot;8083:8083&amp;quot;
-        - &amp;quot;8086:8086&amp;quot;
-    expose:
-        - &amp;quot;8090&amp;quot;
-        - &amp;quot;8099&amp;quot;
-    environment:
-        - PRE_CREATE_DB=cadvisor
-cadvisor:
-    image: &amp;quot;google/cadvisor:0.16.0&amp;quot;
-    volumes:
-        - &amp;quot;/:/rootfs:ro&amp;quot;
-        - &amp;quot;/var/run:/var/run:rw&amp;quot;
-        - &amp;quot;/sys:/sys:ro&amp;quot;
-        - &amp;quot;/var/lib/docker/:/var/lib/docker:ro&amp;quot;
-    links:
-        - &amp;quot;InfluxSrv:influxsrv&amp;quot;
-    ports:
-        - &amp;quot;8080:8080&amp;quot;
-    command: &amp;quot;-storage_driver=influxdb -storage_driver_db=cadvisor -storage_driver_host=influxsrv:8086 -storage_driver_user=root -storage_driver_password=root -storage_driver_secure=False&amp;quot;
-grafana:
-    image: &amp;quot;grafana/grafana:2.1.3&amp;quot;
-    ports:
-        - &amp;quot;3000:3000&amp;quot;
-    environment:
-        - INFLUXDB_HOST=localhost
-        - INFLUXDB_PORT=8086
-        - INFLUXDB_NAME=cadvisor
-        - INFLUXDB_USER=root
-        - INFLUXDB_PASS=root
-    links:
-        - &amp;quot;InfluxSrv:influxsrv&amp;quot;
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;p&gt;コンテナの起動
-+++&lt;/p&gt;
-
-&lt;p&gt;docker コンテナを立ち上げます。&lt;/p&gt;
-
-&lt;pre&gt;&lt;code&gt;vagrant$ docker-compose -d
-&lt;/code&gt;&lt;/pre&gt;
-
-&lt;h2 id=&#34;influxdb-の-webui-に接続する&#34;&gt;influxDB の WebUI に接続する&lt;/h2&gt;
-
-&lt;p&gt;それでは起動したコンテナのうち一つ influxDB の WebUI に接続していましょう。
-上記の VagrantFile では IP アドレスを 192.168.33.10 と指定しました。&lt;/p&gt;
-
-&lt;p&gt;URL : &lt;a href=&#34;http://192.168.33.10:8083&#34;&gt;http://192.168.33.10:8083&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;データベースに接続します。&lt;/p&gt;
-
-&lt;p&gt;ユーザ名 : root
-パスワード : root&lt;/p&gt;
-
-&lt;p&gt;接続するとデータベース作成画面に飛びますので Database Datails 枠に &amp;ldquo;cadvisor&amp;rdquo;
-と入力、その他の項目はデフォルトのままで &amp;ldquo;Create Database&amp;rdquo; をクリックします。&lt;/p&gt;
-
-&lt;h2 id=&#34;cadvisor-の-webui-に接続する&#34;&gt;cAdvisor の WebUI に接続する&lt;/h2&gt;
-
-&lt;p&gt;続いて cAdvisor の WebUI に接続してみましょう。&lt;/p&gt;
-
-&lt;p&gt;URL : &lt;a href=&#34;http://192.168.33.10:8080&#34;&gt;http://192.168.33.10:8080&lt;/a&gt;&lt;/p&gt;
-
-&lt;p&gt;ここでは特に作業の必要はありません。コンテナの監視が行われグラフが描画されてい
-ることを確認します。&lt;/p&gt;
-
-&lt;h2 id=&#34;grafana-の-webui-に接続する&#34;&gt;Grafana の WebUI に接続する&lt;/h2&gt;
-
-&lt;p&gt;最後に Grafana の WebUI です。&lt;/p&gt;
-
-&lt;p&gt;URL : &lt;a href=&#34;http://192.168.33.10:3000&#34;&gt;http://192.168.33.10:3000&lt;/a&gt;
-ユーザ名 : admin
-パスワード : admin&lt;/p&gt;
-
-&lt;p&gt;まずデータソースの設定を行います。左上のアイコンをクリックし &amp;ldquo;Data Sources&amp;rdquo; を
-選択します。次に &amp;ldquo;Add New Data Source&amp;rdquo; ボタンをクリックします。&lt;/p&gt;
-
-&lt;p&gt;下記の情報を入力しましょう。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;Name : influxdb&lt;/li&gt;
-&lt;li&gt;Type : influxDB 0.8.x&lt;/li&gt;
-&lt;li&gt;Url  : &lt;a href=&#34;http://influxsrv:8086&#34;&gt;http://influxsrv:8086&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;Access : proxy&lt;/li&gt;
-&lt;li&gt;Basic Auth User admin&lt;/li&gt;
-&lt;li&gt;Basic Auth Password admin&lt;/li&gt;
-&lt;li&gt;Database : cadvisor&lt;/li&gt;
-&lt;li&gt;User : root&lt;/li&gt;
-&lt;li&gt;Password : root&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;さて最後にグラフを作成していきます。左メニューの &amp;ldquo;Dashboard&amp;rdquo; を選択し上部の
-&amp;ldquo;Home&amp;rdquo; ボランを押し &amp;ldquo;+New&amp;rdquo; を押します。&lt;/p&gt;
-
-&lt;p&gt;下記の画面を参考にし値に入力していきます。&lt;/p&gt;
-
-&lt;p&gt;Metrics を選択しネットワークの受信転送量をグラフにしています。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;series : &amp;lsquo;stats&amp;rsquo;&lt;/li&gt;
-&lt;li&gt;alias : RX Bytes&lt;/li&gt;
-&lt;li&gt;select mean(rx_bytes)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;同じく送信転送量もグラフにします。Add Query を押すと追加できます。&lt;/p&gt;
-
-&lt;ul&gt;
-&lt;li&gt;series : &amp;lsquo;stats&amp;rsquo;&lt;/li&gt;
-&lt;li&gt;alias : TX Bytes&lt;/li&gt;
-&lt;li&gt;select mean(tx_bytes)&lt;/li&gt;
-&lt;/ul&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/grafana_input_data.png&#34; width=&#34;80%&#34;&gt;&lt;/p&gt;
-
-&lt;p&gt;時間が経過すると下記のようにグラフが描画されます。&lt;/p&gt;
-
-&lt;p&gt;&lt;img src=&#34;http://jedipunkz.github.io/pix/grafana_graph.png&#34; width=&#34;80%&#34;&gt;&lt;/p&gt;
-
-&lt;h2 id=&#34;まとめと考察&#34;&gt;まとめと考察&lt;/h2&gt;
-
-&lt;p&gt;3つのソフトウェア共に開発が活発であり、cAdvisor は特に Docker コンテナの監視と
-して一般化しつつあるよう。Kubernates の一部ということもありそう簡単には廃れな
-いと想います。コンテナの中にエージェント等を入れることもなく、これで Docker コ
-ンテナのリソース監視が出来そう。ただサービス監視は別途考えなくてはいけないなぁ
-という印象です。また、今回 docker-compose に記した各コンテナのバージョンは
-Docker Hub を確認すると別バージョンもあるので時期が経ってこのブログ記事をご覧
-になった方は修正すると良いと想います。ただこの記事を書いている時点では
-influxDB の 0.9.x 系では動作しませんでした。よって latest ではなくバージョン指
-定で記してあります。&lt;/p&gt;
-
-&lt;h2 id=&#34;参考にしたサイト&#34;&gt;参考にしたサイト&lt;/h2&gt;
-
-&lt;ul&gt;
-&lt;li&gt;&lt;a href=&#34;http://qiita.com/atskimura/items/4c4aaaaa554e2814e938&#34;&gt;http://qiita.com/atskimura/items/4c4aaaaa554e2814e938&lt;/a&gt;&lt;/li&gt;
-&lt;li&gt;&lt;a href=&#34;https://www.brianchristner.io/how-to-setup-docker-monitoring/&#34;&gt;https://www.brianchristner.io/how-to-setup-docker-monitoring/&lt;/a&gt;&lt;/li&gt;
-&lt;/ul&gt;
-</description>
+      <guid>https://jedipunkz.github.io/blog/2015/09/12/cadvisor-influxdb-grafana-docker/</guid>
+      <description>こんにちは。@jedipunkz です。 今回は Docker ネタです。Docker 導入するにしても監視はどうする？という話になる と思うのですが、各 Monitoring as a Service</description>
+    </item>
+    
+    <item>
+      <title>Knife-ZeroでOpenStack Kiloデプロイ(複数台編)</title>
+      <link>https://jedipunkz.github.io/blog/2015/07/20/knife-zero-openstack-kilo/</link>
+      <pubDate>Mon, 20 Jul 2015 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2015/07/20/knife-zero-openstack-kilo/</guid>
+      <description>こんにちは。@jedipunkz です。 前回 OpenStack Kilo のオールインワン構成を Chef-Zero を使ってデプロイする方法 を書きましたが、複数台構成についても調べたので</description>
+    </item>
+    
+    <item>
+      <title>Chef-ZeroでOpenStack Kiloデプロイ(オールインワン編)</title>
+      <link>https://jedipunkz.github.io/blog/2015/07/16/chef-zero-openstack-allinone/</link>
+      <pubDate>Thu, 16 Jul 2015 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2015/07/16/chef-zero-openstack-allinone/</guid>
+      <description>こんにちは。@jedipunkz です。 久々に openstack-chef-repo を覗いてみたら &amp;lsquo;openstack/openstack-chef-repo&amp;rsquo; とし て公開されていました。今まで stackforge 側で管理されていましたが &amp;lsquo;openstack&amp;rsquo; の方に移動したよう</description>
+    </item>
+    
+    <item>
+      <title>オブジェクトストレージ minio を使ってみる</title>
+      <link>https://jedipunkz.github.io/blog/2015/06/25/minio/</link>
+      <pubDate>Thu, 25 Jun 2015 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2015/06/25/minio/</guid>
+      <description>こんにちは、@jedipunkz です。 久々にブログ更新になりましたが、ウォーミングアップで minio というオブジェクト ストレージを使ってみたメモを記</description>
+    </item>
+    
+    <item>
+      <title>VyOS で VXLAN を使ってみる</title>
+      <link>https://jedipunkz.github.io/blog/2014/12/16/vyos-vxlan/</link>
+      <pubDate>Tue, 16 Dec 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/12/16/vyos-vxlan/</guid>
+      <description>こんにちは。@jedipunkz です。 VyOS に VXLAN が実装されたと聞いて少し触ってみました。この情報を知ったきっかけ は @upaa さんの下記の資料です。 参考資</description>
+    </item>
+    
+    <item>
+      <title>Aviator でモダンに OpenStack を操作する</title>
+      <link>https://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/</link>
+      <pubDate>Sat, 13 Dec 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/12/13/aviator-openstack/</guid>
+      <description>こんにちは。@jedipunkz です。 自分は Ruby を普段使うのでいつも Fog というライブラリを使って OpenStack, AWS を操作していました。Fog を使うとクラウドの</description>
+    </item>
+    
+    <item>
+      <title>Chef-Zero でお手軽に OpenStack Icehouse を作る</title>
+      <link>https://jedipunkz.github.io/blog/2014/11/15/chef-zero-openstack-icehouse/</link>
+      <pubDate>Sat, 15 Nov 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/11/15/chef-zero-openstack-icehouse/</guid>
+      <description>こんにちは。@jedipunkz です。 OpenStack Juno がリリースされましたが、今日は Icehouse ネタです。 icehouse 以降、自分の中で OpenStack を自動で作る仕組みが無くなりつつあり</description>
+    </item>
+    
+    <item>
+      <title>MidoStack を動かしてみる</title>
+      <link>https://jedipunkz.github.io/blog/2014/11/04/midostack/</link>
+      <pubDate>Tue, 04 Nov 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/11/04/midostack/</guid>
+      <description>こんにちは。@jedipunkz です。 昨晩 Midokura さんが Midonet を OSS 化したとニュースになりました。公式サイトは 下記の URL になっています。Midonet は OpenStack</description>
+    </item>
+    
+    <item>
+      <title>Chef-Container Beta を使ってみる</title>
+      <link>https://jedipunkz.github.io/blog/2014/07/16/chef-container/</link>
+      <pubDate>Wed, 16 Jul 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/07/16/chef-container/</guid>
+      <description>こんにちは。@jedipunkz です。 昨晩 Chef が Chef-Container を発表しました。 http://www.getchef.com/blog/2014/07/15/release-chef-container-0-2-0-beta/ http://docs.opscode.com/containers.html まだ Beta リリースでバージョンは 0.2.0 です。(gem だと 0.1.1) Docker を代表とするコンテナ</description>
+    </item>
+    
+    <item>
+      <title>JTF2014 で Ceph について話してきた！</title>
+      <link>https://jedipunkz.github.io/blog/2014/06/22/jtf2014-ceph/</link>
+      <pubDate>Sun, 22 Jun 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/06/22/jtf2014-ceph/</guid>
+      <description>こんにちは。@jedipunkz です。 今日、JTF2014 (July Tech Festa 2014) というイベントで Ceph のことを話してきま した。Ceph ユーザ会の会員として話し</description>
+    </item>
+    
+    <item>
+      <title>Mesos &#43; Marathon &#43; Deimos &#43; Docker を試してみた!</title>
+      <link>https://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/</link>
+      <pubDate>Fri, 13 Jun 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/06/13/mesos-marathon-deimos-docker/</guid>
+      <description>こんにちは。@jedipunkz です。 以前 Mesos, Docker について記事にしました。 http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/ http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/ Twitter で Docker 関連のオーケストレーションツールについて呟いていたら @everpeace さんか</description>
+    </item>
+    
+    <item>
+      <title>クラウドライブラリ Fog で AWS を操作！..のサンプル</title>
+      <link>https://jedipunkz.github.io/blog/2014/05/29/fog-aws-ec2-elb/</link>
+      <pubDate>Thu, 29 May 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/05/29/fog-aws-ec2-elb/</guid>
+      <description>こんにちは。@jedipunkz です。 最近 OpenStack でサービスを開発！.. じゃなくて AWS でプロトタイプサービス作っ ているのですが、Ruby で開発したか</description>
+    </item>
+    
+    <item>
+      <title>stackforge/openstack-chef-repo で OpenStack Icehouse デプロイ</title>
+      <link>https://jedipunkz.github.io/blog/2014/04/25/stackforge-openstack-chef-repo-icehouse-deploy/</link>
+      <pubDate>Fri, 25 Apr 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/04/25/stackforge-openstack-chef-repo-icehouse-deploy/</guid>
+      <description>こんにちは。@jedipunkz です。 またまた OpenStack のデプロイをどうするか？についてです。 今まで自分の中では Rackspace Private Cloud で使われている Rackspace 管理の rcbops/chef-cookbooks が今現</description>
+    </item>
+    
+    <item>
+      <title>Mirantis OpenStack (Neutron GRE)を組んでみた！</title>
+      <link>https://jedipunkz.github.io/blog/2014/04/23/mirantis-openstack/</link>
+      <pubDate>Wed, 23 Apr 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/04/23/mirantis-openstack/</guid>
+      <description>こんにちは。@jedipunkz です。 皆さん、Mirantis OpenStack はご存知ですか？ OpenStack ディストリビューションの 1つです。以下、公式サイトです。 http://software.mirantis.com/main/</description>
+    </item>
+    
+    <item>
+      <title>Geard のポートマッピングについて調べてみた</title>
+      <link>https://jedipunkz.github.io/blog/2014/04/22/geard-port-mapping/</link>
+      <pubDate>Tue, 22 Apr 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/04/22/geard-port-mapping/</guid>
+      <description>こんにちは。@jedipunkz です。 今週 Redhat が &amp;lsquo;Redhat Enterprise Linux Atomic Host&amp;rsquo; しましたよね。Docker を特 徴としたミニマムな OS だとのこと。その内部で用いられてい</description>
+    </item>
+    
+    <item>
+      <title>OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携</title>
+      <link>https://jedipunkz.github.io/blog/2014/04/04/openstack-havana-cinder-glance-ceph/</link>
+      <pubDate>Fri, 04 Apr 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/04/04/openstack-havana-cinder-glance-ceph/</guid>
+      <description>こんにちは！@jedipunkz です。 今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式</description>
+    </item>
+    
+    <item>
+      <title>rcbops/chef-cookbooks で Keystone 2013.2.2(Havana) &#43; Swift 1.10.0 を構築</title>
+      <link>https://jedipunkz.github.io/blog/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0.deploy/</link>
+      <pubDate>Sun, 16 Mar 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0.deploy/</guid>
+      <description>こんにちは。@jedipunkz です。 追記 2014/03/20 : 一旦削除していた記事なのですが、無事動作が確認出来たので再度アッ プします！ 第17回 OpenStack 勉強会で rcbops/chef-cookbooks</description>
+    </item>
+    
+    <item>
+      <title>Sensu,Chef,OpenStack,Fog を使ったオレオレオートスケーラを作ってみた！</title>
+      <link>https://jedipunkz.github.io/blog/2014/03/05/sensu-chef-openstack-fog-autoscaler/</link>
+      <pubDate>Wed, 05 Mar 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/03/05/sensu-chef-openstack-fog-autoscaler/</guid>
+      <description>こんにちは。@jedipunkz です。 今まで監視システムの Sensu やクラウドプラットフォームの OpenStack、コンフィギュ レーションマネージメ</description>
+    </item>
+    
+    <item>
+      <title>Journal 用 SSD を用いた Ceph 構成の構築</title>
+      <link>https://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/</link>
+      <pubDate>Thu, 27 Feb 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/</guid>
+      <description>こんにちは、@jedipunkz です。 前回、&amp;rsquo;Ceph のプロセス配置ベストプラクティス&amp;rsquo; というタイトルで記事を書きま</description>
+    </item>
+    
+    <item>
+      <title>Ceph のプロセス配置ベストプラクティス</title>
+      <link>https://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/</link>
+      <pubDate>Wed, 29 Jan 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/</guid>
+      <description>Ceph はブロック型の分散ストレージファイルシステムです。POSIX のファイルシステ ムとしてマウント出来ます。Linux の Kernel ドライバや FUSE ドライバを</description>
+    </item>
+    
+    <item>
+      <title>第17回 OpenStack 勉強会で話してきました</title>
+      <link>https://jedipunkz.github.io/blog/2014/01/21/17th-openstack-study/</link>
+      <pubDate>Tue, 21 Jan 2014 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2014/01/21/17th-openstack-study/</guid>
+      <description>こんにちは。@jedipunkz です。 昨晩、第17回 OpenStack 勉強会が開催されました http://connpass.com/event/4545/ ここで発表をしてきましたぁ！発表タイトルは &amp;ldquo;rcbops/chef-cookbooks&amp;rdquo; です。 何を発表した</description>
+    </item>
+    
+    <item>
+      <title>Chef で自律的クラスタを考える</title>
+      <link>https://jedipunkz.github.io/blog/2013/12/09/chef-autonoumous-cluster/</link>
+      <pubDate>Mon, 09 Dec 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/12/09/chef-autonoumous-cluster/</guid>
+      <description>こんにちは。@jedipunkz です。 Serf の登場があったり、ここ最近オーケストレーションについて考える人が増えた気 がします。システムをデプロイ</description>
+    </item>
+    
+    <item>
+      <title>CoreOS etcd のクラスタとその応用性</title>
+      <link>https://jedipunkz.github.io/blog/2013/12/09/coreos-etcd-cluster/</link>
+      <pubDate>Mon, 09 Dec 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/12/09/coreos-etcd-cluster/</guid>
+      <description>こんにちは。@jedipunkz です。 皆さん CoreOS は利用されたことありますか？CoreOS は軽量な docker との相性の良 い OS です。下記が公式サイト。 http://coreos.com/ 特</description>
+    </item>
+    
+    <item>
+      <title>Ironic でベアメタル OpenStack ！..の一歩手前</title>
+      <link>https://jedipunkz.github.io/blog/2013/12/05/ironic-openstack-beremetal/</link>
+      <pubDate>Thu, 05 Dec 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/12/05/ironic-openstack-beremetal/</guid>
+      <description>こんにちは。@jedipunkz です。 アドベントカレンダーの季節がやって参りました。 Ironic を使って OpenStack でベアメタルサーバを扱いたい！ということで色</description>
+    </item>
+    
+    <item>
+      <title>sensu-chef で監視システム Sensu を管理 #2</title>
+      <link>https://jedipunkz.github.io/blog/2013/11/27/sensu-chef-deploy-2/</link>
+      <pubDate>Wed, 27 Nov 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/11/27/sensu-chef-deploy-2/</guid>
+      <description>こんにちは。@jedipunkz です。 以前、Sensu を Chef で管理する方法について書きました。 http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/ これは今年(2013)の6月頃の記事ですが、こ</description>
+    </item>
+    
+    <item>
+      <title>Vyatta で Mac 用 TimeMachine サーバ兼ファイルサーバを構築！</title>
+      <link>https://jedipunkz.github.io/blog/2013/11/26/vyatta-timemachine-netatalk/</link>
+      <pubDate>Tue, 26 Nov 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/11/26/vyatta-timemachine-netatalk/</guid>
+      <description>こんにちは。@jedipunkz です。 自宅ルータを Vyatta で運用しているのですが、諸電力な筐体に交換した際に HDD ス ロットが余っていたので HDD を一本さし</description>
+    </item>
+    
+    <item>
+      <title>OpenStack Havana を Chef でデプロイ</title>
+      <link>https://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/</link>
+      <pubDate>Sun, 17 Nov 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/</guid>
+      <description>こんにちは。@jedipunkz です。 毎度お馴染みになった OpenStack の Chef によるデプロイですが、今回は OpenStack Havana 構成を Chef でデプロイする方法についてです。使用</description>
+    </item>
+    
+    <item>
+      <title>第2回 Elasticsearch 勉強会参加レポート</title>
+      <link>https://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/</link>
+      <pubDate>Wed, 13 Nov 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/11/13/elasticsearch-second-study-report/</guid>
+      <description>こんにちは。@jedipunkz です。 第2回 Elasticsearch 勉強会に参加してきました。箇条書きですが参加レポートを記し ておきます。 開催日 : 2013/11/12 場所 : 東京駅 グ</description>
+    </item>
+    
+    <item>
+      <title>Serf を使ってみた</title>
+      <link>https://jedipunkz.github.io/blog/2013/11/10/serf/</link>
+      <pubDate>Sun, 10 Nov 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/11/10/serf/</guid>
+      <description>こんにちは。@jedipunkz です。 僕は Chef 使いなのですが、Chef はオーケストレーションまで踏み込んだツールでは ないように思います。せいぜ</description>
+    </item>
+    
+    <item>
+      <title>実用的な Swift 構成を Chef でデプロイ</title>
+      <link>https://jedipunkz.github.io/blog/2013/10/27/swift-chef/</link>
+      <pubDate>Sun, 27 Oct 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/10/27/swift-chef/</guid>
+      <description>こんにちは。@jedipunkz です。 以前、&amp;rdquo;Swift HA 構成を Chef でデプロイ&amp;rdquo; というタイトルで記事を書きました。 http://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/ こ</description>
+    </item>
+    
+    <item>
+      <title>test-kitchen と OpenStack で Chef Cookbooks テスト (後篇)</title>
+      <link>https://jedipunkz.github.io/blog/2013/10/20/test-kitchen-openstack-chef-cookbooks-test-2/</link>
+      <pubDate>Sun, 20 Oct 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/10/20/test-kitchen-openstack-chef-cookbooks-test-2/</guid>
+      <description>こんにちは。@jedipunkz です。 前回、OpenStack と test-kitchen を使った環境構築方法を書きました。下記の記事で す。 http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/ 今回は実際にテストを書</description>
+    </item>
+    
+    <item>
+      <title>test-kitchen と OpenStack で Chef Cookbooks テスト(前篇)</title>
+      <link>https://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/</link>
+      <pubDate>Sun, 13 Oct 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/</guid>
+      <description>こんにちは。@jedipunkz です。 test-kitchen + Vagrant を利用して複数環境で Chef Cookbooks のテストを行う方法は 結構皆さん利用されていると思うのですが Vagrant だと手元のマ</description>
+    </item>
+    
+    <item>
+      <title>GlusterFS の各クラスタタイプ構築</title>
+      <link>https://jedipunkz.github.io/blog/2013/10/12/glusterfs-install/</link>
+      <pubDate>Sat, 12 Oct 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/10/12/glusterfs-install/</guid>
+      <description>こんにちは。@jedipunkz です。 GlusterFS をちょっと前に調べてました。何故かと言うと OpenStack Havana がもうす ぐリリースされるのですが、Havana から GlusterFS が</description>
+    </item>
+    
+    <item>
+      <title>Methos アーキテクチャ #2 (Docker on Mesos)</title>
+      <link>https://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/</link>
+      <pubDate>Tue, 01 Oct 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/</guid>
+      <description>こんにちは。@jedipunkz です。 Mesos アーキテクチャについて2つめの記事です。 http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/ 上記の前回の記事で Mesos 自体のアーキテクチャについて触れました</description>
+    </item>
+    
+    <item>
+      <title>DevOps Day Tokyo 2013 参加レポート</title>
+      <link>https://jedipunkz.github.io/blog/2013/09/29/devops-day-tokyo-2013-report/</link>
+      <pubDate>Sun, 29 Sep 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/09/29/devops-day-tokyo-2013-report/</guid>
+      <description>こんにちは。@jedipunkz です。 DevOps Day Tokyo 2013 に参加してきました。たくさんの刺激を受けたのでレポート書 いておきます。 開催日 : 2013年09月</description>
+    </item>
+    
+    <item>
+      <title>Mesos アーキテクチャ #1</title>
+      <link>https://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/</link>
+      <pubDate>Sat, 28 Sep 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/</guid>
+      <description>こんにちは。@jedipunkz です。 今回はクラスタマネージャである Mesos について書こうと思います。 Mesos は Apache Software Foundation によって管理されるソフトウェアで分</description>
+    </item>
+    
+    <item>
+      <title>Chef で kibana &#43; elasticsearch &#43; fluentd デプロイしてみた</title>
+      <link>https://jedipunkz.github.io/blog/2013/09/13/chef-kibana-elasticsearch-fluentd/</link>
+      <pubDate>Fri, 13 Sep 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/09/13/chef-kibana-elasticsearch-fluentd/</guid>
+      <description>こんにちは。@jedipunkz です。 前回 kibana + elasticsearch + fluentd を構築する方法を載せたのだけど手動で構築 したので格好悪いなぁと思っていました。いうことで</description>
+    </item>
+    
+    <item>
+      <title>第14回 OpenStack 勉強会参加ログ</title>
+      <link>https://jedipunkz.github.io/blog/2013/09/09/14th-openstack-study-hackathon/</link>
+      <pubDate>Mon, 09 Sep 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/09/09/14th-openstack-study-hackathon/</guid>
+      <description>こんにちは。@jedipunkz です。 OpenStack 第14回勉強会 ハッカソンに参加してきました。その時の自分の作業ログを 記しておきます。自分の作業内容は</description>
+    </item>
+    
+    <item>
+      <title>Kibana3 &#43; elasticsearch &#43; fluentd を試した</title>
+      <link>https://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/</link>
+      <pubDate>Sun, 08 Sep 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/</guid>
+      <description>こんにちは。@jedipunkz です。 {% img /pix/kibana3.png %} 前回の記事で Kibana + elasticsearch + fluentd を試しましたが、ツイッターで @nora96o さんに &amp;ldquo;Kibana3 使うと、幸せになれますよ！&amp;rdq</description>
+    </item>
+    
+    <item>
+      <title>Kibana &#43; ElasticSearch &#43; fluentd を試してみた</title>
+      <link>https://jedipunkz.github.io/blog/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/</link>
+      <pubDate>Sat, 07 Sep 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/</guid>
+      <description>こんにちは。@jedipunkz です。 自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch を使いたいなぁとぼんやり考えていて Logstash</description>
+    </item>
+    
+    <item>
+      <title>Hurricane Electric &#43; Vyatta で宅内 IPv6 化</title>
+      <link>https://jedipunkz.github.io/blog/2013/09/01/hurricane-electric-vyatta-ipv6/</link>
+      <pubDate>Sun, 01 Sep 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/09/01/hurricane-electric-vyatta-ipv6/</guid>
+      <description>こんにちは。@jedipunkz です。 自宅の IPv6 化、したいなぁとぼんやり考えていたのですが、Hurricane Electric Internet Services を見つけました。IPv4 の</description>
+    </item>
+    
+    <item>
+      <title>Vyatta で L2TP over IPsec による VPN 構築</title>
+      <link>https://jedipunkz.github.io/blog/2013/08/24/vyatta-l2tp-ipsec-vpn/</link>
+      <pubDate>Sat, 24 Aug 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/08/24/vyatta-l2tp-ipsec-vpn/</guid>
+      <description>こんにちは。@jedipunkz です。 以前、こんな記事をブログに記しました。2012/06 の記事です。 http://jedipunkz.github.io/blog/2012/06/13/vyatta-vpn/ その後、PPTP で保護されたネットワ</description>
+    </item>
+    
+    <item>
+      <title>OpenStack nova-network IPv6 対応</title>
+      <link>https://jedipunkz.github.io/blog/2013/08/18/openstack-nova-network-ipv6/</link>
+      <pubDate>Sun, 18 Aug 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/08/18/openstack-nova-network-ipv6/</guid>
+      <description>こんにちは。@jedipunkz です 今更なのかもしれませんが、OpenStack の nova-network を IPv6 対応する方法を調べ てみました。何故 nova-network なのか? 自宅の構</description>
+    </item>
+    
+    <item>
+      <title>rcbops Cookbooks で Neutron 構成 OpenStack</title>
+      <link>https://jedipunkz.github.io/blog/2013/08/16/rcbops-cookbooks-neutron-openstack/</link>
+      <pubDate>Fri, 16 Aug 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/08/16/rcbops-cookbooks-neutron-openstack/</guid>
+      <description>こんにちは。@jedipunkz です。 rcbops Cookbooks で Neutron 構成の OpenStack をデプロイする方法を書きたいと思 います。先日紹介した openstack-chef-repo にも Neutron のレシピが含まれているの で</description>
+    </item>
+    
+    <item>
+      <title>Debian Unstable で stumpwm</title>
+      <link>https://jedipunkz.github.io/blog/2013/08/09/debian-unstable-stumpwm/</link>
+      <pubDate>Fri, 09 Aug 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/08/09/debian-unstable-stumpwm/</guid>
+      <description>こんにちは。@jedipunkz です。 Linux のウィンドウマネージャは使い続けて長いのですが、既に1周半しました。twm -&amp;gt; gnome -&amp;gt; enlightenment -&amp;gt; OpenBox -&amp;gt; .. 忘れた .. -&amp;gt;</description>
+    </item>
+    
+    <item>
+      <title>openstack-chef-repo で OpenStack 複数台構成をデプロイ</title>
+      <link>https://jedipunkz.github.io/blog/2013/08/06/opscode-cookbooks-openstack-deploy/</link>
+      <pubDate>Tue, 06 Aug 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/08/06/opscode-cookbooks-openstack-deploy/</guid>
+      <description>こんにちは。@jedipunkz です。 前回、github.com/rcbops の Cookbooks を利用した OpenStack デプロイ方法を紹介し ました。これは RackSpace 社の Private Cloud Service</description>
+    </item>
+    
+    <item>
+      <title>Cobbler で OS 自動インストール</title>
+      <link>https://jedipunkz.github.io/blog/2013/07/28/cobbler-os-automation-install/</link>
+      <pubDate>Sun, 28 Jul 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/07/28/cobbler-os-automation-install/</guid>
+      <description>こんにちは。@jedipunkz です。 最近、自動化は正義だと最近思うのですが、その手助けをしてくれるツール Cobbler を試してみました。Cobbler</description>
+    </item>
+    
+    <item>
+      <title>Swift HA 構成を Chef でデプロイ</title>
+      <link>https://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/</link>
+      <pubDate>Fri, 26 Jul 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/</guid>
+      <description>こんにちは。@jedipunkz です。 最近 Chef で OpenStack をデプロイすることばかりに興味持っちゃって、他のことも やらんとなぁと思っているのですが、せっ</description>
+    </item>
+    
+    <item>
+      <title>OpenStack HA 構成を Chef でデプロイ</title>
+      <link>https://jedipunkz.github.io/blog/2013/07/17/openstach-ha-chef-deploy/</link>
+      <pubDate>Wed, 17 Jul 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/07/17/openstach-ha-chef-deploy/</guid>
+      <description>こんにちは。@jedipunkz です。 OpenStack を運用する中でコントローラは重要です。コントローラノードが落ちると、 仮想マシンの操作等が利用出来ませ</description>
+    </item>
+    
+    <item>
+      <title>Chef で OpenStack デプロイ</title>
+      <link>https://jedipunkz.github.io/blog/2013/07/08/chef-openstack-deploy/</link>
+      <pubDate>Mon, 08 Jul 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/07/08/chef-openstack-deploy/</guid>
+      <description>こんにちは。@jedipunkz です。 前回の記事で OpenCenter を使った OpenStack デプロイを行いましたが、デプロイの 仕組みの実体は Opscode Chef です。慣れている人であれば</description>
+    </item>
+    
+    <item>
+      <title>内部で Chef を使っている OpenCenter で OpenStack 構築</title>
+      <link>https://jedipunkz.github.io/blog/2013/07/02/chef-opencenter-openstack/</link>
+      <pubDate>Tue, 02 Jul 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/07/02/chef-opencenter-openstack/</guid>
+      <description>こんにちは。@jedipunkz です。 第13回 OpenStack 勉強会に参加してきました。内容の濃い収穫のある勉強会でした。 参加してよかった。特にえぐちさん</description>
+    </item>
+    
+    <item>
+      <title>Sensu 監視システムを Chef で制御</title>
+      <link>https://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/</link>
+      <pubDate>Thu, 20 Jun 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/</guid>
+      <description>こんにちは。@jedipunkz です。 自動化の基盤を導入するために色々調べているのですが、監視も自動化しなくちゃ！と いうことで Sensu を調べてたの</description>
+    </item>
+    
+    <item>
+      <title>Chef を Ruby コード内で利用する</title>
+      <link>https://jedipunkz.github.io/blog/2013/06/12/chef-ruby-code/</link>
+      <pubDate>Wed, 12 Jun 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/06/12/chef-ruby-code/</guid>
+      <description>こんにちは。@jedipunkz です。 require &amp;lsquo;chef&amp;rsquo; して Ruby コードの中で chef を利用したいと思って色々調べていた のですが、そもそもリファレンスが無くサンプル</description>
+    </item>
+    
+    <item>
+      <title>Ceph クラスターネットワーク構成</title>
+      <link>https://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/</link>
+      <pubDate>Sat, 25 May 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/</guid>
+      <description>こんにちは。@jedipunkz です。 Ceph を運用する上で考慮しなければいけないのがトラフィックの負荷です。特に OSD 同士のレプリケーション・ハート</description>
+    </item>
+    
+    <item>
+      <title>OpenStack &#43; Ceph 連携</title>
+      <link>https://jedipunkz.github.io/blog/2013/05/19/openstack-ceph/</link>
+      <pubDate>Sun, 19 May 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/05/19/openstack-ceph/</guid>
+      <description>こんにちは。最近 OpenStack の導入に向けて保守性や可用性について調査している @jedipunkz です。 OpenStack は MySQL のダンプや OS イメージ・スナップショットのバックアップをとっ て</description>
+    </item>
+    
+    <item>
+      <title>Chef Cookbook でユーザ・グループ追加</title>
+      <link>https://jedipunkz.github.io/blog/2013/05/18/chef-cookbook-adding-users/</link>
+      <pubDate>Sat, 18 May 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/05/18/chef-cookbook-adding-users/</guid>
+      <description>こんにちは。@jedipunkz です。 今回は Opscode Chef でユーザ・グループを作成する方法をまとめます。 &amp;lsquo;users&amp;rsquo; Cookbook を使います。 % cd ${YOUR_CHEF_REPO} % ${EDITOR} Berksfile cookbook &#39;users&#39; % berks install --path ./cookbooks data_bag を</description>
+    </item>
+    
+    <item>
+      <title>Ceph-Deploy で Ceph 分散ストレージ構築</title>
+      <link>https://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/</link>
+      <pubDate>Sat, 11 May 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/</guid>
+      <description>今回は ceph-deploy というツールを使って Ceph ストレージを簡単に構築することが 出来るので紹介します。Ceph は分散ストレージでオブジェクトストレージとしても</description>
+    </item>
+    
+    <item>
+      <title>Quantum Network ノードの分散・冗長</title>
+      <link>https://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/</link>
+      <pubDate>Fri, 26 Apr 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/</guid>
+      <description>こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機</description>
+    </item>
+    
+    <item>
+      <title>Chef for OpenStack</title>
+      <link>https://jedipunkz.github.io/blog/2013/04/21/chef-for-openstack-grizzly-roadmap/</link>
+      <pubDate>Sun, 21 Apr 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/04/21/chef-for-openstack-grizzly-roadmap/</guid>
+      <description>以前にも話題にしたことがある Chef For OpenStack ですが今週新しい情報が入って来 ました。#ChefConf 2013 というイベントがあったのですがここで Opscode の Matt Ray さん</description>
+    </item>
+    
+    <item>
+      <title>OpenStack Grizzy で非 Virtio OS 稼働</title>
+      <link>https://jedipunkz.github.io/blog/2013/04/21/openstack-non-virtio/</link>
+      <pubDate>Sun, 21 Apr 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/04/21/openstack-non-virtio/</guid>
+      <description>こんにちは jedipunkz です。 Virtio に対応していない OS を OpenStack で稼働させることが今まで出来なかったの ですが Grizzly から非 Virtio な OS イメージが扱えるようになった。今まで NetBSD や</description>
+    </item>
+    
+    <item>
+      <title>OpenStack Grizzly 構築スクリプト</title>
+      <link>https://jedipunkz.github.io/blog/2013/04/20/openstack-grizzly-installation-script/</link>
+      <pubDate>Sat, 20 Apr 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/04/20/openstack-grizzly-installation-script/</guid>
+      <description>OpenStack Grizzly がリリースされて2週間ほど経過しました。皆さん動かしてみまし たか？今回、毎度の構築 Bash スクリプトを開発したので公開します。 下記のサイトで公</description>
+    </item>
+    
+    <item>
+      <title>Chef 11 サーバのローカルネットワーク上構築</title>
+      <link>https://jedipunkz.github.io/blog/2013/04/06/chef-11-private-network/</link>
+      <pubDate>Sat, 06 Apr 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/04/06/chef-11-private-network/</guid>
+      <description>chef-solo を使うの？Chef サーバを使うの？という議論は結構前からあるし、答えは 「それぞれの環境次第」だと思うのだが、僕は個人的に Chef サーバを使ってま</description>
+    </item>
+    
+    <item>
+      <title>クラウドマネジメント勉強会レポ</title>
+      <link>https://jedipunkz.github.io/blog/2013/04/06/cloudmanagement/</link>
+      <pubDate>Sat, 06 Apr 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/04/06/cloudmanagement/</guid>
+      <description>クラウドマネジメント勉強会に参加してきた。今が旬なのか定員140名が埋まっていま した。クラウドフェデレーションサービス各種の話が聞ける貴重な</description>
+    </item>
+    
+    <item>
+      <title>NetBSD on OpenStack</title>
+      <link>https://jedipunkz.github.io/blog/2013/03/28/netbsd-on-openstack/</link>
+      <pubDate>Thu, 28 Mar 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/03/28/netbsd-on-openstack/</guid>
+      <description>もう数日で OpenStack の次期バージョン版 Grizzly がリリースされるタイミングだが 現行バージョン Folsom の OpenStack の上に NetBSD を載せてみた。完全にお遊び だけど&amp;hellip;。</description>
+    </item>
+    
+    <item>
+      <title>Berkshelf で Chef Cookbook の管理</title>
+      <link>https://jedipunkz.github.io/blog/2013/03/17/berkshelf-chef-cookbook-manage/</link>
+      <pubDate>Sun, 17 Mar 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/03/17/berkshelf-chef-cookbook-manage/</guid>
+      <description>こんにちは。@jedipunkz です。 今日は Chef Cookbook の管理をしてくれる Berkshelf について。 Berkshelf は Librarian-Chef と同じく Cookbook の管理をしてくれるツールです。依 存関係のクリア</description>
+    </item>
+    
+    <item>
+      <title>chef-client の継続的デリバリ</title>
+      <link>https://jedipunkz.github.io/blog/2013/03/15/chef-contenuously-deploy/</link>
+      <pubDate>Fri, 15 Mar 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/03/15/chef-contenuously-deploy/</guid>
+      <description>こんにちは。@jedipunkz です。 久々に Chef の話題。 有名な方々が最近 Chef について記事書いたりで Chef が再び盛り上がってきましたね。 僕のブログにも</description>
+    </item>
+    
+    <item>
+      <title>第11回OpenStack勉強会で話してきた</title>
+      <link>https://jedipunkz.github.io/blog/2013/02/10/di-11hui-openstack-study11-openstack-chef-repo/</link>
+      <pubDate>Sun, 10 Feb 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/02/10/di-11hui-openstack-study11-openstack-chef-repo/</guid>
+      <description>2013年2月9日に行われた OpenStack 勉強会第11回で話してきました。 openstack-chef-repo と言う、Opscode Chef で OpenStack を構築する内容を話して きました。その時に説明出来</description>
+    </item>
+    
+    <item>
+      <title>Spiceweasel で knife バッチ処理</title>
+      <link>https://jedipunkz.github.io/blog/2013/02/01/spiceweasel-knife-bootstrap/</link>
+      <pubDate>Fri, 01 Feb 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/02/01/spiceweasel-knife-bootstrap/</guid>
+      <description>Spiceweasel https://github.com/mattray/spiceweasel#cookbooks を使ってみた。 Spiceweasel は Chef の cookbook のダウンロード, role/cookbook の chef server へのアップロード, ブートストラップ等をバッチ処理的に行なってくれる(もしくはコ マンドライ</description>
+    </item>
+    
+    <item>
+      <title>Arch Linux セットアップまとめ</title>
+      <link>https://jedipunkz.github.io/blog/2013/01/14/arch-linux-setup/</link>
+      <pubDate>Mon, 14 Jan 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/01/14/arch-linux-setup/</guid>
+      <description>(2013/08/31 修正しました) 自宅のノート PC にいつも Debian Gnu/Linux unstable を入れて作業してたのだけど、 Arch Linux が試したくなって入れてみた。すごくイイ。ミニマル思考で常に最新。</description>
+    </item>
+    
+    <item>
+      <title>OpenStack Folsom on Thinkpad</title>
+      <link>https://jedipunkz.github.io/blog/2013/01/12/openstack-on-thinkpad/</link>
+      <pubDate>Sat, 12 Jan 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/01/12/openstack-on-thinkpad/</guid>
+      <description>以前紹介した OpenStack Folsom 構築 bash スクリプトなのだけど quantum の代わり に nova-network も使えるようにしておいた。 構築 bash スクリプトは、 https://github.com/jedipunkz/openstack_folsom_deploy/blob/master/README_jp.md に詳しい使い方を書いておきました。ま</description>
+    </item>
+    
+    <item>
+      <title>FreeBSD on OpenStack</title>
+      <link>https://jedipunkz.github.io/blog/2013/01/01/freebsd-on-openstack/</link>
+      <pubDate>Tue, 01 Jan 2013 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2013/01/01/freebsd-on-openstack/</guid>
+      <description>FreeBSD を OpenStack で管理したいなぁと思って自宅に OpenStack 環境作ってました。 お正月なのに&amp;hellip; 使ったのは folsom ベースの OpenStack (nova-network) と FreeBSD 9.1 です。8 系 の FreeBSD でも大体同じ</description>
+    </item>
+    
+    <item>
+      <title>OpenStack API を理解しインフラエンジニアの仕事の変化を感じる</title>
+      <link>https://jedipunkz.github.io/blog/2012/12/08/knife-fog-openstack-api/</link>
+      <pubDate>Sat, 08 Dec 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/12/08/knife-fog-openstack-api/</guid>
+      <description>今日は &amp;ldquo;OpenStack Advent Calendar 2012 JP&amp;rdquo; というイベントのために記事を書きた いと思います。Advent Calendar とはキリスト生誕を祝うため 12&amp;frasl;25 まで毎日誰かがブログ 等で特定の話題</description>
+    </item>
+    
+    <item>
+      <title>OpenFlow Trema ハンズオン参加レポート</title>
+      <link>https://jedipunkz.github.io/blog/2012/11/21/openflow-trema-handson-report/</link>
+      <pubDate>Wed, 21 Nov 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/11/21/openflow-trema-handson-report/</guid>
+      <description>InternetWeek2012 で開かれた &amp;ldquo;OpenFlow Trema ハンズオン&amp;rdquo; に参加してきました。 講師 : Trema 開発チーム 鈴木一哉さま, 高宮安仁さま 開催日 : 2012年11月21日 OpenStack の Quantum</description>
+    </item>
+    
+    <item>
+      <title>OpenStack Folsom 構築スクリプト</title>
+      <link>https://jedipunkz.github.io/blog/2012/11/10/openstack-folsom-install/</link>
+      <pubDate>Sat, 10 Nov 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/11/10/openstack-folsom-install/</guid>
+      <description>※2012/12/04 に内容を修正しました。Network Node を切り出すよう修正。 ※213/01/09 に内容を修正しました。パラメータ修正です</description>
+    </item>
+    
+    <item>
+      <title>Swift で簡単に分散オブジェクトストレージ</title>
+      <link>https://jedipunkz.github.io/blog/2012/11/04/swift-tempauth/</link>
+      <pubDate>Sun, 04 Nov 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/11/04/swift-tempauth/</guid>
+      <description>最近、OpenStack にどっぷり浸かってる @jedipunkz です。 Folsom がリリースされて Quantum を理解するのにめちゃ苦労して楽しい真っ最中なのだけど、 今日は OpenStack の中で</description>
+    </item>
+    
+    <item>
+      <title>Secret Training of Opscode Chef</title>
+      <link>https://jedipunkz.github.io/blog/2012/10/06/secret-training-of-opscode-chef/</link>
+      <pubDate>Sat, 06 Oct 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/10/06/secret-training-of-opscode-chef/</guid>
+      <description>昨日、開かれた &amp;ldquo;Opscode Chef のシークレットトレーニング&amp;rdquo; に参加してきました。 場所はうちの会社で KDDI ウェブコミュニケーションズ。主催はクリエー</description>
+    </item>
+    
+    <item>
+      <title>第7回 OpenStack 勉強会参加レポート</title>
+      <link>https://jedipunkz.github.io/blog/2012/08/29/7th-openstack-meetup/</link>
+      <pubDate>Wed, 29 Aug 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/08/29/7th-openstack-meetup/</guid>
+      <description>第7回 OpenStack 勉強会に参加してきました。 開催日 : 2012年08月28日 開催場所 : 天王洲アイル ビットアイル 1年以上前から OpenStack, CloudStack 界隈はウォッチしていたの</description>
+    </item>
+    
+    <item>
+      <title>OpenStack ESSEX オールインワン インストール</title>
+      <link>https://jedipunkz.github.io/blog/2012/08/26/all-in-one-openstack-installation/</link>
+      <pubDate>Sun, 26 Aug 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/08/26/all-in-one-openstack-installation/</guid>
+      <description>OpenStack のインストールってしんどいなぁ、って感じて devstack http://devstack.org/ とかで構築して中を覗いていたのですが、そもそも devstack って再起動してしまえば何も起動してこないし、</description>
+    </item>
+    
+    <item>
+      <title>Opscode Bootstrap を使った Chef-Server 構築</title>
+      <link>https://jedipunkz.github.io/blog/2012/08/18/opscode-bootstrap-chef-server/</link>
+      <pubDate>Sat, 18 Aug 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/08/18/opscode-bootstrap-chef-server/</guid>
+      <description>chef-server の構築は少し面倒だと前回の記事 http://jedipunkz.github.com/blog/2012/08/18/chef-solo/ に書いたのですが、 opscode が提供している bootstrap を用いると、構築作業がほぼ自動化出来ます。 今回はこの手順を書いていきま</description>
+    </item>
+    
+    <item>
+      <title>chef-solo で学ぶ chef の基本動作</title>
+      <link>https://jedipunkz.github.io/blog/2012/08/18/chef-solo/</link>
+      <pubDate>Sat, 18 Aug 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/08/18/chef-solo/</guid>
+      <description>仕事で Opesocd Chef の情報収集をしてたのですが、僕が感じるにこれはインフラエン ジニアの未来だと。逆に言うとインフラエンジニアの危機。AWS のようなクラ</description>
+    </item>
+    
+    <item>
+      <title>#DevLOVE に参加してきました。Chef De DevOps</title>
+      <link>https://jedipunkz.github.io/blog/2012/07/22/number-devlove-nican-jia-sitekimasita.-chef-de-devops/</link>
+      <pubDate>Sun, 22 Jul 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/07/22/number-devlove-nican-jia-sitekimasita.-chef-de-devops/</guid>
+      <description>2012年07月21日に大崎のフィーチャーアーキテクトさんで行われた #DevLOVE (Chef De DevOps) に参加してきました。 開催日 : 2012年07月21日(土曜日) 15:00 -</description>
+    </item>
+    
+    <item>
+      <title>DNS の猛威とその対策, 参加レポ #interop2012</title>
+      <link>https://jedipunkz.github.io/blog/2012/06/16/dns-report-interop2012/</link>
+      <pubDate>Sat, 16 Jun 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/06/16/dns-report-interop2012/</guid>
+      <description>interop 2012 で &amp;lsquo;DNS の猛威とその対策&amp;rsquo; を傍聴してきました。簡単にレポート書い ておきます。ちょっと油断しただけで大きな問題のアップデートが出て</description>
+    </item>
+    
+    <item>
+      <title>Vyatta ハンズオン参加レポ #interop2012</title>
+      <link>https://jedipunkz.github.io/blog/2012/06/14/vyatta-handson-interop2012/</link>
+      <pubDate>Thu, 14 Jun 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/06/14/vyatta-handson-interop2012/</guid>
+      <description>interop 2012 で開催された &amp;ldquo;仮想ルータ Vyatta を使ったネットワーク構築法&amp;rdquo; に参 加してきました。簡単ですがレポートを書いておきます。 開</description>
+    </item>
+    
+    <item>
+      <title>Vyatta で構築する簡単 VPN サーバ</title>
+      <link>https://jedipunkz.github.io/blog/2012/06/13/vyatta-vpn/</link>
+      <pubDate>Wed, 13 Jun 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/06/13/vyatta-vpn/</guid>
+      <description>Vyatta で VPN しようと思ったら信じられないくらい簡単に構築できたので共有します。 今回は PPTP (Point-to-Point Tunneling Protocol) を用いました。 さっそく手順に。 $ configure # set vpn pptp remote-access authentication local-users username ${USER} password</description>
+    </item>
+    
+    <item>
+      <title>NetBSD インストール直後の初期設定まとめ</title>
+      <link>https://jedipunkz.github.io/blog/2012/05/12/netbsd-first-setup/</link>
+      <pubDate>Sat, 12 May 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/05/12/netbsd-first-setup/</guid>
+      <description>普段は Mac, Linux がメインなのですが、NetBSD もたまにデスクトップ機として利用 するので、初期設定手順をまとめ。 Console 設定, キーリマップ Caps と Ctrl キーを入</description>
+    </item>
+    
+    <item>
+      <title>Vyatta で無線アクセスポイント</title>
+      <link>https://jedipunkz.github.io/blog/2012/05/04/vyatta-wireless-ap/</link>
+      <pubDate>Fri, 04 May 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/05/04/vyatta-wireless-ap/</guid>
+      <description>自宅ルータを Vyatta で運用開始したのだけど、無線ルータ化ができたのでメモしておき ます。 まずはアクセスポイントとして稼働する無線カードの選定。下記の</description>
+    </item>
+    
+    <item>
+      <title>powerline.el で emacs モードラインを派手に</title>
+      <link>https://jedipunkz.github.io/blog/2012/05/04/powerline.el-emacs/</link>
+      <pubDate>Fri, 04 May 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/05/04/powerline.el-emacs/</guid>
+      <description>http://www.emacswiki.org/emacs-en/PowerLine vim の powerline に似たモードを emacs で実現できる powerline.el を試してみた。 見た目が派手でかわいくなるので、気に入った。w すでに下記のようなサイトで紹介さ れつつある</description>
+    </item>
+    
+    <item>
+      <title>vyatta で UPnP 接続</title>
+      <link>https://jedipunkz.github.io/blog/2012/04/29/vyatta-upnp/</link>
+      <pubDate>Sun, 29 Apr 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/04/29/vyatta-upnp/</guid>
+      <description>Vyatta を自宅ルータで使い始めて感じたのは、PS3 などのゲーム機や IP 電話など UPnP 接続が必要なことがあるってこと。ただ Vyatta は UPnP に対応していないので、 どう</description>
+    </item>
+    
+    <item>
+      <title>vyatta で自宅ルータ構築</title>
+      <link>https://jedipunkz.github.io/blog/2012/04/28/vyattarouter/</link>
+      <pubDate>Sat, 28 Apr 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/04/28/vyattarouter/</guid>
+      <description>自宅ルータを Vyatta で構築してみたくなり、秋葉原の ark でマシンを調達しました。 Broadcom の BCM57780 チップが搭載された NIC がマザーボード J&amp;amp;W MINIX™ H61M-USB3 だったのですが</description>
+    </item>
+    
+    <item>
+      <title>Mosh を使う</title>
+      <link>https://jedipunkz.github.io/blog/2012/04/14/ssh-mosh/</link>
+      <pubDate>Sat, 14 Apr 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/04/14/ssh-mosh/</guid>
+      <description>今週/先週？、Hacker News で取り上げられた Mosh を自宅 と会社で使い始めた。SSH 代替なソフトウェアで、SSP (State Synchronization Protocol)over UDP で動作している。MIT が開</description>
+    </item>
+    
+    <item>
+      <title>debian sid on thinkpad</title>
+      <link>https://jedipunkz.github.io/blog/2012/04/07/debian-sid-on-thinkpad-first-setup/</link>
+      <pubDate>Sat, 07 Apr 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/04/07/debian-sid-on-thinkpad-first-setup/</guid>
+      <description>ノート PC を購入するといつも Debian Gnu/Linux sid をインストールするのだけれど も、X Window System や InputMethod をインストールして利用し始められるところま での手順っていつも忘れる</description>
+    </item>
+    
+    <item>
+      <title>OpenFlow 勉強会</title>
+      <link>https://jedipunkz.github.io/blog/2012/03/07/openflow-mian-qiang-hui/</link>
+      <pubDate>Wed, 07 Mar 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/03/07/openflow-mian-qiang-hui/</guid>
+      <description>2012年2月6日、西新宿にある株式会社ニフティさんで行われた &amp;ldquo;OpenFlow 勉強会&amp;rdquo; に参加したので簡単なレポメモを書いておきます。 まずは OpenFlow の</description>
+    </item>
+    
+    <item>
+      <title>USB Stick で Debian Gnu/Linux インストール</title>
+      <link>https://jedipunkz.github.io/blog/2012/03/07/usb-stick-de-debian-gnu-slash-linux-insutoru/</link>
+      <pubDate>Wed, 07 Mar 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/03/07/usb-stick-de-debian-gnu-slash-linux-insutoru/</guid>
+      <description>MS Windows なツールを使う方法だったり、vmlinuz, initrd をファイラーでコピーしたり、何故かいつもインターネットで調べると USB スティックを利用した debian の</description>
+    </item>
+    
+    <item>
+      <title>cocoa な emacs インストール</title>
+      <link>https://jedipunkz.github.io/blog/2012/03/07/cocoa-na-emacs-insutoru/</link>
+      <pubDate>Wed, 07 Mar 2012 00:00:00 +0000</pubDate>
+      
+      <guid>https://jedipunkz.github.io/blog/2012/03/07/cocoa-na-emacs-insutoru/</guid>
+      <description>Carbon な API は排除していくべきと Apple も言っているようですし、自宅も会社も Cocoa な emacs を使うようになりました。 その手順を書いていきます。 ソースとパッチでビル</description>
     </item>
     
   </channel>
