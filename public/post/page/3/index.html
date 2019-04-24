@@ -205,7 +205,7 @@ if (!doNotTrack) {
                 <span class="post-meta">
   
   
-  <i class="fas fa-calendar"></i>&nbsp;Posted on December 31, 2018
+  <i class="fas fa-calendar"></i>&nbsp;Posted on April 24, 2019
   
   
   
@@ -231,6 +231,619 @@ if (!doNotTrack) {
       <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
         
         <div class="posts-list">
+          
+            <article class="post-preview">
+              <a href="https://jedipunkz.github.io/blog/2015/07/20/knife-zero-openstack-kilo/">
+                <h2 class="post-title">Knife-ZeroでOpenStack Kiloデプロイ(複数台編)</h2>
+
+                
+              </a>
+
+              <p class="post-meta">
+                <span class="post-meta">
+  
+  
+  <i class="fas fa-calendar"></i>&nbsp;Posted on July 20, 2015
+  
+  
+  
+  
+    &nbsp;|&nbsp;<i class="fas fa-user"></i>&nbsp;jedipunkz
+  
+  
+</span>
+
+
+              </p>
+              <div class="post-entry">
+                
+                  
+
+<p>こんにちは。@jedipunkz です。</p>
+
+<p>前回 OpenStack Kilo のオールインワン構成を Chef-Zero を使ってデプロイする方法
+を書きましたが、複数台構成についても調べたので結果をまとめていきます。</p>
+
+<p>使うのは openstack/openstack-chef-repo です。下記の URL にあります。</p>
+
+<p><a href="https://github.com/openstack/openstack-chef-repo">https://github.com/openstack/openstack-chef-repo</a></p>
+
+<p>この中に Vagrant を使ったファイルが存在しますが、実機でのデプロイには全く役に
+立ちません。自分で Environment ファイルを作成する必要があります。今回は前提の
+構成を作って、それに合わせた Environment ファイルを記します。ほぼスタンダード
+な構成にしましたので、自分の環境に合わせて修正するのも比較的簡単だと想います。
+参考にしてください。</p>
+
+<p>今回は knife-zero を使ってデプロイします。Chef サーバが必要なく、knife-zero を
+使うホスト上のオンメモリで Chef サーバが稼働するので準備がほとんど必要ありません。</p>
+
+<p>早速ですが、構成と準備・そしてデプロイ作業を記していきます。</p>
+
+<h2 id="前提の構成">前提の構成</h2>
+<div class="highlight"><pre class="chroma">   +------------+
+   | GW Router  |
++--+------------+
+|  |
+|  +--------------+--------------+---------------------------- public network
+|  | eth0         | eth0
+|  +------------+ +------------+ +------------+ +------------+
+|  | Controller | |  Network   | |  Compute   | | Knife-Zero | 
+|  +------------+ +-------+----+ +------+-----+ +------------+
+|  | eth1         | eth1  |      | eth1 |       | eth1 
++--+--------------+-------)------+------)-------+------------- api/management network
+                          | eth2        | eth2
+                          +-------------+--------------------- guest network</pre></div>
+<p>特徴としては&hellip;</p>
+
+<ul>
+<li>public, api/management, guest の3つのネットワークに接続された OpenStack ホスト</li>
+<li>Controller, Network, Compute の最小複数台構成</li>
+<li>knife-zero を実行する &lsquo;Knife-Zero&rsquo; ホスト</li>
+<li>Knife-zero ホストは api/management network のみに接続で可</li>
+<li>デプロイは api/management network を介して行う</li>
+<li>public, api/management network はインターネットへの疎通が必須</li>
+<li>OS は Ubuntu 14.04 amd64</li>
+</ul>
+
+<p>とくに api/management network がインターネットへの疎通が必要なところに注意して
+ください。デプロイは knife-zero ホストで実行しますが、各ノードへログインしデプ
+ロイする際にインターネット上からパッケージの取得を試みます。</p>
+
+<p>また api/management network を2つに分離するのも一般的ですが、ここでは一本にま
+とめています。</p>
+
+<h2 id="ip-アドレス">IP アドレス</h2>
+
+<p>IP アドレスは下記を前提にします。</p>
+
+<table>
+<thead>
+<tr>
+<th align="left">interface</th>
+<th align="left">IP addr</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td align="left">Controller eth0</td>
+<td align="left">10.0.1.10</td>
+</tr>
+
+<tr>
+<td align="left">Controller eth1</td>
+<td align="left">10.0.2.10</td>
+</tr>
+
+<tr>
+<td align="left">Network eth0</td>
+<td align="left">10.0.1.11</td>
+</tr>
+
+<tr>
+<td align="left">Network eth1</td>
+<td align="left">10.0.2.11</td>
+</tr>
+
+<tr>
+<td align="left">Network eth2</td>
+<td align="left">10.0.3.11</td>
+</tr>
+
+<tr>
+<td align="left">Compute eth1</td>
+<td align="left">10.0.2.12</td>
+</tr>
+
+<tr>
+<td align="left">Compute eth2</td>
+<td align="left">10.0.3.12</td>
+</tr>
+
+<tr>
+<td align="left">Knife-Zero eth1</td>
+<td align="left">10.0.2.13</td>
+</tr>
+</tbody>
+</table>
+
+<h2 id="ネットワークインターフェース設定">ネットワークインターフェース設定</h2>
+
+<p>それぞれのホストで下記のようにネットワークインターフェースを設定します。</p>
+
+<ul>
+<li>Controller ホスト</li>
+</ul>
+
+<p>eth0, 1 を使用します。</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">auto eth0
+iface eth0 inet static
+    address <span class="m">10</span>.0.1.10
+    netmask <span class="m">255</span>.255.255.0
+    gateway <span class="m">10</span>.0.1.254
+    dns-nameservers <span class="m">8</span>.8.8.8
+    dns-search jedihub.com
+
+auto eth1
+iface eth1 inet static
+    address <span class="m">10</span>.0.2.10
+    netmask <span class="m">255</span>.255.255.0
+
+auto eth2
+iface eth2 inet manual</code></pre></div>
+<ul>
+<li>Network ホスト</li>
+</ul>
+
+<p>eth0, 1, 2 全てを使用します。</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">auto eth0
+iface eth0 inet static
+        up ifconfig <span class="nv">$IFACE</span> <span class="m">0</span>.0.0.0 up
+        up ip link <span class="nb">set</span> <span class="nv">$IFACE</span> promisc on
+        down ip link <span class="nb">set</span> <span class="nv">$IFACE</span> promisc off
+        down ifconfig <span class="nv">$IFACE</span> down
+        address <span class="m">10</span>.0.1.11
+        netmask <span class="m">255</span>.255.255.0
+
+auto eth1
+iface eth1 inet static
+        address <span class="m">10</span>.0.2.11
+        netmask <span class="m">255</span>.255.255.0
+        gateway <span class="m">10</span>.0.2.248
+        dns-nameservers <span class="m">8</span>.8.8.8
+        dns-search jedihub.com
+
+auto eth2
+iface eth2 inet static
+        address <span class="m">10</span>.0.3.11
+        netmask <span class="m">255</span>.255.255.0</code></pre></div>
+<ul>
+<li>Compute ホスト</li>
+</ul>
+
+<p>eth1, 2 を使用します。</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">auto eth0
+iface eth0 inet manual
+
+auto eth1
+iface eth1 inet static
+        address <span class="m">10</span>.0.2.12
+        netmask <span class="m">255</span>.255.255.0
+        gateway <span class="m">10</span>.0.2.248
+        dns-nameservers <span class="m">8</span>.8.8.8
+        dns-search jedihub.com
+
+auto eth2
+iface eth2 inet static
+        address <span class="m">10</span>.0.3.12
+        netmask <span class="m">255</span>.255.255.0</code></pre></div>
+<p>これらの作業は knife-zero からログインし eth1 を介して行ってください。でないと
+接続が切断される可能性があります。</p>
+
+<h2 id="準備">準備</h2>
+
+<p>knife-zero ホストに chef, knife-zero, berkshelf が入っている必要があるので、こ
+こでインストールしていきます。</p>
+
+<p>knife-zero ホストに chef をインストールします。Omnibus パッケージを使って手っ
+取り早く環境を整えます。</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">sudo -i
+curl -L https://www.opscode.com/chef/install.sh <span class="p">|</span> bash</code></pre></div>
+<p>Berkshelf をインストールするのに必要なソフトウェアをインストールします。</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev ruby-dev libxml2-dev libxslt-dev g++</code></pre></div>
+<p>Berkshelf をインストールします。</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">/opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc</code></pre></div>
+<p>最後に knife-zero をインストールします。</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">/opt/chef/embedded/bin/gem install knife-zero --no-ri --no-rdoc</code></pre></div>
+<h2 id="デプロイ作業">デプロイ作業</h2>
+
+<p>それでは openstack-chef-repo を取得してデプロイの準備を行います。
+ブランチの指定は行わず master ブランチを取得します。Kilo は master ブランチで
+管理されています。次のバージョンの開発が始まるタイミングで &lsquo;stable/kilo&rsquo; ブラ
+ンチに管理が移されます。</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">sudo -i
+<span class="nb">cd</span> ~/
+git clone https://github.com/openstack/openstack-chef-repo.git</code></pre></div>
+<p>次に Berkshelf を使って必要な Cookbooks をダウンロードします。</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash"><span class="nb">cd</span> ~/openstack-chef-repo
+/opt/chef/embedded/bin/berks vendor ./cookbooks</code></pre></div>
+<p>Environment を作成します。これは各環境に合わせた設定ファイルのようなもので、各
+Cookbooks の Attributes を上書きする仕組みになっています。下記の内容を</p>
+<div class="highlight"><pre class="chroma">openstack-chef-repo/environments/multi-neutron-kilo.json</pre></div>
+<p>というファイル名で保存してください。</p>
+<div class="highlight"><pre class="chroma"><code class="language-json" data-lang="json"><span class="p">{</span>
+  <span class="nt">&#34;name&#34;</span><span class="p">:</span> <span class="s2">&#34;multi-neutron-kilo&#34;</span><span class="p">,</span>
+  <span class="nt">&#34;description&#34;</span><span class="p">:</span> <span class="s2">&#34;test&#34;</span><span class="p">,</span>
+  <span class="nt">&#34;cookbook_versions&#34;</span><span class="p">:</span> <span class="p">{</span>
+  <span class="p">},</span>
+  <span class="nt">&#34;json_class&#34;</span><span class="p">:</span> <span class="s2">&#34;Chef::Environment&#34;</span><span class="p">,</span>
+  <span class="nt">&#34;chef_type&#34;</span><span class="p">:</span> <span class="s2">&#34;environment&#34;</span><span class="p">,</span>
+  <span class="nt">&#34;default_attributes&#34;</span><span class="p">:</span> <span class="p">{</span>
+  <span class="p">},</span>
+  <span class="nt">&#34;override_attributes&#34;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nt">&#34;mysql&#34;</span><span class="p">:</span> <span class="p">{</span>
+      <span class="nt">&#34;bind_address&#34;</span><span class="p">:</span> <span class="s2">&#34;0.0.0.0&#34;</span><span class="p">,</span>
+      <span class="nt">&#34;server_root_password&#34;</span><span class="p">:</span> <span class="s2">&#34;mysqlroot&#34;</span><span class="p">,</span>
+      <span class="nt">&#34;server_debian_password&#34;</span><span class="p">:</span> <span class="s2">&#34;mysqlroot&#34;</span><span class="p">,</span>
+      <span class="nt">&#34;server_repl_password&#34;</span><span class="p">:</span> <span class="s2">&#34;mysqlroot&#34;</span><span class="p">,</span>
+      <span class="nt">&#34;allow_remote_root&#34;</span><span class="p">:</span> <span class="kc">true</span><span class="p">,</span>
+      <span class="nt">&#34;root_network_acl&#34;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&#34;10.0.0.0/8&#34;</span><span class="p">]</span>
+    <span class="p">},</span>
+    <span class="nt">&#34;rabbitmq&#34;</span><span class="p">:</span> <span class="p">{</span>
+      <span class="nt">&#34;address&#34;</span><span class="p">:</span> <span class="s2">&#34;0.0.0.0&#34;</span><span class="p">,</span>
+      <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;5672&#34;</span><span class="p">,</span>
+      <span class="nt">&#34;loopback_users&#34;</span><span class="p">:</span> <span class="p">[]</span>
+    <span class="p">},</span>
+    <span class="nt">&#34;openstack&#34;</span><span class="p">:</span> <span class="p">{</span>
+      <span class="nt">&#34;auth&#34;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="nt">&#34;validate_certs&#34;</span><span class="p">:</span> <span class="kc">false</span>
+      <span class="p">},</span>
+      <span class="nt">&#34;dashboard&#34;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="nt">&#34;session_backend&#34;</span><span class="p">:</span> <span class="s2">&#34;file&#34;</span>
+      <span class="p">},</span>
+      <span class="nt">&#34;block-storage&#34;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="nt">&#34;syslog&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;use&#34;</span><span class="p">:</span> <span class="kc">false</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;api&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;ratelimit&#34;</span><span class="p">:</span> <span class="s2">&#34;False&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;debug&#34;</span><span class="p">:</span> <span class="kc">true</span><span class="p">,</span>
+        <span class="nt">&#34;image_api_chef_role&#34;</span><span class="p">:</span> <span class="s2">&#34;os-image&#34;</span><span class="p">,</span>
+        <span class="nt">&#34;identity_service_chef_role&#34;</span><span class="p">:</span> <span class="s2">&#34;os-identity&#34;</span><span class="p">,</span>
+        <span class="nt">&#34;rabbit_server_chef_role&#34;</span><span class="p">:</span> <span class="s2">&#34;os-ops-messaging&#34;</span>
+      <span class="p">},</span>
+      <span class="nt">&#34;compute&#34;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="nt">&#34;rabbit&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;novnc_proxy&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;bind_interface&#34;</span><span class="p">:</span> <span class="s2">&#34;eth1&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;libvirt&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;virt_type&#34;</span><span class="p">:</span> <span class="s2">&#34;qemu&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;bind_interface&#34;</span><span class="p">:</span> <span class="s2">&#34;eth1&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;novnc_proxy&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;bind_interface&#34;</span><span class="p">:</span> <span class="s2">&#34;eth1&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;xvpvnc_proxy&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;bind_interface&#34;</span><span class="p">:</span> <span class="s2">&#34;eth1&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;image_api_chef_role&#34;</span><span class="p">:</span> <span class="s2">&#34;os-image&#34;</span><span class="p">,</span>
+        <span class="nt">&#34;identity_service_chef_role&#34;</span><span class="p">:</span> <span class="s2">&#34;os-identity&#34;</span><span class="p">,</span>
+        <span class="nt">&#34;nova_setup_chef_role&#34;</span><span class="p">:</span> <span class="s2">&#34;os-compute-api&#34;</span><span class="p">,</span>
+        <span class="nt">&#34;rabbit_server_chef_role&#34;</span><span class="p">:</span> <span class="s2">&#34;os-ops-messaging&#34;</span><span class="p">,</span>
+        <span class="nt">&#34;network&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;public_interface&#34;</span><span class="p">:</span> <span class="s2">&#34;eth1&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;service_type&#34;</span><span class="p">:</span> <span class="s2">&#34;neutron&#34;</span>
+        <span class="p">}</span>
+      <span class="p">},</span>
+      <span class="nt">&#34;network&#34;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="nt">&#34;debug&#34;</span><span class="p">:</span> <span class="s2">&#34;True&#34;</span><span class="p">,</span>
+        <span class="nt">&#34;dhcp&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;enable_isolated_metadata&#34;</span><span class="p">:</span> <span class="s2">&#34;True&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;metadata&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;nova_metadata_ip&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;openvswitch&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;tunnel_id_ranges&#34;</span><span class="p">:</span> <span class="s2">&#34;1:1000&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;enable_tunneling&#34;</span><span class="p">:</span> <span class="s2">&#34;True&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;tenant_network_type&#34;</span><span class="p">:</span> <span class="s2">&#34;gre&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;tunnel_types&#34;</span><span class="p">:</span> <span class="s2">&#34;gre&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;tunnel_type&#34;</span><span class="p">:</span> <span class="s2">&#34;gre&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;bridge_mappings&#34;</span><span class="p">:</span> <span class="s2">&#34;physnet1:br-eth2&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;bridge_mapping_interface&#34;</span><span class="p">:</span> <span class="s2">&#34;br-eth2:eth2&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;ml2&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;tenant_network_types&#34;</span><span class="p">:</span> <span class="s2">&#34;gre&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;mechanism_drivers&#34;</span><span class="p">:</span> <span class="s2">&#34;openvswitch&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;tunnel_id_ranges&#34;</span><span class="p">:</span> <span class="s2">&#34;1:1000&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;enable_security_group&#34;</span><span class="p">:</span> <span class="s2">&#34;True&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;api&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;bind_interface&#34;</span><span class="p">:</span> <span class="s2">&#34;eth1&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;l3&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;external_network_bridge_interface&#34;</span><span class="p">:</span> <span class="s2">&#34;eth0&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;service_plugins&#34;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&#34;neutron.services.l3_router.l3_router_plugin.L3RouterPlugin&#34;</span><span class="p">]</span>
+      <span class="p">},</span>
+      <span class="nt">&#34;db&#34;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="nt">&#34;bind_interface&#34;</span><span class="p">:</span> <span class="s2">&#34;eth1&#34;</span><span class="p">,</span>
+        <span class="nt">&#34;compute&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;identity&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;image&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;network&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;volume&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;dashboard&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;telemetry&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;orchestration&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span>
+        <span class="p">}</span>
+      <span class="p">},</span>
+      <span class="nt">&#34;developer_mode&#34;</span><span class="p">:</span> <span class="kc">true</span><span class="p">,</span>
+      <span class="nt">&#34;endpoints&#34;</span><span class="p">:</span> <span class="p">{</span>
+        <span class="nt">&#34;network-openvswitch&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;bind_interface&#34;</span><span class="p">:</span> <span class="s2">&#34;eth1&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;compute-api-bind&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;8774&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;compute-api&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;8774&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;compute-ec2-admin-bind&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;8773&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;compute-ec2-admin&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;8773&#34;</span>
+        <span class="p">},</span>
+       <span class="nt">&#34;compute-ec2-api-bind&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;8773&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;compute-ec2-api&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;8773&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;compute-xvpvnc&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;6081&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;compute-novnc-bind&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;6080&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;compute-novnc&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;6080&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;compute-vnc&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;0.0.0.0&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;6080&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;image-api&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;9292&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;image-api-bind&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;9292&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;image-registry&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;9191&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;image-registry-bind&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;9191&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;identity-api&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;5000&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;identity-bind&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;5000&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;identity-admin&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;35357&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;identity-internal&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;35357&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;volume-api-bind&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;8776&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;volume-api&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;8776&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;telemetry-api&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.10&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;8777&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;network-api-bind&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.11&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;scheme&#34;</span><span class="p">:</span> <span class="s2">&#34;http&#34;</span><span class="p">,</span>
+          <span class="nt">&#34;port&#34;</span><span class="p">:</span> <span class="s2">&#34;9696&#34;</span>
+        <span class="p">},</span>
+        <span class="nt">&#34;network-api&#34;</span><span class="p">:</span> <span class="p">{</span>
+          <span class="nt">&#34;host&#34;</span><span class="p">:</span> <span class="s2">&#34;10.0.2.11,
+</span><span class="s2">          &#34;</span><span class="err">scheme</span><span class="s2">&#34;: &#34;</span><span class="err">http</span><span class="s2">&#34;,
+</span><span class="s2">          &#34;</span><span class="err">port</span><span class="s2">&#34;: &#34;</span><span class="mi">9696</span><span class="s2">&#34;
+</span><span class="s2">        },
+</span><span class="s2">        &#34;</span><span class="err">block-storage-api-bind</span><span class="s2">&#34;: {
+</span><span class="s2">          &#34;</span><span class="err">host</span><span class="s2">&#34;: &#34;</span><span class="mf">10.0</span><span class="err">.</span><span class="mf">2.10</span><span class="s2">&#34;,
+</span><span class="s2">          &#34;</span><span class="err">port</span><span class="s2">&#34;: &#34;</span><span class="mi">8776</span><span class="s2">&#34;,
+</span><span class="s2">          &#34;</span><span class="err">bind_interface</span><span class="s2">&#34;: &#34;</span><span class="err">eth</span><span class="mi">1</span><span class="s2">&#34;
+</span><span class="s2">        },
+</span><span class="s2">        &#34;</span><span class="err">block-storage-api</span><span class="s2">&#34;: {
+</span><span class="s2">          &#34;</span><span class="err">host</span><span class="s2">&#34;: &#34;</span><span class="mf">10.0</span><span class="err">.</span><span class="mf">2.10</span><span class="s2">&#34;,
+</span><span class="s2">          &#34;</span><span class="err">scheme</span><span class="s2">&#34;: &#34;</span><span class="err">http</span><span class="s2">&#34;,
+</span><span class="s2">          &#34;</span><span class="err">port</span><span class="s2">&#34;: &#34;</span><span class="mi">8776</span><span class="s2">&#34;
+</span><span class="s2">        },
+</span><span class="s2">        &#34;</span><span class="err">orchestration-api</span><span class="s2">&#34;: {
+</span><span class="s2">          &#34;</span><span class="err">host</span><span class="s2">&#34;: &#34;</span><span class="mf">10.0</span><span class="err">.</span><span class="mf">2.10</span><span class="s2">&#34;,
+</span><span class="s2">          &#34;</span><span class="err">scheme</span><span class="s2">&#34;: &#34;</span><span class="err">http</span><span class="s2">&#34;,
+</span><span class="s2">          &#34;</span><span class="err">port</span><span class="s2">&#34;: &#34;</span><span class="mi">8004</span><span class="s2">&#34;
+</span><span class="s2">        },
+</span><span class="s2">        &#34;</span><span class="err">orchestration-api-cfn</span><span class="s2">&#34;: {
+</span><span class="s2">          &#34;</span><span class="err">host</span><span class="s2">&#34;: &#34;</span><span class="mf">10.0</span><span class="err">.</span><span class="mf">2.10</span><span class="s2">&#34;,
+</span><span class="s2">          &#34;</span><span class="err">scheme</span><span class="s2">&#34;: &#34;</span><span class="err">http</span><span class="s2">&#34;,
+</span><span class="s2">          &#34;</span><span class="err">port</span><span class="s2">&#34;: &#34;</span><span class="mi">8000</span><span class="s2">&#34;
+</span><span class="s2">        },
+</span><span class="s2">        &#34;</span><span class="err">db</span><span class="s2">&#34;: {
+</span><span class="s2">          &#34;</span><span class="err">host</span><span class="s2">&#34;: &#34;</span><span class="mf">0.0</span><span class="err">.</span><span class="mf">0.0</span><span class="s2">&#34;,
+</span><span class="s2">          &#34;</span><span class="err">port</span><span class="s2">&#34;: &#34;</span><span class="mi">3306</span><span class="s2">&#34;
+</span><span class="s2">        },
+</span><span class="s2">        &#34;</span><span class="err">bind-host</span><span class="s2">&#34;: &#34;</span><span class="mf">0.0</span><span class="err">.</span><span class="mf">0.0</span><span class="s2">&#34;
+</span><span class="s2">      },
+</span><span class="s2">      &#34;</span><span class="err">identity</span><span class="s2">&#34;: {
+</span><span class="s2">        &#34;</span><span class="err">admin_user</span><span class="s2">&#34;: &#34;</span><span class="err">admin</span><span class="s2">&#34;,
+</span><span class="s2">        &#34;</span><span class="err">bind_interface</span><span class="s2">&#34;: &#34;</span><span class="err">eth</span><span class="mi">1</span><span class="s2">&#34;,
+</span><span class="s2">        &#34;</span><span class="err">debug</span><span class="s2">&#34;: true
+</span><span class="s2">      },
+</span><span class="s2">      &#34;</span><span class="err">image</span><span class="s2">&#34;: {
+</span><span class="s2">        &#34;</span><span class="err">api</span><span class="s2">&#34;: {
+</span><span class="s2">          &#34;</span><span class="err">bind_interface</span><span class="s2">&#34;: &#34;</span><span class="err">eth</span><span class="mi">1</span><span class="s2">&#34;
+</span><span class="s2">        },
+</span><span class="s2">        &#34;</span><span class="err">debug</span><span class="s2">&#34;: true,
+</span><span class="s2">        &#34;</span><span class="err">identity_service_chef_role</span><span class="s2">&#34;: &#34;</span><span class="err">os-identity</span><span class="s2">&#34;,
+</span><span class="s2">        &#34;</span><span class="err">rabbit_server_chef_role</span><span class="s2">&#34;: &#34;</span><span class="err">os-ops-messaging</span><span class="s2">&#34;,
+</span><span class="s2">        &#34;</span><span class="err">registry</span><span class="s2">&#34;: {
+</span><span class="s2">          &#34;</span><span class="err">bind_interface</span><span class="s2">&#34;: &#34;</span><span class="err">eth</span><span class="mi">1</span><span class="s2">&#34;
+</span><span class="s2">        },
+</span><span class="s2">        &#34;</span><span class="err">syslog</span><span class="s2">&#34;: {
+</span><span class="s2">          &#34;</span><span class="err">use</span><span class="s2">&#34;: false
+</span><span class="s2">        }
+</span><span class="s2">      },
+</span><span class="s2">      &#34;</span><span class="err">mq</span><span class="s2">&#34;: {
+</span><span class="s2">        &#34;</span><span class="err">bind_interface</span><span class="s2">&#34;: &#34;</span><span class="err">eth</span><span class="mi">1</span><span class="s2">&#34;,
+</span><span class="s2">        &#34;</span><span class="err">host</span><span class="s2">&#34;: &#34;</span><span class="mf">10.0</span><span class="err">.</span><span class="mf">2.10</span><span class="s2">&#34;,
+</span><span class="s2">        &#34;</span><span class="err">user</span><span class="s2">&#34;: &#34;</span><span class="err">guest</span><span class="s2">&#34;,
+</span><span class="s2">        &#34;</span><span class="err">vhost</span><span class="s2">&#34;: &#34;</span><span class="err">/nova</span><span class="s2">&#34;,
+</span><span class="s2">        &#34;</span><span class="err">network</span><span class="s2">&#34;: {
+</span><span class="s2">          &#34;</span><span class="err">rabbit</span><span class="s2">&#34;: {
+</span><span class="s2">             &#34;</span><span class="err">host</span><span class="s2">&#34;: &#34;</span><span class="mf">10.0</span><span class="err">.</span><span class="mf">2.10</span><span class="s2">&#34;,
+</span><span class="s2">             &#34;</span><span class="err">port</span><span class="s2">&#34;: &#34;</span><span class="mi">5672</span><span class="s2">&#34;
+</span><span class="s2">          }
+</span><span class="s2">        },
+</span><span class="s2">        &#34;</span><span class="err">compute</span><span class="s2">&#34;: {
+</span><span class="s2">           &#34;</span><span class="err">service_type</span><span class="s2">&#34;: &#34;</span><span class="err">rabbitmq</span><span class="s2">&#34;,
+</span><span class="s2">          &#34;</span><span class="err">rabbit</span><span class="s2">&#34;: {
+</span><span class="s2">            &#34;</span><span class="err">host</span><span class="s2">&#34;: &#34;</span><span class="mf">10.0</span><span class="err">.</span><span class="mf">2.10</span><span class="s2">&#34;,
+</span><span class="s2">            &#34;</span><span class="err">port</span><span class="s2">&#34;: &#34;</span><span class="mi">5672</span><span class="s2">&#34;
+</span><span class="s2">          }
+</span><span class="s2">        },
+</span><span class="s2">        &#34;</span><span class="err">block-storage</span><span class="s2">&#34;: {
+</span><span class="s2">          &#34;</span><span class="err">service_type</span><span class="s2">&#34;: &#34;</span><span class="err">rabbitmq</span><span class="s2">&#34;,
+</span><span class="s2">          &#34;</span><span class="err">rabbit</span><span class="s2">&#34;: {
+</span><span class="s2">            &#34;</span><span class="err">host</span><span class="s2">&#34;: &#34;</span><span class="mf">10.0</span><span class="err">.</span><span class="mf">2.10</span><span class="s2">&#34;,
+</span><span class="s2">            &#34;</span><span class="err">port</span><span class="s2">&#34;: &#34;</span><span class="mi">5672</span><span class="s2">&#34;
+</span><span class="s2">          }
+</span><span class="s2">        }
+</span><span class="s2">      }
+</span><span class="s2">    },
+</span><span class="s2">    &#34;</span><span class="err">queue</span><span class="s2">&#34;: {
+</span><span class="s2">      &#34;</span><span class="err">host</span><span class="s2">&#34;: &#34;</span><span class="mf">10.0</span><span class="err">.</span><span class="mf">2.10</span><span class="s2">&#34;,
+</span><span class="s2">      &#34;</span><span class="err">user</span><span class="s2">&#34;: &#34;</span><span class="err">guest</span><span class="s2">&#34;,
+</span><span class="s2">      &#34;</span><span class="err">vhost</span><span class="s2">&#34;: &#34;</span><span class="err">/nova&#34;</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span></code></pre></div>
+<p>上記ファイルでは virt_type : qemu に設定していますが、KVM リソースを利用出来る
+環境であればここを削除してください。デフォルトの &lsquo;kvm&rsquo; が適用されます。また気
+をつけることは IP アドレスとネットワークインターフェース名です。環境に合わせて
+設定していきましょう。今回は前提構成に合わせて environemnt ファイルを作ってい
+ます。</p>
+
+<p>次に openstack-chef-repo/.chef/encrypted_data_bag_secret というファイルが
+knife-zero ホストにあるはずです。これをデプロイ対象の3ノードに事前に転送してお
+く必要があります。</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">scp openstack-chef-repo/.chef/encrypted_data_bag_secret <span class="m">10</span>.0.2.10:/tmp/
+scp openstack-chef-repo/.chef/encrypted_data_bag_secret <span class="m">10</span>.0.2.11:/tmp/
+scp openstack-chef-repo/.chef/encrypted_data_bag_secret <span class="m">10</span>.0.2.12:/tmp/</code></pre></div>
+<p>対象ホストにて</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">mkdir /etc/chef
+mv /tmp/encrypted_data_bag_secret /etc/chef/openstack_data_bag_secret</code></pre></div>
+<p>ではいよいよデプロイです。</p>
+
+<p>Controller ホストへのデプロイ</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">knife zero bootstrap <span class="m">10</span>.0.2.10 -N kilo01 -r <span class="s1">&#39;role[os-compute-single-controller-no-network]&#39;</span> -E multi-neutron-kilo -x &lt;USERNAME&gt; --sudo</code></pre></div>
+<p>Network ホストへのデプロイ</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">knife zero bootstrap <span class="m">10</span>.0.2.11 -N kilo02 -r <span class="s1">&#39;role[os-client]&#39;</span>,<span class="s1">&#39;role[os-network]&#39;</span> -E multi-neutron-kilo -x &lt;USERNAME&gt; --sudo</code></pre></div>
+<p>Compute ノードへのデプロイ</p>
+<div class="highlight"><pre class="chroma"><code class="language-bash" data-lang="bash">knife zero bootstrap <span class="m">10</span>.0.2.12 -N kilo03 -r <span class="s1">&#39;role[os-compute-worker]&#39;</span> -E multi-neutron-kilo -x &lt;USERNAME&gt; --sudo</code></pre></div>
+<p>これで完了です。admin/mypass というユーザ・パスワードでログインが可能です。</p>
+
+<h2 id="まとめ">まとめ</h2>
+
+<p>openstack-chef-repo を使って OpenStack Kilo の複数台構成をデプロイ出来ました。重要なのは Environment をどうやって作るか？ですが、
+私は 作成 -&gt; デプロイ -&gt; 修正 -&gt; デプロイ -&gt;&hellip;. を繰り返して作成しています。何度実行しても不具合は発生しない設計なクックブックに
+なっていますので、このような作業が可能になります。また、「ここの設定を追加したい」という時は&hellip;</p>
+
+<ul>
+<li>該当の template を探す</li>
+<li>該当のパラメータを確認する</li>
+<li>recipe 内で template にどうパラメータを渡しているか確認する</li>
+<li>attribute なり、変数なりを修正するための方法を探す</li>
+</ul>
+
+<p>と行います。比較的難しい作業になるのですが、自らの環境に合わせた Environment を作成するにはこれらの作業が必須となってきます。</p>
+
+<p>以上、複数台構成のデプロイ方法についてでした。</p>
+
+                
+              </div>
+
+              
+
+            </article>
           
             <article class="post-preview">
               <a href="https://jedipunkz.github.io/blog/2015/07/16/chef-zero-openstack-allinone/">
@@ -667,40 +1280,6 @@ display_name, size のみを指定し仮想ディスクを作成しました。�
 
             </article>
           
-            <article class="post-preview">
-              <a href="https://jedipunkz.github.io/blog/2014/05/29/fog-aws-ec2-elb/">
-                <h2 class="post-title">クラウドライブラリ Fog で AWS を操作！..のサンプル</h2>
-
-                
-              </a>
-
-              <p class="post-meta">
-                <span class="post-meta">
-  
-  
-  <i class="fas fa-calendar"></i>&nbsp;Posted on May 29, 2014
-  
-  
-  
-  
-    &nbsp;|&nbsp;<i class="fas fa-user"></i>&nbsp;jedipunkz
-  
-  
-</span>
-
-
-              </p>
-              <div class="post-entry">
-                
-                  こんにちは。@jedipunkz です。 最近 OpenStack でサービスを開発！.. じゃなくて AWS でプロトタイプサービス作っ ているのですが、Ruby で開発したか
-                  <a href="https://jedipunkz.github.io/blog/2014/05/29/fog-aws-ec2-elb/" class="post-read-more">[Read More]</a>
-                
-              </div>
-
-              
-
-            </article>
-          
         </div>
         
           <ul class="pager main-pager">
@@ -772,7 +1351,7 @@ display_name, size のみを指定し仮想ディスクを作成しました。�
 
           &nbsp;&bull;&nbsp;&copy;
           
-            2018
+            2019
           
 
           
