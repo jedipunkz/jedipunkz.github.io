@@ -2,7 +2,6 @@
 title: "Istio Sidecar Injection を理解する"
 date: 2019-04-24T22:55:45+09:00
 Categories: ["infrastructure"]
-draft: true
 ---
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
