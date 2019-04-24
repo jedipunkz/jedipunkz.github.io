@@ -6,7 +6,7 @@ draft: true
 ---
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
-前回の記事 「Istio, Helm を使って Getting Started 的なアプリをデプロイ」(https://jedipunkz.github.io/blog/2018/12/31/istio/) で kubernetes 上で istio をインストールし sidecar injection を有効化しサンプルアプリケーションを起動しました。その結果、sidecar 的に envoy コンテナが起動するところまで確認しました。今回はもう少し単純な pod を用いて 'sidecar injection' の中身をもう少しだけ深掘りして見ていきたいと思います。
+前回の記事 <a href="https://jedipunkz.github.io/blog/2018/12/31/istio/">「Istio, Helm を使って Getting Started 的なアプリをデプロイ」</a>で kubernetes 上で istio をインストールし sidecar injection を有効化しサンプルアプリケーションを起動しました。その結果、sidecar 的に envoy コンテナが起動するところまで確認しました。今回はもう少し単純な pod を用いて 'sidecar injection' の中身をもう少しだけ深掘りして見ていきたいと思います。
 
 ## Rquirements
 
