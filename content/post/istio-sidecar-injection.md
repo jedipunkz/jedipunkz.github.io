@@ -7,7 +7,7 @@ Categories: ["infrastructure"]
 
 前回の記事 <a href="https://jedipunkz.github.io/blog/2018/12/31/istio/">「Istio, Helm を使って Getting Started 的なアプリをデプロイ」</a>で kubernetes 上で istio をインストールし sidecar injection を有効化しサンプルアプリケーションを起動しました。その結果、sidecar 的に envoy コンテナが起動するところまで確認しました。今回はもう少し単純な pod を用いて 'sidecar injection' の中身をもう少しだけ深掘りして見ていきたいと思います。
 
-## Rquirements
+### Rquirements
 
 記事と同等の動きを確認するために下記のソフトウェアが必要になります。
 それぞれのソフトウェアは事前にインストールされた前提で記事を記していきます。
@@ -17,14 +17,14 @@ Categories: ["infrastructure"]
 - istioctl
 - minikube
 
-## 参考 URL
+### 参考 URL
 
 下記の istio 公式ドキュメントを参考に動作確認しました。
 
 - https://istio.io/docs/setup/kubernetes/additional-setup/sidecar-injection/
 - https://istio.io/docs/setup/kubernetes/additional-setup/sidecar-injection/
 
-## minikube で kubenetes をデプロイ
+### minikube で kubenetes をデプロイ
 
 前回同様に minikube 上で動作を確認していきます。パラメータは適宜、自分の環境に読み替えてください。
 
@@ -35,7 +35,7 @@ minikube start --memory=8192 --cpus=4 --kubernetes-version=v1.10.0 \
   --vm-driver=virtualbox
 ```
 
-## istio を稼働させる
+### istio を稼働させる
 
 下記のコマンドを用いてカレントディレクトリに istio のサンプル yaml が入ったフォルダを展開します。
 
@@ -100,7 +100,7 @@ kiali-95fcf457f-kfdhp                     1/1     Running     0          115m
 prometheus-5554746896-ccs5x               1/1     Running     0          115m
 ```
 
-## istio-injection な状態でサンプル pod コンテナ 'sleep' を起動
+### istio-injection な状態でサンプル pod コンテナ 'sleep' を起動
 
 ここで sleep コマンドが起動するだけの pod コンテナを istio-injection=enabled な状態でデプロイします。まず先程ダウンロードしたディレクトリ上の sleep.yaml を見てみましょう。
 
@@ -150,7 +150,7 @@ spec:
 kubectl apply -f <(istioctl kube-inject -f samples/sleep/sleep.yaml)
 ```
 
-## デプロイされた状態を確認し sidecar コンテナを知る
+### デプロイされた状態を確認し sidecar コンテナを知る
 
 デプロイされた Deployment を見てみましょう。
 
@@ -219,7 +219,7 @@ Containers:
     Host Port:     0/TCP
 ```
 
-## sidecar のテンプレートとなる configmap を確認する
+### sidecar のテンプレートとなる configmap を確認する
 
 今回 istio-injection=enabled な状態で 'sleep' コンテナをデプロイし本体のコンテナとは別に sidecar なコンテナ2つが稼働することが確認できました。次に説明するのが configmap です。どの様な状態でどの様なコンテナを sidecar 的に稼働させるかのルールを記したものが `istio-sidecar-injector` という configmap になります。その configmap の内容を確認してみましょう。
 
@@ -288,7 +288,7 @@ template: |-
 - プロトコル
 - etc..
 
-## pod の iptables を確認してトラヒックを理解する
+### pod の iptables を確認してトラヒックを理解する
 
 次に minikube のホストにログインしサービス pod (今回は 'sleep') に割り当てられた iptables の内容を確認してみましょう。
 
@@ -326,7 +326,7 @@ sudo nsenter -t 20066 -n iptables -t nat -S
 
 結果から、この pod は INBOUND 通信のリダイレクト先ポートとして 15001 番ポートが指定されているのが分かります。このポートは istio-proxy が待ち受けているポートになります。また OUTBOUND 通信に関しても同様に 15001 番ポートにリダイレクトされているのが分かります。よって 'sleep' pod コンテナの全ての通信が istio-proxy を介すようになっています。また今回は単純に sleep するだけのコンテナを起動しましたが、http サーバ等を起動する pod を立ち上げた場合 `-A ISTIO_INBOUND -p tcp -m tcp --dport 80 -j ISTIO_IN_REDIRECT` といった制御も確認出来ると思います。
 
-## まとめ
+### まとめ
 
 kubernetes 上に istio をインストールすることで、テストで起動した pod コンテナに隣接する形で sidecar コンテナ istio-proxy, istio-init コンテナが起動することが確認出来ました。またそれらのコンテナを起動するテンプレートとなる configmap の内容を確認することができました。この configmap は修正することが可能な様です。そしてこの pod コンテナのインバウンド・アウトバウンドの通信は全て istio-proxy コンテナにリダイレクトされていることも分かりました。また今回は configmap の内容を確認するに留まりましたが、istio の機能としては routing, service discovery 等も有しているため、次回は routing あたりを調べようかと思っています。この routing を操作することで今回確認した iptables の内容も変わってくるのではないでしょうか。
 
