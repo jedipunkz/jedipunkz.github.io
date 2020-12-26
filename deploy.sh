@@ -5,7 +5,7 @@ if [ $# != 1 ]; then
     exit
 fi
 
-hugo -t beautifulhugo
+hugo -t hugo-PaperMod
 
 git add .
 git commit -m "$1"
