@@ -1,5 +1,5 @@
 ---
-title: "Go 言語と awscli を使って ECS/Fargate 上でコマンドを実行する2つの方法"
+title: "Go 言語と awscli を使って ECS/Fargate 上でコマンド実行してみた"
 date: 2021-04-13T18:35:36+09:00
 Categories: ["infrastructure"]
 draft: false
@@ -12,8 +12,8 @@ draft: false
 
 下記の2つの ECS の機能についてそれぞれ Go 言語, awscli で動作検証実施しました。
 
-- [ECS Execute Command (New)](https://aws.amazon.com/jp/blogs/news/new-using-amazon-ecs-exec-access-your-containers-fargate-ec2/)
-- [ECS Run Task](https://docs.aws.amazon.com/cli/latest/reference/ecs/run-task.html)
+- [(1) ECS Execute Command (2021/03 リリース)](https://aws.amazon.com/jp/blogs/news/new-using-amazon-ecs-exec-access-your-containers-fargate-ec2/)
+- [(2) ECS Run Task](https://docs.aws.amazon.com/cli/latest/reference/ecs/run-task.html)
 
 ## 用いるツール類
 
@@ -59,7 +59,7 @@ taksRoleArn の内容については https://docs.aws.amazon.com/ja_jp/AmazonECS
 ```
 
 ## コマンド実行
-### ECS Exuecute Command (2021/03 New)
+### (1) ECS Exuecute Command (2021/03 リリース)
 
 まず最近リリースされた ECS コマンド実行について試します。Terraform やその他の周辺の技術 (aws 公式 GitHub Actions 等も)、この機能にはまだ対応していません。awscli (v1, v2), session-manager, aws-sdk-go 等が既に対応しています。ここでは awscli, aws-sdk-go を使ってこの機能を試してみます。
 
@@ -183,7 +183,7 @@ func main() {
 
 残念ながらコマンド結果はレスポンスには入っていないようです。が、コマンドは正常を正常に叩いたかの API レスポンスとしてはエラーも検知出来ます。
 
-### ECS Run Task によるコマンドのオーバーライド
+### (2) ECS Run Task によるコマンドのオーバーライド
 
 次に ECS Run Task によるコマンドのオーバーライドについて記します。こちらは以前からある機能なのでほぼすべての周辺ツールが対応している認識です。まず awscli で動作確認してみます。
 
@@ -304,6 +304,7 @@ func main() {
 - Terraform, aws 公式 [GitHub Actions](https://github.com/aws-actions/amazon-ecs-render-task-definition) 等がまだ対応していない
 - awscli ではコマンド結果が得られるが aws-sdk を用いると API のレスポンスにコマンド結果が入ってない
 - 実行する際には TaskId を指定。よって予め Run Task などで Task を起動させるのが前提になる
+- インタラクティブ(対話的) にコマンドを実行出来るそう (未検証)
 
 ### Run Task の特徴
 
