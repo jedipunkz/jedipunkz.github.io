@@ -61,7 +61,12 @@ taksRoleArn の内容については https://docs.aws.amazon.com/ja_jp/AmazonECS
 ## コマンド実行
 ### (1) ECS Exuecute Command (2021/03 リリース)
 
-まず最近リリースされた ECS コマンド実行について試します。Terraform やその他の周辺の技術 (aws 公式 GitHub Actions 等も)、この機能にはまだ対応していません。awscli (v1, v2), session-manager, aws-sdk-go 等が既に対応しています。ここでは awscli, aws-sdk-go を使ってこの機能を試してみます。
+まず最近リリースされた ECS コマンド実行について試します。~~Terraform やその他の周辺の技術 (aws 公式 GitHub Actions 等も)、この機能にはまだ対応していません。~~ awscli (v1, v2), session-manager, aws-sdk-go 等が既に対応しています。ここでは awscli, aws-sdk-go を使ってこの機能を試してみます。
+
+(2021/04/21 追記) 下記の通り Terraform も aws 公式 GitHub Actions も既に対応されていました。
+
+- [Terraform Execute Command 対応](https://github.com/hashicorp/terraform-provider-aws/pull/18347)
+- [aws 公式 ECS Task Definition Render GitHub Actions](https://github.com/aws-actions/amazon-ecs-deploy-task-definition/pull/183)
 
 awscli, session-manager, aws-sdk-go は比較的新しいバージョンを事前にインストールする必要があります。
 
