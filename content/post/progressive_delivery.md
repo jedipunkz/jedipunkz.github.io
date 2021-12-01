@@ -1,5 +1,5 @@
 ---
-title: "Progressive Delivery の調査"
+title: "ECS 以後の構成と Progressive Delivery の調査"
 date: 2021-11-11T17:28:46+09:00
 Categories: ["infrastructure"]
 draft: false
@@ -8,11 +8,11 @@ draft: false
 
 今回は自分が勤めている企業の AdventCalendar として記事を書きます。
 
-自分が今勤めている企業では 2021 年の夏に AWS ECS へプラットフォーム移行をしました。ECS は自分達の要件を全て満たしてくれ、運用コストも極小化できて更に周辺の技術も AWS 公式のものが揃っているので、とても満足している状況です。
+自分が今勤めている企業では 2021 年の夏に AWS ECS へプラットフォーム移行をしました。ECS は自分達の要件を全て満たしてくれ運用コストも極小化できて更に周辺の技術も AWS 公式のものが揃っているので、とても満足している状況です。
 
-移行を終えたばかりなので「では次のアーキテクチャは？」という話にはまだなっていないのですが、今は準備期間として余裕を持ってスケジューリングできる状態にして頂いているので、SRE としては色々な技術をリサーチしている段階になります。
+移行を終えたばかりなので「では次のアーキテクチャは？」という話にはまだなっていないのですが、今は準備期間として余裕を持ってスケジューリングできる状態にして頂いているので、SRE チームとしては色々な技術をリサーチしている段階になります。
 
-今は ECS + CodeDeploy を使って Blue/Green デプロイメントを実現しているのですが、よりモダンなデプロイ方式 Progressive Delivery について去年あたりから興味を持っていました。ただ、今までは実際に技術を触るまでには至っていなかったので、この機会に色々と触ってみたという次第です。
+今現在は ECS + CodeDeploy を使って Blue/Green デプロイメントを実現しているのですが、よりモダンなデプロイ方式 Progressive Delivery について去年あたりから興味を持っていました。ただ、今までは実際に技術を触るまでには至っていなかったのでこの機会に色々と触ってみたという次第です。
 
 今までも Blue/Green デプロイメント, Canary リリースとデプロイ方式が複数ありましたが、これらを含む継続的デリバリの次のステップと言われているのが Progressive Delivery です。2020年に Hashicorp 社の [Mitchell Hashimoto 氏](https://twitter.com/mitchellh) が来日した際に「今一番気になっているワード」としてあげていましたのが印象的でした。
 
@@ -21,7 +21,7 @@ draft: false
 Progressive Delivery の話をする前に ECS を使った Canary リリースについて少し触れておきます。
 (具体的な話についても、どこかのタイミングで記事にできればと思っています)
 
-AWS App Mesh と ECS, X-Ray を使って下記のような構成を作りました。この構成中の App Mesh の Virtual Router のルーティング情報を修正する形で Canary リリースのトラヒック操作が行えます。ECS 以前は Canary リリースを実現できていて、ECS 導入によってそれがデグレした状態だったので、これは一つの成果だったと思っていますし、今回話をする Progressive Delivery のひとつ前のステップとも考えています。
+AWS App Mesh と ECS, X-Ray を使って下記のような構成を作りました。この構成中の App Mesh の Virtual Router のルーティング情報を修正する形で Canary リリースのトラヒック操作が行えます。ECS 以前は Canary リリースを実現できていて ECS 導入によってそれがデグレした状態だったので、この構成の検証は一つの成果だったと思っていますし、今回話をする Progressive Delivery のひとつ前のステップとも考えています。
 
 ```
                              
@@ -93,7 +93,7 @@ Progressive Delivery では下記の様になります。 (ref: https://static.s
 
 ### マルチ Analysis プロバイダ対応
 
-Analysis でテスト・メトリクス収集とそれを元にしたクエリを発行する、と上記に記しましたが、その取得方法や利用できるソフトウェア・サービスに関してもそれぞれ複数対応している様です。代表的なものだけ記しますが、下記の通りです。
+Analysis でテスト・メトリクス収集とそれを元にしたクエリを発行する、と上記に記しましたが、その取得方法や利用できるソフトウェア or サービスに関してもそれぞれ複数対応している様です。代表的なものは下記になります。
 
 - Prometheus
 - Datadog
@@ -104,7 +104,7 @@ Analysis でテスト・メトリクス収集とそれを元にしたクエリ�
 - InfluxDB
 - etc...
 
-### 実査に Analysis のコンフィギュレーションを見てみるo
+### 実査に Analysis のコンフィギュレーションを見てみる
 
 実際に Analysis のコンフィギュレーションを見て理解を深めたいと思います。下記は ArogCD Rollouts の Prometheus の Analysis のコンフィギュレーションです。
 
@@ -136,7 +136,7 @@ spec:
 Analysis に関わる Kubernetes CRD であると見てわかると思います。下記にこのコンフィギュレーションの意味を記します。
 
 - interval でクエリを発行する間隔を指定
-- successCondition でクエリ結果の敷居を指定
+- successCondition でクエリ結果の閾値を指定
 - failtureLimit で最大失敗許可数を指定
 - provider.prometheus で Prometheus プロバイダ利用を宣言
 - address で Prometheus Server の URL を指定
