@@ -6,7 +6,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <meta name="robots" content="index, follow">
 <title>Journal 用 SSD を用いた Ceph 構成の構築 | jedipunkz 🚀 のブログ</title>
-
 <meta name="keywords" content="" />
 <meta name="description" content="こんにちは、@jedipunkz です。
 前回、&lsquo;Ceph のプロセス配置ベストプラクティス&rsquo; というタイトルで記事を書きました。
@@ -15,9 +14,9 @@ http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/
  ceph01 - ceph04 の4台構成 ノードに HDD 2台搭載されていることを前提 (/dev/sdb, /dev/sdc) ノードに Journal 用 SSD 1台搭載されていることを前提 (/dev/ssd) ceph04 は mds サービス稼働 ceph05 は ceph-deploy を実行するためのワークステーション 最終的に ceph04 から Ceph をマウントする mon は ノード単位で稼働 osd は HDD 単位で稼働 mds は ceph04 に稼働  構成 : ハードウェアとノードとネットワークの関係  public network &#43;-------------------&#43;-------------------&#43;-------------------&#43;-------------------&#43;--------- | | | | | &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; | ceph01 | | ceph02 | | ceph03 | | ceph04 | | ceph05 | | &#43;-----&#43; &#43;-----&#43; | | &#43;-----&#43; &#43;-----&#43; | | &#43;-----&#43; &#43;-----&#43; | | | | | | | sdb | | sdc | | | | sdb | | sdc | | | | sdb | | sdc | | | | | | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-----&#43;-&#43;-----&#43; | | | | | | | ssd | | | | ssd | | | | ssd | | | | | | | &#43;-------------&#43; | | &#43;-------------&#43; | | &#43;-------------&#43; | | | | | &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;-----------------&#43; &#43;-----------------&#43; | | | cluster network &#43;-------------------&#43;-------------------&#43;------------------------------------------------- 構成 : プロセスとノードとネットワークの関係  public network &#43;-------------------&#43;-------------------&#43;-------------------&#43;-------------------&#43;--------- | | | | | &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; | ceph01 | | ceph02 | | ceph03 | | ceph04 | | ceph05 | | &#43;-----&#43; &#43;-----&#43; | | &#43;-----&#43; &#43;-----&#43; | | &#43;-----&#43; &#43;-----&#43; | | &#43;-------------&#43; | | | | | osd | | osd | | | | osd | | osd | | | | osd | | osd | | | | mds | | | | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-------------&#43; | | | | | mon | | | | mon | | | | mon | | | | | | | &#43;-------------&#43; | | &#43;-------------&#43; | | &#43;-------------&#43; | | | | | &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;-----------------&#43; &#43;-----------------&#43; | | | cluster network &#43;-------------------&#43;-------------------&#43;------------------------------------------------- 注意 : 上記の図だと ssd : mon が対に見えますが、そうではありません。">
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2014/02/27/journal-ssd-ceph-deploy/" />
-<link href="https://jedipunkz.github.io/assets/css/stylesheet.min.521ef667ad8ddd035b65438a1d85fd5707173fefe338d23bc2544d116fa47efb.css" integrity="sha256-Uh72Z62N3QNbZUOKHYX9VwcXP&#43;/jONI7wlRNEW&#43;kfvs=" rel="preload stylesheet"
-    as="style">
-
+<link crossorigin="anonymous" href="/assets/css/stylesheet.min.6f60056d44d3f7eb69a4bc6c332b59960f3a995802bded244750232f33713c49.css" integrity="sha256-b2AFbUTT9&#43;tppLxsMytZlg86mVgCve0kR1AjLzNxPEk=" rel="preload stylesheet" as="style">
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+    onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.github.io/favicon-32x32.png">
@@ -25,30 +24,38 @@ http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.82.0" />
+<meta name="generator" content="Hugo 0.89.2" />
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
 
-
-
+    </style>
+</noscript>
 <script type="application/javascript">
 var doNotTrack = false;
 if (!doNotTrack) {
-	window.ga=window.ga||function(){(ga.q=ga.q||[]).push(arguments)};ga.l=+new Date;
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
 	ga('create', 'UA-30563095-1', 'auto');
 	
 	ga('send', 'pageview');
 }
-</script>
-<script async src='https://www.google-analytics.com/analytics.js'></script>
-<meta property="og:title" content="Journal 用 SSD を用いた Ceph 構成の構築" />
+</script><meta property="og:title" content="Journal 用 SSD を用いた Ceph 構成の構築" />
 <meta property="og:description" content="こんにちは、@jedipunkz です。
 前回、&lsquo;Ceph のプロセス配置ベストプラクティス&rsquo; というタイトルで記事を書きました。
 http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/
 今回はこの記事にあるポリシに従って下記のような特徴を持った構成を作る手順を具体 的に書いていきたいと思います。
  ceph01 - ceph04 の4台構成 ノードに HDD 2台搭載されていることを前提 (/dev/sdb, /dev/sdc) ノードに Journal 用 SSD 1台搭載されていることを前提 (/dev/ssd) ceph04 は mds サービス稼働 ceph05 は ceph-deploy を実行するためのワークステーション 最終的に ceph04 から Ceph をマウントする mon は ノード単位で稼働 osd は HDD 単位で稼働 mds は ceph04 に稼働  構成 : ハードウェアとノードとネットワークの関係  public network &#43;-------------------&#43;-------------------&#43;-------------------&#43;-------------------&#43;--------- | | | | | &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; | ceph01 | | ceph02 | | ceph03 | | ceph04 | | ceph05 | | &#43;-----&#43; &#43;-----&#43; | | &#43;-----&#43; &#43;-----&#43; | | &#43;-----&#43; &#43;-----&#43; | | | | | | | sdb | | sdc | | | | sdb | | sdc | | | | sdb | | sdc | | | | | | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-----&#43;-&#43;-----&#43; | | | | | | | ssd | | | | ssd | | | | ssd | | | | | | | &#43;-------------&#43; | | &#43;-------------&#43; | | &#43;-------------&#43; | | | | | &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;-----------------&#43; &#43;-----------------&#43; | | | cluster network &#43;-------------------&#43;-------------------&#43;------------------------------------------------- 構成 : プロセスとノードとネットワークの関係  public network &#43;-------------------&#43;-------------------&#43;-------------------&#43;-------------------&#43;--------- | | | | | &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; | ceph01 | | ceph02 | | ceph03 | | ceph04 | | ceph05 | | &#43;-----&#43; &#43;-----&#43; | | &#43;-----&#43; &#43;-----&#43; | | &#43;-----&#43; &#43;-----&#43; | | &#43;-------------&#43; | | | | | osd | | osd | | | | osd | | osd | | | | osd | | osd | | | | mds | | | | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-------------&#43; | | | | | mon | | | | mon | | | | mon | | | | | | | &#43;-------------&#43; | | &#43;-------------&#43; | | &#43;-------------&#43; | | | | | &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;-----------------&#43; &#43;-----------------&#43; | | | cluster network &#43;-------------------&#43;-------------------&#43;------------------------------------------------- 注意 : 上記の図だと ssd : mon が対に見えますが、そうではありません。" />
 <meta property="og:type" content="article" />
-<meta property="og:url" content="https://jedipunkz.github.io/post/2014/02/27/journal-ssd-ceph-deploy/" />
-<meta property="article:published_time" content="2014-02-27T00:00:00+00:00" />
-<meta property="article:modified_time" content="2014-02-27T00:00:00+00:00" />
+<meta property="og:url" content="https://jedipunkz.github.io/post/2014/02/27/journal-ssd-ceph-deploy/" /><meta property="article:section" content="post" />
+<meta property="article:published_time" content="2014-02-27T00:00:00&#43;00:00" />
+<meta property="article:modified_time" content="2014-02-27T00:00:00&#43;00:00" />
+
 <meta name="twitter:card" content="summary"/>
 <meta name="twitter:title" content="Journal 用 SSD を用いた Ceph 構成の構築"/>
 <meta name="twitter:description" content="こんにちは、@jedipunkz です。
@@ -57,13 +64,34 @@ http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/
 今回はこの記事にあるポリシに従って下記のような特徴を持った構成を作る手順を具体 的に書いていきたいと思います。
  ceph01 - ceph04 の4台構成 ノードに HDD 2台搭載されていることを前提 (/dev/sdb, /dev/sdc) ノードに Journal 用 SSD 1台搭載されていることを前提 (/dev/ssd) ceph04 は mds サービス稼働 ceph05 は ceph-deploy を実行するためのワークステーション 最終的に ceph04 から Ceph をマウントする mon は ノード単位で稼働 osd は HDD 単位で稼働 mds は ceph04 に稼働  構成 : ハードウェアとノードとネットワークの関係  public network &#43;-------------------&#43;-------------------&#43;-------------------&#43;-------------------&#43;--------- | | | | | &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; | ceph01 | | ceph02 | | ceph03 | | ceph04 | | ceph05 | | &#43;-----&#43; &#43;-----&#43; | | &#43;-----&#43; &#43;-----&#43; | | &#43;-----&#43; &#43;-----&#43; | | | | | | | sdb | | sdc | | | | sdb | | sdc | | | | sdb | | sdc | | | | | | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-----&#43;-&#43;-----&#43; | | | | | | | ssd | | | | ssd | | | | ssd | | | | | | | &#43;-------------&#43; | | &#43;-------------&#43; | | &#43;-------------&#43; | | | | | &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;-----------------&#43; &#43;-----------------&#43; | | | cluster network &#43;-------------------&#43;-------------------&#43;------------------------------------------------- 構成 : プロセスとノードとネットワークの関係  public network &#43;-------------------&#43;-------------------&#43;-------------------&#43;-------------------&#43;--------- | | | | | &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; | ceph01 | | ceph02 | | ceph03 | | ceph04 | | ceph05 | | &#43;-----&#43; &#43;-----&#43; | | &#43;-----&#43; &#43;-----&#43; | | &#43;-----&#43; &#43;-----&#43; | | &#43;-------------&#43; | | | | | osd | | osd | | | | osd | | osd | | | | osd | | osd | | | | mds | | | | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-----&#43;-&#43;-----&#43; | | &#43;-------------&#43; | | | | | mon | | | | mon | | | | mon | | | | | | | &#43;-------------&#43; | | &#43;-------------&#43; | | &#43;-------------&#43; | | | | | &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;--------&#43;--------&#43; &#43;-----------------&#43; &#43;-----------------&#43; | | | cluster network &#43;-------------------&#43;-------------------&#43;------------------------------------------------- 注意 : 上記の図だと ssd : mon が対に見えますが、そうではありません。"/>
 
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "Posts",
+      "item": "https://jedipunkz.github.io/post/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  3 ,
+      "name": "Journal 用 SSD を用いた Ceph 構成の構築",
+      "item": "https://jedipunkz.github.io/post/2014/02/27/journal-ssd-ceph-deploy/"
+    }
+  ]
+}
+</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "Journal 用 SSD を用いた Ceph 構成の構築",
   "name": "Journal 用 SSD を用いた Ceph 構成の構築",
-  "description": "こんにちは、@jedipunkz です。\n前回、\u0026amp;lsquo;Ceph のプロセス配置ベストプラクティス\u0026amp;rsquo; というタイトルで記事を書きました。\nhttp://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/\n今回はこの記事にあるポリシに従って下記のような特徴を持った構成 …",
+  "description": "こんにちは、@jedipunkz です。\n前回、\u0026lsquo;Ceph のプロセス配置ベストプラクティス\u0026rsquo; というタイトルで記事を書きました。\nhttp://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/\n今回はこの記事にあるポリシに従って下記のような特徴を持った構成を作る手順を具体 的に書いていきたいと思います。\n ceph01 - ceph04 の4台構成 ノードに HDD 2台搭載されていることを前提 (/dev/sdb, /dev/sdc) ノードに Journal 用 SSD 1台搭載されていることを前提 (/dev/ssd) ceph04 は mds サービス稼働 ceph05 は ceph-deploy を実行するためのワークステーション 最終的に ceph04 から Ceph をマウントする mon は ノード単位で稼働 osd は HDD 単位で稼働 mds は ceph04 に稼働  構成 : ハードウェアとノードとネットワークの関係  public network +-------------------+-------------------+-------------------+-------------------+--------- | | | | | +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+ | ceph01 | | ceph02 | | ceph03 | | ceph04 | | ceph05 | | +-----+ +-----+ | | +-----+ +-----+ | | +-----+ +-----+ | | | | | | | sdb | | sdc | | | | sdb | | sdc | | | | sdb | | sdc | | | | | | | +-----+-+-----+ | | +-----+-+-----+ | | +-----+-+-----+ | | | | | | | ssd | | | | ssd | | | | ssd | | | | | | | +-------------+ | | +-------------+ | | +-------------+ | | | | | +--------+--------+ +--------+--------+ +--------+--------+ +-----------------+ +-----------------+ | | | cluster network +-------------------+-------------------+------------------------------------------------- 構成 : プロセスとノードとネットワークの関係  public network +-------------------+-------------------+-------------------+-------------------+--------- | | | | | +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+ | ceph01 | | ceph02 | | ceph03 | | ceph04 | | ceph05 | | +-----+ +-----+ | | +-----+ +-----+ | | +-----+ +-----+ | | +-------------+ | | | | | osd | | osd | | | | osd | | osd | | | | osd | | osd | | | | mds | | | | | +-----+-+-----+ | | +-----+-+-----+ | | +-----+-+-----+ | | +-------------+ | | | | | mon | | | | mon | | | | mon | | | | | | | +-------------+ | | +-------------+ | | +-------------+ | | | | | +--------+--------+ +--------+--------+ +--------+--------+ +-----------------+ +-----------------+ | | | cluster network +-------------------+-------------------+------------------------------------------------- 注意 : 上記の図だと ssd : mon が対に見えますが、そうではありません。",
   "keywords": [
     
   ],
@@ -90,9 +118,6 @@ http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/
   }
 }
 </script>
-
-
-
 </head>
 
 <body class="" id="top">
@@ -102,70 +127,56 @@ http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/
     }
 
 </script>
-<noscript>
-    <style type="text/css">
-        .theme-toggle,
-        .top-link {
-            display: none;
-        }
 
-    </style>
-</noscript>
 <header class="header">
     <nav class="nav">
         <div class="logo">
             <a href="https://jedipunkz.github.io" accesskey="h" title="jedipunkz 🚀 のブログ (Alt + H)">jedipunkz 🚀 のブログ</a>
             <span class="logo-switches">
-                <span class="theme-toggle" title="(Alt + T)">
-                    <a id="theme-toggle" accesskey="t">
-                        <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                        </svg>
-                        <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="5"></circle>
-                            <line x1="12" y1="1" x2="12" y2="3"></line>
-                            <line x1="12" y1="21" x2="12" y2="23"></line>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                            <line x1="1" y1="12" x2="3" y2="12"></line>
-                            <line x1="21" y1="12" x2="23" y2="12"></line>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                        </svg>
-                    </a>
-                </span>
-                
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
             </span>
         </div>
-        <ul class="menu" id="menu" onscroll="menu_on_scroll()">
+        <ul id="menu">
             <li>
                 <a href="https://jedipunkz.github.io/about" title="About">
                     <span>About</span>
                 </a>
-            </li></ul>
+            </li>
+        </ul>
     </nav>
 </header>
-
-    <main class="main">
+<main class="main">
 
 <article class="post-single">
   <header class="post-header">
+    
     <h1 class="post-title">
       Journal 用 SSD を用いた Ceph 構成の構築
     </h1>
-    <div class="post-meta">
+    <div class="post-meta"><span title='2014-02-27 00:00:00 +0000 UTC'>February 27, 2014</span>&nbsp;·&nbsp;4 min&nbsp;·&nbsp;Theme PaperMod
 
-February 27, 2014&nbsp;·&nbsp;4 min&nbsp;·&nbsp;Theme PaperMod
-
-    </div>
+</div>
   </header> 
-
-  <div class="post-content">
-<p>こんにちは、@jedipunkz です。</p>
+  <div class="post-content"><p>こんにちは、@jedipunkz です。</p>
 <p>前回、&lsquo;Ceph のプロセス配置ベストプラクティス&rsquo; というタイトルで記事を書きました。</p>
 <p><a href="http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/">http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/</a></p>
 <p>今回はこの記事にあるポリシに従って下記のような特徴を持った構成を作る手順を具体
@@ -182,7 +193,7 @@ February 27, 2014&nbsp;·&nbsp;4 min&nbsp;·&nbsp;Theme PaperMod
 <li>mds は ceph04 に稼働</li>
 </ul>
 <h2 id="構成--ハードウェアとノードとネットワークの関係">構成 : ハードウェアとノードとネットワークの関係<a hidden class="anchor" aria-hidden="true" href="#構成--ハードウェアとノードとネットワークの関係">#</a></h2>
-<pre><code>                                                                                      public network
+<pre tabindex="0"><code>                                                                                      public network
          +-------------------+-------------------+-------------------+-------------------+---------
          |                   |                   |                   |                   |
 +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+
@@ -196,7 +207,7 @@ February 27, 2014&nbsp;·&nbsp;4 min&nbsp;·&nbsp;Theme PaperMod
          |                   |                   |                                    cluster network
          +-------------------+-------------------+-------------------------------------------------
 </code></pre><h2 id="構成--プロセスとノードとネットワークの関係">構成 : プロセスとノードとネットワークの関係<a hidden class="anchor" aria-hidden="true" href="#構成--プロセスとノードとネットワークの関係">#</a></h2>
-<pre><code>                                                                                      public network
+<pre tabindex="0"><code>                                                                                      public network
          +-------------------+-------------------+-------------------+-------------------+---------
          |                   |                   |                   |                   |
 +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+ +--------+--------+
@@ -213,23 +224,23 @@ February 27, 2014&nbsp;·&nbsp;4 min&nbsp;·&nbsp;Theme PaperMod
 <p>では構築方法について書いていきます。</p>
 <h2 id="作業用ホストの準備">作業用ホストの準備<a hidden class="anchor" aria-hidden="true" href="#作業用ホストの準備">#</a></h2>
 <p>ノンパスフレーズの SSH 公開鍵・秘密鍵を生成する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ssh-keygen
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ssh-keygen
 </code></pre></div><p>公開鍵をターゲットホスト (ceph01-03) に配置</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ssh-copy-id ceph@ceph01
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ssh-copy-id ceph@ceph01
 % ssh-copy-id ceph@ceph02
 % ssh-copy-id ceph@ceph03
 </code></pre></div><p>ceph-deploy の取得を行う。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% git clone https://github.com/ceph/ceph-deploy.git ~/ceph-deploy
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% git clone https://github.com/ceph/ceph-deploy.git ~/ceph-deploy
 </code></pre></div><p>&lsquo;python-virtualenv&rsquo; パッケージをインストールする。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo apt-get update ; sudo apt-get -y install python-virtualenv
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo apt-get update ; sudo apt-get -y install python-virtualenv
 </code></pre></div><p>ceph-deploy をブートストラップする</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% cd ~/ceph-deploy
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% cd ~/ceph-deploy
 % ./bootstrap
 </code></pre></div><p>PATH を通す。下記は例。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> ~/.zshrc
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> ~/.zshrc
 export PATH<span style="color:#f92672">=</span>$HOME/ceph-deploy:$PATH
 </code></pre></div><p>ホスト名の解決を行う。IP アドレスは例。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> /etc/hosts
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> /etc/hosts
 10.200.10.11    ceph01
 10.200.10.12    ceph02
 10.200.10.13    ceph03
@@ -241,12 +252,12 @@ export PATH<span style="color:#f92672">=</span>$HOME/ceph-deploy:$PATH
 <p><a href="https://github.com/ceph/ceph-deploy">https://github.com/ceph/ceph-deploy</a></p>
 <p>下記の手順でコンフィギュレーションと鍵の生成を行う。またこれからの操作はすべて public network
 上の ceph-deploy 専用 node からの操作とする。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% mkdir ~/ceph-work
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% mkdir ~/ceph-work
 % cd ~/ceph-work
 % ceph-deploy --cluster cluster01 new ceph01 ceph02 ceph03 ceph04
 </code></pre></div><p>~/ceph-work ディレクトリ上に cluster01.conf が生成されているので下記の通り
 cluster network を扱う形へと追記を行う。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">public network <span style="color:#f92672">=</span> &lt;public_network_addr&gt;/&lt;netmask&gt;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">public network <span style="color:#f92672">=</span> &lt;public_network_addr&gt;/&lt;netmask&gt;
 cluster network <span style="color:#f92672">=</span> &lt;cluster_network_addr&gt;/&lt;netmask&gt;
 
 <span style="color:#f92672">[</span>mon.a<span style="color:#f92672">]</span>
@@ -277,24 +288,24 @@ cluster network <span style="color:#f92672">=</span> &lt;cluster_network_addr&gt
     host <span style="color:#f92672">=</span> ceph04
 </code></pre></div><p>ceph の各 nodes へのインストールを行う。ceph はワークステーションである ceph05 にも
 インストールしておきます。後に Ceph ストレージをマウントするためです。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 install ceph01 ceph02 ceph03 ceph04 ceph04
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 install ceph01 ceph02 ceph03 ceph04 ceph04
 </code></pre></div><p>mon プロセスを各 nodes で稼働する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 mon create ceph01 ceph02 ceph03
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 mon create ceph01 ceph02 ceph03
 </code></pre></div><p>鍵の配布を各 nodes に行う。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 gatherkeys ceph01 ceph02 ceph03 ceph04 ceph05
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 gatherkeys ceph01 ceph02 ceph03 ceph04 ceph05
 </code></pre></div><p>disk のリストを確認。</p>
 <p>各 node 毎に用いることが可能は disk の一覧を確認する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 disk list ceph01
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 disk list ceph01
 % ceph-deploy --cluster cluster01 disk list ceph02
 % ceph-deploy --cluster cluster01 disk list ceph03
 </code></pre></div><p>disk の初期化を行う。この作業を行うと指定ディスク上のデータは消去される。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 disk zap ceph01:/dev/sdb ceph01:/dev/sdc
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 disk zap ceph01:/dev/sdb ceph01:/dev/sdc
 % ceph-deploy --cluster cluster01 disk zap ceph02:/dev/sdb ceph02:/dev/sdc
 % ceph-deploy --cluster cluster01 disk zap ceph03:/dev/sdb ceph03:/dev/sdc
 </code></pre></div><p>journal 用の ssd のパーティションを切る。ここでは 10GB 毎に切った
 /dev/ssd1, /dev/ssd2 が存在することを前提に記す。ceph と同時にインストールされた
 gdisk を用いる。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo gdisk /dev/ssd
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo gdisk /dev/ssd
 </code></pre></div><p>(注意) 下記の公式ドキュメントでは osd prepare, osc activate の手順が掲載されて
 いるがその後の osd create のコマンドにて prepare が実行されるようでこれら2つの
 手順を行うと正常に osd create コマンドが実行できなかった。よってこのタイミング
@@ -304,17 +315,17 @@ gdisk を用いる。</p>
 <li><a href="http://ceph.com/docs/dumpling/start/quick-ceph-deploy/">http://ceph.com/docs/dumpling/start/quick-ceph-deploy/</a></li>
 </ul>
 <p>2 つの disk に対してそれぞれ osd を稼働させる。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 osd create ceph01:sdb:/dev/ssd1 ceph02:sdb:/dev/ssd1 ceph03:sdb:/dev/ssd1
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 osd create ceph01:sdb:/dev/ssd1 ceph02:sdb:/dev/ssd1 ceph03:sdb:/dev/ssd1
 % ceph-deploy --cluster cluster01 osd create ceph01:sdc:/dev/ssd2 ceph02:sdc:/dev/ssd2 ceph03:sdc:/dev/ssd2
 </code></pre></div><p>mds の稼働を行う。ここでは1号機にのみ稼働を行う。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 mds create ceph04
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ceph-deploy --cluster cluster01 mds create ceph04
 </code></pre></div><h2 id="クライアントからのマウント方法各種">クライアントからのマウント方法各種<a hidden class="anchor" aria-hidden="true" href="#クライアントからのマウント方法各種">#</a></h2>
 <p>上記で構築した Ceph ストレージを利用する方法を3つ説明する。先に述べたように
 POSIX 互換 filesystem として利用が可能。それぞれ mds が稼働しているホストに対
 して接続を行う。</p>
 <h4 id="block-device-としてマウントする方法">Block Device としてマウントする方法<a hidden class="anchor" aria-hidden="true" href="#block-device-としてマウントする方法">#</a></h4>
 <p>ストレージ上に block device を生成しそれをマウントする</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">cephclient% rbd create foo --size <span style="color:#ae81ff">4096</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">cephclient% rbd create foo --size <span style="color:#ae81ff">4096</span>
 cephclient% sudo modprobe rbd
 cephclient% sudo rbd map foo --pool rbd --name client.admin
 cephclient% sudo mkfs.ext4 -m0 /dev/rbd/rbd/foo
@@ -322,18 +333,18 @@ cephclient% sudo mkdir /mnt/myrbd
 cephclinet% sudo mount /dev/rbd/rbd/foo /mnt/myrbd
 </code></pre></div><h4 id="kernel-driver-を用いてマウントする方法">Kernel Driver を用いてマウントする方法<a hidden class="anchor" aria-hidden="true" href="#kernel-driver-を用いてマウントする方法">#</a></h4>
 <p>kernel Driver を用いてストレージをマウントする</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">cephclient% sudo mkdir /mnt/mycephfs
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">cephclient% sudo mkdir /mnt/mycephfs
 cephclient% sudo mount -t ceph 10.200.10.26:6789:/ /mnt/mycephfs -o <span style="color:#ae81ff">\
 </span><span style="color:#ae81ff"></span>            name<span style="color:#f92672">=</span>admin,secret<span style="color:#f92672">=</span><span style="color:#e6db74">`</span>sudo ceph-authtool -p /etc/ceph/cluster01.client.admin.keyring<span style="color:#e6db74">`</span>
 </code></pre></div><h4 id="fuse-driver-ユーザランド-を用いてマウントする方法">Fuse Driver (ユーザランド) を用いてマウントする方法<a hidden class="anchor" aria-hidden="true" href="#fuse-driver-ユーザランド-を用いてマウントする方法">#</a></h4>
 <p>ユーザランドソフトウェア FUSE を用いてマウントする方法</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">cephclient% sudo mkdir /home/&lt;username&gt;/cephfs
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">cephclient% sudo mkdir /home/&lt;username&gt;/cephfs
 cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
 </code></pre></div>
-</div>
+
+  </div>
+
   <footer class="post-footer">
-
-
 
 <div class="share-buttons">
     <a target="_blank" rel="noopener noreferrer" aria-label="share Journal 用 SSD を用いた Ceph 構成の構築 on twitter"
@@ -382,46 +393,52 @@ cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
 
   </footer>
 </article>
-    </main><footer class="footer">
+    </main>
+    
+<footer class="footer">
     <span>&copy; 2021 <a href="https://jedipunkz.github.io">jedipunkz 🚀 のブログ</a></span>
-    <span>&middot;</span>
-    <span>Powered by <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a></span>
-    <span>&middot;</span>
-    <span>Theme <a href="https://git.io/hugopapermod" rel="noopener" target="_blank">PaperMod</a></span>
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://git.io/hugopapermod" rel="noopener" target="_blank">PaperMod</a>
+    </span>
 </footer>
-<a href="#top">
-    <button class="top-link" id="top-link" type="button" aria-label="go to top" title="Go to Top (Alt + G)"
-        accesskey="g">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6">
-            <path d="M12 6H0l6-6z" />
-        </svg>
-    </button>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
 </a>
 
-
-
-<script defer src="https://jedipunkz.github.io/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
-    onload="hljs.initHighlightingOnLoad();"></script>
 <script>
-    window.onload = function () {
-        if (localStorage.getItem("menu-scroll-position")) {
-            document.getElementById('menu').scrollLeft = localStorage.getItem("menu-scroll-position");
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
         }
     }
+
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         anchor.addEventListener("click", function (e) {
             e.preventDefault();
             var id = this.getAttribute("href").substr(1);
-            document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
-                behavior: "smooth"
-            });
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
             if (id === "top") {
                 history.replaceState(null, null, " ");
             } else {
-                history.replaceState(null, null, `#${id}`);
+                history.pushState(null, null, `#${id}`);
             }
         });
     });
+
+</script>
+<script>
     var mybutton = document.getElementById("top-link");
     window.onscroll = function () {
         if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
@@ -432,10 +449,6 @@ cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
             mybutton.style.opacity = "0";
         }
     };
-
-    function menu_on_scroll() {
-        localStorage.setItem("menu-scroll-position", document.getElementById('menu').scrollLeft);
-    }
 
 </script>
 <script>
@@ -450,7 +463,6 @@ cephclient% sudo ceph-fuse -m 10.200.10.26:6789 /home/&lt;username&gt;/cephfs
     })
 
 </script>
-
 </body>
 
 </html>

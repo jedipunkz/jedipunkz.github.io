@@ -6,22 +6,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <meta name="robots" content="index, follow">
 <title>Kibana &#43; ElasticSearch &#43; fluentd を試してみた | jedipunkz 🚀 のブログ</title>
-
 <meta name="keywords" content="" />
-<meta name="description" content="こんにちは。@jedipunkzです。
+<meta name="description" content="こんにちは。@jedipunkz です。
 自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目 に止まるようになってきました。
 ElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。バックエ ンドに Logstash を使って&hellip; と思ってたのですが最近よく聞くようになった fluentd をそろそろ真面目に使いたい！ということで、今回は Kibana &#43; ElasticSearch &#43; fluentd の組み合わせでログ解析システムを組む方法をメモしておきます。
 参考にさせて頂いた URL http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html
 前提の環境  OS : Ubuntu 12.04 Precise (同じ方法で 13.04 Raring でも出来ました)  必要なパッケージインストール 下記のパッケージを事前にインストールします。
 % sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk 手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても 構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。
 ElasticSearch のインストール 下記のサイトより ElasticSearch をダウンロードします。
-http://www.elasticsearch.org/download/
-現時点 (2013/09/07) で最新のバージョンは 0.">
+http://www.elasticsearch.org/download/">
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/" />
-<link href="https://jedipunkz.github.io/assets/css/stylesheet.min.521ef667ad8ddd035b65438a1d85fd5707173fefe338d23bc2544d116fa47efb.css" integrity="sha256-Uh72Z62N3QNbZUOKHYX9VwcXP&#43;/jONI7wlRNEW&#43;kfvs=" rel="preload stylesheet"
-    as="style">
-
+<link crossorigin="anonymous" href="/assets/css/stylesheet.min.6f60056d44d3f7eb69a4bc6c332b59960f3a995802bded244750232f33713c49.css" integrity="sha256-b2AFbUTT9&#43;tppLxsMytZlg86mVgCve0kR1AjLzNxPEk=" rel="preload stylesheet" as="style">
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+    onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.github.io/favicon-32x32.png">
@@ -29,58 +27,85 @@ http://www.elasticsearch.org/download/
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.82.0" />
+<meta name="generator" content="Hugo 0.89.2" />
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
 
-
-
+    </style>
+</noscript>
 <script type="application/javascript">
 var doNotTrack = false;
 if (!doNotTrack) {
-	window.ga=window.ga||function(){(ga.q=ga.q||[]).push(arguments)};ga.l=+new Date;
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
 	ga('create', 'UA-30563095-1', 'auto');
 	
 	ga('send', 'pageview');
 }
-</script>
-<script async src='https://www.google-analytics.com/analytics.js'></script>
-<meta property="og:title" content="Kibana &#43; ElasticSearch &#43; fluentd を試してみた" />
-<meta property="og:description" content="こんにちは。@jedipunkzです。
+</script><meta property="og:title" content="Kibana &#43; ElasticSearch &#43; fluentd を試してみた" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。
 自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目 に止まるようになってきました。
 ElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。バックエ ンドに Logstash を使って&hellip; と思ってたのですが最近よく聞くようになった fluentd をそろそろ真面目に使いたい！ということで、今回は Kibana &#43; ElasticSearch &#43; fluentd の組み合わせでログ解析システムを組む方法をメモしておきます。
 参考にさせて頂いた URL http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html
 前提の環境  OS : Ubuntu 12.04 Precise (同じ方法で 13.04 Raring でも出来ました)  必要なパッケージインストール 下記のパッケージを事前にインストールします。
 % sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk 手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても 構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。
 ElasticSearch のインストール 下記のサイトより ElasticSearch をダウンロードします。
-http://www.elasticsearch.org/download/
-現時点 (2013/09/07) で最新のバージョンは 0." />
+http://www.elasticsearch.org/download/" />
 <meta property="og:type" content="article" />
-<meta property="og:url" content="https://jedipunkz.github.io/post/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/" />
-<meta property="article:published_time" content="2013-09-07T00:00:00+00:00" />
-<meta property="article:modified_time" content="2013-09-07T00:00:00+00:00" />
+<meta property="og:url" content="https://jedipunkz.github.io/post/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/" /><meta property="article:section" content="post" />
+<meta property="article:published_time" content="2013-09-07T00:00:00&#43;00:00" />
+<meta property="article:modified_time" content="2013-09-07T00:00:00&#43;00:00" />
+
 <meta name="twitter:card" content="summary"/>
 <meta name="twitter:title" content="Kibana &#43; ElasticSearch &#43; fluentd を試してみた"/>
-<meta name="twitter:description" content="こんにちは。@jedipunkzです。
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。
 自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目 に止まるようになってきました。
 ElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。バックエ ンドに Logstash を使って&hellip; と思ってたのですが最近よく聞くようになった fluentd をそろそろ真面目に使いたい！ということで、今回は Kibana &#43; ElasticSearch &#43; fluentd の組み合わせでログ解析システムを組む方法をメモしておきます。
 参考にさせて頂いた URL http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html
 前提の環境  OS : Ubuntu 12.04 Precise (同じ方法で 13.04 Raring でも出来ました)  必要なパッケージインストール 下記のパッケージを事前にインストールします。
 % sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk 手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても 構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。
 ElasticSearch のインストール 下記のサイトより ElasticSearch をダウンロードします。
-http://www.elasticsearch.org/download/
-現時点 (2013/09/07) で最新のバージョンは 0."/>
+http://www.elasticsearch.org/download/"/>
 
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "Posts",
+      "item": "https://jedipunkz.github.io/post/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  3 ,
+      "name": "Kibana + ElasticSearch + fluentd を試してみた",
+      "item": "https://jedipunkz.github.io/post/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/"
+    }
+  ]
+}
+</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "Kibana + ElasticSearch + fluentd を試してみた",
   "name": "Kibana \u002b ElasticSearch \u002b fluentd を試してみた",
-  "description": "こんにちは。@jedipunkzです。\n自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目 に止まるようになってきました。\nElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。 …",
+  "description": "こんにちは。@jedipunkz です。\n自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目 に止まるようになってきました。\nElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。バックエ ンドに Logstash を使って\u0026hellip; と思ってたのですが最近よく聞くようになった fluentd をそろそろ真面目に使いたい！ということで、今回は Kibana + ElasticSearch + fluentd の組み合わせでログ解析システムを組む方法をメモしておきます。\n参考にさせて頂いた URL http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html\n前提の環境  OS : Ubuntu 12.04 Precise (同じ方法で 13.04 Raring でも出来ました)  必要なパッケージインストール 下記のパッケージを事前にインストールします。\n% sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk 手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても 構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。\nElasticSearch のインストール 下記のサイトより ElasticSearch をダウンロードします。\nhttp://www.elasticsearch.org/download/",
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkzです。\n自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目 に止まるようになってきました。\nElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。バックエ ンドに Logstash を使って… と思ってたのですが最近よく聞くようになった fluentd をそろそろ真面目に使いたい！ということで、今回は Kibana + ElasticSearch + fluentd の組み合わせでログ解析システムを組む方法をメモしておきます。\n参考にさせて頂いた URL http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html\n前提の環境  OS : Ubuntu 12.04 Precise (同じ方法で 13.04 Raring でも出来ました)  必要なパッケージインストール 下記のパッケージを事前にインストールします。\n% sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk 手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても 構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。\nElasticSearch のインストール 下記のサイトより ElasticSearch をダウンロードします。\nhttp://www.elasticsearch.org/download/\n現時点 (2013/09/07) で最新のバージョンは 0.90.3 でした。\n% wget https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-0.90.3.deb % sudo dpkg -i elasticsearch-0.90.3.deb % sudo service elasticsearch start Kibana のインストール Kibana をダウンロードして Gemfile にしたがって必要なモノをインストールします。\n% git clone --branch=kibana-ruby https://github.com/rashidkpc/Kibana.git % sudo gem install bundler % cd Kibana % sudo bundle install % sudo gem install tzinfo-data KibanaConfig.rb の KibanaHost はリスンアドレスになるので 0.0.0.0 に修正sます。\nKibanaHost = '0.0.0.0' Kibana を起動します。\n% ruby kibana.rb == Sinatra/1.4.3 has taken the stage on 5601 for development with backup from Thin  Thin web server (v1.5.1 codename Straight Razor)  Maximum connections set to 1024  Listening on 0.0.0.0:5601, CTRL+C to stop fluentd のインストール fluentd を下記の通りインストールします。\n% sudo -i % curl -L http://toolbelt.treasure-data.com/sh/install-ubuntu-precise.sh | sh /etc/td-agent/td-agent.conf を下記の通りに修正します。サンプルで Apache のログ を ElasticSearch に飛ばす設定にします。\n type tail format apache path /var/log/apache2/access.log tag kibana01.apache.access   *.apache.* index_name adminpack type_name apache type elasticsearch include_tag_key true tag_key @log_name host 10.0.1.8 port 9200 logstash_format true flush_interval 3s  host パラメータは環境に合わせて設定します。\nfluentd を起動します。\n% sudo service td-agent start Apache のインストール システムに必要なわけではありませんが、サンプルで Apache のログを fluentd 経由 で飛ばして Kibana で確認したいのでインストールします。\n% sudo apt-get install apache2 % sudo chown -R td-agent /var/log/apache2 ファイルのオーナを td-agent にする必要がありました。\nブラウザでアクセス Apache2 のポート 80 にブラウザでアクセスし、その後 ポート 5601 にアクセスする と Kibana の画面が表示されます。ポート 80 のアクセスに応じて結果が出力されます。\n{% img /pix/kibana-cap.png %}\nまとめ LogStash でも今度試してみたい。 あと API をどう叩くかは..\nhttp://www.elasticsearch.org/guide/reference/api/\nにリファレンスがあるので、時間を見つけてやってみる。Apache 以外のログ転送につ いては fluentd を詳細に知る必要があるので、そちらも時間を見つけてやってみる。 kibana.rb を起動するもっと良い方法がないかも調べないと。\n2013.09.08追記\n@nora96o さんに「Kibana3 使うと幸せになれますよ！」と教えて頂いて早速 Kibana3 も試してみました。\nhttp://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/\n",
-  "wordCount" : "284",
+  "articleBody": "こんにちは。@jedipunkz です。\n自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目 に止まるようになってきました。\nElasticSaerch は API で情報を検索出来たりするので自動化にもってこい。バックエ ンドに Logstash を使って… と思ってたのですが最近よく聞くようになった fluentd をそろそろ真面目に使いたい！ということで、今回は Kibana + ElasticSearch + fluentd の組み合わせでログ解析システムを組む方法をメモしておきます。\n参考にさせて頂いた URL http://memocra.blogspot.jp/2013/04/kibanakibanaelasticsearchfluentd.html\n前提の環境  OS : Ubuntu 12.04 Precise (同じ方法で 13.04 Raring でも出来ました)  必要なパッケージインストール 下記のパッケージを事前にインストールします。\n% sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk 手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても 構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。\nElasticSearch のインストール 下記のサイトより ElasticSearch をダウンロードします。\nhttp://www.elasticsearch.org/download/\n現時点 (2013/09/07) で最新のバージョンは 0.90.3 でした。\n% wget https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-0.90.3.deb % sudo dpkg -i elasticsearch-0.90.3.deb % sudo service elasticsearch start Kibana のインストール Kibana をダウンロードして Gemfile にしたがって必要なモノをインストールします。\n% git clone --branch=kibana-ruby https://github.com/rashidkpc/Kibana.git % sudo gem install bundler % cd Kibana % sudo bundle install % sudo gem install tzinfo-data KibanaConfig.rb の KibanaHost はリスンアドレスになるので 0.0.0.0 に修正sます。\nKibanaHost = '0.0.0.0' Kibana を起動します。\n% ruby kibana.rb == Sinatra/1.4.3 has taken the stage on 5601 for development with backup from Thin  Thin web server (v1.5.1 codename Straight Razor)  Maximum connections set to 1024  Listening on 0.0.0.0:5601, CTRL+C to stop fluentd のインストール fluentd を下記の通りインストールします。\n% sudo -i % curl -L http://toolbelt.treasure-data.com/sh/install-ubuntu-precise.sh | sh /etc/td-agent/td-agent.conf を下記の通りに修正します。サンプルで Apache のログ を ElasticSearch に飛ばす設定にします。\n type tail format apache path /var/log/apache2/access.log tag kibana01.apache.access   *.apache.* index_name adminpack type_name apache type elasticsearch include_tag_key true tag_key @log_name host 10.0.1.8 port 9200 logstash_format true flush_interval 3s  host パラメータは環境に合わせて設定します。\nfluentd を起動します。\n% sudo service td-agent start Apache のインストール システムに必要なわけではありませんが、サンプルで Apache のログを fluentd 経由 で飛ばして Kibana で確認したいのでインストールします。\n% sudo apt-get install apache2 % sudo chown -R td-agent /var/log/apache2 ファイルのオーナを td-agent にする必要がありました。\nブラウザでアクセス Apache2 のポート 80 にブラウザでアクセスし、その後 ポート 5601 にアクセスする と Kibana の画面が表示されます。ポート 80 のアクセスに応じて結果が出力されます。\n{% img /pix/kibana-cap.png %}\nまとめ LogStash でも今度試してみたい。 あと API をどう叩くかは..\nhttp://www.elasticsearch.org/guide/reference/api/\nにリファレンスがあるので、時間を見つけてやってみる。Apache 以外のログ転送につ いては fluentd を詳細に知る必要があるので、そちらも時間を見つけてやってみる。 kibana.rb を起動するもっと良い方法がないかも調べないと。\n2013.09.08追記\n@nora96o さんに「Kibana3 使うと幸せになれますよ！」と教えて頂いて早速 Kibana3 も試してみました。\nhttp://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/\n",
+  "wordCount" : "285",
   "inLanguage": "en",
   "datePublished": "2013-09-07T00:00:00Z",
   "dateModified": "2013-09-07T00:00:00Z",
@@ -102,9 +127,6 @@ http://www.elasticsearch.org/download/
   }
 }
 </script>
-
-
-
 </head>
 
 <body class="" id="top">
@@ -114,70 +136,56 @@ http://www.elasticsearch.org/download/
     }
 
 </script>
-<noscript>
-    <style type="text/css">
-        .theme-toggle,
-        .top-link {
-            display: none;
-        }
 
-    </style>
-</noscript>
 <header class="header">
     <nav class="nav">
         <div class="logo">
             <a href="https://jedipunkz.github.io" accesskey="h" title="jedipunkz 🚀 のブログ (Alt + H)">jedipunkz 🚀 のブログ</a>
             <span class="logo-switches">
-                <span class="theme-toggle" title="(Alt + T)">
-                    <a id="theme-toggle" accesskey="t">
-                        <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                        </svg>
-                        <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="5"></circle>
-                            <line x1="12" y1="1" x2="12" y2="3"></line>
-                            <line x1="12" y1="21" x2="12" y2="23"></line>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                            <line x1="1" y1="12" x2="3" y2="12"></line>
-                            <line x1="21" y1="12" x2="23" y2="12"></line>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                        </svg>
-                    </a>
-                </span>
-                
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
             </span>
         </div>
-        <ul class="menu" id="menu" onscroll="menu_on_scroll()">
+        <ul id="menu">
             <li>
                 <a href="https://jedipunkz.github.io/about" title="About">
                     <span>About</span>
                 </a>
-            </li></ul>
+            </li>
+        </ul>
     </nav>
 </header>
-
-    <main class="main">
+<main class="main">
 
 <article class="post-single">
   <header class="post-header">
+    
     <h1 class="post-title">
       Kibana &#43; ElasticSearch &#43; fluentd を試してみた
     </h1>
-    <div class="post-meta">
+    <div class="post-meta"><span title='2013-09-07 00:00:00 +0000 UTC'>September 7, 2013</span>&nbsp;·&nbsp;2 min&nbsp;·&nbsp;Theme PaperMod
 
-September 7, 2013&nbsp;·&nbsp;2 min&nbsp;·&nbsp;Theme PaperMod
-
-    </div>
+</div>
   </header> 
-
-  <div class="post-content">
-<p>こんにちは。<!-- raw HTML omitted -->@jedipunkz<!-- raw HTML omitted --> です。</p>
+  <div class="post-content"><p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 <p>自動化の流れを検討する中でログ解析も忘れてはいけないということで ElasticSearch
 を使いたいなぁとぼんやり考えていて Logstash とか Kibana とかいうキーワードも目
 に止まるようになってきました。</p>
@@ -193,38 +201,38 @@ fluentd の組み合わせでログ解析システムを組む方法をメモし
 </ul>
 <h2 id="必要なパッケージインストール">必要なパッケージインストール<a hidden class="anchor" aria-hidden="true" href="#必要なパッケージインストール">#</a></h2>
 <p>下記のパッケージを事前にインストールします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo apt-get install git-core build-essential ruby1.9.3 openjdk-7-jdk
 </code></pre></div><p>手順を省くために Ruby はパッケージで入れました。また Java は他の物を利用しても
 構いません。Ruby は Kibana, fluentd が、Java は ElasticSearch が必要とします。</p>
 <h2 id="elasticsearch-のインストール">ElasticSearch のインストール<a hidden class="anchor" aria-hidden="true" href="#elasticsearch-のインストール">#</a></h2>
 <p>下記のサイトより ElasticSearch をダウンロードします。</p>
 <p><a href="http://www.elasticsearch.org/download/">http://www.elasticsearch.org/download/</a></p>
 <p>現時点 (2013/09/07) で最新のバージョンは 0.90.3 でした。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% wget https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-0.90.3.deb
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% wget https://download.elasticsearch.org/elasticsearch/elasticsearch/elasticsearch-0.90.3.deb
 % sudo dpkg -i elasticsearch-0.90.3.deb
 % sudo service elasticsearch start
 </code></pre></div><h2 id="kibana-のインストール">Kibana のインストール<a hidden class="anchor" aria-hidden="true" href="#kibana-のインストール">#</a></h2>
 <p>Kibana をダウンロードして Gemfile にしたがって必要なモノをインストールします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% git clone --branch<span style="color:#f92672">=</span>kibana-ruby https://github.com/rashidkpc/Kibana.git
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% git clone --branch<span style="color:#f92672">=</span>kibana-ruby https://github.com/rashidkpc/Kibana.git
 % sudo gem install bundler
 % cd Kibana
 % sudo bundle install
 % sudo gem install tzinfo-data
 </code></pre></div><p>KibanaConfig.rb の KibanaHost はリスンアドレスになるので 0.0.0.0 に修正sます。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">KibanaHost <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;0.0.0.0&#39;</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">KibanaHost <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;0.0.0.0&#39;</span>
 </code></pre></div><p>Kibana を起動します。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ruby kibana.rb
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ruby kibana.rb
 <span style="color:#f92672">==</span> Sinatra/1.4.3 has taken the stage on <span style="color:#ae81ff">5601</span> <span style="color:#66d9ef">for</span> development with backup from Thin
 &gt;&gt; Thin web server <span style="color:#f92672">(</span>v1.5.1 codename Straight Razor<span style="color:#f92672">)</span>
 &gt;&gt; Maximum connections set to <span style="color:#ae81ff">1024</span>
 &gt;&gt; Listening on 0.0.0.0:5601, CTRL+C to stop
 </code></pre></div><h2 id="fluentd-のインストール">fluentd のインストール<a hidden class="anchor" aria-hidden="true" href="#fluentd-のインストール">#</a></h2>
 <p>fluentd を下記の通りインストールします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo -i
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo -i
 % curl -L http://toolbelt.treasure-data.com/sh/install-ubuntu-precise.sh | sh
 </code></pre></div><p>/etc/td-agent/td-agent.conf を下記の通りに修正します。サンプルで Apache のログ
 を ElasticSearch に飛ばす設定にします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-xml" data-lang="xml"><span style="color:#f92672">&lt;source&gt;</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-xml" data-lang="xml"><span style="color:#f92672">&lt;source&gt;</span>
   type tail
   format apache
   path /var/log/apache2/access.log
@@ -244,11 +252,11 @@ fluentd の組み合わせでログ解析システムを組む方法をメモし
 <span style="color:#f92672">&lt;/match&gt;</span>
 </code></pre></div><p>host パラメータは環境に合わせて設定します。</p>
 <p>fluentd を起動します。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo service td-agent start
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo service td-agent start
 </code></pre></div><h2 id="apache-のインストール">Apache のインストール<a hidden class="anchor" aria-hidden="true" href="#apache-のインストール">#</a></h2>
 <p>システムに必要なわけではありませんが、サンプルで Apache のログを fluentd 経由
 で飛ばして Kibana で確認したいのでインストールします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo apt-get install apache2
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo apt-get install apache2
 % sudo chown -R td-agent /var/log/apache2
 </code></pre></div><p>ファイルのオーナを td-agent にする必要がありました。</p>
 <h2 id="ブラウザでアクセス">ブラウザでアクセス<a hidden class="anchor" aria-hidden="true" href="#ブラウザでアクセス">#</a></h2>
@@ -267,10 +275,10 @@ kibana.rb を起動するもっと良い方法がないかも調べないと。<
 も試してみました。</p>
 <p><a href="http://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/">http://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/</a></p>
 
-</div>
+
+  </div>
+
   <footer class="post-footer">
-
-
 
 <div class="share-buttons">
     <a target="_blank" rel="noopener noreferrer" aria-label="share Kibana &#43; ElasticSearch &#43; fluentd を試してみた on twitter"
@@ -319,46 +327,52 @@ kibana.rb を起動するもっと良い方法がないかも調べないと。<
 
   </footer>
 </article>
-    </main><footer class="footer">
+    </main>
+    
+<footer class="footer">
     <span>&copy; 2021 <a href="https://jedipunkz.github.io">jedipunkz 🚀 のブログ</a></span>
-    <span>&middot;</span>
-    <span>Powered by <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a></span>
-    <span>&middot;</span>
-    <span>Theme <a href="https://git.io/hugopapermod" rel="noopener" target="_blank">PaperMod</a></span>
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://git.io/hugopapermod" rel="noopener" target="_blank">PaperMod</a>
+    </span>
 </footer>
-<a href="#top">
-    <button class="top-link" id="top-link" type="button" aria-label="go to top" title="Go to Top (Alt + G)"
-        accesskey="g">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6">
-            <path d="M12 6H0l6-6z" />
-        </svg>
-    </button>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
 </a>
 
-
-
-<script defer src="https://jedipunkz.github.io/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
-    onload="hljs.initHighlightingOnLoad();"></script>
 <script>
-    window.onload = function () {
-        if (localStorage.getItem("menu-scroll-position")) {
-            document.getElementById('menu').scrollLeft = localStorage.getItem("menu-scroll-position");
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
         }
     }
+
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         anchor.addEventListener("click", function (e) {
             e.preventDefault();
             var id = this.getAttribute("href").substr(1);
-            document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
-                behavior: "smooth"
-            });
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
             if (id === "top") {
                 history.replaceState(null, null, " ");
             } else {
-                history.replaceState(null, null, `#${id}`);
+                history.pushState(null, null, `#${id}`);
             }
         });
     });
+
+</script>
+<script>
     var mybutton = document.getElementById("top-link");
     window.onscroll = function () {
         if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
@@ -369,10 +383,6 @@ kibana.rb を起動するもっと良い方法がないかも調べないと。<
             mybutton.style.opacity = "0";
         }
     };
-
-    function menu_on_scroll() {
-        localStorage.setItem("menu-scroll-position", document.getElementById('menu').scrollLeft);
-    }
 
 </script>
 <script>
@@ -387,7 +397,6 @@ kibana.rb を起動するもっと良い方法がないかも調べないと。<
     })
 
 </script>
-
 </body>
 
 </html>

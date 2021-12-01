@@ -6,9 +6,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <meta name="robots" content="index, follow">
 <title>OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携 | jedipunkz 🚀 のブログ</title>
-
 <meta name="keywords" content="" />
-<meta name="description" content="こんにちは！@jedipunkzです。
+<meta name="description" content="こんにちは！@jedipunkz です。
 今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。
 https://ceph.com/docs/master/rbd/rbd-openstack/
 この手順から下記の変更を行って、ここでは記していきます。
@@ -17,9 +16,9 @@ https://ceph.com/docs/master/rbd/rbd-openstack/
  &#43;--------------------------------------------------------------------- external | &#43;--------------&#43;--(-----------&#43;--------------&#43;------------------------------------------ public | | | | | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | controller | | network | | compute | | ceph01 | | ceph02 | | ceph03 | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | | | | | | | | | | | | | | | | &#43;--------------&#43;--(-----------&#43;--(-----------&#43;--(--(--------&#43;--(--(--------&#43;--(--(------- management | | | | | | | | | | | &#43;--------------&#43;--(-----------(--(-----------(--(-----------(--(------- guest | | | | | | | | &#43;--------------------------------&#43;-----------&#43;--(-----------&#43;--(-----------&#43;--(------- storage | | | &#43;--------------&#43;--------------&#43;------- cluster 特徴">
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2014/04/04/openstack-havana-cinder-glance-ceph/" />
-<link href="https://jedipunkz.github.io/assets/css/stylesheet.min.521ef667ad8ddd035b65438a1d85fd5707173fefe338d23bc2544d116fa47efb.css" integrity="sha256-Uh72Z62N3QNbZUOKHYX9VwcXP&#43;/jONI7wlRNEW&#43;kfvs=" rel="preload stylesheet"
-    as="style">
-
+<link crossorigin="anonymous" href="/assets/css/stylesheet.min.6f60056d44d3f7eb69a4bc6c332b59960f3a995802bded244750232f33713c49.css" integrity="sha256-b2AFbUTT9&#43;tppLxsMytZlg86mVgCve0kR1AjLzNxPEk=" rel="preload stylesheet" as="style">
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+    onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.github.io/favicon-32x32.png">
@@ -27,22 +26,29 @@ https://ceph.com/docs/master/rbd/rbd-openstack/
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.82.0" />
+<meta name="generator" content="Hugo 0.89.2" />
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
 
-
-
+    </style>
+</noscript>
 <script type="application/javascript">
 var doNotTrack = false;
 if (!doNotTrack) {
-	window.ga=window.ga||function(){(ga.q=ga.q||[]).push(arguments)};ga.l=+new Date;
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
 	ga('create', 'UA-30563095-1', 'auto');
 	
 	ga('send', 'pageview');
 }
-</script>
-<script async src='https://www.google-analytics.com/analytics.js'></script>
-<meta property="og:title" content="OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携" />
-<meta property="og:description" content="こんにちは！@jedipunkzです。
+</script><meta property="og:title" content="OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携" />
+<meta property="og:description" content="こんにちは！@jedipunkz です。
 今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。
 https://ceph.com/docs/master/rbd/rbd-openstack/
 この手順から下記の変更を行って、ここでは記していきます。
@@ -50,12 +56,13 @@ https://ceph.com/docs/master/rbd/rbd-openstack/
 構成 下記の通りの物理ネットワーク6つの構成です。 OpenStack, Ceph 共に最小構成を前提にします。
  &#43;--------------------------------------------------------------------- external | &#43;--------------&#43;--(-----------&#43;--------------&#43;------------------------------------------ public | | | | | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | controller | | network | | compute | | ceph01 | | ceph02 | | ceph03 | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | | | | | | | | | | | | | | | | &#43;--------------&#43;--(-----------&#43;--(-----------&#43;--(--(--------&#43;--(--(--------&#43;--(--(------- management | | | | | | | | | | | &#43;--------------&#43;--(-----------(--(-----------(--(-----------(--(------- guest | | | | | | | | &#43;--------------------------------&#43;-----------&#43;--(-----------&#43;--(-----------&#43;--(------- storage | | | &#43;--------------&#43;--------------&#43;------- cluster 特徴" />
 <meta property="og:type" content="article" />
-<meta property="og:url" content="https://jedipunkz.github.io/post/2014/04/04/openstack-havana-cinder-glance-ceph/" />
-<meta property="article:published_time" content="2014-04-04T00:00:00+00:00" />
-<meta property="article:modified_time" content="2014-04-04T00:00:00+00:00" />
+<meta property="og:url" content="https://jedipunkz.github.io/post/2014/04/04/openstack-havana-cinder-glance-ceph/" /><meta property="article:section" content="post" />
+<meta property="article:published_time" content="2014-04-04T00:00:00&#43;00:00" />
+<meta property="article:modified_time" content="2014-04-04T00:00:00&#43;00:00" />
+
 <meta name="twitter:card" content="summary"/>
 <meta name="twitter:title" content="OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携"/>
-<meta name="twitter:description" content="こんにちは！@jedipunkzです。
+<meta name="twitter:description" content="こんにちは！@jedipunkz です。
 今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。
 https://ceph.com/docs/master/rbd/rbd-openstack/
 この手順から下記の変更を行って、ここでは記していきます。
@@ -63,18 +70,39 @@ https://ceph.com/docs/master/rbd/rbd-openstack/
 構成 下記の通りの物理ネットワーク6つの構成です。 OpenStack, Ceph 共に最小構成を前提にします。
  &#43;--------------------------------------------------------------------- external | &#43;--------------&#43;--(-----------&#43;--------------&#43;------------------------------------------ public | | | | | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | controller | | network | | compute | | ceph01 | | ceph02 | | ceph03 | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | | | | | | | | | | | | | | | | &#43;--------------&#43;--(-----------&#43;--(-----------&#43;--(--(--------&#43;--(--(--------&#43;--(--(------- management | | | | | | | | | | | &#43;--------------&#43;--(-----------(--(-----------(--(-----------(--(------- guest | | | | | | | | &#43;--------------------------------&#43;-----------&#43;--(-----------&#43;--(-----------&#43;--(------- storage | | | &#43;--------------&#43;--------------&#43;------- cluster 特徴"/>
 
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "Posts",
+      "item": "https://jedipunkz.github.io/post/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  3 ,
+      "name": "OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携",
+      "item": "https://jedipunkz.github.io/post/2014/04/04/openstack-havana-cinder-glance-ceph/"
+    }
+  ]
+}
+</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携",
   "name": "OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携",
-  "description": "こんにちは！@jedipunkzです。\n今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。\nhttps://ceph.com/docs/master/rbd/rbd-openstack/\nこの手順から下記の変 …",
+  "description": "こんにちは！@jedipunkz です。\n今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。\nhttps://ceph.com/docs/master/rbd/rbd-openstack/\nこの手順から下記の変更を行って、ここでは記していきます。\n Nova + Ceph 連携させない cinder-backup は今のところ動作確認出来ていないので省く 諸々の手順がそのままでは実施出来ないので補足を入れていく。  cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ 上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の Ceph 連携は意味が大きくなってくると思います。\n構成 下記の通りの物理ネットワーク6つの構成です。 OpenStack, Ceph 共に最小構成を前提にします。\n +--------------------------------------------------------------------- external | +--------------+--(-----------+--------------+------------------------------------------ public | | | | | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | controller | | network | | compute | | ceph01 | | ceph02 | | ceph03 | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | | | | | | | | | | | | | | | | +--------------+--(-----------+--(-----------+--(--(--------+--(--(--------+--(--(------- management | | | | | | | | | | | +--------------+--(-----------(--(-----------(--(-----------(--(------- guest | | | | | | | | +--------------------------------+-----------+--(-----------+--(-----------+--(------- storage | | | +--------------+--------------+------- cluster 特徴",
   "keywords": [
     
   ],
-  "articleBody": "こんにちは！@jedipunkzです。\n今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。\nhttps://ceph.com/docs/master/rbd/rbd-openstack/\nこの手順から下記の変更を行って、ここでは記していきます。\n Nova + Ceph 連携させない cinder-backup は今のところ動作確認出来ていないので省く 諸々の手順がそのままでは実施出来ないので補足を入れていく。  cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ 上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の Ceph 連携は意味が大きくなってくると思います。\n構成 下記の通りの物理ネットワーク6つの構成です。 OpenStack, Ceph 共に最小構成を前提にします。\n +--------------------------------------------------------------------- external | +--------------+--(-----------+--------------+------------------------------------------ public | | | | | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | controller | | network | | compute | | ceph01 | | ceph02 | | ceph03 | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | | | | | | | | | | | | | | | | +--------------+--(-----------+--(-----------+--(--(--------+--(--(--------+--(--(------- management | | | | | | | | | | | +--------------+--(-----------(--(-----------(--(-----------(--(------- guest | | | | | | | | +--------------------------------+-----------+--(-----------+--(-----------+--(------- storage | | | +--------------+--------------+------- cluster 特徴\n 最小構成 controller x 1 + network x 1 + compute x 1 + ceph x 3 OpenStack API の相互通信は management ネットワーク OpenStack VM 間通信は guest ネットワーク OpenStack 外部通信は public ネットワーク OpenStack VM の floating-ip (グローバル) 通信は external ネットワーク Ceph と OpenStack 間の通信は storage ネットワーク Ceph の OSD 間通信は cluster ネットワーク ここには記されていないホスト ‘workstation’ から OpenStack, Ceph をデプロイ  前提の構成 前提構成の OpenStack と Ceph ですが、ここでは構築方法は割愛します。OpenStack は rcbops/chef-cookbooks を。Ceph は ceph-deploy を使って自分は構築しました。 下記の自分のブログに構築手順が載っているので参考にしてみてください。\nOpenStack 構築方法\nhttp://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/\nCeph 構築方法\nhttp://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/\nOpenStack + Ceph 連携手順 では実際に連携するための手順を記していきます。\nrbd pool の作成 Ceph ノードの何れかで下記の手順を実施し rbd pool を作成する。\nceph01% sudo ceph osd pool create volumes 128 ceph01% sudo ceph osd pool create images 128 ceph01% sudo ceph osd pool create backups 128 ssh 鍵の配置 Ceph ノードから OpenStack の controller, compute ノードへ接続出来るよう鍵を配 布します。\nceph01% ssh-copy-id @ ceph01% ssh-copy-id @ sudoers の設定 controller, compute ノード上で sudoers の設定を予め実施する。 /etc/sudoers.d/として保存する。\n ALL = (root) NOPASSWD:ALL ceph パッケージのインストール controller ノード, compute ノード上で Ceph パッケージをインストールする。\ncontroller% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add - controller% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list controller% sudo apt-get update \u0026\u0026 sudo apt-get install -y python-ceph ceph-common compute% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add - compute% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list compute% sudo apt-get update \u0026\u0026 sudo apt-get install -y python-ceph ceph-common controller ノード, compute ノード上でディレクトリを作成する。\ncontroller% sudo mkdir /etc/ceph compute % sudo mkdir /etc/ceph ceph.conf を controller, compute ノードへ配布する。\nceph01% sudo -i ceph01# ssh  sudo tee /etc/ceph/ceph.conf sudo tee /etc/ceph/ceph.conf ceph 上にユーザを作成 Ceph 上に cinder, glance 用の新しいユーザを作成する。\nceph auth get-or-create client.cinder mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=volumes, allow rx pool=images' ceph auth get-or-create client.glance mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=images' ceph auth get-or-create client.cinder-backup mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=backups' キーリングの作成と配置 client.cinder, client.glance, client.cinder-backup のキーリングを作成する。また作成したキーリングを controller ノードに配布する。\nceph01% sudo ceph auth get-or-create client.glance | ssh {your-glance-api-server} sudo tee /etc/ceph/ceph.client.glance.keyring ceph01% ssh {your-glance-api-server} sudo chown glance:glance /etc/ceph/ceph.client.glance.keyring ceph01% sudo ceph auth get-or-create client.cinder | ssh {your-volume-server} sudo tee /etc/ceph/ceph.client.cinder.keyring ceph01% ssh {your-cinder-volume-server} sudo chown cinder:cinder /etc/ceph/ceph.client.cinder.keyring ceph01% sudo ceph auth get-or-create client.cinder-backup | ssh {your-cinder-backup-server} sudo tee /etc/ceph/ceph.client.cinder-backup.keyring ceph01% ssh {your-cinder-backup-server} sudo chown cinder:cinder /etc/ceph/ceph.client.cinder-backup.keyring client.cinder のキーリングを compute ノードに配置する。\nceph01% sudo ceph auth get-key client.cinder | ssh {your-compute-node} tee client.cinder.key libvirt への secret キー追加 compute ノード上で secret キーを libvirt に追加する。\ncompute% uuidgen 457eb676-33da-42ec-9a8c-9293d545c337 cat  secret.xml 457eb676-33da-42ec-9a8c-9293d545c337 client.cinder secret   EOF compute % sudo virsh secret-define --file secret.xml Secret 457eb676-33da-42ec-9a8c-9293d545c337 created compute% sudo virsh secret-set-value --secret 457eb676-33da-42ec-9a8c-9293d545c337 --base64 $(cat client.cinder.key) \u0026\u0026 rm client.cinder.key secret.xml glance 連携手順 controller ノードの /etc/glance/glance-api.conf に下記を追記。 default_store=file と標準ではなっているので下記の通り rbd に書き換える。\ndefault_store=rbd rbd_store_user=glance rbd_store_pool=images cinder 連携手順 controller ノードの /etc/cinder/cinder.conf に下記を追記。 volume_driver は予め LVM の設定が入っていると思われるので書き換える。 また rbd_secret_uuid は先ほど生成した uuid を記す。\nvolume_driver=cinder.volume.drivers.rbd.RBDDriver rbd_pool=volumes rbd_ceph_conf=/etc/ceph/ceph.conf rbd_flatten_volume_from_snapshot=false rbd_max_clone_depth=5 glance_api_version=2 rbd_user=cinder rbd_secret_uuid=457eb676-33da-42ec-9a8c-9293d545c337 ceph.conf への追記 上記で配布した ceph.conf にはキーリングのパスが記されていない。controller ノー ド上の /etc/ceph/ceph.conf に下記の通り追記する。\nここは公式サイトには印されていないのでハマりました。ポイントです。\n[client.keyring] keyring = /etc/ceph/ceph.client.cinder.keyring OpenStack のそれぞれのコンポーネントを再起動かける controller% sudo glance-control api restart compute % sudo service nova-compute restart controller% sudo service cinder-volume restart controller% sudo service cinder-backup restart 動作確認 では動作確認を。Glance に OS イメージを登録。その後そのイメージを元にインスタ ンスを作成。Cinder 上に仮想ディスクを作成。その後先ほど作成したインスタンスに 接続しマウント。そのマウントした仮想ディスク上で書き込みが行えるか確認をします。\nテストで Ubuntu Precise 12.04 のイメージを glance を用いて登録する。\ncontroller% wget http://cloud-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64-disk1.img controller% glance image-create --name precise-image --is-public true --container-format bare --disk-format qcow2 テスト VM を稼働する。\ncontroller% nova boot --nic net-id= --flavor 2 --image precise-image --key_name novakey01 vm01 controller% cinder create --display-name vol01 1 controller% nova volume-attach   auto テスト VM へログインしファイルシステムを作成後、マウントする。\ncontroller% ssh -i  -l ubuntu  vm01% sudo mkfs -t ext4 /dev/vdb vm01% sudo mount -t ext4 /dev/vdb /mnt マウントした仮想ディスク上でデータを書き込んでみる。\nvm01% sudo dd if=/dev/zero of=/mnt/500M bs=1M count=5000 まとめ Ceph, Cinder の Ceph 連携が出来ました！\nOpenStack Grizzly 版時代に Ceph 連携は取っていたのですが Havana では\n cinder-bacup の Ceph 連携 nova の Ceph 連携  が追加されていました。Nova 連携をとるとインスタンスを稼働させる際に通常は controller ノードの /var/lib/nova 配下にファイルとしてインスタンスイメージが作 成されますが、これが Ceph 上に作成されるとのことです。Nova 連携は是非とってみ たいのですが、今のところ動いていません。引き続き調査を行います。\ncinder-backup も少し連携取ってみましたが backup_driver に Ceph ドライバの指定 をしているにも関わらず Swift に接続しにいってしまう有り様でした..。こちらも引 き続き調査します。またステートが ‘in-use’ の場合バックアップが取れず ‘available’ なステートでないといけないようです。確かに書き込み中に操作が行われ てしまってもバックアップの整合性が取れないですし、ここは仕方ないところですね。\n",
-  "wordCount" : "776",
+  "articleBody": "こんにちは！@jedipunkz です。\n今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。\nhttps://ceph.com/docs/master/rbd/rbd-openstack/\nこの手順から下記の変更を行って、ここでは記していきます。\n Nova + Ceph 連携させない cinder-backup は今のところ動作確認出来ていないので省く 諸々の手順がそのままでは実施出来ないので補足を入れていく。  cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ 上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の Ceph 連携は意味が大きくなってくると思います。\n構成 下記の通りの物理ネットワーク6つの構成です。 OpenStack, Ceph 共に最小構成を前提にします。\n +--------------------------------------------------------------------- external | +--------------+--(-----------+--------------+------------------------------------------ public | | | | | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | controller | | network | | compute | | ceph01 | | ceph02 | | ceph03 | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | | | | | | | | | | | | | | | | +--------------+--(-----------+--(-----------+--(--(--------+--(--(--------+--(--(------- management | | | | | | | | | | | +--------------+--(-----------(--(-----------(--(-----------(--(------- guest | | | | | | | | +--------------------------------+-----------+--(-----------+--(-----------+--(------- storage | | | +--------------+--------------+------- cluster 特徴\n 最小構成 controller x 1 + network x 1 + compute x 1 + ceph x 3 OpenStack API の相互通信は management ネットワーク OpenStack VM 間通信は guest ネットワーク OpenStack 外部通信は public ネットワーク OpenStack VM の floating-ip (グローバル) 通信は external ネットワーク Ceph と OpenStack 間の通信は storage ネットワーク Ceph の OSD 間通信は cluster ネットワーク ここには記されていないホスト ‘workstation’ から OpenStack, Ceph をデプロイ  前提の構成 前提構成の OpenStack と Ceph ですが、ここでは構築方法は割愛します。OpenStack は rcbops/chef-cookbooks を。Ceph は ceph-deploy を使って自分は構築しました。 下記の自分のブログに構築手順が載っているので参考にしてみてください。\nOpenStack 構築方法\nhttp://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/\nCeph 構築方法\nhttp://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/\nOpenStack + Ceph 連携手順 では実際に連携するための手順を記していきます。\nrbd pool の作成 Ceph ノードの何れかで下記の手順を実施し rbd pool を作成する。\nceph01% sudo ceph osd pool create volumes 128 ceph01% sudo ceph osd pool create images 128 ceph01% sudo ceph osd pool create backups 128 ssh 鍵の配置 Ceph ノードから OpenStack の controller, compute ノードへ接続出来るよう鍵を配 布します。\nceph01% ssh-copy-id @ ceph01% ssh-copy-id @ sudoers の設定 controller, compute ノード上で sudoers の設定を予め実施する。 /etc/sudoers.d/ として保存する。\n ALL = (root) NOPASSWD:ALL ceph パッケージのインストール controller ノード, compute ノード上で Ceph パッケージをインストールする。\ncontroller% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add - controller% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list controller% sudo apt-get update \u0026\u0026 sudo apt-get install -y python-ceph ceph-common compute% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add - compute% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list compute% sudo apt-get update \u0026\u0026 sudo apt-get install -y python-ceph ceph-common controller ノード, compute ノード上でディレクトリを作成する。\ncontroller% sudo mkdir /etc/ceph compute % sudo mkdir /etc/ceph ceph.conf を controller, compute ノードへ配布する。\nceph01% sudo -i ceph01# ssh  sudo tee /etc/ceph/ceph.conf sudo tee /etc/ceph/ceph.conf ceph 上にユーザを作成 Ceph 上に cinder, glance 用の新しいユーザを作成する。\nceph auth get-or-create client.cinder mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=volumes, allow rx pool=images' ceph auth get-or-create client.glance mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=images' ceph auth get-or-create client.cinder-backup mon 'allow r' osd 'allow class-read object_prefix rbd_children, allow rwx pool=backups' キーリングの作成と配置 client.cinder, client.glance, client.cinder-backup のキーリングを作成する。また作成したキーリングを controller ノードに配布する。\nceph01% sudo ceph auth get-or-create client.glance | ssh {your-glance-api-server} sudo tee /etc/ceph/ceph.client.glance.keyring ceph01% ssh {your-glance-api-server} sudo chown glance:glance /etc/ceph/ceph.client.glance.keyring ceph01% sudo ceph auth get-or-create client.cinder | ssh {your-volume-server} sudo tee /etc/ceph/ceph.client.cinder.keyring ceph01% ssh {your-cinder-volume-server} sudo chown cinder:cinder /etc/ceph/ceph.client.cinder.keyring ceph01% sudo ceph auth get-or-create client.cinder-backup | ssh {your-cinder-backup-server} sudo tee /etc/ceph/ceph.client.cinder-backup.keyring ceph01% ssh {your-cinder-backup-server} sudo chown cinder:cinder /etc/ceph/ceph.client.cinder-backup.keyring client.cinder のキーリングを compute ノードに配置する。\nceph01% sudo ceph auth get-key client.cinder | ssh {your-compute-node} tee client.cinder.key libvirt への secret キー追加 compute ノード上で secret キーを libvirt に追加する。\ncompute% uuidgen 457eb676-33da-42ec-9a8c-9293d545c337 cat  secret.xml 457eb676-33da-42ec-9a8c-9293d545c337 client.cinder secret   EOF compute % sudo virsh secret-define --file secret.xml Secret 457eb676-33da-42ec-9a8c-9293d545c337 created compute% sudo virsh secret-set-value --secret 457eb676-33da-42ec-9a8c-9293d545c337 --base64 $(cat client.cinder.key) \u0026\u0026 rm client.cinder.key secret.xml glance 連携手順 controller ノードの /etc/glance/glance-api.conf に下記を追記。 default_store=file と標準ではなっているので下記の通り rbd に書き換える。\ndefault_store=rbd rbd_store_user=glance rbd_store_pool=images cinder 連携手順 controller ノードの /etc/cinder/cinder.conf に下記を追記。 volume_driver は予め LVM の設定が入っていると思われるので書き換える。 また rbd_secret_uuid は先ほど生成した uuid を記す。\nvolume_driver=cinder.volume.drivers.rbd.RBDDriver rbd_pool=volumes rbd_ceph_conf=/etc/ceph/ceph.conf rbd_flatten_volume_from_snapshot=false rbd_max_clone_depth=5 glance_api_version=2 rbd_user=cinder rbd_secret_uuid=457eb676-33da-42ec-9a8c-9293d545c337 ceph.conf への追記 上記で配布した ceph.conf にはキーリングのパスが記されていない。controller ノー ド上の /etc/ceph/ceph.conf に下記の通り追記する。\nここは公式サイトには印されていないのでハマりました。ポイントです。\n[client.keyring] keyring = /etc/ceph/ceph.client.cinder.keyring OpenStack のそれぞれのコンポーネントを再起動かける controller% sudo glance-control api restart compute % sudo service nova-compute restart controller% sudo service cinder-volume restart controller% sudo service cinder-backup restart 動作確認 では動作確認を。Glance に OS イメージを登録。その後そのイメージを元にインスタ ンスを作成。Cinder 上に仮想ディスクを作成。その後先ほど作成したインスタンスに 接続しマウント。そのマウントした仮想ディスク上で書き込みが行えるか確認をします。\nテストで Ubuntu Precise 12.04 のイメージを glance を用いて登録する。\ncontroller% wget http://cloud-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64-disk1.img controller% glance image-create --name precise-image --is-public true --container-format bare --disk-format qcow2 テスト VM を稼働する。\ncontroller% nova boot --nic net-id= --flavor 2 --image precise-image --key_name novakey01 vm01 controller% cinder create --display-name vol01 1 controller% nova volume-attach   auto テスト VM へログインしファイルシステムを作成後、マウントする。\ncontroller% ssh -i  -l ubuntu  vm01% sudo mkfs -t ext4 /dev/vdb vm01% sudo mount -t ext4 /dev/vdb /mnt マウントした仮想ディスク上でデータを書き込んでみる。\nvm01% sudo dd if=/dev/zero of=/mnt/500M bs=1M count=5000 まとめ Ceph, Cinder の Ceph 連携が出来ました！\nOpenStack Grizzly 版時代に Ceph 連携は取っていたのですが Havana では\n cinder-bacup の Ceph 連携 nova の Ceph 連携  が追加されていました。Nova 連携をとるとインスタンスを稼働させる際に通常は controller ノードの /var/lib/nova 配下にファイルとしてインスタンスイメージが作 成されますが、これが Ceph 上に作成されるとのことです。Nova 連携は是非とってみ たいのですが、今のところ動いていません。引き続き調査を行います。\ncinder-backup も少し連携取ってみましたが backup_driver に Ceph ドライバの指定 をしているにも関わらず Swift に接続しにいってしまう有り様でした..。こちらも引 き続き調査します。またステートが ‘in-use’ の場合バックアップが取れず ‘available’ なステートでないといけないようです。確かに書き込み中に操作が行われ てしまってもバックアップの整合性が取れないですし、ここは仕方ないところですね。\n",
+  "wordCount" : "778",
   "inLanguage": "en",
   "datePublished": "2014-04-04T00:00:00Z",
   "dateModified": "2014-04-04T00:00:00Z",
@@ -96,9 +124,6 @@ https://ceph.com/docs/master/rbd/rbd-openstack/
   }
 }
 </script>
-
-
-
 </head>
 
 <body class="" id="top">
@@ -108,70 +133,56 @@ https://ceph.com/docs/master/rbd/rbd-openstack/
     }
 
 </script>
-<noscript>
-    <style type="text/css">
-        .theme-toggle,
-        .top-link {
-            display: none;
-        }
 
-    </style>
-</noscript>
 <header class="header">
     <nav class="nav">
         <div class="logo">
             <a href="https://jedipunkz.github.io" accesskey="h" title="jedipunkz 🚀 のブログ (Alt + H)">jedipunkz 🚀 のブログ</a>
             <span class="logo-switches">
-                <span class="theme-toggle" title="(Alt + T)">
-                    <a id="theme-toggle" accesskey="t">
-                        <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                        </svg>
-                        <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="5"></circle>
-                            <line x1="12" y1="1" x2="12" y2="3"></line>
-                            <line x1="12" y1="21" x2="12" y2="23"></line>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                            <line x1="1" y1="12" x2="3" y2="12"></line>
-                            <line x1="21" y1="12" x2="23" y2="12"></line>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                        </svg>
-                    </a>
-                </span>
-                
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
             </span>
         </div>
-        <ul class="menu" id="menu" onscroll="menu_on_scroll()">
+        <ul id="menu">
             <li>
                 <a href="https://jedipunkz.github.io/about" title="About">
                     <span>About</span>
                 </a>
-            </li></ul>
+            </li>
+        </ul>
     </nav>
 </header>
-
-    <main class="main">
+<main class="main">
 
 <article class="post-single">
   <header class="post-header">
+    
     <h1 class="post-title">
       OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携
     </h1>
-    <div class="post-meta">
+    <div class="post-meta"><span title='2014-04-04 00:00:00 +0000 UTC'>April 4, 2014</span>&nbsp;·&nbsp;4 min&nbsp;·&nbsp;Theme PaperMod
 
-April 4, 2014&nbsp;·&nbsp;4 min&nbsp;·&nbsp;Theme PaperMod
-
-    </div>
+</div>
   </header> 
-
-  <div class="post-content">
-<p>こんにちは！<!-- raw HTML omitted -->@jedipunkz<!-- raw HTML omitted --> です。</p>
+  <div class="post-content"><p>こんにちは！<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 <p>今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ
 る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。</p>
 <p><a href="https://ceph.com/docs/master/rbd/rbd-openstack/">https://ceph.com/docs/master/rbd/rbd-openstack/</a></p>
@@ -189,7 +200,7 @@ Ceph 連携は意味が大きくなってくると思います。</p>
 <h2 id="構成">構成<a hidden class="anchor" aria-hidden="true" href="#構成">#</a></h2>
 <p>下記の通りの物理ネットワーク6つの構成です。
 OpenStack, Ceph 共に最小構成を前提にします。</p>
-<pre><code>                  +--------------------------------------------------------------------- external
+<pre tabindex="0"><code>                  +--------------------------------------------------------------------- external
                   |
 +--------------+--(-----------+--------------+------------------------------------------ public
 |              |  |           |              |
@@ -227,21 +238,21 @@ OpenStack, Ceph 共に最小構成を前提にします。</p>
 <p>では実際に連携するための手順を記していきます。</p>
 <h4 id="rbd-pool-の作成">rbd pool の作成<a hidden class="anchor" aria-hidden="true" href="#rbd-pool-の作成">#</a></h4>
 <p>Ceph ノードの何れかで下記の手順を実施し rbd pool を作成する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ceph01% sudo ceph osd pool create volumes <span style="color:#ae81ff">128</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ceph01% sudo ceph osd pool create volumes <span style="color:#ae81ff">128</span>
 ceph01% sudo ceph osd pool create images <span style="color:#ae81ff">128</span>
 ceph01% sudo ceph osd pool create backups <span style="color:#ae81ff">128</span>
 </code></pre></div><h4 id="ssh-鍵の配置">ssh 鍵の配置<a hidden class="anchor" aria-hidden="true" href="#ssh-鍵の配置">#</a></h4>
 <p>Ceph ノードから OpenStack の controller, compute ノードへ接続出来るよう鍵を配
 布します。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ceph01% ssh-copy-id &lt;username&gt;@&lt;controller_ip&gt;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ceph01% ssh-copy-id &lt;username&gt;@&lt;controller_ip&gt;
 ceph01% ssh-copy-id &lt;username&gt;@&lt;compute_ip&gt;
 </code></pre></div><h4 id="sudoers-の設定">sudoers の設定<a hidden class="anchor" aria-hidden="true" href="#sudoers-の設定">#</a></h4>
 <p>controller, compute ノード上で sudoers の設定を予め実施する。
-/etc/sudoers.d/<!-- raw HTML omitted --> として保存する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">&lt;username&gt; ALL <span style="color:#f92672">=</span> <span style="color:#f92672">(</span>root<span style="color:#f92672">)</span> NOPASSWD:ALL
+/etc/sudoers.d/<username> として保存する。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">&lt;username&gt; ALL <span style="color:#f92672">=</span> <span style="color:#f92672">(</span>root<span style="color:#f92672">)</span> NOPASSWD:ALL
 </code></pre></div><h4 id="ceph-パッケージのインストール">ceph パッケージのインストール<a hidden class="anchor" aria-hidden="true" href="#ceph-パッケージのインストール">#</a></h4>
 <p>controller ノード, compute ノード上で Ceph パッケージをインストールする。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% wget -q -O- <span style="color:#e6db74">&#39;https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc&#39;</span> | sudo apt-key add -
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% wget -q -O- <span style="color:#e6db74">&#39;https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc&#39;</span> | sudo apt-key add -
 controller% echo deb http://ceph.com/debian/ <span style="color:#66d9ef">$(</span>lsb_release -sc<span style="color:#66d9ef">)</span> main | sudo tee /etc/apt/sources.list.d/ceph.list
 controller% sudo apt-get update <span style="color:#f92672">&amp;&amp;</span> sudo apt-get install -y python-ceph ceph-common
 
@@ -249,31 +260,31 @@ compute% wget -q -O- <span style="color:#e6db74">&#39;https://ceph.com/git/?p=ce
 compute% echo deb http://ceph.com/debian/ <span style="color:#66d9ef">$(</span>lsb_release -sc<span style="color:#66d9ef">)</span> main | sudo tee /etc/apt/sources.list.d/ceph.list
 compute% sudo apt-get update <span style="color:#f92672">&amp;&amp;</span> sudo apt-get install -y python-ceph ceph-common
 </code></pre></div><p>controller ノード, compute ノード上でディレクトリを作成する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% sudo mkdir /etc/ceph
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% sudo mkdir /etc/ceph
 compute   % sudo mkdir /etc/ceph
 </code></pre></div><p>ceph.conf を controller, compute ノードへ配布する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ceph01% sudo -i
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ceph01% sudo -i
 ceph01# ssh &lt;controller_ip&gt; sudo tee /etc/ceph/ceph.conf &lt;/etc/ceph/ceph.conf
 ceph01# ssh &lt;compute_ip&gt; sudo tee /etc/ceph/ceph.conf &lt;/etc/ceph/ceph.conf
 </code></pre></div><h4 id="ceph-上にユーザを作成">ceph 上にユーザを作成<a hidden class="anchor" aria-hidden="true" href="#ceph-上にユーザを作成">#</a></h4>
 <p>Ceph 上に cinder, glance 用の新しいユーザを作成する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ceph auth get-or-create client.cinder mon <span style="color:#e6db74">&#39;allow r&#39;</span> osd <span style="color:#e6db74">&#39;allow class-read object_prefix rbd_children, allow rwx pool=volumes, allow rx pool=images&#39;</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ceph auth get-or-create client.cinder mon <span style="color:#e6db74">&#39;allow r&#39;</span> osd <span style="color:#e6db74">&#39;allow class-read object_prefix rbd_children, allow rwx pool=volumes, allow rx pool=images&#39;</span>
 ceph auth get-or-create client.glance mon <span style="color:#e6db74">&#39;allow r&#39;</span> osd <span style="color:#e6db74">&#39;allow class-read object_prefix rbd_children, allow rwx pool=images&#39;</span>
 ceph auth get-or-create client.cinder-backup mon <span style="color:#e6db74">&#39;allow r&#39;</span> osd <span style="color:#e6db74">&#39;allow class-read object_prefix rbd_children, allow rwx pool=backups&#39;</span>
 </code></pre></div><h4 id="キーリングの作成と配置">キーリングの作成と配置<a hidden class="anchor" aria-hidden="true" href="#キーリングの作成と配置">#</a></h4>
 <p>client.cinder, client.glance, client.cinder-backup のキーリングを作成する。また作成したキーリングを
 controller ノードに配布する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ceph01% sudo ceph auth get-or-create client.glance | ssh <span style="color:#f92672">{</span>your-glance-api-server<span style="color:#f92672">}</span> sudo tee /etc/ceph/ceph.client.glance.keyring
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ceph01% sudo ceph auth get-or-create client.glance | ssh <span style="color:#f92672">{</span>your-glance-api-server<span style="color:#f92672">}</span> sudo tee /etc/ceph/ceph.client.glance.keyring
 ceph01% ssh <span style="color:#f92672">{</span>your-glance-api-server<span style="color:#f92672">}</span> sudo chown glance:glance /etc/ceph/ceph.client.glance.keyring
 ceph01% sudo ceph auth get-or-create client.cinder | ssh <span style="color:#f92672">{</span>your-volume-server<span style="color:#f92672">}</span> sudo tee /etc/ceph/ceph.client.cinder.keyring
 ceph01% ssh <span style="color:#f92672">{</span>your-cinder-volume-server<span style="color:#f92672">}</span> sudo chown cinder:cinder /etc/ceph/ceph.client.cinder.keyring
 ceph01% sudo ceph auth get-or-create client.cinder-backup | ssh <span style="color:#f92672">{</span>your-cinder-backup-server<span style="color:#f92672">}</span> sudo tee /etc/ceph/ceph.client.cinder-backup.keyring
 ceph01% ssh <span style="color:#f92672">{</span>your-cinder-backup-server<span style="color:#f92672">}</span> sudo chown cinder:cinder /etc/ceph/ceph.client.cinder-backup.keyring
 </code></pre></div><p>client.cinder のキーリングを compute ノードに配置する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ceph01% sudo ceph auth get-key client.cinder | ssh <span style="color:#f92672">{</span>your-compute-node<span style="color:#f92672">}</span> tee client.cinder.key
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">ceph01% sudo ceph auth get-key client.cinder | ssh <span style="color:#f92672">{</span>your-compute-node<span style="color:#f92672">}</span> tee client.cinder.key
 </code></pre></div><h4 id="libvirt-への-secret-キー追加">libvirt への secret キー追加<a hidden class="anchor" aria-hidden="true" href="#libvirt-への-secret-キー追加">#</a></h4>
 <p>compute ノード上で secret キーを libvirt に追加する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">compute% uuidgen
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">compute% uuidgen
 457eb676-33da-42ec-9a8c-9293d545c337
 
 cat &gt; secret.xml <span style="color:#e6db74">&lt;&lt;EOF
@@ -290,14 +301,14 @@ compute% sudo virsh secret-set-value --secret 457eb676-33da-42ec-9a8c-9293d545c3
 </code></pre></div><h4 id="glance-連携手順">glance 連携手順<a hidden class="anchor" aria-hidden="true" href="#glance-連携手順">#</a></h4>
 <p>controller ノードの /etc/glance/glance-api.conf に下記を追記。
 default_store=file と標準ではなっているので下記の通り rbd に書き換える。</p>
-<pre><code>default_store=rbd
+<pre tabindex="0"><code>default_store=rbd
 rbd_store_user=glance
 rbd_store_pool=images
 </code></pre><h4 id="cinder-連携手順">cinder 連携手順<a hidden class="anchor" aria-hidden="true" href="#cinder-連携手順">#</a></h4>
 <p>controller ノードの /etc/cinder/cinder.conf に下記を追記。
 volume_driver は予め LVM の設定が入っていると思われるので書き換える。
 また rbd_secret_uuid は先ほど生成した uuid を記す。</p>
-<pre><code>volume_driver=cinder.volume.drivers.rbd.RBDDriver
+<pre tabindex="0"><code>volume_driver=cinder.volume.drivers.rbd.RBDDriver
 rbd_pool=volumes
 rbd_ceph_conf=/etc/ceph/ceph.conf
 rbd_flatten_volume_from_snapshot=false
@@ -309,10 +320,10 @@ rbd_secret_uuid=457eb676-33da-42ec-9a8c-9293d545c337
 <p>上記で配布した ceph.conf にはキーリングのパスが記されていない。controller ノー
 ド上の /etc/ceph/ceph.conf に下記の通り追記する。</p>
 <p>ここは公式サイトには印されていないのでハマりました。ポイントです。</p>
-<pre><code>[client.keyring]
+<pre tabindex="0"><code>[client.keyring]
   keyring = /etc/ceph/ceph.client.cinder.keyring
 </code></pre><h4 id="openstack-のそれぞれのコンポーネントを再起動かける">OpenStack のそれぞれのコンポーネントを再起動かける<a hidden class="anchor" aria-hidden="true" href="#openstack-のそれぞれのコンポーネントを再起動かける">#</a></h4>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% sudo glance-control api restart
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% sudo glance-control api restart
 compute   % sudo service nova-compute restart
 controller% sudo service cinder-volume restart
 controller% sudo service cinder-backup restart
@@ -321,18 +332,18 @@ controller% sudo service cinder-backup restart
 ンスを作成。Cinder 上に仮想ディスクを作成。その後先ほど作成したインスタンスに
 接続しマウント。そのマウントした仮想ディスク上で書き込みが行えるか確認をします。</p>
 <p>テストで Ubuntu Precise 12.04 のイメージを glance を用いて登録する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% wget http://cloud-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64-disk1.img
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% wget http://cloud-images.ubuntu.com/precise/current/precise-server-cloudimg-amd64-disk1.img
 controller% glance image-create --name precise-image --is-public true --container-format bare --disk-format qcow2 &lt; precise-server-cloudimg-amd64-disk1.img
 </code></pre></div><p>テスト VM を稼働する。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% nova boot --nic net-id<span style="color:#f92672">=</span>&lt;net_id&gt; --flavor <span style="color:#ae81ff">2</span> --image precise-image --key_name novakey01 vm01
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% nova boot --nic net-id<span style="color:#f92672">=</span>&lt;net_id&gt; --flavor <span style="color:#ae81ff">2</span> --image precise-image --key_name novakey01 vm01
 controller% cinder create --display-name vol01 <span style="color:#ae81ff">1</span>
 controller% nova volume-attach &lt;instance_id&gt; &lt;volume_id&gt; auto
 </code></pre></div><p>テスト VM へログインしファイルシステムを作成後、マウントする。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% ssh -i &lt;key_file_path&gt; -l ubuntu &lt;instance_ip&gt;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% ssh -i &lt;key_file_path&gt; -l ubuntu &lt;instance_ip&gt;
 vm01% sudo mkfs -t ext4 /dev/vdb
 vm01% sudo mount -t ext4 /dev/vdb /mnt
 </code></pre></div><p>マウントした仮想ディスク上でデータを書き込んでみる。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">vm01% sudo dd <span style="color:#66d9ef">if</span><span style="color:#f92672">=</span>/dev/zero of<span style="color:#f92672">=</span>/mnt/500M bs<span style="color:#f92672">=</span>1M count<span style="color:#f92672">=</span><span style="color:#ae81ff">5000</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">vm01% sudo dd <span style="color:#66d9ef">if</span><span style="color:#f92672">=</span>/dev/zero of<span style="color:#f92672">=</span>/mnt/500M bs<span style="color:#f92672">=</span>1M count<span style="color:#f92672">=</span><span style="color:#ae81ff">5000</span>
 </code></pre></div><h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
 <p>Ceph, Cinder の Ceph 連携が出来ました！</p>
 <p>OpenStack Grizzly 版時代に Ceph 連携は取っていたのですが Havana では</p>
@@ -350,10 +361,10 @@ controller ノードの /var/lib/nova 配下にファイルとしてインスタ
 &lsquo;available&rsquo; なステートでないといけないようです。確かに書き込み中に操作が行われ
 てしまってもバックアップの整合性が取れないですし、ここは仕方ないところですね。</p>
 
-</div>
+
+  </div>
+
   <footer class="post-footer">
-
-
 
 <div class="share-buttons">
     <a target="_blank" rel="noopener noreferrer" aria-label="share OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携 on twitter"
@@ -402,46 +413,52 @@ controller ノードの /var/lib/nova 配下にファイルとしてインスタ
 
   </footer>
 </article>
-    </main><footer class="footer">
+    </main>
+    
+<footer class="footer">
     <span>&copy; 2021 <a href="https://jedipunkz.github.io">jedipunkz 🚀 のブログ</a></span>
-    <span>&middot;</span>
-    <span>Powered by <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a></span>
-    <span>&middot;</span>
-    <span>Theme <a href="https://git.io/hugopapermod" rel="noopener" target="_blank">PaperMod</a></span>
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://git.io/hugopapermod" rel="noopener" target="_blank">PaperMod</a>
+    </span>
 </footer>
-<a href="#top">
-    <button class="top-link" id="top-link" type="button" aria-label="go to top" title="Go to Top (Alt + G)"
-        accesskey="g">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6">
-            <path d="M12 6H0l6-6z" />
-        </svg>
-    </button>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
 </a>
 
-
-
-<script defer src="https://jedipunkz.github.io/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
-    onload="hljs.initHighlightingOnLoad();"></script>
 <script>
-    window.onload = function () {
-        if (localStorage.getItem("menu-scroll-position")) {
-            document.getElementById('menu').scrollLeft = localStorage.getItem("menu-scroll-position");
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
         }
     }
+
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         anchor.addEventListener("click", function (e) {
             e.preventDefault();
             var id = this.getAttribute("href").substr(1);
-            document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
-                behavior: "smooth"
-            });
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
             if (id === "top") {
                 history.replaceState(null, null, " ");
             } else {
-                history.replaceState(null, null, `#${id}`);
+                history.pushState(null, null, `#${id}`);
             }
         });
     });
+
+</script>
+<script>
     var mybutton = document.getElementById("top-link");
     window.onscroll = function () {
         if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
@@ -452,10 +469,6 @@ controller ノードの /var/lib/nova 配下にファイルとしてインスタ
             mybutton.style.opacity = "0";
         }
     };
-
-    function menu_on_scroll() {
-        localStorage.setItem("menu-scroll-position", document.getElementById('menu').scrollLeft);
-    }
 
 </script>
 <script>
@@ -470,7 +483,6 @@ controller ノードの /var/lib/nova 配下にファイルとしてインスタ
     })
 
 </script>
-
 </body>
 
 </html>

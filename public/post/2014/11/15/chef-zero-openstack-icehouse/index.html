@@ -6,9 +6,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <meta name="robots" content="index, follow">
 <title>Chef-Zero でお手軽に OpenStack Icehouse を作る | jedipunkz 🚀 のブログ</title>
-
 <meta name="keywords" content="" />
-<meta name="description" content="こんにちは。@jedipunkzです。
+<meta name="description" content="こんにちは。@jedipunkz です。
 OpenStack Juno がリリースされましたが、今日は Icehouse ネタです。
 icehouse 以降、自分の中で OpenStack を自動で作る仕組みが無くなりつつあり、気軽 に OpenStack を作って色々試したい！ッていう時に手段が無く困っていました。例え ば仕事でちょっと OpenStack 弄りたい！って時に DevStack, RDO しかなく。DevStack は御存知の通り動かない可能性が結構あるし RDO は Ubuntu/Debian Gnu Linux ベース じゃないし。
 ってことで、以前にも紹介した stackforge 管理の openstack-chef-repo と Chef-Zero を使って OpenStack Icehouse (Neutron) のオールインワン構成を作る方法 を書きます。ちなみに最近 Chef-Solo が Chef-Zero に置き換わりつつあるらしいです。 Chef-Zero はオンメモリで Chef サーバを起動する仕組みです。Chef-Solo と違って Chef サーバを扱う時と何も変更無く操作が出来るのでとても楽です。また、Chef サーバを 別途構、構築・管理しなくて良いので、気軽に OpenStack が作れます。
@@ -16,9 +15,9 @@ icehouse 以降、自分の中で OpenStack を自動で作る仕組みが無く
  nova-network 構成 API の Endpoint が全て localhost に向いてしまうため外部から操作不可能 各コンポーネントの bind_address が localhost を向いてしまう berkshelf がそのままでは入らない  よって、今回はこれらの問題を解決しつつ &ldquo;オールインワンな Neutron 構成の Icehouse OpenStack を作る方法&rdquo; を書いていきます。">
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2014/11/15/chef-zero-openstack-icehouse/" />
-<link href="https://jedipunkz.github.io/assets/css/stylesheet.min.521ef667ad8ddd035b65438a1d85fd5707173fefe338d23bc2544d116fa47efb.css" integrity="sha256-Uh72Z62N3QNbZUOKHYX9VwcXP&#43;/jONI7wlRNEW&#43;kfvs=" rel="preload stylesheet"
-    as="style">
-
+<link crossorigin="anonymous" href="/assets/css/stylesheet.min.6f60056d44d3f7eb69a4bc6c332b59960f3a995802bded244750232f33713c49.css" integrity="sha256-b2AFbUTT9&#43;tppLxsMytZlg86mVgCve0kR1AjLzNxPEk=" rel="preload stylesheet" as="style">
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+    onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.github.io/favicon-32x32.png">
@@ -26,52 +25,81 @@ icehouse 以降、自分の中で OpenStack を自動で作る仕組みが無く
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.82.0" />
+<meta name="generator" content="Hugo 0.89.2" />
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
 
-
-
+    </style>
+</noscript>
 <script type="application/javascript">
 var doNotTrack = false;
 if (!doNotTrack) {
-	window.ga=window.ga||function(){(ga.q=ga.q||[]).push(arguments)};ga.l=+new Date;
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
 	ga('create', 'UA-30563095-1', 'auto');
 	
 	ga('send', 'pageview');
 }
-</script>
-<script async src='https://www.google-analytics.com/analytics.js'></script>
-<meta property="og:title" content="Chef-Zero でお手軽に OpenStack Icehouse を作る" />
-<meta property="og:description" content="こんにちは。@jedipunkzです。
+</script><meta property="og:title" content="Chef-Zero でお手軽に OpenStack Icehouse を作る" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。
 OpenStack Juno がリリースされましたが、今日は Icehouse ネタです。
 icehouse 以降、自分の中で OpenStack を自動で作る仕組みが無くなりつつあり、気軽 に OpenStack を作って色々試したい！ッていう時に手段が無く困っていました。例え ば仕事でちょっと OpenStack 弄りたい！って時に DevStack, RDO しかなく。DevStack は御存知の通り動かない可能性が結構あるし RDO は Ubuntu/Debian Gnu Linux ベース じゃないし。
 ってことで、以前にも紹介した stackforge 管理の openstack-chef-repo と Chef-Zero を使って OpenStack Icehouse (Neutron) のオールインワン構成を作る方法 を書きます。ちなみに最近 Chef-Solo が Chef-Zero に置き換わりつつあるらしいです。 Chef-Zero はオンメモリで Chef サーバを起動する仕組みです。Chef-Solo と違って Chef サーバを扱う時と何も変更無く操作が出来るのでとても楽です。また、Chef サーバを 別途構、構築・管理しなくて良いので、気軽に OpenStack が作れます。
 ちなみに stackforge/openstack-chef-repo の README.md に Chef-Zero での構築方法 が書いてありますが、沢山の問題があります。
  nova-network 構成 API の Endpoint が全て localhost に向いてしまうため外部から操作不可能 各コンポーネントの bind_address が localhost を向いてしまう berkshelf がそのままでは入らない  よって、今回はこれらの問題を解決しつつ &ldquo;オールインワンな Neutron 構成の Icehouse OpenStack を作る方法&rdquo; を書いていきます。" />
 <meta property="og:type" content="article" />
-<meta property="og:url" content="https://jedipunkz.github.io/post/2014/11/15/chef-zero-openstack-icehouse/" />
-<meta property="article:published_time" content="2014-11-15T00:00:00+00:00" />
-<meta property="article:modified_time" content="2014-11-15T00:00:00+00:00" />
+<meta property="og:url" content="https://jedipunkz.github.io/post/2014/11/15/chef-zero-openstack-icehouse/" /><meta property="article:section" content="post" />
+<meta property="article:published_time" content="2014-11-15T00:00:00&#43;00:00" />
+<meta property="article:modified_time" content="2014-11-15T00:00:00&#43;00:00" />
+
 <meta name="twitter:card" content="summary"/>
 <meta name="twitter:title" content="Chef-Zero でお手軽に OpenStack Icehouse を作る"/>
-<meta name="twitter:description" content="こんにちは。@jedipunkzです。
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。
 OpenStack Juno がリリースされましたが、今日は Icehouse ネタです。
 icehouse 以降、自分の中で OpenStack を自動で作る仕組みが無くなりつつあり、気軽 に OpenStack を作って色々試したい！ッていう時に手段が無く困っていました。例え ば仕事でちょっと OpenStack 弄りたい！って時に DevStack, RDO しかなく。DevStack は御存知の通り動かない可能性が結構あるし RDO は Ubuntu/Debian Gnu Linux ベース じゃないし。
 ってことで、以前にも紹介した stackforge 管理の openstack-chef-repo と Chef-Zero を使って OpenStack Icehouse (Neutron) のオールインワン構成を作る方法 を書きます。ちなみに最近 Chef-Solo が Chef-Zero に置き換わりつつあるらしいです。 Chef-Zero はオンメモリで Chef サーバを起動する仕組みです。Chef-Solo と違って Chef サーバを扱う時と何も変更無く操作が出来るのでとても楽です。また、Chef サーバを 別途構、構築・管理しなくて良いので、気軽に OpenStack が作れます。
 ちなみに stackforge/openstack-chef-repo の README.md に Chef-Zero での構築方法 が書いてありますが、沢山の問題があります。
  nova-network 構成 API の Endpoint が全て localhost に向いてしまうため外部から操作不可能 各コンポーネントの bind_address が localhost を向いてしまう berkshelf がそのままでは入らない  よって、今回はこれらの問題を解決しつつ &ldquo;オールインワンな Neutron 構成の Icehouse OpenStack を作る方法&rdquo; を書いていきます。"/>
 
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "Posts",
+      "item": "https://jedipunkz.github.io/post/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  3 ,
+      "name": "Chef-Zero でお手軽に OpenStack Icehouse を作る",
+      "item": "https://jedipunkz.github.io/post/2014/11/15/chef-zero-openstack-icehouse/"
+    }
+  ]
+}
+</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "Chef-Zero でお手軽に OpenStack Icehouse を作る",
   "name": "Chef-Zero でお手軽に OpenStack Icehouse を作る",
-  "description": "こんにちは。@jedipunkzです。\nOpenStack Juno がリリースされましたが、今日は Icehouse ネタです。\nicehouse 以降、自分の中で OpenStack を自動で作る仕組みが無くなりつつあり、気軽 に OpenStack を作って色々試したい！ッていう時に手段が無く困っていました。例え ば仕事でちょっと OpenStack  …",
+  "description": "こんにちは。@jedipunkz です。\nOpenStack Juno がリリースされましたが、今日は Icehouse ネタです。\nicehouse 以降、自分の中で OpenStack を自動で作る仕組みが無くなりつつあり、気軽 に OpenStack を作って色々試したい！ッていう時に手段が無く困っていました。例え ば仕事でちょっと OpenStack 弄りたい！って時に DevStack, RDO しかなく。DevStack は御存知の通り動かない可能性が結構あるし RDO は Ubuntu/Debian Gnu Linux ベース じゃないし。\nってことで、以前にも紹介した stackforge 管理の openstack-chef-repo と Chef-Zero を使って OpenStack Icehouse (Neutron) のオールインワン構成を作る方法 を書きます。ちなみに最近 Chef-Solo が Chef-Zero に置き換わりつつあるらしいです。 Chef-Zero はオンメモリで Chef サーバを起動する仕組みです。Chef-Solo と違って Chef サーバを扱う時と何も変更無く操作が出来るのでとても楽です。また、Chef サーバを 別途構、構築・管理しなくて良いので、気軽に OpenStack が作れます。\nちなみに stackforge/openstack-chef-repo の README.md に Chef-Zero での構築方法 が書いてありますが、沢山の問題があります。\n nova-network 構成 API の Endpoint が全て localhost に向いてしまうため外部から操作不可能 各コンポーネントの bind_address が localhost を向いてしまう berkshelf がそのままでは入らない  よって、今回はこれらの問題を解決しつつ \u0026ldquo;オールインワンな Neutron 構成の Icehouse OpenStack を作る方法\u0026rdquo; を書いていきます。",
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkzです。\nOpenStack Juno がリリースされましたが、今日は Icehouse ネタです。\nicehouse 以降、自分の中で OpenStack を自動で作る仕組みが無くなりつつあり、気軽 に OpenStack を作って色々試したい！ッていう時に手段が無く困っていました。例え ば仕事でちょっと OpenStack 弄りたい！って時に DevStack, RDO しかなく。DevStack は御存知の通り動かない可能性が結構あるし RDO は Ubuntu/Debian Gnu Linux ベース じゃないし。\nってことで、以前にも紹介した stackforge 管理の openstack-chef-repo と Chef-Zero を使って OpenStack Icehouse (Neutron) のオールインワン構成を作る方法 を書きます。ちなみに最近 Chef-Solo が Chef-Zero に置き換わりつつあるらしいです。 Chef-Zero はオンメモリで Chef サーバを起動する仕組みです。Chef-Solo と違って Chef サーバを扱う時と何も変更無く操作が出来るのでとても楽です。また、Chef サーバを 別途構、構築・管理しなくて良いので、気軽に OpenStack が作れます。\nちなみに stackforge/openstack-chef-repo の README.md に Chef-Zero での構築方法 が書いてありますが、沢山の問題があります。\n nova-network 構成 API の Endpoint が全て localhost に向いてしまうため外部から操作不可能 各コンポーネントの bind_address が localhost を向いてしまう berkshelf がそのままでは入らない  よって、今回はこれらの問題を解決しつつ “オールインワンな Neutron 構成の Icehouse OpenStack を作る方法” を書いていきます。\n構成 +----------------- 10.0.0.0/24 (api/management network) | +----------------+ | OpenStack Node | | Controller | | Compute | +----------------+ | | +--(-------------- 10.0.1.0/24 (external network) | +-------------- 10.0.2.0/24 (guest vm network)  IP address 達\n 10.0.0.10 (api/manageent network) : eth0 10.0.1.10 (external network) : eth1 10.0.2.10 (guest vm network) : eth2  注意 : 操作は全て eth0 経由で行う\n前提の環境 stackforge/openstack-chef-repo の依存している Cookbooks の関係上、upstart 周り がうまく制御できていないので Ubuntu Server 12.04.x を使います。\nインストール方法 上記のように3つのネットワークインターフェースが付いたサーバを1台用意します。 KVM が利用出来たほうがいいですが使えないくても構いません。KVM リソースが使えな い場合の修正方法を後に記します。\nサーバにログインし root ユーザになります。その後 Chef をオムニバスインストーラ でインストールします。\n% sudo -i # curl -L https://www.opscode.com/chef/install.sh | bash 次に stable/icehose ブランチを指定して openstack-chef-repo をクローンします。\n# cd ~ # git clone -b stable/icehouse https://github.com/stackforge/openstack-chef-repo #  berkshelf をインストールするのですが依存パッケージが足らないのでここでインストー ルします。\n# apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev \\ ruby-dev libxml2-dev libxslt-dev g++ berkshelf をインストールします。\n# /opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc 次に openstack-chef-repo に依存する Cookbooks を取得します。\n# cd ~/openstack-chef-repo # /opt/chef/embedded/bin/berks vendor ./cookbooks ~/openstack-chef-repo/environments ディレクトリ配下に neutron-allinone.json と いうファイル名で作成します。内容は下記の通りです。\n{ [0/215] \"name\": \"neutron-allinone\", \"description\": \"test\", \"cookbook_versions\": { }, \"json_class\": \"Chef::Environment\", \"chef_type\": \"environment\", \"default_attributes\": { }, \"override_attributes\": { \"mysql\": { \"bind_address\": \"0.0.0.0\", \"server_root_password\": \"root\", \"server_debian_password\": \"root\", \"server_repl_password\": \"root\", \"allow_remote_root\": true, \"root_network_acl\": [\"10.0.0.0/8\"] }, \"rabbitmq\": { \"address\": \"10.0.1.10\", \"port\": \"5672\" }, \"openstack\": { \"auth\": { \"validate_certs\": false }, \"dashboard\": { \"session_backend\": \"file\" }, \"block-storage\": { \"syslog\": { \"use\": false }, \"api\": { \"ratelimit\": \"False\" }, \"debug\": true, \"image_api_chef_role\": \"os-image\", \"identity_service_chef_role\": \"os-identity\", \"rabbit_server_chef_role\": \"os-ops-messaging\" }, \"compute\": { \"rabbit\": { \"host\": \"10.0.1.10\" }, \"novnc_proxy\": { \"bind_interface\": \"eth0\" }, \"libvirt\": { \"bind_interface\": \"eth0\", }, \"novnc_proxy\": { \"bind_interface\": \"eth0\" }, \"xvpvnc_proxy\": { \"bind_interface\": \"eth0\" }, \"image_api_chef_role\": \"os-image\", \"identity_service_chef_role\": \"os-identity\", \"nova_setup_chef_role\": \"os-compute-api\", \"rabbit_server_chef_role\": \"os-ops-messaging\", \"network\": { \"public_interface\": \"eth0\", \"service_type\": \"neutron\" } }, \"network\": { \"debug\": \"True\", \"dhcp\": { \"enable_isolated_metadata\": \"True\" }, \"metadata\": { \"nova_metadata_ip\": \"10.0.1.10\" }, \"openvswitch\": { \"tunnel_id_ranges\": \"1:1000\", \"enable_tunneling\": \"True\", \"tenant_network_type\": \"gre\", \"local_ip_interface\": \"eth2\" }, \"api\": { \"bind_interface\": \"eth0\" }, \"l3\": { \"external_network_bridge_interface\": \"eth1\" }, \"service_plugins\": [\"neutron.services.l3_router.l3_router_plugin.L3RouterPlugin\"] }, \"db\": { \"bind_interface\": \"eth0\", \"compute\": { \"host\": \"10.0.1.10\" }, \"identity\": { \"host\": \"10.0.1.10\" }, \"image\": { \"host\": \"10.0.1.10\" }, \"network\": { \"host\": \"10.0.1.10\" }, \"volume\": { \"host\": \"10.0.1.10\" }, \"dashboard\": { \"host\": \"10.0.1.10\" }, \"telemetry\": { \"host\": \"10.0.1.10\" }, \"orchestration\": { \"host\": \"10.0.1.10\" } }, \"developer_mode\": true, \"endpoints\": { \"compute-api-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8774\" }, \"compute-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8774\" }, \"compute-ec2-admin-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8773\" }, \"compute-ec2-admin\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8773\" }, \"compute-ec2-api-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8773\" }, \"compute-ec2-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8773\" }, \"compute-xvpvnc\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"6081\" }, \"compute-novnc-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"6080\" }, \"compute-novnc\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"6080\" }, \"compute-vnc\": { \"host\": \"0.0.0.0\", \"scheme\": \"http\", \"port\": \"6080\" }, \"image-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"9292\" }, \"image-api-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"9292\" }, \"image-registry\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"9191\" }, \"image-registry-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"9191\" }, \"identity-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"5000\" }, \"identity-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"5000\" }, \"identity-admin\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"35357\" }, \"volume-api-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8776\" }, \"volume-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8776\" }, \"telemetry-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8777\" }, \"network-api-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"9696\" }, \"network-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"9696\" }, \"orchestration-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8004\" }, \"orchestration-api-cfn\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8000\" } }, \"identity\": { \"admin_user\": \"admin\", \"bind_interface\": \"eth0\", \"debug\": true }, \"image\": { \"api\": { \"bind_interface\": \"eth0\" }, \"debug\": true, \"identity_service_chef_role\": \"os-identity\", \"rabbit_server_chef_role\": \"os-ops-messaging\", \"registry\": { \"bind_interface\": \"eth0\" }, \"syslog\": { \"use\": false }, \"upload_images\": [ \"precise\" ] }, \"mq\": { \"bind_interface\": \"eth0\", \"host\": \"10.0.1.10\", \"user\": \"guest\", \"vhost\": \"/nova\", \"network\": { \"rabbit\": { \"host\": \"10.0.1.10\", \"port\": \"5672\" } }, \"compute\": { \"service_type\": \"rabbitmq\", \"rabbit\": { \"host\": \"10.0.1.10\", \"port\": \"5672\" } }, \"block-storage\": { \"service_type\": \"rabbitmq\", \"rabbit\": { \"host\": \"10.0.1.10\", \"port\": \"5672\" } } } }, \"queue\": { \"host\": \"10.0.1.10\", \"user\": \"guest\", \"vhost\": \"/nova\" } } } 内容について全て説明するのは難しいですが、このファイルを作成するのが今回一番苦 労した点です。と言うのは、構成を作りつつそれぞれのコンポーネントのコンフィギュ レーション、エンドポイントのアドレス、バインドアドレス、リスンポート等など、全 てが正常な値になるように Cookbooks を読みつつ作業するからです。この json ファ イルが完成してしまえば、あとは簡単なのですが。\n前述しましたが KVM リソースが使えない環境の場合 Qemu で仮想マシンを稼働するこ とができます。その場合、下記のように “libvirt” の項目に “virt_type” を追記して ください。\n\"libvirt\": { \"bind_interface\": \"eth0\", \"virt_type\": \"qemu\" #  追記 }, それではデプロイしていきます。\nここで ‘allinone’ はホスト名、‘allinone-compute’ は Role 名、neutron-allinone は先ほど作成した json で指定している environment 名です。\n# chef-client -z # knife node -z run_list add allinone 'role[allinone-compute]' # chef-client -z -E neutron-allinone 環境にもよりますが、数分でオールインワンな OpenStack Icehouse が完成します。\nまとめ +++\nChef サーバを使わなくて良いのでお手軽に OpenStack が構築出来ました。この json ファイルは実は他にも応用出来ると思っています。複数台構成の OpenStack も指定 Role を工夫すれば構築出来るでしょう。が、その場合は chef-zero は使えません。 Chef サーバ構成にする必要が出てきます。\nちなみに OpenStack Paris Summit 2014 で「OpenStack のデプロイに何を使っている か？」という調査結果が下記になります。Chef が2位ですが Pueppet に大きく離され ている感があります。Juno 版の openstack-chef-repo も開発が進んでいますので、頑 張って広めていきたいです。\n 1位 Puppet 2位 Chef 3位 Ansible 4位 DevStack 5位 PackStack 6位 Salt 7位 Juju 8位 Crowbar 9位 CFEngine  参考 URL : http://superuser.openstack.org/articles/openstack-user-survey-insights-november-2014\nちなみに、Puppet を使った OpenStack デプロイも個人的に色々試しています。\n",
-  "wordCount" : "861",
+  "articleBody": "こんにちは。@jedipunkz です。\nOpenStack Juno がリリースされましたが、今日は Icehouse ネタです。\nicehouse 以降、自分の中で OpenStack を自動で作る仕組みが無くなりつつあり、気軽 に OpenStack を作って色々試したい！ッていう時に手段が無く困っていました。例え ば仕事でちょっと OpenStack 弄りたい！って時に DevStack, RDO しかなく。DevStack は御存知の通り動かない可能性が結構あるし RDO は Ubuntu/Debian Gnu Linux ベース じゃないし。\nってことで、以前にも紹介した stackforge 管理の openstack-chef-repo と Chef-Zero を使って OpenStack Icehouse (Neutron) のオールインワン構成を作る方法 を書きます。ちなみに最近 Chef-Solo が Chef-Zero に置き換わりつつあるらしいです。 Chef-Zero はオンメモリで Chef サーバを起動する仕組みです。Chef-Solo と違って Chef サーバを扱う時と何も変更無く操作が出来るのでとても楽です。また、Chef サーバを 別途構、構築・管理しなくて良いので、気軽に OpenStack が作れます。\nちなみに stackforge/openstack-chef-repo の README.md に Chef-Zero での構築方法 が書いてありますが、沢山の問題があります。\n nova-network 構成 API の Endpoint が全て localhost に向いてしまうため外部から操作不可能 各コンポーネントの bind_address が localhost を向いてしまう berkshelf がそのままでは入らない  よって、今回はこれらの問題を解決しつつ “オールインワンな Neutron 構成の Icehouse OpenStack を作る方法” を書いていきます。\n構成 +----------------- 10.0.0.0/24 (api/management network) | +----------------+ | OpenStack Node | | Controller | | Compute | +----------------+ | | +--(-------------- 10.0.1.0/24 (external network) | +-------------- 10.0.2.0/24 (guest vm network)  IP address 達\n 10.0.0.10 (api/manageent network) : eth0 10.0.1.10 (external network) : eth1 10.0.2.10 (guest vm network) : eth2  注意 : 操作は全て eth0 経由で行う\n前提の環境 stackforge/openstack-chef-repo の依存している Cookbooks の関係上、upstart 周り がうまく制御できていないので Ubuntu Server 12.04.x を使います。\nインストール方法 上記のように3つのネットワークインターフェースが付いたサーバを1台用意します。 KVM が利用出来たほうがいいですが使えないくても構いません。KVM リソースが使えな い場合の修正方法を後に記します。\nサーバにログインし root ユーザになります。その後 Chef をオムニバスインストーラ でインストールします。\n% sudo -i # curl -L https://www.opscode.com/chef/install.sh | bash 次に stable/icehose ブランチを指定して openstack-chef-repo をクローンします。\n# cd ~ # git clone -b stable/icehouse https://github.com/stackforge/openstack-chef-repo #  berkshelf をインストールするのですが依存パッケージが足らないのでここでインストー ルします。\n# apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev \\ ruby-dev libxml2-dev libxslt-dev g++ berkshelf をインストールします。\n# /opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc 次に openstack-chef-repo に依存する Cookbooks を取得します。\n# cd ~/openstack-chef-repo # /opt/chef/embedded/bin/berks vendor ./cookbooks ~/openstack-chef-repo/environments ディレクトリ配下に neutron-allinone.json と いうファイル名で作成します。内容は下記の通りです。\n{ [0/215] \"name\": \"neutron-allinone\", \"description\": \"test\", \"cookbook_versions\": { }, \"json_class\": \"Chef::Environment\", \"chef_type\": \"environment\", \"default_attributes\": { }, \"override_attributes\": { \"mysql\": { \"bind_address\": \"0.0.0.0\", \"server_root_password\": \"root\", \"server_debian_password\": \"root\", \"server_repl_password\": \"root\", \"allow_remote_root\": true, \"root_network_acl\": [\"10.0.0.0/8\"] }, \"rabbitmq\": { \"address\": \"10.0.1.10\", \"port\": \"5672\" }, \"openstack\": { \"auth\": { \"validate_certs\": false }, \"dashboard\": { \"session_backend\": \"file\" }, \"block-storage\": { \"syslog\": { \"use\": false }, \"api\": { \"ratelimit\": \"False\" }, \"debug\": true, \"image_api_chef_role\": \"os-image\", \"identity_service_chef_role\": \"os-identity\", \"rabbit_server_chef_role\": \"os-ops-messaging\" }, \"compute\": { \"rabbit\": { \"host\": \"10.0.1.10\" }, \"novnc_proxy\": { \"bind_interface\": \"eth0\" }, \"libvirt\": { \"bind_interface\": \"eth0\", }, \"novnc_proxy\": { \"bind_interface\": \"eth0\" }, \"xvpvnc_proxy\": { \"bind_interface\": \"eth0\" }, \"image_api_chef_role\": \"os-image\", \"identity_service_chef_role\": \"os-identity\", \"nova_setup_chef_role\": \"os-compute-api\", \"rabbit_server_chef_role\": \"os-ops-messaging\", \"network\": { \"public_interface\": \"eth0\", \"service_type\": \"neutron\" } }, \"network\": { \"debug\": \"True\", \"dhcp\": { \"enable_isolated_metadata\": \"True\" }, \"metadata\": { \"nova_metadata_ip\": \"10.0.1.10\" }, \"openvswitch\": { \"tunnel_id_ranges\": \"1:1000\", \"enable_tunneling\": \"True\", \"tenant_network_type\": \"gre\", \"local_ip_interface\": \"eth2\" }, \"api\": { \"bind_interface\": \"eth0\" }, \"l3\": { \"external_network_bridge_interface\": \"eth1\" }, \"service_plugins\": [\"neutron.services.l3_router.l3_router_plugin.L3RouterPlugin\"] }, \"db\": { \"bind_interface\": \"eth0\", \"compute\": { \"host\": \"10.0.1.10\" }, \"identity\": { \"host\": \"10.0.1.10\" }, \"image\": { \"host\": \"10.0.1.10\" }, \"network\": { \"host\": \"10.0.1.10\" }, \"volume\": { \"host\": \"10.0.1.10\" }, \"dashboard\": { \"host\": \"10.0.1.10\" }, \"telemetry\": { \"host\": \"10.0.1.10\" }, \"orchestration\": { \"host\": \"10.0.1.10\" } }, \"developer_mode\": true, \"endpoints\": { \"compute-api-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8774\" }, \"compute-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8774\" }, \"compute-ec2-admin-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8773\" }, \"compute-ec2-admin\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8773\" }, \"compute-ec2-api-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8773\" }, \"compute-ec2-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8773\" }, \"compute-xvpvnc\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"6081\" }, \"compute-novnc-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"6080\" }, \"compute-novnc\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"6080\" }, \"compute-vnc\": { \"host\": \"0.0.0.0\", \"scheme\": \"http\", \"port\": \"6080\" }, \"image-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"9292\" }, \"image-api-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"9292\" }, \"image-registry\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"9191\" }, \"image-registry-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"9191\" }, \"identity-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"5000\" }, \"identity-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"5000\" }, \"identity-admin\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"35357\" }, \"volume-api-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8776\" }, \"volume-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8776\" }, \"telemetry-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8777\" }, \"network-api-bind\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"9696\" }, \"network-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"9696\" }, \"orchestration-api\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8004\" }, \"orchestration-api-cfn\": { \"host\": \"10.0.1.10\", \"scheme\": \"http\", \"port\": \"8000\" } }, \"identity\": { \"admin_user\": \"admin\", \"bind_interface\": \"eth0\", \"debug\": true }, \"image\": { \"api\": { \"bind_interface\": \"eth0\" }, \"debug\": true, \"identity_service_chef_role\": \"os-identity\", \"rabbit_server_chef_role\": \"os-ops-messaging\", \"registry\": { \"bind_interface\": \"eth0\" }, \"syslog\": { \"use\": false }, \"upload_images\": [ \"precise\" ] }, \"mq\": { \"bind_interface\": \"eth0\", \"host\": \"10.0.1.10\", \"user\": \"guest\", \"vhost\": \"/nova\", \"network\": { \"rabbit\": { \"host\": \"10.0.1.10\", \"port\": \"5672\" } }, \"compute\": { \"service_type\": \"rabbitmq\", \"rabbit\": { \"host\": \"10.0.1.10\", \"port\": \"5672\" } }, \"block-storage\": { \"service_type\": \"rabbitmq\", \"rabbit\": { \"host\": \"10.0.1.10\", \"port\": \"5672\" } } } }, \"queue\": { \"host\": \"10.0.1.10\", \"user\": \"guest\", \"vhost\": \"/nova\" } } } 内容について全て説明するのは難しいですが、このファイルを作成するのが今回一番苦 労した点です。と言うのは、構成を作りつつそれぞれのコンポーネントのコンフィギュ レーション、エンドポイントのアドレス、バインドアドレス、リスンポート等など、全 てが正常な値になるように Cookbooks を読みつつ作業するからです。この json ファ イルが完成してしまえば、あとは簡単なのですが。\n前述しましたが KVM リソースが使えない環境の場合 Qemu で仮想マシンを稼働するこ とができます。その場合、下記のように “libvirt” の項目に “virt_type” を追記して ください。\n\"libvirt\": { \"bind_interface\": \"eth0\", \"virt_type\": \"qemu\" #  追記 }, それではデプロイしていきます。\nここで ‘allinone’ はホスト名、‘allinone-compute’ は Role 名、neutron-allinone は先ほど作成した json で指定している environment 名です。\n# chef-client -z # knife node -z run_list add allinone 'role[allinone-compute]' # chef-client -z -E neutron-allinone 環境にもよりますが、数分でオールインワンな OpenStack Icehouse が完成します。\nまとめ +++\nChef サーバを使わなくて良いのでお手軽に OpenStack が構築出来ました。この json ファイルは実は他にも応用出来ると思っています。複数台構成の OpenStack も指定 Role を工夫すれば構築出来るでしょう。が、その場合は chef-zero は使えません。 Chef サーバ構成にする必要が出てきます。\nちなみに OpenStack Paris Summit 2014 で「OpenStack のデプロイに何を使っている か？」という調査結果が下記になります。Chef が2位ですが Pueppet に大きく離され ている感があります。Juno 版の openstack-chef-repo も開発が進んでいますので、頑 張って広めていきたいです。\n 1位 Puppet 2位 Chef 3位 Ansible 4位 DevStack 5位 PackStack 6位 Salt 7位 Juju 8位 Crowbar 9位 CFEngine  参考 URL : http://superuser.openstack.org/articles/openstack-user-survey-insights-november-2014\nちなみに、Puppet を使った OpenStack デプロイも個人的に色々試しています。\n",
+  "wordCount" : "862",
   "inLanguage": "en",
   "datePublished": "2014-11-15T00:00:00Z",
   "dateModified": "2014-11-15T00:00:00Z",
@@ -93,9 +121,6 @@ icehouse 以降、自分の中で OpenStack を自動で作る仕組みが無く
   }
 }
 </script>
-
-
-
 </head>
 
 <body class="" id="top">
@@ -105,70 +130,56 @@ icehouse 以降、自分の中で OpenStack を自動で作る仕組みが無く
     }
 
 </script>
-<noscript>
-    <style type="text/css">
-        .theme-toggle,
-        .top-link {
-            display: none;
-        }
 
-    </style>
-</noscript>
 <header class="header">
     <nav class="nav">
         <div class="logo">
             <a href="https://jedipunkz.github.io" accesskey="h" title="jedipunkz 🚀 のブログ (Alt + H)">jedipunkz 🚀 のブログ</a>
             <span class="logo-switches">
-                <span class="theme-toggle" title="(Alt + T)">
-                    <a id="theme-toggle" accesskey="t">
-                        <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                        </svg>
-                        <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="5"></circle>
-                            <line x1="12" y1="1" x2="12" y2="3"></line>
-                            <line x1="12" y1="21" x2="12" y2="23"></line>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                            <line x1="1" y1="12" x2="3" y2="12"></line>
-                            <line x1="21" y1="12" x2="23" y2="12"></line>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                        </svg>
-                    </a>
-                </span>
-                
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
             </span>
         </div>
-        <ul class="menu" id="menu" onscroll="menu_on_scroll()">
+        <ul id="menu">
             <li>
                 <a href="https://jedipunkz.github.io/about" title="About">
                     <span>About</span>
                 </a>
-            </li></ul>
+            </li>
+        </ul>
     </nav>
 </header>
-
-    <main class="main">
+<main class="main">
 
 <article class="post-single">
   <header class="post-header">
+    
     <h1 class="post-title">
       Chef-Zero でお手軽に OpenStack Icehouse を作る
     </h1>
-    <div class="post-meta">
+    <div class="post-meta"><span title='2014-11-15 00:00:00 +0000 UTC'>November 15, 2014</span>&nbsp;·&nbsp;5 min&nbsp;·&nbsp;Theme PaperMod
 
-November 15, 2014&nbsp;·&nbsp;5 min&nbsp;·&nbsp;Theme PaperMod
-
-    </div>
+</div>
   </header> 
-
-  <div class="post-content">
-<p>こんにちは。<!-- raw HTML omitted -->@jedipunkz<!-- raw HTML omitted --> です。</p>
+  <div class="post-content"><p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 <p>OpenStack Juno がリリースされましたが、今日は Icehouse ネタです。</p>
 <p>icehouse 以降、自分の中で OpenStack を自動で作る仕組みが無くなりつつあり、気軽
 に OpenStack を作って色々試したい！ッていう時に手段が無く困っていました。例え
@@ -220,24 +231,24 @@ KVM が利用出来たほうがいいですが使えないくても構いませ�
 い場合の修正方法を後に記します。</p>
 <p>サーバにログインし root ユーザになります。その後 Chef をオムニバスインストーラ
 でインストールします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo -i
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo -i
 <span style="color:#75715e"># curl -L https://www.opscode.com/chef/install.sh | bash</span>
 </code></pre></div><p>次に stable/icehose ブランチを指定して openstack-chef-repo をクローンします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#75715e"># cd ~</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#75715e"># cd ~</span>
 <span style="color:#75715e"># git clone -b stable/icehouse https://github.com/stackforge/openstack-chef-repo</span>
 <span style="color:#75715e"># </span>
 </code></pre></div><p>berkshelf をインストールするのですが依存パッケージが足らないのでここでインストー
 ルします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#75715e"># apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev \</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#75715e"># apt-get -y install build-essential zlib1g-dev libssl-dev libreadline-dev \</span>
   ruby-dev libxml2-dev libxslt-dev g++
 </code></pre></div><p>berkshelf をインストールします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#75715e"># /opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#75715e"># /opt/chef/embedded/bin/gem install berkshelf --no-ri --no-rdoc</span>
 </code></pre></div><p>次に openstack-chef-repo に依存する Cookbooks を取得します。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#75715e"># cd ~/openstack-chef-repo</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#75715e"># cd ~/openstack-chef-repo</span>
 <span style="color:#75715e"># /opt/chef/embedded/bin/berks vendor ./cookbooks</span>
 </code></pre></div><p>~/openstack-chef-repo/environments ディレクトリ配下に neutron-allinone.json と
 いうファイル名で作成します。内容は下記の通りです。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{                                                                                                                                                      <span style="color:#960050;background-color:#1e0010">[0/215]</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{                                                                                                                                                      <span style="color:#960050;background-color:#1e0010">[0/215]</span>
   <span style="color:#f92672">&#34;name&#34;</span>: <span style="color:#e6db74">&#34;neutron-allinone&#34;</span>,
   <span style="color:#f92672">&#34;description&#34;</span>: <span style="color:#e6db74">&#34;test&#34;</span>,
   <span style="color:#f92672">&#34;cookbook_versions&#34;</span>: {
@@ -539,14 +550,14 @@ KVM が利用出来たほうがいいですが使えないくても構いませ�
 <p>前述しましたが KVM リソースが使えない環境の場合 Qemu で仮想マシンを稼働するこ
 とができます。その場合、下記のように &ldquo;libvirt&rdquo; の項目に &ldquo;virt_type&rdquo; を追記して
 ください。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">        <span style="color:#e6db74">&#34;libvirt&#34;</span><span style="color:#960050;background-color:#1e0010">:</span> {
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">        <span style="color:#e6db74">&#34;libvirt&#34;</span><span style="color:#960050;background-color:#1e0010">:</span> {
           <span style="color:#f92672">&#34;bind_interface&#34;</span>: <span style="color:#e6db74">&#34;eth0&#34;</span>,
           <span style="color:#f92672">&#34;virt_type&#34;</span>: <span style="color:#e6db74">&#34;qemu&#34;</span> <span style="color:#960050;background-color:#1e0010">#</span> <span style="color:#960050;background-color:#1e0010">&lt;------</span> <span style="color:#960050;background-color:#1e0010">追記</span>
         }<span style="color:#960050;background-color:#1e0010">,</span>
 </code></pre></div><p>それではデプロイしていきます。</p>
 <p>ここで &lsquo;allinone&rsquo; はホスト名、&lsquo;allinone-compute&rsquo; は Role 名、neutron-allinone
 は先ほど作成した json で指定している environment 名です。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#75715e"># chef-client -z</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#75715e"># chef-client -z</span>
 <span style="color:#75715e"># knife node -z run_list add allinone &#39;role[allinone-compute]&#39;</span>
 <span style="color:#75715e"># chef-client -z -E neutron-allinone</span>
 </code></pre></div><p>環境にもよりますが、数分でオールインワンな OpenStack Icehouse が完成します。</p>
@@ -574,10 +585,10 @@ Chef サーバ構成にする必要が出てきます。</p>
 <p>参考 URL : <a href="http://superuser.openstack.org/articles/openstack-user-survey-insights-november-2014">http://superuser.openstack.org/articles/openstack-user-survey-insights-november-2014</a></p>
 <p>ちなみに、Puppet を使った OpenStack デプロイも個人的に色々試しています。</p>
 
-</div>
+
+  </div>
+
   <footer class="post-footer">
-
-
 
 <div class="share-buttons">
     <a target="_blank" rel="noopener noreferrer" aria-label="share Chef-Zero でお手軽に OpenStack Icehouse を作る on twitter"
@@ -626,46 +637,52 @@ Chef サーバ構成にする必要が出てきます。</p>
 
   </footer>
 </article>
-    </main><footer class="footer">
+    </main>
+    
+<footer class="footer">
     <span>&copy; 2021 <a href="https://jedipunkz.github.io">jedipunkz 🚀 のブログ</a></span>
-    <span>&middot;</span>
-    <span>Powered by <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a></span>
-    <span>&middot;</span>
-    <span>Theme <a href="https://git.io/hugopapermod" rel="noopener" target="_blank">PaperMod</a></span>
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://git.io/hugopapermod" rel="noopener" target="_blank">PaperMod</a>
+    </span>
 </footer>
-<a href="#top">
-    <button class="top-link" id="top-link" type="button" aria-label="go to top" title="Go to Top (Alt + G)"
-        accesskey="g">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6">
-            <path d="M12 6H0l6-6z" />
-        </svg>
-    </button>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
 </a>
 
-
-
-<script defer src="https://jedipunkz.github.io/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
-    onload="hljs.initHighlightingOnLoad();"></script>
 <script>
-    window.onload = function () {
-        if (localStorage.getItem("menu-scroll-position")) {
-            document.getElementById('menu').scrollLeft = localStorage.getItem("menu-scroll-position");
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
         }
     }
+
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         anchor.addEventListener("click", function (e) {
             e.preventDefault();
             var id = this.getAttribute("href").substr(1);
-            document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
-                behavior: "smooth"
-            });
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
             if (id === "top") {
                 history.replaceState(null, null, " ");
             } else {
-                history.replaceState(null, null, `#${id}`);
+                history.pushState(null, null, `#${id}`);
             }
         });
     });
+
+</script>
+<script>
     var mybutton = document.getElementById("top-link");
     window.onscroll = function () {
         if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
@@ -676,10 +693,6 @@ Chef サーバ構成にする必要が出てきます。</p>
             mybutton.style.opacity = "0";
         }
     };
-
-    function menu_on_scroll() {
-        localStorage.setItem("menu-scroll-position", document.getElementById('menu').scrollLeft);
-    }
 
 </script>
 <script>
@@ -694,7 +707,6 @@ Chef サーバ構成にする必要が出てきます。</p>
     })
 
 </script>
-
 </body>
 
 </html>
