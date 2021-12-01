@@ -6,7 +6,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <meta name="robots" content="index, follow">
 <title>Quantum Network ノードの分散・冗長 | jedipunkz 🚀 のブログ</title>
-
 <meta name="keywords" content="" />
 <meta name="description" content="こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機能につい て評価した結果をお伝えします。
 Folsom までは
@@ -15,9 +14,9 @@ Folsom までは
 &#43;-------------&#43;-------------&#43;-------------------------- Public/API Network | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | |vm|vm|.. | | controller| | network | | network | &#43;-----------&#43; | | | | | | | compute | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | | &#43;-------------&#43;-----)-------&#43;-----)-------&#43;-----)------ Management/API Network | | | &#43;-------------&#43;-------------&#43;------ Data Network  L3-agent の分散は仮想ルータ単位で行います。それに対し DHCP-agent は仮想 ネットワーク単位で行います。">
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2013/04/26/quantum-network-distributing/" />
-<link href="https://jedipunkz.github.io/assets/css/stylesheet.min.521ef667ad8ddd035b65438a1d85fd5707173fefe338d23bc2544d116fa47efb.css" integrity="sha256-Uh72Z62N3QNbZUOKHYX9VwcXP&#43;/jONI7wlRNEW&#43;kfvs=" rel="preload stylesheet"
-    as="style">
-
+<link crossorigin="anonymous" href="/assets/css/stylesheet.min.6f60056d44d3f7eb69a4bc6c332b59960f3a995802bded244750232f33713c49.css" integrity="sha256-b2AFbUTT9&#43;tppLxsMytZlg86mVgCve0kR1AjLzNxPEk=" rel="preload stylesheet" as="style">
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+    onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.github.io/favicon-32x32.png">
@@ -25,30 +24,38 @@ Folsom までは
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.82.0" />
+<meta name="generator" content="Hugo 0.89.2" />
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
 
-
-
+    </style>
+</noscript>
 <script type="application/javascript">
 var doNotTrack = false;
 if (!doNotTrack) {
-	window.ga=window.ga||function(){(ga.q=ga.q||[]).push(arguments)};ga.l=+new Date;
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
 	ga('create', 'UA-30563095-1', 'auto');
 	
 	ga('send', 'pageview');
 }
-</script>
-<script async src='https://www.google-analytics.com/analytics.js'></script>
-<meta property="og:title" content="Quantum Network ノードの分散・冗長" />
+</script><meta property="og:title" content="Quantum Network ノードの分散・冗長" />
 <meta property="og:description" content="こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機能につい て評価した結果をお伝えします。
 Folsom までは
  Quantum L3-agent が落ちると、その OpenStack 一式の上にある仮想マシン全ての通 信が途絶える Quantum L3-agent に仮想マシンの全てのトラフィックが集まりボトルネックとなる。  という問題がありました。Folsom リリース時代にもし僕が職場で OpenStack を導入す るのであればこれらを理由に nova-network を選択していたかもしれません。 nova-network は compute ノードが落ちればその上の仮想マシンも同時に落ちるが、他 の compute ノード上の仮想マシンの通信には影響を与えないからです。もちろん仮想 ルータ・仮想ネットワークの生成等を API でユーザに提供したいなどの要望があれば Quantum を選択するしかありませんが。これに対して Grizzly リリースの Quantum は 改善に向けて大きな機能を提供してくれています。L3-agent, DHCP-agent の分散・冗 長機能です。
 下記の構成が想定出来ます。ここでは Network ノードを2台用意しました。それ以上の 台数に増やすことも出来ます。
 &#43;-------------&#43;-------------&#43;-------------------------- Public/API Network | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | |vm|vm|.. | | controller| | network | | network | &#43;-----------&#43; | | | | | | | compute | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | | &#43;-------------&#43;-----)-------&#43;-----)-------&#43;-----)------ Management/API Network | | | &#43;-------------&#43;-------------&#43;------ Data Network  L3-agent の分散は仮想ルータ単位で行います。それに対し DHCP-agent は仮想 ネットワーク単位で行います。" />
 <meta property="og:type" content="article" />
-<meta property="og:url" content="https://jedipunkz.github.io/post/2013/04/26/quantum-network-distributing/" />
-<meta property="article:published_time" content="2013-04-26T00:00:00+00:00" />
-<meta property="article:modified_time" content="2013-04-26T00:00:00+00:00" />
+<meta property="og:url" content="https://jedipunkz.github.io/post/2013/04/26/quantum-network-distributing/" /><meta property="article:section" content="post" />
+<meta property="article:published_time" content="2013-04-26T00:00:00&#43;00:00" />
+<meta property="article:modified_time" content="2013-04-26T00:00:00&#43;00:00" />
+
 <meta name="twitter:card" content="summary"/>
 <meta name="twitter:title" content="Quantum Network ノードの分散・冗長"/>
 <meta name="twitter:description" content="こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機能につい て評価した結果をお伝えします。
@@ -57,13 +64,34 @@ Folsom までは
 下記の構成が想定出来ます。ここでは Network ノードを2台用意しました。それ以上の 台数に増やすことも出来ます。
 &#43;-------------&#43;-------------&#43;-------------------------- Public/API Network | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | |vm|vm|.. | | controller| | network | | network | &#43;-----------&#43; | | | | | | | compute | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | | &#43;-------------&#43;-----)-------&#43;-----)-------&#43;-----)------ Management/API Network | | | &#43;-------------&#43;-------------&#43;------ Data Network  L3-agent の分散は仮想ルータ単位で行います。それに対し DHCP-agent は仮想 ネットワーク単位で行います。"/>
 
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "Posts",
+      "item": "https://jedipunkz.github.io/post/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  3 ,
+      "name": "Quantum Network ノードの分散・冗長",
+      "item": "https://jedipunkz.github.io/post/2013/04/26/quantum-network-distributing/"
+    }
+  ]
+}
+</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "Quantum Network ノードの分散・冗長",
   "name": "Quantum Network ノードの分散・冗長",
-  "description": "こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機能につい て評価した結果をお伝えします。\nFolsom までは\n Quantum L3-agent が落ちると、その OpenStack …",
+  "description": "こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機能につい て評価した結果をお伝えします。\nFolsom までは\n Quantum L3-agent が落ちると、その OpenStack 一式の上にある仮想マシン全ての通 信が途絶える Quantum L3-agent に仮想マシンの全てのトラフィックが集まりボトルネックとなる。  という問題がありました。Folsom リリース時代にもし僕が職場で OpenStack を導入す るのであればこれらを理由に nova-network を選択していたかもしれません。 nova-network は compute ノードが落ちればその上の仮想マシンも同時に落ちるが、他 の compute ノード上の仮想マシンの通信には影響を与えないからです。もちろん仮想 ルータ・仮想ネットワークの生成等を API でユーザに提供したいなどの要望があれば Quantum を選択するしかありませんが。これに対して Grizzly リリースの Quantum は 改善に向けて大きな機能を提供してくれています。L3-agent, DHCP-agent の分散・冗 長機能です。\n下記の構成が想定出来ます。ここでは Network ノードを2台用意しました。それ以上の 台数に増やすことも出来ます。\n+-------------+-------------+-------------------------- Public/API Network | | | +-----------+ +-----------+ +-----------+ +-----------+ | | | | | | |vm|vm|.. | | controller| | network | | network | +-----------+ | | | | | | | compute | +-----------+ +-----------+ +-----------+ +-----------+ | | | | | | | +-------------+-----)-------+-----)-------+-----)------ Management/API Network | | | +-------------+-------------+------ Data Network  L3-agent の分散は仮想ルータ単位で行います。それに対し DHCP-agent は仮想 ネットワーク単位で行います。",
   "keywords": [
     
   ],
@@ -90,9 +118,6 @@ Folsom までは
   }
 }
 </script>
-
-
-
 </head>
 
 <body class="" id="top">
@@ -102,70 +127,56 @@ Folsom までは
     }
 
 </script>
-<noscript>
-    <style type="text/css">
-        .theme-toggle,
-        .top-link {
-            display: none;
-        }
 
-    </style>
-</noscript>
 <header class="header">
     <nav class="nav">
         <div class="logo">
             <a href="https://jedipunkz.github.io" accesskey="h" title="jedipunkz 🚀 のブログ (Alt + H)">jedipunkz 🚀 のブログ</a>
             <span class="logo-switches">
-                <span class="theme-toggle" title="(Alt + T)">
-                    <a id="theme-toggle" accesskey="t">
-                        <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                        </svg>
-                        <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="5"></circle>
-                            <line x1="12" y1="1" x2="12" y2="3"></line>
-                            <line x1="12" y1="21" x2="12" y2="23"></line>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                            <line x1="1" y1="12" x2="3" y2="12"></line>
-                            <line x1="21" y1="12" x2="23" y2="12"></line>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                        </svg>
-                    </a>
-                </span>
-                
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
             </span>
         </div>
-        <ul class="menu" id="menu" onscroll="menu_on_scroll()">
+        <ul id="menu">
             <li>
                 <a href="https://jedipunkz.github.io/about" title="About">
                     <span>About</span>
                 </a>
-            </li></ul>
+            </li>
+        </ul>
     </nav>
 </header>
-
-    <main class="main">
+<main class="main">
 
 <article class="post-single">
   <header class="post-header">
+    
     <h1 class="post-title">
       Quantum Network ノードの分散・冗長
     </h1>
-    <div class="post-meta">
+    <div class="post-meta"><span title='2013-04-26 00:00:00 +0000 UTC'>April 26, 2013</span>&nbsp;·&nbsp;3 min&nbsp;·&nbsp;Theme PaperMod
 
-April 26, 2013&nbsp;·&nbsp;3 min&nbsp;·&nbsp;Theme PaperMod
-
-    </div>
+</div>
   </header> 
-
-  <div class="post-content">
-<p>こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース
+  <div class="post-content"><p>こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース
 まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機能につい
 て評価した結果をお伝えします。</p>
 <p>Folsom までは</p>
@@ -282,10 +293,10 @@ Added network int_net to DHCP agent
 OpenStack を導入するという意味で、この機能は非常に大きな前進だと僕は思っていま
 す。</p>
 
-</div>
+
+  </div>
+
   <footer class="post-footer">
-
-
 
 <div class="share-buttons">
     <a target="_blank" rel="noopener noreferrer" aria-label="share Quantum Network ノードの分散・冗長 on twitter"
@@ -334,46 +345,52 @@ OpenStack を導入するという意味で、この機能は非常に大きな�
 
   </footer>
 </article>
-    </main><footer class="footer">
+    </main>
+    
+<footer class="footer">
     <span>&copy; 2021 <a href="https://jedipunkz.github.io">jedipunkz 🚀 のブログ</a></span>
-    <span>&middot;</span>
-    <span>Powered by <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a></span>
-    <span>&middot;</span>
-    <span>Theme <a href="https://git.io/hugopapermod" rel="noopener" target="_blank">PaperMod</a></span>
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://git.io/hugopapermod" rel="noopener" target="_blank">PaperMod</a>
+    </span>
 </footer>
-<a href="#top">
-    <button class="top-link" id="top-link" type="button" aria-label="go to top" title="Go to Top (Alt + G)"
-        accesskey="g">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6">
-            <path d="M12 6H0l6-6z" />
-        </svg>
-    </button>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
 </a>
 
-
-
-<script defer src="https://jedipunkz.github.io/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
-    onload="hljs.initHighlightingOnLoad();"></script>
 <script>
-    window.onload = function () {
-        if (localStorage.getItem("menu-scroll-position")) {
-            document.getElementById('menu').scrollLeft = localStorage.getItem("menu-scroll-position");
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
         }
     }
+
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         anchor.addEventListener("click", function (e) {
             e.preventDefault();
             var id = this.getAttribute("href").substr(1);
-            document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
-                behavior: "smooth"
-            });
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
             if (id === "top") {
                 history.replaceState(null, null, " ");
             } else {
-                history.replaceState(null, null, `#${id}`);
+                history.pushState(null, null, `#${id}`);
             }
         });
     });
+
+</script>
+<script>
     var mybutton = document.getElementById("top-link");
     window.onscroll = function () {
         if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
@@ -384,10 +401,6 @@ OpenStack を導入するという意味で、この機能は非常に大きな�
             mybutton.style.opacity = "0";
         }
     };
-
-    function menu_on_scroll() {
-        localStorage.setItem("menu-scroll-position", document.getElementById('menu').scrollLeft);
-    }
 
 </script>
 <script>
@@ -402,7 +415,6 @@ OpenStack を導入するという意味で、この機能は非常に大きな�
     })
 
 </script>
-
 </body>
 
 </html>

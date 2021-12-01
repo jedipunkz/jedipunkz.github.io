@@ -6,18 +6,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <meta name="robots" content="index, follow">
 <title>Sensu 監視システムを Chef で制御 | jedipunkz 🚀 のブログ</title>
-
 <meta name="keywords" content="" />
-<meta name="description" content="こんにちは。@jedipunkzです。
+<meta name="description" content="こんにちは。@jedipunkz です。
 自動化の基盤を導入するために色々調べているのですが、監視も自動化しなくちゃ！と いうことで Sensu を調べてたのですが Chef との相性バッチリな感じで、自分的にイ ケてるなと思いました。
  公式サイト http://www.sonian.com/cloud-monitoring-sensu/ ドキュメント http://docs.sensuapp.org/0.9/index.html  開発元が予め Chef の Cookbook (正確にはラッパー Cookbook 開発のための Cookbook で Include して使う) を用意してくれていたり、インストールを容易にする ための Omnibus 形式のパッケージの提供だったり。Omnibus なのでインストールと共 に Sensu が推奨する Ruby 一式も一緒にインストールされます。Chef と同じですね。
 今回紹介したいのは、Chef で Sensu を構築・制御する方法です。
 &#43;--------------&#43; &#43;--------------&#43; | chef-server | | workstation | &#43;--------------&#43; &#43;--------------&#43; | | &#43;----------------&#43; | &#43;--------------&#43; | sensu-server | &#43;--------------&#43; | &#43;----------------&#43;----------------&#43;----------------&#43; | | | | &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; | sensu-client | | sensu-client | | sensu-client | | sensu-client | .">
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2013/06/20/sensu-chef-controll/" />
-<link href="https://jedipunkz.github.io/assets/css/stylesheet.min.521ef667ad8ddd035b65438a1d85fd5707173fefe338d23bc2544d116fa47efb.css" integrity="sha256-Uh72Z62N3QNbZUOKHYX9VwcXP&#43;/jONI7wlRNEW&#43;kfvs=" rel="preload stylesheet"
-    as="style">
-
+<link crossorigin="anonymous" href="/assets/css/stylesheet.min.6f60056d44d3f7eb69a4bc6c332b59960f3a995802bded244750232f33713c49.css" integrity="sha256-b2AFbUTT9&#43;tppLxsMytZlg86mVgCve0kR1AjLzNxPEk=" rel="preload stylesheet" as="style">
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+    onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.github.io/favicon-32x32.png">
@@ -25,50 +24,79 @@
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.82.0" />
+<meta name="generator" content="Hugo 0.89.2" />
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
 
-
-
+    </style>
+</noscript>
 <script type="application/javascript">
 var doNotTrack = false;
 if (!doNotTrack) {
-	window.ga=window.ga||function(){(ga.q=ga.q||[]).push(arguments)};ga.l=+new Date;
+	(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+	(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+	m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+	})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
 	ga('create', 'UA-30563095-1', 'auto');
 	
 	ga('send', 'pageview');
 }
-</script>
-<script async src='https://www.google-analytics.com/analytics.js'></script>
-<meta property="og:title" content="Sensu 監視システムを Chef で制御" />
-<meta property="og:description" content="こんにちは。@jedipunkzです。
+</script><meta property="og:title" content="Sensu 監視システムを Chef で制御" />
+<meta property="og:description" content="こんにちは。@jedipunkz です。
 自動化の基盤を導入するために色々調べているのですが、監視も自動化しなくちゃ！と いうことで Sensu を調べてたのですが Chef との相性バッチリな感じで、自分的にイ ケてるなと思いました。
  公式サイト http://www.sonian.com/cloud-monitoring-sensu/ ドキュメント http://docs.sensuapp.org/0.9/index.html  開発元が予め Chef の Cookbook (正確にはラッパー Cookbook 開発のための Cookbook で Include して使う) を用意してくれていたり、インストールを容易にする ための Omnibus 形式のパッケージの提供だったり。Omnibus なのでインストールと共 に Sensu が推奨する Ruby 一式も一緒にインストールされます。Chef と同じですね。
 今回紹介したいのは、Chef で Sensu を構築・制御する方法です。
 &#43;--------------&#43; &#43;--------------&#43; | chef-server | | workstation | &#43;--------------&#43; &#43;--------------&#43; | | &#43;----------------&#43; | &#43;--------------&#43; | sensu-server | &#43;--------------&#43; | &#43;----------------&#43;----------------&#43;----------------&#43; | | | | &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; | sensu-client | | sensu-client | | sensu-client | | sensu-client | ." />
 <meta property="og:type" content="article" />
-<meta property="og:url" content="https://jedipunkz.github.io/post/2013/06/20/sensu-chef-controll/" />
-<meta property="article:published_time" content="2013-06-20T00:00:00+00:00" />
-<meta property="article:modified_time" content="2013-06-20T00:00:00+00:00" />
+<meta property="og:url" content="https://jedipunkz.github.io/post/2013/06/20/sensu-chef-controll/" /><meta property="article:section" content="post" />
+<meta property="article:published_time" content="2013-06-20T00:00:00&#43;00:00" />
+<meta property="article:modified_time" content="2013-06-20T00:00:00&#43;00:00" />
+
 <meta name="twitter:card" content="summary"/>
 <meta name="twitter:title" content="Sensu 監視システムを Chef で制御"/>
-<meta name="twitter:description" content="こんにちは。@jedipunkzです。
+<meta name="twitter:description" content="こんにちは。@jedipunkz です。
 自動化の基盤を導入するために色々調べているのですが、監視も自動化しなくちゃ！と いうことで Sensu を調べてたのですが Chef との相性バッチリな感じで、自分的にイ ケてるなと思いました。
  公式サイト http://www.sonian.com/cloud-monitoring-sensu/ ドキュメント http://docs.sensuapp.org/0.9/index.html  開発元が予め Chef の Cookbook (正確にはラッパー Cookbook 開発のための Cookbook で Include して使う) を用意してくれていたり、インストールを容易にする ための Omnibus 形式のパッケージの提供だったり。Omnibus なのでインストールと共 に Sensu が推奨する Ruby 一式も一緒にインストールされます。Chef と同じですね。
 今回紹介したいのは、Chef で Sensu を構築・制御する方法です。
 &#43;--------------&#43; &#43;--------------&#43; | chef-server | | workstation | &#43;--------------&#43; &#43;--------------&#43; | | &#43;----------------&#43; | &#43;--------------&#43; | sensu-server | &#43;--------------&#43; | &#43;----------------&#43;----------------&#43;----------------&#43; | | | | &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; | sensu-client | | sensu-client | | sensu-client | | sensu-client | ."/>
 
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [, 
+    {
+      "@type": "ListItem",
+      "position":  2 ,
+      "name": "Posts",
+      "item": "https://jedipunkz.github.io/post/"
+    }, 
+    {
+      "@type": "ListItem",
+      "position":  3 ,
+      "name": "Sensu 監視システムを Chef で制御",
+      "item": "https://jedipunkz.github.io/post/2013/06/20/sensu-chef-controll/"
+    }
+  ]
+}
+</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "Sensu 監視システムを Chef で制御",
   "name": "Sensu 監視システムを Chef で制御",
-  "description": "こんにちは。@jedipunkzです。\n自動化の基盤を導入するために色々調べているのですが、監視も自動化しなくちゃ！と いうことで Sensu を調べてたのですが Chef との相性バッチリな感じで、自分的にイ ケてるなと思いました。\n 公式サイト http://www.sonian.com/cloud-monitoring-sensu/ …",
+  "description": "こんにちは。@jedipunkz です。\n自動化の基盤を導入するために色々調べているのですが、監視も自動化しなくちゃ！と いうことで Sensu を調べてたのですが Chef との相性バッチリな感じで、自分的にイ ケてるなと思いました。\n 公式サイト http://www.sonian.com/cloud-monitoring-sensu/ ドキュメント http://docs.sensuapp.org/0.9/index.html  開発元が予め Chef の Cookbook (正確にはラッパー Cookbook 開発のための Cookbook で Include して使う) を用意してくれていたり、インストールを容易にする ための Omnibus 形式のパッケージの提供だったり。Omnibus なのでインストールと共 に Sensu が推奨する Ruby 一式も一緒にインストールされます。Chef と同じですね。\n今回紹介したいのは、Chef で Sensu を構築・制御する方法です。\n+--------------+ +--------------+ | chef-server | | workstation | +--------------+ +--------------+ | | +----------------+ | +--------------+ | sensu-server | +--------------+ | +----------------+----------------+----------------+ | | | | +--------------+ +--------------+ +--------------+ +--------------+ | sensu-client | | sensu-client | | sensu-client | | sensu-client | .",
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkzです。\n自動化の基盤を導入するために色々調べているのですが、監視も自動化しなくちゃ！と いうことで Sensu を調べてたのですが Chef との相性バッチリな感じで、自分的にイ ケてるなと思いました。\n 公式サイト http://www.sonian.com/cloud-monitoring-sensu/ ドキュメント http://docs.sensuapp.org/0.9/index.html  開発元が予め Chef の Cookbook (正確にはラッパー Cookbook 開発のための Cookbook で Include して使う) を用意してくれていたり、インストールを容易にする ための Omnibus 形式のパッケージの提供だったり。Omnibus なのでインストールと共 に Sensu が推奨する Ruby 一式も一緒にインストールされます。Chef と同じですね。\n今回紹介したいのは、Chef で Sensu を構築・制御する方法です。\n+--------------+ +--------------+ | chef-server | | workstation | +--------------+ +--------------+ | | +----------------+ | +--------------+ | sensu-server | +--------------+ | +----------------+----------------+----------------+ | | | | +--------------+ +--------------+ +--------------+ +--------------+ | sensu-client | | sensu-client | | sensu-client | | sensu-client | .. +--------------+ +--------------+ +--------------+ +--------------+ | service node | | service node | | service node | | service node | +--------------+ +--------------+ +--------------+ +--------------+ この構成の処理の流れとしては…\nsensu-server, sensu-client の構築の流れ    workstation から cookbook, role, data_bag を chef-server へアップ    workstation から sensu-server を bootstrap で構築    workstation から sensu-client を boostrrap で構築    監視項目の追加・無効化の流れ   workstation から監視項目 data bag の chef-server へのアップ    sensu-server 上の chef-client が chef-server から data bag の取得    sensu-server に新たな(削除された)監視項目が追加    sensu-client が新たな(削除された)監視項目を検知し、監視開始    つまり… 運用で必要な操作 (監視対象の追加・監視項目の追加・無効化)を workstation から knife を使って全て行えるっていうことです。しかも Chef も Sensu も API を持っているので自動化を形成するプログラムの開発も容易です。実際に API を叩くちょっとしたダッシュボードを Ruby on Rails で作ってみましたが簡単に出来 ました。\n今回はこの構成の構築と操作方法について書いていきます。予め私のほうで作っておい た sensu のための chef-repo を使って環境を作っていきます。\nhttps://github.com/jedipunkz/sensu-chef-repo\nこの chef-repo には\n Berksfile サンプルの監視項目 data bag SSL 鍵生成の仕組み (後に data bag に収める)  のみが入っています。公式の sensu-chef レポジトリ内にあったサンプルを利用して作っ ています。また、Berksfile 内で、これまた\n chef-redis (redis の cookbook) sensu-chef (公式の sensu cookbook, ラッパー cookbook 内で用いる) chef-monitor (ラッパー cookbook の例)  を取得するようにしています。それぞれ fork して私のレポジトリに置いています。動 く状態を保ちたかったためです。redis に関しては結構手を加えました。そのままでは 全く構築出来ない状態でしたので。chef-monitor は内部で sensu-chef (公式 cookbook) を Include しているラッパー cookbook です。公式 cookbook 内で例とし て挙げられていたモノです。こちらは手を加えていません。\nでは手順を…\n(chef 環境の構築方法は割愛します)\nsensu-server のデプロイ sensu-chef-repo の取得を行います。ここからの操作は全て上図の workstation 上で の操作になります。\n% git clone https://github.com/jedipunkz/sensu-chef-repo SSL 鍵ペアを生成し data bag に投入します。\n% cd ~/sensu-chef-repo/data_bags/ssl % ./ssl_certs.sh generate % knife data bag create sensu % knife data bag from file sensu ./ssl.json サンプル監視項目 proc_cron.json を data bags に投入します。\n% cd ~/sensu-chef-repo/ % knife data bag create sensu_checks % knife data bag from file sensu_checks data_bags/sensu_checks/proc_cron.json proc_cron.json の内容は下記の通り\n{ \"id\": \"proc_cron\", \"command\": \"check-procs.rb -p cron -C 1\", \"subscribers\": [ \"sensu-client\" ], \"interval\": 10 } json の構成を説明すると..\n id : 監視項目名 command : agent が実行するコマンド subscribers : 監視対象のグループ名, chef role 名が自動で監視対象に割り当てられる interval : 監視間隔 (秒)  となります。\nBerkshelf を使って cookbook の取得を行います。\n% gem install berksfile --no-ri --no-rdoc % berks install --path ./cookbooks/ roles を chef server へアップロードします。\n% knife role from file roles/sensu-client.rb # 後の sensu-client デプロイのためついでに準備します % knife role from file roles/sensu-server.rb “master_address” を sensu-server の IP アドレスに書き換えます。書き換える箇所 は ‘monitor’ cookbook の attributes です。\n% ${EDITOR} cookbooks/monitor/attributes/default.rb default[\"monitor\"][\"master_address\"] = \"XXX.XXX.XXX.XXX\" cookbooks を chef server へアップロードします。\nworkstation% knife cookbook upload -a sensu-server を knife を用いてブートストラップします。\n% knife bootstrap  -N  -r 'role[sensu-server]' -x root -i  sensu ダッシュボード URL : http://:8080 にアクセスし動作確認, アカ ウント情報は下記の attributes に記載してあります。\ncookbooks/sensu/attributes/default.rb sensu-client デプロイ方法 knife を用いて sensu-client をデプロイします。\n% knife bootstrap  -N  -r 'role[sensu-client]' -x root -i  この状態で先ほどの ‘proc_cron’ が監視開始されます。\n監視項目の追加方法 下記のような json ファイルを生成します。ここでは例として nginx のプロセス監視 のための項目を追加してみます。\n% ${EDITOR} data_bags/sensu_checks/proc_nginx.json { \"id\": \"proc_nginx\", \"command\": \"check-procs.rb -p nginx -w 5 -c 10\", \"subscribers\": [ \"sensu-client\" ], \"interval\": 10 } 先ほども書きましたが subscribers は chef 的な role 名と一致しています。なので sensu の監視をグルーピングしたいときは role 名を変えて knife bootstrap すると 良いと思います。ここでは例として ‘sensu-client’ という先ほど利用した role 名を 用います。\ndata bags に監視項目情報を投入します。\n% knife data bag from file sensu_checks data_bags/sensu_checks/proc_nginx.json 暫くすると下記のプロセスを経て監視が開始される\n sensu-server 上の chef-client が interval 間隔後実行 sensu-server に proc_nginx.json が配置 sensu-server が chef により再起動 sensu-client 上の sensu agent が自らの subscribers が属している proc_nginx.json を検知 sensu-client が nginx のプロセス監視開始  まとめ 監視対象追加 (agent 仕込み), 監視項目追加を workstation 上から knife を使って 操作出来ました。監視項目の削除についてはダミーの json (command 項に ‘echo ok’ など設定) を投入することで、私は対処していますが、本来は data bag が存在しない ことを検知して sensu-server 上から監視項目を削除する cookbook に仕上げなければ いけないと思います。\n",
-  "wordCount" : "552",
+  "articleBody": "こんにちは。@jedipunkz です。\n自動化の基盤を導入するために色々調べているのですが、監視も自動化しなくちゃ！と いうことで Sensu を調べてたのですが Chef との相性バッチリな感じで、自分的にイ ケてるなと思いました。\n 公式サイト http://www.sonian.com/cloud-monitoring-sensu/ ドキュメント http://docs.sensuapp.org/0.9/index.html  開発元が予め Chef の Cookbook (正確にはラッパー Cookbook 開発のための Cookbook で Include して使う) を用意してくれていたり、インストールを容易にする ための Omnibus 形式のパッケージの提供だったり。Omnibus なのでインストールと共 に Sensu が推奨する Ruby 一式も一緒にインストールされます。Chef と同じですね。\n今回紹介したいのは、Chef で Sensu を構築・制御する方法です。\n+--------------+ +--------------+ | chef-server | | workstation | +--------------+ +--------------+ | | +----------------+ | +--------------+ | sensu-server | +--------------+ | +----------------+----------------+----------------+ | | | | +--------------+ +--------------+ +--------------+ +--------------+ | sensu-client | | sensu-client | | sensu-client | | sensu-client | .. +--------------+ +--------------+ +--------------+ +--------------+ | service node | | service node | | service node | | service node | +--------------+ +--------------+ +--------------+ +--------------+ この構成の処理の流れとしては…\nsensu-server, sensu-client の構築の流れ    workstation から cookbook, role, data_bag を chef-server へアップ    workstation から sensu-server を bootstrap で構築    workstation から sensu-client を boostrrap で構築    監視項目の追加・無効化の流れ   workstation から監視項目 data bag の chef-server へのアップ    sensu-server 上の chef-client が chef-server から data bag の取得    sensu-server に新たな(削除された)監視項目が追加    sensu-client が新たな(削除された)監視項目を検知し、監視開始    つまり… 運用で必要な操作 (監視対象の追加・監視項目の追加・無効化)を workstation から knife を使って全て行えるっていうことです。しかも Chef も Sensu も API を持っているので自動化を形成するプログラムの開発も容易です。実際に API を叩くちょっとしたダッシュボードを Ruby on Rails で作ってみましたが簡単に出来 ました。\n今回はこの構成の構築と操作方法について書いていきます。予め私のほうで作っておい た sensu のための chef-repo を使って環境を作っていきます。\nhttps://github.com/jedipunkz/sensu-chef-repo\nこの chef-repo には\n Berksfile サンプルの監視項目 data bag SSL 鍵生成の仕組み (後に data bag に収める)  のみが入っています。公式の sensu-chef レポジトリ内にあったサンプルを利用して作っ ています。また、Berksfile 内で、これまた\n chef-redis (redis の cookbook) sensu-chef (公式の sensu cookbook, ラッパー cookbook 内で用いる) chef-monitor (ラッパー cookbook の例)  を取得するようにしています。それぞれ fork して私のレポジトリに置いています。動 く状態を保ちたかったためです。redis に関しては結構手を加えました。そのままでは 全く構築出来ない状態でしたので。chef-monitor は内部で sensu-chef (公式 cookbook) を Include しているラッパー cookbook です。公式 cookbook 内で例とし て挙げられていたモノです。こちらは手を加えていません。\nでは手順を…\n(chef 環境の構築方法は割愛します)\nsensu-server のデプロイ sensu-chef-repo の取得を行います。ここからの操作は全て上図の workstation 上で の操作になります。\n% git clone https://github.com/jedipunkz/sensu-chef-repo SSL 鍵ペアを生成し data bag に投入します。\n% cd ~/sensu-chef-repo/data_bags/ssl % ./ssl_certs.sh generate % knife data bag create sensu % knife data bag from file sensu ./ssl.json サンプル監視項目 proc_cron.json を data bags に投入します。\n% cd ~/sensu-chef-repo/ % knife data bag create sensu_checks % knife data bag from file sensu_checks data_bags/sensu_checks/proc_cron.json proc_cron.json の内容は下記の通り\n{ \"id\": \"proc_cron\", \"command\": \"check-procs.rb -p cron -C 1\", \"subscribers\": [ \"sensu-client\" ], \"interval\": 10 } json の構成を説明すると..\n id : 監視項目名 command : agent が実行するコマンド subscribers : 監視対象のグループ名, chef role 名が自動で監視対象に割り当てられる interval : 監視間隔 (秒)  となります。\nBerkshelf を使って cookbook の取得を行います。\n% gem install berksfile --no-ri --no-rdoc % berks install --path ./cookbooks/ roles を chef server へアップロードします。\n% knife role from file roles/sensu-client.rb # 後の sensu-client デプロイのためついでに準備します % knife role from file roles/sensu-server.rb “master_address” を sensu-server の IP アドレスに書き換えます。書き換える箇所 は ‘monitor’ cookbook の attributes です。\n% ${EDITOR} cookbooks/monitor/attributes/default.rb default[\"monitor\"][\"master_address\"] = \"XXX.XXX.XXX.XXX\" cookbooks を chef server へアップロードします。\nworkstation% knife cookbook upload -a sensu-server を knife を用いてブートストラップします。\n% knife bootstrap  -N  -r 'role[sensu-server]' -x root -i  sensu ダッシュボード URL : http://:8080 にアクセスし動作確認, アカ ウント情報は下記の attributes に記載してあります。\ncookbooks/sensu/attributes/default.rb sensu-client デプロイ方法 knife を用いて sensu-client をデプロイします。\n% knife bootstrap  -N  -r 'role[sensu-client]' -x root -i  この状態で先ほどの ‘proc_cron’ が監視開始されます。\n監視項目の追加方法 下記のような json ファイルを生成します。ここでは例として nginx のプロセス監視 のための項目を追加してみます。\n% ${EDITOR} data_bags/sensu_checks/proc_nginx.json { \"id\": \"proc_nginx\", \"command\": \"check-procs.rb -p nginx -w 5 -c 10\", \"subscribers\": [ \"sensu-client\" ], \"interval\": 10 } 先ほども書きましたが subscribers は chef 的な role 名と一致しています。なので sensu の監視をグルーピングしたいときは role 名を変えて knife bootstrap すると 良いと思います。ここでは例として ‘sensu-client’ という先ほど利用した role 名を 用います。\ndata bags に監視項目情報を投入します。\n% knife data bag from file sensu_checks data_bags/sensu_checks/proc_nginx.json 暫くすると下記のプロセスを経て監視が開始される\n sensu-server 上の chef-client が interval 間隔後実行 sensu-server に proc_nginx.json が配置 sensu-server が chef により再起動 sensu-client 上の sensu agent が自らの subscribers が属している proc_nginx.json を検知 sensu-client が nginx のプロセス監視開始  まとめ 監視対象追加 (agent 仕込み), 監視項目追加を workstation 上から knife を使って 操作出来ました。監視項目の削除についてはダミーの json (command 項に ‘echo ok’ など設定) を投入することで、私は対処していますが、本来は data bag が存在しない ことを検知して sensu-server 上から監視項目を削除する cookbook に仕上げなければ いけないと思います。\n",
+  "wordCount" : "553",
   "inLanguage": "en",
   "datePublished": "2013-06-20T00:00:00Z",
   "dateModified": "2013-06-20T00:00:00Z",
@@ -90,9 +118,6 @@ if (!doNotTrack) {
   }
 }
 </script>
-
-
-
 </head>
 
 <body class="" id="top">
@@ -102,70 +127,56 @@ if (!doNotTrack) {
     }
 
 </script>
-<noscript>
-    <style type="text/css">
-        .theme-toggle,
-        .top-link {
-            display: none;
-        }
 
-    </style>
-</noscript>
 <header class="header">
     <nav class="nav">
         <div class="logo">
             <a href="https://jedipunkz.github.io" accesskey="h" title="jedipunkz 🚀 のブログ (Alt + H)">jedipunkz 🚀 のブログ</a>
             <span class="logo-switches">
-                <span class="theme-toggle" title="(Alt + T)">
-                    <a id="theme-toggle" accesskey="t">
-                        <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                        </svg>
-                        <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                            stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="5"></circle>
-                            <line x1="12" y1="1" x2="12" y2="3"></line>
-                            <line x1="12" y1="21" x2="12" y2="23"></line>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                            <line x1="1" y1="12" x2="3" y2="12"></line>
-                            <line x1="21" y1="12" x2="23" y2="12"></line>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                        </svg>
-                    </a>
-                </span>
-                
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
             </span>
         </div>
-        <ul class="menu" id="menu" onscroll="menu_on_scroll()">
+        <ul id="menu">
             <li>
                 <a href="https://jedipunkz.github.io/about" title="About">
                     <span>About</span>
                 </a>
-            </li></ul>
+            </li>
+        </ul>
     </nav>
 </header>
-
-    <main class="main">
+<main class="main">
 
 <article class="post-single">
   <header class="post-header">
+    
     <h1 class="post-title">
       Sensu 監視システムを Chef で制御
     </h1>
-    <div class="post-meta">
+    <div class="post-meta"><span title='2013-06-20 00:00:00 +0000 UTC'>June 20, 2013</span>&nbsp;·&nbsp;3 min&nbsp;·&nbsp;Theme PaperMod
 
-June 20, 2013&nbsp;·&nbsp;3 min&nbsp;·&nbsp;Theme PaperMod
-
-    </div>
+</div>
   </header> 
-
-  <div class="post-content">
-<p>こんにちは。<!-- raw HTML omitted -->@jedipunkz<!-- raw HTML omitted --> です。</p>
+  <div class="post-content"><p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 <p>自動化の基盤を導入するために色々調べているのですが、監視も自動化しなくちゃ！と
 いうことで Sensu を調べてたのですが Chef との相性バッチリな感じで、自分的にイ
 ケてるなと思いました。</p>
@@ -178,7 +189,7 @@ Cookbook で Include して使う) を用意してくれていたり、インス
 ための Omnibus 形式のパッケージの提供だったり。Omnibus なのでインストールと共
 に Sensu が推奨する Ruby 一式も一緒にインストールされます。Chef と同じですね。</p>
 <p>今回紹介したいのは、Chef で Sensu を構築・制御する方法です。</p>
-<pre><code>+--------------+ +--------------+
+<pre tabindex="0"><code>+--------------+ +--------------+
 | chef-server  | | workstation  |
 +--------------+ +--------------+
        |                |
@@ -268,18 +279,18 @@ cookbook) を Include しているラッパー cookbook です。公式 cookbook
 <h2 id="sensu-server-のデプロイ">sensu-server のデプロイ<a hidden class="anchor" aria-hidden="true" href="#sensu-server-のデプロイ">#</a></h2>
 <p>sensu-chef-repo の取得を行います。ここからの操作は全て上図の workstation 上で
 の操作になります。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% git clone https://github.com/jedipunkz/sensu-chef-repo
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% git clone https://github.com/jedipunkz/sensu-chef-repo
 </code></pre></div><p>SSL 鍵ペアを生成し data bag に投入します。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% cd ~/sensu-chef-repo/data_bags/ssl
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% cd ~/sensu-chef-repo/data_bags/ssl
 % ./ssl_certs.sh generate
 % knife data bag create sensu
 % knife data bag from file sensu ./ssl.json
 </code></pre></div><p>サンプル監視項目 proc_cron.json を data bags に投入します。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% cd ~/sensu-chef-repo/
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% cd ~/sensu-chef-repo/
 % knife data bag create sensu_checks
 % knife data bag from file sensu_checks data_bags/sensu_checks/proc_cron.json
 </code></pre></div><p>proc_cron.json の内容は下記の通り</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
   <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;proc_cron&#34;</span>,
   <span style="color:#f92672">&#34;command&#34;</span>: <span style="color:#e6db74">&#34;check-procs.rb -p cron -C 1&#34;</span>,
   <span style="color:#f92672">&#34;subscribers&#34;</span>: [
@@ -296,31 +307,31 @@ cookbook) を Include しているラッパー cookbook です。公式 cookbook
 </ul>
 <p>となります。</p>
 <p>Berkshelf を使って cookbook の取得を行います。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% gem install berksfile --no-ri --no-rdoc
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% gem install berksfile --no-ri --no-rdoc
 % berks install --path ./cookbooks/
 </code></pre></div><p>roles を chef server へアップロードします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife role from file roles/sensu-client.rb <span style="color:#75715e"># 後の sensu-client デプロイのためついでに準備します</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife role from file roles/sensu-client.rb <span style="color:#75715e"># 後の sensu-client デプロイのためついでに準備します</span>
 % knife role from file roles/sensu-server.rb
 </code></pre></div><p>&ldquo;master_address&rdquo; を sensu-server の IP アドレスに書き換えます。書き換える箇所
 は &lsquo;monitor&rsquo; cookbook の attributes です。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> cookbooks/monitor/attributes/default.rb
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> cookbooks/monitor/attributes/default.rb
 default<span style="color:#f92672">[</span><span style="color:#e6db74">&#34;monitor&#34;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#34;master_address&#34;</span><span style="color:#f92672">]</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;XXX.XXX.XXX.XXX&#34;</span>
 </code></pre></div><p>cookbooks を chef server へアップロードします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">workstation% knife cookbook upload -a
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">workstation% knife cookbook upload -a
 </code></pre></div><p>sensu-server を knife を用いてブートストラップします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife bootstrap &lt;server-ip&gt; -N &lt;server-name&gt; -r <span style="color:#e6db74">&#39;role[sensu-server]&#39;</span> -x root -i &lt;secret-key&gt;
-</code></pre></div><p>sensu ダッシュボード URL : http://<!-- raw HTML omitted -->:8080 にアクセスし動作確認, アカ
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife bootstrap &lt;server-ip&gt; -N &lt;server-name&gt; -r <span style="color:#e6db74">&#39;role[sensu-server]&#39;</span> -x root -i &lt;secret-key&gt;
+</code></pre></div><p>sensu ダッシュボード URL : http://<server-ip>:8080 にアクセスし動作確認, アカ
 ウント情報は下記の attributes に記載してあります。</p>
-<pre><code>cookbooks/sensu/attributes/default.rb
+<pre tabindex="0"><code>cookbooks/sensu/attributes/default.rb
 </code></pre><h2 id="sensu-client-デプロイ方法">sensu-client デプロイ方法<a hidden class="anchor" aria-hidden="true" href="#sensu-client-デプロイ方法">#</a></h2>
 <p>knife を用いて sensu-client をデプロイします。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife bootstrap &lt;client-ip&gt; -N &lt;client-name&gt; -r <span style="color:#e6db74">&#39;role[sensu-client]&#39;</span> -x root -i &lt;secret-key&gt;
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife bootstrap &lt;client-ip&gt; -N &lt;client-name&gt; -r <span style="color:#e6db74">&#39;role[sensu-client]&#39;</span> -x root -i &lt;secret-key&gt;
 </code></pre></div><p>この状態で先ほどの &lsquo;proc_cron&rsquo; が監視開始されます。</p>
 <h2 id="監視項目の追加方法">監視項目の追加方法<a hidden class="anchor" aria-hidden="true" href="#監視項目の追加方法">#</a></h2>
 <p>下記のような json ファイルを生成します。ここでは例として nginx のプロセス監視
 のための項目を追加してみます。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> data_bags/sensu_checks/proc_nginx.json
-</code></pre></div><div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> data_bags/sensu_checks/proc_nginx.json
+</code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
   <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;proc_nginx&#34;</span>,
   <span style="color:#f92672">&#34;command&#34;</span>: <span style="color:#e6db74">&#34;check-procs.rb -p nginx -w 5 -c 10&#34;</span>,
   <span style="color:#f92672">&#34;subscribers&#34;</span>: [
@@ -333,7 +344,7 @@ sensu の監視をグルーピングしたいときは role 名を変えて knif
 良いと思います。ここでは例として &lsquo;sensu-client&rsquo; という先ほど利用した role 名を
 用います。</p>
 <p>data bags に監視項目情報を投入します。</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife data bag from file sensu_checks data_bags/sensu_checks/proc_nginx.json
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife data bag from file sensu_checks data_bags/sensu_checks/proc_nginx.json
 </code></pre></div><p>暫くすると下記のプロセスを経て監視が開始される</p>
 <ul>
 <li>sensu-server 上の chef-client が interval 間隔後実行</li>
@@ -349,10 +360,10 @@ sensu の監視をグルーピングしたいときは role 名を変えて knif
 ことを検知して sensu-server 上から監視項目を削除する cookbook に仕上げなければ
 いけないと思います。</p>
 
-</div>
+
+  </div>
+
   <footer class="post-footer">
-
-
 
 <div class="share-buttons">
     <a target="_blank" rel="noopener noreferrer" aria-label="share Sensu 監視システムを Chef で制御 on twitter"
@@ -401,46 +412,52 @@ sensu の監視をグルーピングしたいときは role 名を変えて knif
 
   </footer>
 </article>
-    </main><footer class="footer">
+    </main>
+    
+<footer class="footer">
     <span>&copy; 2021 <a href="https://jedipunkz.github.io">jedipunkz 🚀 のブログ</a></span>
-    <span>&middot;</span>
-    <span>Powered by <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a></span>
-    <span>&middot;</span>
-    <span>Theme <a href="https://git.io/hugopapermod" rel="noopener" target="_blank">PaperMod</a></span>
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://git.io/hugopapermod" rel="noopener" target="_blank">PaperMod</a>
+    </span>
 </footer>
-<a href="#top">
-    <button class="top-link" id="top-link" type="button" aria-label="go to top" title="Go to Top (Alt + G)"
-        accesskey="g">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6">
-            <path d="M12 6H0l6-6z" />
-        </svg>
-    </button>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
 </a>
 
-
-
-<script defer src="https://jedipunkz.github.io/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
-    onload="hljs.initHighlightingOnLoad();"></script>
 <script>
-    window.onload = function () {
-        if (localStorage.getItem("menu-scroll-position")) {
-            document.getElementById('menu').scrollLeft = localStorage.getItem("menu-scroll-position");
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
         }
     }
+
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
         anchor.addEventListener("click", function (e) {
             e.preventDefault();
             var id = this.getAttribute("href").substr(1);
-            document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
-                behavior: "smooth"
-            });
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
             if (id === "top") {
                 history.replaceState(null, null, " ");
             } else {
-                history.replaceState(null, null, `#${id}`);
+                history.pushState(null, null, `#${id}`);
             }
         });
     });
+
+</script>
+<script>
     var mybutton = document.getElementById("top-link");
     window.onscroll = function () {
         if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
@@ -451,10 +468,6 @@ sensu の監視をグルーピングしたいときは role 名を変えて knif
             mybutton.style.opacity = "0";
         }
     };
-
-    function menu_on_scroll() {
-        localStorage.setItem("menu-scroll-position", document.getElementById('menu').scrollLeft);
-    }
 
 </script>
 <script>
@@ -469,7 +482,6 @@ sensu の監視をグルーピングしたいときは role 名を変えて knif
     })
 
 </script>
-
 </body>
 
 </html>
