@@ -6,7 +6,7 @@ draft: false
 ---
 こんにちは。[jedipunkz](https://twitter.com/jedipunkz) です。
 
-今回は [READYFOR Advent Calendar 2021](https://qiita.com/advent-calendar/2020/readyfor) の記事として執筆します。
+今回は [READYFOR Advent Calendar 2021](https://qiita.com/advent-calendar/2021/readyfor) の記事として執筆します。
 
 READYFOR では 2021 年の夏に AWS ECS へプラットフォーム移行をしました。ECS は自分達の要件を全て満たしてくれ運用コストも極小化できて更に周辺の技術も AWS 公式のものが揃っているので、とても満足している状況です。
 
