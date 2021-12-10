@@ -180,10 +180,10 @@ func main() {
 			"Action": {
 				"WeightedTargets": [{
 					"VirtualNode": "example1",
-					"Weight": 90 // example1 の荷重
+					"Weight": 90
 				},{
 					"VirtualNode": "example2",
-					"Weight": 10 // example2 の荷重
+					"Weight": 10
 				}]
 			},
 			"Match": {
