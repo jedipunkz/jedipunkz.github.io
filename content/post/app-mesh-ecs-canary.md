@@ -60,7 +60,7 @@ $ terraform apply
 
 検証で構築した構成(上記の Terraform コードで構築できる) は下記になります。
 
-<img src="http://jedipunkz.github.io/pix/appmesh_ecs.png" width="70%">
+<img src="http://jedipunkz.github.io/pix/appmesh_ecs.png" width="100%">
 
 #### 構成の特徴とリクエスト処理の流れ
 
