@@ -1,41 +1,46 @@
 ---
-title: "興味のある技術たち"
+title: "興味のある技術/テーマたち"
 date: 2020-12-27T17:21:16+09:00
 Categories: ["infrastructure"]
 draft: false
 ---
 こんな技術に興味を持っています。
 
-## クラウド・コンテナ基盤技術
+### クラウド・コンテナ基盤, CNCF 技術
 
 - AWS
-  - ECS
-  - EKS
+    - ECS
+    - EKS
 - GCP
-  - GKE
-  - BigQuery
-- Ceph
+    - GKE
+    - BigQuery
 - OpenStack
-  - Swift
 - Kubernetes
+- Ceph
+- Prometheus
+- ArgoCD (Rollouts)
+- Flux
+- PipeCD
 
-## プログラミング言語
+### プログラミング言語
 
 - Golang
+- Rust
 - Python
 
-## IaC Tools
+### Infrastracture as a Code Tools
 
 - Terraform
 - Ansible
-- Chef
+- AWS CDK
 
-## etc.
 
+### テーマ
+
+- AWS, GCP を使った SRE 活動
 - プログレッシブデリバリー
 - サービスメッシュ
 - データ基盤
 - ログ基盤
-- Prometheus
 - Datadog
 - Hashicorp の各技術・ソフトウェア
