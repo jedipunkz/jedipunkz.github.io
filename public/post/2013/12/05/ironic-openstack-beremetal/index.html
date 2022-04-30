@@ -27,7 +27,7 @@ https://launchpad.net/ironic
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2013/12/05/ironic-openstack-beremetal/" />
 <link crossorigin="anonymous" href="/assets/css/stylesheet.min.44044074f4b4d7b018bfd3febcc1fa76eb874db64213f920feacf263e3028a73.css" integrity="sha256-RARAdPS017AYv9P&#43;vMH6duuHTbZCE/kg/qzyY&#43;MCinM=" rel="preload stylesheet" as="style">
-<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.2840b7fccd34145847db71a290569594bdbdb00047097f75d6495d162f5d7dff.js" integrity="sha256-KEC3/M00FFhH23GikFaVlL29sABHCX911kldFi9dff8="
     onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/pix/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
@@ -36,7 +36,7 @@ https://launchpad.net/ironic
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.92.1" />
+<meta name="generator" content="Hugo 0.97.3" />
 <noscript>
     <style>
         #theme-toggle,
@@ -131,7 +131,7 @@ https://launchpad.net/ironic
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkz です。\nアドベントカレンダーの季節がやって参りました。\nIronic を使って OpenStack でベアメタルサーバを扱いたい！ということで色々とやっ ている最中 (今週から始めました..) なのですが、まだまだ incubator プロジェクト ということもあって実装が追い付いていなかったりドキュメントも揃っていなかったり とシンドい状況ｗ ここ2日程で集めた情報を整理するためにも 2013年 OpenStack アド ベントカレンダーに参加させてもらいますー。\n参考資料のまとめ まずは公式 wiki ページ。逆に言うとここに記されている以上の情報は無いんじゃ？あ とはコード読め！の世界かも..。\nhttps://wiki.openstack.org/wiki/Ironic\ndevtest_undercloud です。上の資料の中でも手順の中で度々こちらにジャンプしている。 同じく incubator プロジェクトの TrippleO のデベロッパ用ドキュメントになっている。 上記の公式 wiki の情報を合わせ読むことで Ironic を使ったデプロイの手順に仕上がります。\nhttp://docs.openstack.org/developer/tripleo-incubator/devtest_undercloud.html\nソースコードとドキュメント。あとでドキュメント作成方法を記しますが、こちらを取 得して作成します。\nhttps://github.com/openstack/ironic\nドキュメントサイト。まだ情報が揃っていません。よって上の github から取得したモ ノからドキュメントを作る方法を後で書きます。\nhttp://docs.openstack.org/developer/ironic/\nlaunchpad サイト。全てのバグ情報やブループリント等が閲覧出来ます。まだ絶賛開発 中なので読む必要があると思います。\nhttps://launchpad.net/ironic\nドキュメントを作る +++\n公式 ドキュメントサイトは一応、上記の通りあるのですが、ドキュメントも絶賛執筆 中ということで所々抜けがあります。また公式ドキュメントサイトがどのスパンで更新 されているか分からないので、いち早く情報をゲットしたい場合ドキュメントを作る必 要があると思います。ということで、その作り方を記していきます。尚、公式 wiki サ イトにも手順が載っていますが Vagrant と Apache を用いた方法になっているので、 普通に Ubuntu サーバが手元にある環境を想定して読み替えながら説明していきます。\n必要なパッケージのインストールを行います。\n% sudo apt-get update % sudo apt-get install -y git python-dev swig libssl-dev python-pip \\  libmysqlclient-dev libxml2-dev libxslt-dev libxslt1-dev python-mysqldb \\  libpq-dev % sudo pip install virtualenv setuptools-git flake8 tox % sudo easy_install nose ソースコード・ドキュメントを取得します。\n% git clone git://github.com/openstack/ironic.git Sphinx で構成されているのでビルドします。\n% cd ironic % tox -evenv -- echo 'done' % source .tox/venv/bin/activate  python setup.ph build_sphinx  deactivate ironic/doc/build/html ディレクトリ配下に HTML のドキュメントが生成されたはずで す。これを手元の端末に持ってきて開けばブラウザで最新のドキュメントが閲覧出来ま す。\nironic を有効にした devstack による構築 devstack を使って ironic を機能させていきます。私は下記の localrc を用いて ironic の試験をしていました。またブランチは ‘master’ を使います。\n% git clone https://github.com/openstack-dev/devstack.git % cd devstack % ${EDITOR} localrc # 下記の通り HOST_IP= LOGFILE=stack.sh.log ADMIN_PASSWORD=nomoresecrete MYSQL_PASSWORD=$ADMIN_PASSWORD RABBIT_PASSWORD=$ADMIN_PASSWORD SERVICE_PASSWORD=$ADMIN_PASSWORD SERVICE_TOKEN=admintoken disable_service n-obj # ironic enable_service ir-api enable_service ir-cond # use neutron disable_service n-net enable_service q-svc enable_service q-agt enable_service q-dhcp enable_service q-l3 enable_service q-meta enable_service q-lbaas enable_service neutron ENABLE_TENANT_TUNNELS=True # heat ENABLED_SERVICES+=,heat,h-api,h-api-cfn,h-api-cw,h-eng ## It would also be useful to automatically download and register VM images that Heat can launch. # 64bit image (~660MB) IMAGE_URLS+=\",http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-x86_64-cfntools.qcow2\" # 32bit image (~640MB) IMAGE_URLS+=\",http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-i386-cfntools.qcow2\" # syslog SYSLOG=True SYSLOG_HOST=$HOST_IP SYSLOG_PORT=514 stack.sh を実行します。\n% ./stack.sh Ironic を有効にした OpenStack 環境が出来上がったはずです。\ndiskimage-builder を使ったイメージ作成 ベアメタルサーバをデプロイするためのイメージを作成します。元々は TrippleO のプ ロジェクト内に存在していましたが、現在は git レポジトリが別れています。\n先ほど devstack を導入したホストでイメージを作ります。作成には結構時間が掛かります。\n% cd ~ % git clone https://github.com/openstack/diskimage-builder.git % git clone https://github.com/openstack/tripleo-incubator.git % git clone https://github.com/openstack/tripleo-image-elements.git % git clone https://github.com/openstack/tripleo-heat-templates.git % export UNDERCLOUD_DIB_EXTRA_ARGS='ironic-api ironic-conductor' % export ELEMENTS_PATH=/home/thirai/tripleo-image-elements/elements % ./diskimage-builder/bin/disk-image-create -a amd64 -o ~/undercloud boot-stack \\  nova-baremetal os-collect-config stackuser dhcp-all-interfaces \\  neutron-dhcp-agent ${UNDERCLOUD_DIB_EXTRA_ARGS:-} ubuntu 2\u00261 | tee /tmp/undercloud.log イメージが ~/undercloud.qcow2 が生成されたはずです。作成したイメージを Glance に登録します。\n% ~/tripleo-incubator/scripts/load-image undercloud.qcow2 undercloud.yaml と ironic.yaml をマージします。\n% cd ~/tripleo-heat-templates % make undercloud-vm-ironic.yaml パスワードの生成と環境変数への読み込みを行います。\n% cd ~/tripleo-incubator/scripts/ % export PATH=$PATH:. % ./setup-undercloud-passwords % source tripleo-undercloud-passwords UNDERCLOUD_IRONIC_PASSWORD 環境変数にも読み込みます。\n% export UNDERCLOUD_IRONIC_PASSWORD=$(~/tripleo-incubator/scripts/os-make-password) さて、イメージを利用したベアメタルへの稼働ですが、…\nif [ \"$DHCP_DRIVER\" = \"bm-dnsmasq\" ]; then UNDERCLOUD_NATIVE_PXE=\"\" else UNDERCLOUD_NATIVE_PXE=\";NeutronNativePXE=True\" fi heat stack-create -f ./tripleo-heat-templates/undercloud-vm-ironic.yaml \\ -P \"PowerUserName=$(whoami);\\ AdminToken=${UNDERCLOUD_ADMIN_TOKEN};\\ AdminPassword=${UNDERCLOUD_ADMIN_PASSWORD};\\ GlancePassword=${UNDERCLOUD_GLANCE_PASSWORD};\\ HeatPassword=${UNDERCLOUD_HEAT_PASSWORD};\\ NeutronPassword=${UNDERCLOUD_NEUTRON_PASSWORD};\\ NovaPassword=${UNDERCLOUD_NOVA_PASSWORD};\\ BaremetalArch=${NODE_ARCH}$UNDERCLOUD_NATIVE_PXE\" \\ IronicPassword=${UNDERCLOUD_IRONIC_PASSWORD}\" \\ undercloud コケました。…エラーは下記の通り。\nTRACE heat.engine.resource Error: Creation of server teststack01-WikiDatabase-5nyiqluilnxn failed: No valid host was found. Exceeded max scheduling attempts 3 for instance 733b69df-2b54-44ae-9d61-de766746f21a (500)#0122013-12-03 16:04:14.513 10022 TRACE heat.engine.resource No Valid Host とな…。うーん。確かに IPMI を積んだベアメタルマシンの情報って どこにも記していないんだよなぁ。しかも heat のテンプレート (underclound-vm-ironic.yaml) 見てもよく理解していない自分がいる…(´・ω・`)\nというか手順にはその周りのこと何も書いていないのでぇすがぁ！…\nということで、まだまだコントリビュートするチャンス満載の状態なので、よかったら 皆さん参加されませんか !?!?\nhttps://wiki.openstack.org/wiki/HowToContribute\n",
+  "articleBody": "こんにちは。@jedipunkz です。\nアドベントカレンダーの季節がやって参りました。\nIronic を使って OpenStack でベアメタルサーバを扱いたい！ということで色々とやっ ている最中 (今週から始めました..) なのですが、まだまだ incubator プロジェクト ということもあって実装が追い付いていなかったりドキュメントも揃っていなかったり とシンドい状況ｗ ここ2日程で集めた情報を整理するためにも 2013年 OpenStack アド ベントカレンダーに参加させてもらいますー。\n参考資料のまとめ まずは公式 wiki ページ。逆に言うとここに記されている以上の情報は無いんじゃ？あ とはコード読め！の世界かも..。\nhttps://wiki.openstack.org/wiki/Ironic\ndevtest_undercloud です。上の資料の中でも手順の中で度々こちらにジャンプしている。 同じく incubator プロジェクトの TrippleO のデベロッパ用ドキュメントになっている。 上記の公式 wiki の情報を合わせ読むことで Ironic を使ったデプロイの手順に仕上がります。\nhttp://docs.openstack.org/developer/tripleo-incubator/devtest_undercloud.html\nソースコードとドキュメント。あとでドキュメント作成方法を記しますが、こちらを取 得して作成します。\nhttps://github.com/openstack/ironic\nドキュメントサイト。まだ情報が揃っていません。よって上の github から取得したモ ノからドキュメントを作る方法を後で書きます。\nhttp://docs.openstack.org/developer/ironic/\nlaunchpad サイト。全てのバグ情報やブループリント等が閲覧出来ます。まだ絶賛開発 中なので読む必要があると思います。\nhttps://launchpad.net/ironic\nドキュメントを作る +++\n公式 ドキュメントサイトは一応、上記の通りあるのですが、ドキュメントも絶賛執筆 中ということで所々抜けがあります。また公式ドキュメントサイトがどのスパンで更新 されているか分からないので、いち早く情報をゲットしたい場合ドキュメントを作る必 要があると思います。ということで、その作り方を記していきます。尚、公式 wiki サ イトにも手順が載っていますが Vagrant と Apache を用いた方法になっているので、 普通に Ubuntu サーバが手元にある環境を想定して読み替えながら説明していきます。\n必要なパッケージのインストールを行います。\n% sudo apt-get update % sudo apt-get install -y git python-dev swig libssl-dev python-pip \\  libmysqlclient-dev libxml2-dev libxslt-dev libxslt1-dev python-mysqldb \\  libpq-dev % sudo pip install virtualenv setuptools-git flake8 tox % sudo easy_install nose ソースコード・ドキュメントを取得します。\n% git clone git://github.com/openstack/ironic.git Sphinx で構成されているのでビルドします。\n% cd ironic % tox -evenv -- echo 'done' % source .tox/venv/bin/activate  python setup.ph build_sphinx  deactivate ironic/doc/build/html ディレクトリ配下に HTML のドキュメントが生成されたはずで す。これを手元の端末に持ってきて開けばブラウザで最新のドキュメントが閲覧出来ま す。\nironic を有効にした devstack による構築 devstack を使って ironic を機能させていきます。私は下記の localrc を用いて ironic の試験をしていました。またブランチは ‘master’ を使います。\n% git clone https://github.com/openstack-dev/devstack.git % cd devstack % ${EDITOR} localrc # 下記の通り  HOST_IP=  LOGFILE=stack.sh.log  ADMIN_PASSWORD=nomoresecrete MYSQL_PASSWORD=$ADMIN_PASSWORD RABBIT_PASSWORD=$ADMIN_PASSWORD SERVICE_PASSWORD=$ADMIN_PASSWORD SERVICE_TOKEN=admintoken  disable_service n-obj  # ironic enable_service ir-api enable_service ir-cond  # use neutron disable_service n-net enable_service q-svc enable_service q-agt enable_service q-dhcp enable_service q-l3 enable_service q-meta enable_service q-lbaas enable_service neutron  ENABLE_TENANT_TUNNELS=True  # heat ENABLED_SERVICES+=,heat,h-api,h-api-cfn,h-api-cw,h-eng ## It would also be useful to automatically download and register VM images that Heat can launch. # 64bit image (~660MB) IMAGE_URLS+=\",http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-x86_64-cfntools.qcow2\" # 32bit image (~640MB) IMAGE_URLS+=\",http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-i386-cfntools.qcow2\"  # syslog SYSLOG=True SYSLOG_HOST=$HOST_IP SYSLOG_PORT=514 stack.sh を実行します。\n% ./stack.sh Ironic を有効にした OpenStack 環境が出来上がったはずです。\ndiskimage-builder を使ったイメージ作成 ベアメタルサーバをデプロイするためのイメージを作成します。元々は TrippleO のプ ロジェクト内に存在していましたが、現在は git レポジトリが別れています。\n先ほど devstack を導入したホストでイメージを作ります。作成には結構時間が掛かります。\n% cd ~ % git clone https://github.com/openstack/diskimage-builder.git % git clone https://github.com/openstack/tripleo-incubator.git % git clone https://github.com/openstack/tripleo-image-elements.git % git clone https://github.com/openstack/tripleo-heat-templates.git % export UNDERCLOUD_DIB_EXTRA_ARGS='ironic-api ironic-conductor' % export ELEMENTS_PATH=/home/thirai/tripleo-image-elements/elements % ./diskimage-builder/bin/disk-image-create -a amd64 -o ~/undercloud boot-stack \\  nova-baremetal os-collect-config stackuser dhcp-all-interfaces \\  neutron-dhcp-agent ${UNDERCLOUD_DIB_EXTRA_ARGS:-} ubuntu 2\u00261 | tee /tmp/undercloud.log イメージが ~/undercloud.qcow2 が生成されたはずです。作成したイメージを Glance に登録します。\n% ~/tripleo-incubator/scripts/load-image undercloud.qcow2 undercloud.yaml と ironic.yaml をマージします。\n% cd ~/tripleo-heat-templates % make undercloud-vm-ironic.yaml パスワードの生成と環境変数への読み込みを行います。\n% cd ~/tripleo-incubator/scripts/ % export PATH=$PATH:. % ./setup-undercloud-passwords % source tripleo-undercloud-passwords UNDERCLOUD_IRONIC_PASSWORD 環境変数にも読み込みます。\n% export UNDERCLOUD_IRONIC_PASSWORD=$(~/tripleo-incubator/scripts/os-make-password) さて、イメージを利用したベアメタルへの稼働ですが、…\nif [ \"$DHCP_DRIVER\" = \"bm-dnsmasq\" ]; then  UNDERCLOUD_NATIVE_PXE=\"\" else  UNDERCLOUD_NATIVE_PXE=\";NeutronNativePXE=True\" fi  heat stack-create -f ./tripleo-heat-templates/undercloud-vm-ironic.yaml \\ -P \"PowerUserName=$(whoami);\\ AdminToken=${UNDERCLOUD_ADMIN_TOKEN};\\ AdminPassword=${UNDERCLOUD_ADMIN_PASSWORD};\\ GlancePassword=${UNDERCLOUD_GLANCE_PASSWORD};\\ HeatPassword=${UNDERCLOUD_HEAT_PASSWORD};\\ NeutronPassword=${UNDERCLOUD_NEUTRON_PASSWORD};\\ NovaPassword=${UNDERCLOUD_NOVA_PASSWORD};\\ BaremetalArch=${NODE_ARCH}$UNDERCLOUD_NATIVE_PXE\" \\ IronicPassword=${UNDERCLOUD_IRONIC_PASSWORD}\" \\ undercloud コケました。…エラーは下記の通り。\nTRACE heat.engine.resource Error: Creation of server teststack01-WikiDatabase-5nyiqluilnxn failed: No valid host was found. Exceeded max scheduling attempts 3 for instance 733b69df-2b54-44ae-9d61-de766746f21a (500)#0122013-12-03 16:04:14.513 10022 TRACE heat.engine.resource No Valid Host とな…。うーん。確かに IPMI を積んだベアメタルマシンの情報って どこにも記していないんだよなぁ。しかも heat のテンプレート (underclound-vm-ironic.yaml) 見てもよく理解していない自分がいる…(´・ω・`)\nというか手順にはその周りのこと何も書いていないのでぇすがぁ！…\nということで、まだまだコントリビュートするチャンス満載の状態なので、よかったら 皆さん参加されませんか !?!?\nhttps://wiki.openstack.org/wiki/HowToContribute\n",
   "wordCount" : "402",
   "inLanguage": "en",
   "datePublished": "2013-12-05T00:00:00Z",
@@ -245,118 +245,118 @@ https://launchpad.net/ironic
 イトにも手順が載っていますが Vagrant と Apache を用いた方法になっているので、
 普通に Ubuntu サーバが手元にある環境を想定して読み替えながら説明していきます。</p>
 <p>必要なパッケージのインストールを行います。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo apt-get update
-% sudo apt-get install -y git python-dev swig libssl-dev python-pip <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  libmysqlclient-dev libxml2-dev libxslt-dev libxslt1-dev python-mysqldb <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  libpq-dev
-% sudo pip install virtualenv setuptools-git flake8 tox
-% sudo easy_install nose
-</code></pre></div><p>ソースコード・ドキュメントを取得します。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% git clone git://github.com/openstack/ironic.git
-</code></pre></div><p>Sphinx で構成されているのでビルドします。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% cd ironic
-% tox -evenv -- echo <span style="color:#e6db74">&#39;done&#39;</span>
-% source .tox/venv/bin/activate
-&gt; python setup.ph build_sphinx
-&gt; deactivate
-</code></pre></div><p>ironic/doc/build/html ディレクトリ配下に HTML のドキュメントが生成されたはずで
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% sudo apt-get update
+</span></span><span style="display:flex;"><span>% sudo apt-get install -y git python-dev swig libssl-dev python-pip <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  libmysqlclient-dev libxml2-dev libxslt-dev libxslt1-dev python-mysqldb <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  libpq-dev
+</span></span><span style="display:flex;"><span>% sudo pip install virtualenv setuptools-git flake8 tox
+</span></span><span style="display:flex;"><span>% sudo easy_install nose
+</span></span></code></pre></div><p>ソースコード・ドキュメントを取得します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% git clone git://github.com/openstack/ironic.git
+</span></span></code></pre></div><p>Sphinx で構成されているのでビルドします。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% cd ironic
+</span></span><span style="display:flex;"><span>% tox -evenv -- echo <span style="color:#e6db74">&#39;done&#39;</span>
+</span></span><span style="display:flex;"><span>% source .tox/venv/bin/activate
+</span></span><span style="display:flex;"><span>&gt; python setup.ph build_sphinx
+</span></span><span style="display:flex;"><span>&gt; deactivate
+</span></span></code></pre></div><p>ironic/doc/build/html ディレクトリ配下に HTML のドキュメントが生成されたはずで
 す。これを手元の端末に持ってきて開けばブラウザで最新のドキュメントが閲覧出来ま
 す。</p>
 <h2 id="ironic-を有効にした-devstack-による構築">ironic を有効にした devstack による構築<a hidden class="anchor" aria-hidden="true" href="#ironic-を有効にした-devstack-による構築">#</a></h2>
 <p>devstack を使って ironic を機能させていきます。私は下記の localrc を用いて
 ironic の試験をしていました。またブランチは &lsquo;master&rsquo; を使います。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% git clone https://github.com/openstack-dev/devstack.git
-% cd devstack
-% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> localrc <span style="color:#75715e"># 下記の通り</span>
-
-HOST_IP<span style="color:#f92672">=</span>&lt;your_machine_ip_addr&gt;
-
-LOGFILE<span style="color:#f92672">=</span>stack.sh.log
-
-ADMIN_PASSWORD<span style="color:#f92672">=</span>nomoresecrete
-MYSQL_PASSWORD<span style="color:#f92672">=</span>$ADMIN_PASSWORD
-RABBIT_PASSWORD<span style="color:#f92672">=</span>$ADMIN_PASSWORD
-SERVICE_PASSWORD<span style="color:#f92672">=</span>$ADMIN_PASSWORD
-SERVICE_TOKEN<span style="color:#f92672">=</span>admintoken
-
-disable_service n-obj
-
-<span style="color:#75715e"># ironic</span>
-enable_service ir-api
-enable_service ir-cond
-
-<span style="color:#75715e"># use neutron</span>
-disable_service n-net
-enable_service q-svc
-enable_service q-agt
-enable_service q-dhcp
-enable_service q-l3
-enable_service q-meta
-enable_service q-lbaas
-enable_service neutron
-
-ENABLE_TENANT_TUNNELS<span style="color:#f92672">=</span>True
-
-<span style="color:#75715e"># heat</span>
-ENABLED_SERVICES<span style="color:#f92672">+=</span>,heat,h-api,h-api-cfn,h-api-cw,h-eng
-<span style="color:#75715e">## It would also be useful to automatically download and register VM images that Heat can launch.</span>
-<span style="color:#75715e"># 64bit image (~660MB)</span>
-IMAGE_URLS<span style="color:#f92672">+=</span><span style="color:#e6db74">&#34;,http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-x86_64-cfntools.qcow2&#34;</span>
-<span style="color:#75715e"># 32bit image (~640MB)</span>
-IMAGE_URLS<span style="color:#f92672">+=</span><span style="color:#e6db74">&#34;,http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-i386-cfntools.qcow2&#34;</span>
-
-<span style="color:#75715e"># syslog</span>
-SYSLOG<span style="color:#f92672">=</span>True
-SYSLOG_HOST<span style="color:#f92672">=</span>$HOST_IP
-SYSLOG_PORT<span style="color:#f92672">=</span><span style="color:#ae81ff">514</span>
-</code></pre></div><p>stack.sh を実行します。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ./stack.sh
-</code></pre></div><p>Ironic を有効にした OpenStack 環境が出来上がったはずです。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% git clone https://github.com/openstack-dev/devstack.git
+</span></span><span style="display:flex;"><span>% cd devstack
+</span></span><span style="display:flex;"><span>% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> localrc <span style="color:#75715e"># 下記の通り</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>HOST_IP<span style="color:#f92672">=</span>&lt;your_machine_ip_addr&gt;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>LOGFILE<span style="color:#f92672">=</span>stack.sh.log
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>ADMIN_PASSWORD<span style="color:#f92672">=</span>nomoresecrete
+</span></span><span style="display:flex;"><span>MYSQL_PASSWORD<span style="color:#f92672">=</span>$ADMIN_PASSWORD
+</span></span><span style="display:flex;"><span>RABBIT_PASSWORD<span style="color:#f92672">=</span>$ADMIN_PASSWORD
+</span></span><span style="display:flex;"><span>SERVICE_PASSWORD<span style="color:#f92672">=</span>$ADMIN_PASSWORD
+</span></span><span style="display:flex;"><span>SERVICE_TOKEN<span style="color:#f92672">=</span>admintoken
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>disable_service n-obj
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># ironic</span>
+</span></span><span style="display:flex;"><span>enable_service ir-api
+</span></span><span style="display:flex;"><span>enable_service ir-cond
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># use neutron</span>
+</span></span><span style="display:flex;"><span>disable_service n-net
+</span></span><span style="display:flex;"><span>enable_service q-svc
+</span></span><span style="display:flex;"><span>enable_service q-agt
+</span></span><span style="display:flex;"><span>enable_service q-dhcp
+</span></span><span style="display:flex;"><span>enable_service q-l3
+</span></span><span style="display:flex;"><span>enable_service q-meta
+</span></span><span style="display:flex;"><span>enable_service q-lbaas
+</span></span><span style="display:flex;"><span>enable_service neutron
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>ENABLE_TENANT_TUNNELS<span style="color:#f92672">=</span>True
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># heat</span>
+</span></span><span style="display:flex;"><span>ENABLED_SERVICES<span style="color:#f92672">+=</span>,heat,h-api,h-api-cfn,h-api-cw,h-eng
+</span></span><span style="display:flex;"><span><span style="color:#75715e">## It would also be useful to automatically download and register VM images that Heat can launch.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 64bit image (~660MB)</span>
+</span></span><span style="display:flex;"><span>IMAGE_URLS<span style="color:#f92672">+=</span><span style="color:#e6db74">&#34;,http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-x86_64-cfntools.qcow2&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># 32bit image (~640MB)</span>
+</span></span><span style="display:flex;"><span>IMAGE_URLS<span style="color:#f92672">+=</span><span style="color:#e6db74">&#34;,http://fedorapeople.org/groups/heat/prebuilt-jeos-images/F17-i386-cfntools.qcow2&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># syslog</span>
+</span></span><span style="display:flex;"><span>SYSLOG<span style="color:#f92672">=</span>True
+</span></span><span style="display:flex;"><span>SYSLOG_HOST<span style="color:#f92672">=</span>$HOST_IP
+</span></span><span style="display:flex;"><span>SYSLOG_PORT<span style="color:#f92672">=</span><span style="color:#ae81ff">514</span>
+</span></span></code></pre></div><p>stack.sh を実行します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% ./stack.sh
+</span></span></code></pre></div><p>Ironic を有効にした OpenStack 環境が出来上がったはずです。</p>
 <h2 id="diskimage-builder-を使ったイメージ作成">diskimage-builder を使ったイメージ作成<a hidden class="anchor" aria-hidden="true" href="#diskimage-builder-を使ったイメージ作成">#</a></h2>
 <p>ベアメタルサーバをデプロイするためのイメージを作成します。元々は TrippleO のプ
 ロジェクト内に存在していましたが、現在は git レポジトリが別れています。</p>
 <p>先ほど devstack を導入したホストでイメージを作ります。作成には結構時間が掛かります。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% cd ~     
-% git clone https://github.com/openstack/diskimage-builder.git
-% git clone https://github.com/openstack/tripleo-incubator.git
-% git clone https://github.com/openstack/tripleo-image-elements.git
-% git clone https://github.com/openstack/tripleo-heat-templates.git
-% export UNDERCLOUD_DIB_EXTRA_ARGS<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;ironic-api ironic-conductor&#39;</span>
-% export ELEMENTS_PATH<span style="color:#f92672">=</span>/home/thirai/tripleo-image-elements/elements
-% ./diskimage-builder/bin/disk-image-create -a amd64 -o ~/undercloud boot-stack <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  nova-baremetal os-collect-config stackuser dhcp-all-interfaces <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  neutron-dhcp-agent <span style="color:#e6db74">${</span>UNDERCLOUD_DIB_EXTRA_ARGS<span style="color:#66d9ef">:-</span><span style="color:#e6db74">}</span> ubuntu 2&gt;&amp;<span style="color:#ae81ff">1</span> | tee /tmp/undercloud.log 
-</code></pre></div><p>イメージが ~/undercloud.qcow2 が生成されたはずです。作成したイメージを Glance に登録します。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ~/tripleo-incubator/scripts/load-image undercloud.qcow2
-</code></pre></div><p>undercloud.yaml と ironic.yaml をマージします。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% cd ~/tripleo-heat-templates
-% make undercloud-vm-ironic.yaml
-</code></pre></div><p>パスワードの生成と環境変数への読み込みを行います。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% cd ~/tripleo-incubator/scripts/
-% export PATH<span style="color:#f92672">=</span>$PATH:.
-% ./setup-undercloud-passwords
-% source tripleo-undercloud-passwords
-</code></pre></div><p>UNDERCLOUD_IRONIC_PASSWORD 環境変数にも読み込みます。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% export UNDERCLOUD_IRONIC_PASSWORD<span style="color:#f92672">=</span><span style="color:#66d9ef">$(</span>~/tripleo-incubator/scripts/os-make-password<span style="color:#66d9ef">)</span>
-</code></pre></div><p>さて、イメージを利用したベアメタルへの稼働ですが、&hellip;</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#66d9ef">if</span> <span style="color:#f92672">[</span> <span style="color:#e6db74">&#34;</span>$DHCP_DRIVER<span style="color:#e6db74">&#34;</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;bm-dnsmasq&#34;</span> <span style="color:#f92672">]</span>; <span style="color:#66d9ef">then</span>
-    UNDERCLOUD_NATIVE_PXE<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;&#34;</span>
-<span style="color:#66d9ef">else</span>
-    UNDERCLOUD_NATIVE_PXE<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;;NeutronNativePXE=True&#34;</span>
-<span style="color:#66d9ef">fi</span>
-
-heat stack-create -f ./tripleo-heat-templates/undercloud-vm-ironic.yaml <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>-P <span style="color:#e6db74">&#34;PowerUserName=</span><span style="color:#66d9ef">$(</span>whoami<span style="color:#66d9ef">)</span><span style="color:#e6db74">;\
-</span><span style="color:#e6db74">AdminToken=</span><span style="color:#e6db74">${</span>UNDERCLOUD_ADMIN_TOKEN<span style="color:#e6db74">}</span><span style="color:#e6db74">;\
-</span><span style="color:#e6db74">AdminPassword=</span><span style="color:#e6db74">${</span>UNDERCLOUD_ADMIN_PASSWORD<span style="color:#e6db74">}</span><span style="color:#e6db74">;\
-</span><span style="color:#e6db74">GlancePassword=</span><span style="color:#e6db74">${</span>UNDERCLOUD_GLANCE_PASSWORD<span style="color:#e6db74">}</span><span style="color:#e6db74">;\
-</span><span style="color:#e6db74">HeatPassword=</span><span style="color:#e6db74">${</span>UNDERCLOUD_HEAT_PASSWORD<span style="color:#e6db74">}</span><span style="color:#e6db74">;\
-</span><span style="color:#e6db74">NeutronPassword=</span><span style="color:#e6db74">${</span>UNDERCLOUD_NEUTRON_PASSWORD<span style="color:#e6db74">}</span><span style="color:#e6db74">;\
-</span><span style="color:#e6db74">NovaPassword=</span><span style="color:#e6db74">${</span>UNDERCLOUD_NOVA_PASSWORD<span style="color:#e6db74">}</span><span style="color:#e6db74">;\
-</span><span style="color:#e6db74">BaremetalArch=</span><span style="color:#e6db74">${</span>NODE_ARCH<span style="color:#e6db74">}</span>$UNDERCLOUD_NATIVE_PXE<span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>IronicPassword<span style="color:#f92672">=</span><span style="color:#e6db74">${</span>UNDERCLOUD_IRONIC_PASSWORD<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34; \
-</span><span style="color:#e6db74">undercloud
-</span></code></pre></div><p>コケました。&hellip;エラーは下記の通り。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% cd ~     
+</span></span><span style="display:flex;"><span>% git clone https://github.com/openstack/diskimage-builder.git
+</span></span><span style="display:flex;"><span>% git clone https://github.com/openstack/tripleo-incubator.git
+</span></span><span style="display:flex;"><span>% git clone https://github.com/openstack/tripleo-image-elements.git
+</span></span><span style="display:flex;"><span>% git clone https://github.com/openstack/tripleo-heat-templates.git
+</span></span><span style="display:flex;"><span>% export UNDERCLOUD_DIB_EXTRA_ARGS<span style="color:#f92672">=</span><span style="color:#e6db74">&#39;ironic-api ironic-conductor&#39;</span>
+</span></span><span style="display:flex;"><span>% export ELEMENTS_PATH<span style="color:#f92672">=</span>/home/thirai/tripleo-image-elements/elements
+</span></span><span style="display:flex;"><span>% ./diskimage-builder/bin/disk-image-create -a amd64 -o ~/undercloud boot-stack <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  nova-baremetal os-collect-config stackuser dhcp-all-interfaces <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  neutron-dhcp-agent <span style="color:#e6db74">${</span>UNDERCLOUD_DIB_EXTRA_ARGS<span style="color:#66d9ef">:-</span><span style="color:#e6db74">}</span> ubuntu 2&gt;&amp;<span style="color:#ae81ff">1</span> | tee /tmp/undercloud.log 
+</span></span></code></pre></div><p>イメージが ~/undercloud.qcow2 が生成されたはずです。作成したイメージを Glance に登録します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% ~/tripleo-incubator/scripts/load-image undercloud.qcow2
+</span></span></code></pre></div><p>undercloud.yaml と ironic.yaml をマージします。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% cd ~/tripleo-heat-templates
+</span></span><span style="display:flex;"><span>% make undercloud-vm-ironic.yaml
+</span></span></code></pre></div><p>パスワードの生成と環境変数への読み込みを行います。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% cd ~/tripleo-incubator/scripts/
+</span></span><span style="display:flex;"><span>% export PATH<span style="color:#f92672">=</span>$PATH:.
+</span></span><span style="display:flex;"><span>% ./setup-undercloud-passwords
+</span></span><span style="display:flex;"><span>% source tripleo-undercloud-passwords
+</span></span></code></pre></div><p>UNDERCLOUD_IRONIC_PASSWORD 環境変数にも読み込みます。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% export UNDERCLOUD_IRONIC_PASSWORD<span style="color:#f92672">=</span><span style="color:#66d9ef">$(</span>~/tripleo-incubator/scripts/os-make-password<span style="color:#66d9ef">)</span>
+</span></span></code></pre></div><p>さて、イメージを利用したベアメタルへの稼働ですが、&hellip;</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> <span style="color:#f92672">[</span> <span style="color:#e6db74">&#34;</span>$DHCP_DRIVER<span style="color:#e6db74">&#34;</span> <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;bm-dnsmasq&#34;</span> <span style="color:#f92672">]</span>; <span style="color:#66d9ef">then</span>
+</span></span><span style="display:flex;"><span>    UNDERCLOUD_NATIVE_PXE<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">else</span>
+</span></span><span style="display:flex;"><span>    UNDERCLOUD_NATIVE_PXE<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;;NeutronNativePXE=True&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">fi</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>heat stack-create -f ./tripleo-heat-templates/undercloud-vm-ironic.yaml <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>-P <span style="color:#e6db74">&#34;PowerUserName=</span><span style="color:#66d9ef">$(</span>whoami<span style="color:#66d9ef">)</span><span style="color:#e6db74">;\
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">AdminToken=</span><span style="color:#e6db74">${</span>UNDERCLOUD_ADMIN_TOKEN<span style="color:#e6db74">}</span><span style="color:#e6db74">;\
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">AdminPassword=</span><span style="color:#e6db74">${</span>UNDERCLOUD_ADMIN_PASSWORD<span style="color:#e6db74">}</span><span style="color:#e6db74">;\
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">GlancePassword=</span><span style="color:#e6db74">${</span>UNDERCLOUD_GLANCE_PASSWORD<span style="color:#e6db74">}</span><span style="color:#e6db74">;\
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">HeatPassword=</span><span style="color:#e6db74">${</span>UNDERCLOUD_HEAT_PASSWORD<span style="color:#e6db74">}</span><span style="color:#e6db74">;\
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">NeutronPassword=</span><span style="color:#e6db74">${</span>UNDERCLOUD_NEUTRON_PASSWORD<span style="color:#e6db74">}</span><span style="color:#e6db74">;\
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">NovaPassword=</span><span style="color:#e6db74">${</span>UNDERCLOUD_NOVA_PASSWORD<span style="color:#e6db74">}</span><span style="color:#e6db74">;\
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">BaremetalArch=</span><span style="color:#e6db74">${</span>NODE_ARCH<span style="color:#e6db74">}</span>$UNDERCLOUD_NATIVE_PXE<span style="color:#e6db74">&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>IronicPassword<span style="color:#f92672">=</span><span style="color:#e6db74">${</span>UNDERCLOUD_IRONIC_PASSWORD<span style="color:#e6db74">}</span><span style="color:#e6db74">&#34; \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">undercloud
+</span></span></span></code></pre></div><p>コケました。&hellip;エラーは下記の通り。</p>
 <pre tabindex="0"><code>TRACE heat.engine.resource Error: Creation of server teststack01-WikiDatabase-5nyiqluilnxn failed: No valid host was found. Exceeded max
 scheduling attempts 3 for instance 733b69df-2b54-44ae-9d61-de766746f21a (500)#0122013-12-03 16:04:14.513 10022 TRACE heat.engine.resource
 </code></pre><p>No Valid Host とな&hellip;。うーん。確かに IPMI を積んだベアメタルマシンの情報って

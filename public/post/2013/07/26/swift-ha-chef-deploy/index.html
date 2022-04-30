@@ -17,7 +17,7 @@ Swift って分散ストレージなのに HA ってなんよ！と思われる�
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2013/07/26/swift-ha-chef-deploy/" />
 <link crossorigin="anonymous" href="/assets/css/stylesheet.min.44044074f4b4d7b018bfd3febcc1fa76eb874db64213f920feacf263e3028a73.css" integrity="sha256-RARAdPS017AYv9P&#43;vMH6duuHTbZCE/kg/qzyY&#43;MCinM=" rel="preload stylesheet" as="style">
-<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.2840b7fccd34145847db71a290569594bdbdb00047097f75d6495d162f5d7dff.js" integrity="sha256-KEC3/M00FFhH23GikFaVlL29sABHCX911kldFi9dff8="
     onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/pix/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
@@ -26,7 +26,7 @@ Swift って分散ストレージなのに HA ってなんよ！と思われる�
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.92.1" />
+<meta name="generator" content="Hugo 0.97.3" />
 <noscript>
     <style>
         #theme-toggle,
@@ -101,7 +101,7 @@ Swift って分散ストレージなのに HA ってなんよ！と思われる�
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkz です。\n最近 Chef で OpenStack をデプロイすることばかりに興味持っちゃって、他のことも やらんとなぁと思っているのですが、せっかくなので Swift HA 構成を Chef でデプロ イする方法を書きます。\nSwift って分散ストレージなのに HA ってなんよ！と思われるかもしれませんが、ご存 知の様に Swift はストレージノード (accout, object, container) とプロキシノード に別れます。今回紹介する方法だとプロキシノードを Keepalived と Haproxy で HA、 また MySQL も KeepAlived で HA の構成に出来ました。いつものように RackSpace 管 理の Cookbooks を使っています。\n参考資料 http://www.rackspace.com/knowledge_center/article/openstack-object-storage-configuration\n構成 構成は簡単に記すと下記のようになります。特徴としては…\n swift-proxy01, swift-proxy02 で HA。VRRP + LB な構成。 swift-proxy01 で git サーバ稼働。Rings 情報を管理。 swift-storageNN がストレージノード OS は Ubuntu server 12.04  です。\n|--------- VRRP + Load Balancer ------| +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ | swift-proxy01 | | swift-proxy02 | | swift-storage01 | | swift-storage02 | | swift-storage03 | +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ | | | | | +-------------------+-------------------+-------------------+-------------------+------------------ | | +-----------------+ +-----------------+ | chef workstation| | chef server | +-----------------+ +-----------------+ 絵は書く意味なかったか…。\n手順 chef server 構築 例によって Omnibus パッケージを使います。\n% wget https://opscode-omnibus-packages.s3.amazonaws.com/ubuntu/12.04/x86_64/chef-server_11.0.8-1.ubuntu.12.04_amd64.deb % sudo dpkg -i chef-server_11.0.8-1.ubuntu.12.04_amd64.deb % sudo chef-server-ctl reconfigure % knife configure -i ‘knife configure -i’ で自分用の秘密鍵が生成出来ます。\nworkstation ノードでの準備 ほぼ全ての操作を workstation ノードで行います。knife.rb や秘密鍵の設置等につい ては方法を割愛します。このへんはモヤモヤと説明しますが、皆さんならご存知かと思 いますので..。\ngithub より rackspace 管理の Chef Cookbooks を取得する。\n% git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo % cd ~/openstack-chef-repo v.4.0.0 とい現在 (2013/07/25) 最新リリース版をチェックアウトする。\n% git checkout v4.0.0 % git submodule init % git submodule sync % git submodule update ‘chef server’ ノードへ Cookbooks をアップロードする\n% knife cookbook upload -o cookbooks -a ‘chef-server’ ノードへ Roles をアップロードする\n% knife role from file roles/*rb 今回の構成用の environment ‘swift-ha’ を用意します。ここでは各 Cookbooks の Attributes を上書きし、一つの構成を組みます。Cookbooks 内でこの environment 名 をキーに検索し自ノードと同環境のノードを見つけ出し、関連付けがされます。\n{ \"name\": \"swift-ha\", \"description\": \"\", \"cookbook_versions\": { }, \"json_class\": \"Chef::Environment\", \"chef_type\": \"environment\", \"default_attributes\": { }, \"override_attributes\": { \"package_component\": \"grizzly\", \"osops_networks\": { \"management\": \"10.0.0.0/24\", \"public\": \"10.0.0.0/24\", \"nova\": \"10.0.0.0/24\", \"swift\": \"10.0.0.0/24\" }, \"keystone\": { \"admin_user\": \"admin\", \"tenants\": [ \"admin\", \"service\" ], \"users\": { \"admin\": { \"password\": \"secrete\", \"roles\": { \"admin\": [ \"admin\" ] } }, \"demo\": { \"password\": \"demo\", \"default_tenant\" : \"service\", \"roles\": { \"admin\": [ \"admin\" ] } } }, \"db\": { \"password\": \"keystone\" } }, \"mysql\": { \"root_network_acl\": \"%\", \"allow_remote_root\": true, \"server_root_password\": \"secrete\", \"server_repl_password\": \"secrete\", \"server_debian_password\": \"secrete\" }, \"monitoring\": { \"procmon_provider\": \"monit\", \"metric_provider\": \"collectd\" }, \"vips\": { \"keystone-admin-api\": \"10.0.0.11\", \"keystone-service-api\": \"10.0.0.11\", \"keystone-internal-api\": \"10.0.0.11\", \"mysql-db\": \"10.0.0.12\", \"swift-proxy\": \"10.0.0.11\" }, \"developer_mode\": false, \"swift\": { \"swift_hash\": \"127005c8ea84\", \"authmode\": \"keystone\", \"authkey\": \"1f281c71-cf89-5b27-a2ad-ad873d3f2760\" } } } 生成した environment ファイル ‘environments/swift-ha.json’ を Chef サーバへアッ プロードします。\n% knife environment from file environments/swift-ha.json disk デバイスの用意 swift-storageNN で オブジェクト格納用の Disk がある場合はパーティションを作成 します。追加の Disk が無くても構わないと思います。後に Chef が使用可能な Disk デバイスを検知してくれます。ここでは例として /dev/sdb として認識されていること を前提に記します。追加の disk が無い場合は /dev/sda6 等、OS インストール時にオ ブジェクト格納用のパーティションを用意してもらえば大丈夫です。また GPT なパー ティションを切る必要があると思いますので (大きいから) fdisk ではなく gdisk を 用いましょう。\n% swift-storageNN% sudo apt-get update; apt-get -y install gdisk % swift-storageNN% sudo gdisk /dev/sdb 各ノードをブートストラップ いよいよデプロイします。\n% knife bootstrap  -N swift-proxy01 -r 'role[ha-swift-controller1]' -E swift-ha --sudo -x jedipunkz % knife bootstrap  -N swift-proxy02 -r 'role[ha-swift-controller2]' -E swift-ha --sudo -x jedipunkz % knife bootstrap  -N swift-storage01 -r \\ 'role[swift-object-server]','role[swift-container-server]','role[swift-account-server]' -E swift-ha --sudo -x jedipunkz % knife bootstrap  -N swift-storage02 -r \\ 'role[swift-object-server]','role[swift-container-server]','role[swift-account-server]' -E swift-ha --sudo -x jedipunkz % knife bootstrap  -N swift-storage03 -r \\ 'role[swift-object-server]','role[swift-container-server]','role[swift-account-server]' -E swift-ha --sudo -x jedipunkz Chef サーバにノード情報が登録されているので各ストレージノードの zone 情報にシー ケンシャル番号を付与します。これにより各ノードは自分の zone 情報を Chef サーバ から知ることが出来ます。\n% knife exec -E \"nodes.find(:name = 'swift-storage01') {|n| n.set['swift']['zone'] = '1'; n.save }\" % knife exec -E \"nodes.find(:name = 'swift-storage02') {|n| n.set['swift']['zone'] = '2'; n.save }\" % knife exec -E \"nodes.find(:name = 'swift-storage03') {|n| n.set['swift']['zone'] = '3'; n.save }\" Account, Container, Object に対して適切に割り当てられたか確認を行います。\n% knife exec -E 'search(:node,\"role:swift-account-server\") \\ { |n| z=n[:swift][:zone]||\"not defined\"; puts \"#{n.name} has the role \\ role [swift-account-server] and is in swift zone #{z}\"; }' % knife exec -E 'search(:node,\"role:swift-container-server\") \\ { |n| z=n[:swift][:zone]||\"not defined\"; puts \"#{n.name} has the role \\ [swift-container-server] and is in swift zone #{z}\"; }' % knife exec -E 'search(:node,\"role:swift-object-server\") \\ { |n| z=n[:swift][:zone]||\"not defined\"; puts \"#{n.name} has the role \\ [swift-object-server] and is in swift zone #{z}\"; }' また、先ほど用意した Swift 用ディスクデバイスを Chef がディスカバ出来るか確認 を行います。\n% knife exec -E \\  'search(:node,\"role:swift-object-server OR \\ role:swift-account-server \\ OR role:swift-container-server\") \\ { |n| puts \"#{n.name}\"; \\ begin; n[:swift][:state][:devs].each do |d| \\ puts \"\\tdevice #{d[1][\"device\"]}\"; \\ end; rescue; puts \\ \"no candidate drives found\"; end; }' またディスカバされたディスクデバイス /dev/sdb1 が既にマウントされているかどう か確認します。\nswift-strageNN# df\n‘swift-proxy01’ ノードにて再度 chef-client を実行し /etc/swift/ring-workspace/generate-rings.sh を 更新する。上記 zone 情報に従って内容が更新される。\nswift-proxy01# chef-client 生成された generate-rails.sh を実行。‘exit 0’ の行をコメントアウトして実行すること。\nswift-proxy01# cd /etc/swift/ring-workspace swift-proxy01# ./generate-rings.sh /etc/swift/ring-workstation/rings 配下に Rings ファイルが生成されたはずです。確 認してみてください。この Rings ファイルを git サーバにプッシュします。git サー バは既に ‘swift-proxy01’ ノード上に構築されています。\nswift-proxy01# cd /etc/swift/ring-workspace/rings swift-proxy01# git add account.builder container.builder object.builder swift-proxy01# git add account.ring.gz container.ring.gz object.ring.gz swift-proxy01# git commit -m \"initial commit\" swift-proxy01# git push git サーバにプッシュされた Rings ファイルを各ノードに配布します。配布の方法は 各ノードで chef-client を実行することです。これは knife ssh 等を用いても構いま せん。\nswift-proxy01# chef-client swift-proxy02# chef-client swift-storage01# chef-client swift-storage02# chef-client swift-storage03# chef-client swift-storageNN の計3台が登録されたかどうかを確認します。\nswift-proxy# swift-recon --md5 動作確認 動作確認をしましょう。\nswift-storage01# source swift-openrc swift-storage01# swift post container01 swift-storage01# echo \"test\"  test swift-storage01# swift upload container01 test swift-storage01# swift list swift-storage01# swift list container01 また、これらの操作が swift-proxy01, swift-proxy02 の片系を落とした状態でも可能 かどうかも確認しましょう。\nまとめ swift-proxy 片系の障害時にも読み込み系・書き込み系の操作が可能なことを確認出来 ました。復旧に関しても MySQL 的な Slave 系 (今回だと swift-proxy02(後からブー トストラップしたノード)) に関しては knife bootstrap で出来ます。Master 系の復 旧は簡単にはいきません。この事態に備えるには Rings 情報のバックアップ (Git レ ポジトリバックアップ) と MySQL のダンプの定期的取得が必要になるでしょう。\nまた、今回 VRRP で HA しているので2台構成になります。Swift プロキシは本来、ノー ドを増やすことでより多くのリクエストを受けられる (何がボトルネックになるかで状 況は変わりますが) 利点があるため、この2台構成がベストかどうかは状況に合わせて 考えた方が良いかもしれません。この構成の場合、ロードバランサが必要ない点がメリッ トだったりします。\n",
+  "articleBody": "こんにちは。@jedipunkz です。\n最近 Chef で OpenStack をデプロイすることばかりに興味持っちゃって、他のことも やらんとなぁと思っているのですが、せっかくなので Swift HA 構成を Chef でデプロ イする方法を書きます。\nSwift って分散ストレージなのに HA ってなんよ！と思われるかもしれませんが、ご存 知の様に Swift はストレージノード (accout, object, container) とプロキシノード に別れます。今回紹介する方法だとプロキシノードを Keepalived と Haproxy で HA、 また MySQL も KeepAlived で HA の構成に出来ました。いつものように RackSpace 管 理の Cookbooks を使っています。\n参考資料 http://www.rackspace.com/knowledge_center/article/openstack-object-storage-configuration\n構成 構成は簡単に記すと下記のようになります。特徴としては…\n swift-proxy01, swift-proxy02 で HA。VRRP + LB な構成。 swift-proxy01 で git サーバ稼働。Rings 情報を管理。 swift-storageNN がストレージノード OS は Ubuntu server 12.04  です。\n|--------- VRRP + Load Balancer ------| +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ | swift-proxy01 | | swift-proxy02 | | swift-storage01 | | swift-storage02 | | swift-storage03 | +-----------------+ +-----------------+ +-----------------+ +-----------------+ +-----------------+ | | | | | +-------------------+-------------------+-------------------+-------------------+------------------ | | +-----------------+ +-----------------+ | chef workstation| | chef server | +-----------------+ +-----------------+ 絵は書く意味なかったか…。\n手順 chef server 構築 例によって Omnibus パッケージを使います。\n% wget https://opscode-omnibus-packages.s3.amazonaws.com/ubuntu/12.04/x86_64/chef-server_11.0.8-1.ubuntu.12.04_amd64.deb % sudo dpkg -i chef-server_11.0.8-1.ubuntu.12.04_amd64.deb % sudo chef-server-ctl reconfigure % knife configure -i ‘knife configure -i’ で自分用の秘密鍵が生成出来ます。\nworkstation ノードでの準備 ほぼ全ての操作を workstation ノードで行います。knife.rb や秘密鍵の設置等につい ては方法を割愛します。このへんはモヤモヤと説明しますが、皆さんならご存知かと思 いますので..。\ngithub より rackspace 管理の Chef Cookbooks を取得する。\n% git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo % cd ~/openstack-chef-repo v.4.0.0 とい現在 (2013/07/25) 最新リリース版をチェックアウトする。\n% git checkout v4.0.0 % git submodule init % git submodule sync % git submodule update ‘chef server’ ノードへ Cookbooks をアップロードする\n% knife cookbook upload -o cookbooks -a ‘chef-server’ ノードへ Roles をアップロードする\n% knife role from file roles/*rb 今回の構成用の environment ‘swift-ha’ を用意します。ここでは各 Cookbooks の Attributes を上書きし、一つの構成を組みます。Cookbooks 内でこの environment 名 をキーに検索し自ノードと同環境のノードを見つけ出し、関連付けがされます。\n{  \"name\": \"swift-ha\",  \"description\": \"\",  \"cookbook_versions\": {  },  \"json_class\": \"Chef::Environment\",  \"chef_type\": \"environment\",  \"default_attributes\": {  },  \"override_attributes\": {  \"package_component\": \"grizzly\",  \"osops_networks\": {  \"management\": \"10.0.0.0/24\",  \"public\": \"10.0.0.0/24\",  \"nova\": \"10.0.0.0/24\",  \"swift\": \"10.0.0.0/24\"  },  \"keystone\": {  \"admin_user\": \"admin\",  \"tenants\": [  \"admin\",  \"service\"  ],  \"users\": {  \"admin\": {  \"password\": \"secrete\",  \"roles\": {  \"admin\": [  \"admin\"  ]  }  },  \"demo\": {  \"password\": \"demo\",  \"default_tenant\" : \"service\",  \"roles\": {  \"admin\": [ \"admin\" ]  }  }  },  \"db\": {  \"password\": \"keystone\"  }  },  \"mysql\": {  \"root_network_acl\": \"%\",  \"allow_remote_root\": true,  \"server_root_password\": \"secrete\",  \"server_repl_password\": \"secrete\",  \"server_debian_password\": \"secrete\"  },  \"monitoring\": {  \"procmon_provider\": \"monit\",  \"metric_provider\": \"collectd\"  },  \"vips\": {  \"keystone-admin-api\": \"10.0.0.11\",  \"keystone-service-api\": \"10.0.0.11\",  \"keystone-internal-api\": \"10.0.0.11\",  \"mysql-db\": \"10.0.0.12\",  \"swift-proxy\": \"10.0.0.11\"  },  \"developer_mode\": false,  \"swift\": {  \"swift_hash\": \"127005c8ea84\",  \"authmode\": \"keystone\",  \"authkey\": \"1f281c71-cf89-5b27-a2ad-ad873d3f2760\"  }  } } 生成した environment ファイル ’environments/swift-ha.json’ を Chef サーバへアッ プロードします。\n% knife environment from file environments/swift-ha.json disk デバイスの用意 swift-storageNN で オブジェクト格納用の Disk がある場合はパーティションを作成 します。追加の Disk が無くても構わないと思います。後に Chef が使用可能な Disk デバイスを検知してくれます。ここでは例として /dev/sdb として認識されていること を前提に記します。追加の disk が無い場合は /dev/sda6 等、OS インストール時にオ ブジェクト格納用のパーティションを用意してもらえば大丈夫です。また GPT なパー ティションを切る必要があると思いますので (大きいから) fdisk ではなく gdisk を 用いましょう。\n% swift-storageNN% sudo apt-get update; apt-get -y install gdisk % swift-storageNN% sudo gdisk /dev/sdb 各ノードをブートストラップ いよいよデプロイします。\n% knife bootstrap  -N swift-proxy01 -r 'role[ha-swift-controller1]' -E swift-ha --sudo -x jedipunkz % knife bootstrap  -N swift-proxy02 -r 'role[ha-swift-controller2]' -E swift-ha --sudo -x jedipunkz % knife bootstrap  -N swift-storage01 -r \\ 'role[swift-object-server]','role[swift-container-server]','role[swift-account-server]' -E swift-ha --sudo -x jedipunkz % knife bootstrap  -N swift-storage02 -r \\ 'role[swift-object-server]','role[swift-container-server]','role[swift-account-server]' -E swift-ha --sudo -x jedipunkz % knife bootstrap  -N swift-storage03 -r \\ 'role[swift-object-server]','role[swift-container-server]','role[swift-account-server]' -E swift-ha --sudo -x jedipunkz Chef サーバにノード情報が登録されているので各ストレージノードの zone 情報にシー ケンシャル番号を付与します。これにより各ノードは自分の zone 情報を Chef サーバ から知ることが出来ます。\n% knife exec -E \"nodes.find(:name = 'swift-storage01') {|n| n.set['swift']['zone'] = '1'; n.save }\" % knife exec -E \"nodes.find(:name = 'swift-storage02') {|n| n.set['swift']['zone'] = '2'; n.save }\" % knife exec -E \"nodes.find(:name = 'swift-storage03') {|n| n.set['swift']['zone'] = '3'; n.save }\" Account, Container, Object に対して適切に割り当てられたか確認を行います。\n% knife exec -E 'search(:node,\"role:swift-account-server\") \\ { |n| z=n[:swift][:zone]||\"not defined\"; puts \"#{n.name} has the role \\ role [swift-account-server] and is in swift zone #{z}\"; }' % knife exec -E 'search(:node,\"role:swift-container-server\") \\ { |n| z=n[:swift][:zone]||\"not defined\"; puts \"#{n.name} has the role \\ [swift-container-server] and is in swift zone #{z}\"; }' % knife exec -E 'search(:node,\"role:swift-object-server\") \\ { |n| z=n[:swift][:zone]||\"not defined\"; puts \"#{n.name} has the role \\ [swift-object-server] and is in swift zone #{z}\"; }' また、先ほど用意した Swift 用ディスクデバイスを Chef がディスカバ出来るか確認 を行います。\n% knife exec -E \\  'search(:node,\"role:swift-object-server OR \\ role:swift-account-server \\ OR role:swift-container-server\") \\ { |n| puts \"#{n.name}\"; \\ begin; n[:swift][:state][:devs].each do |d| \\ puts \"\\tdevice #{d[1][\"device\"]}\"; \\ end; rescue; puts \\ \"no candidate drives found\"; end; }' またディスカバされたディスクデバイス /dev/sdb1 が既にマウントされているかどう か確認します。\nswift-strageNN# df\n‘swift-proxy01’ ノードにて再度 chef-client を実行し /etc/swift/ring-workspace/generate-rings.sh を 更新する。上記 zone 情報に従って内容が更新される。\nswift-proxy01# chef-client 生成された generate-rails.sh を実行。’exit 0’ の行をコメントアウトして実行すること。\nswift-proxy01# cd /etc/swift/ring-workspace swift-proxy01# ./generate-rings.sh /etc/swift/ring-workstation/rings 配下に Rings ファイルが生成されたはずです。確 認してみてください。この Rings ファイルを git サーバにプッシュします。git サー バは既に ‘swift-proxy01’ ノード上に構築されています。\nswift-proxy01# cd /etc/swift/ring-workspace/rings swift-proxy01# git add account.builder container.builder object.builder swift-proxy01# git add account.ring.gz container.ring.gz object.ring.gz swift-proxy01# git commit -m \"initial commit\" swift-proxy01# git push git サーバにプッシュされた Rings ファイルを各ノードに配布します。配布の方法は 各ノードで chef-client を実行することです。これは knife ssh 等を用いても構いま せん。\nswift-proxy01# chef-client swift-proxy02# chef-client swift-storage01# chef-client swift-storage02# chef-client swift-storage03# chef-client swift-storageNN の計3台が登録されたかどうかを確認します。\nswift-proxy# swift-recon --md5 動作確認 動作確認をしましょう。\nswift-storage01# source swift-openrc swift-storage01# swift post container01 swift-storage01# echo \"test\"  test swift-storage01# swift upload container01 test swift-storage01# swift list swift-storage01# swift list container01 また、これらの操作が swift-proxy01, swift-proxy02 の片系を落とした状態でも可能 かどうかも確認しましょう。\nまとめ swift-proxy 片系の障害時にも読み込み系・書き込み系の操作が可能なことを確認出来 ました。復旧に関しても MySQL 的な Slave 系 (今回だと swift-proxy02(後からブー トストラップしたノード)) に関しては knife bootstrap で出来ます。Master 系の復 旧は簡単にはいきません。この事態に備えるには Rings 情報のバックアップ (Git レ ポジトリバックアップ) と MySQL のダンプの定期的取得が必要になるでしょう。\nまた、今回 VRRP で HA しているので2台構成になります。Swift プロキシは本来、ノー ドを増やすことでより多くのリクエストを受けられる (何がボトルネックになるかで状 況は変わりますが) 利点があるため、この2台構成がベストかどうかは状況に合わせて 考えた方が良いかもしれません。この構成の場合、ロードバランサが必要ない点がメリッ トだったりします。\n",
   "wordCount" : "803",
   "inLanguage": "en",
   "datePublished": "2013-07-26T00:00:00Z",
@@ -217,105 +217,105 @@ Swift って分散ストレージなのに HA ってなんよ！と思われる�
 <h2 id="手順">手順<a hidden class="anchor" aria-hidden="true" href="#手順">#</a></h2>
 <h4 id="chef-server-構築">chef server 構築<a hidden class="anchor" aria-hidden="true" href="#chef-server-構築">#</a></h4>
 <p>例によって Omnibus パッケージを使います。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% wget https://opscode-omnibus-packages.s3.amazonaws.com/ubuntu/12.04/x86_64/chef-server_11.0.8-1.ubuntu.12.04_amd64.deb
-% sudo dpkg -i chef-server_11.0.8-1.ubuntu.12.04_amd64.deb
-% sudo chef-server-ctl reconfigure
-% knife configure -i
-&lt; 適当に答える &gt;
-</code></pre></div><p>&lsquo;knife configure -i&rsquo; で自分用の秘密鍵が生成出来ます。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% wget https://opscode-omnibus-packages.s3.amazonaws.com/ubuntu/12.04/x86_64/chef-server_11.0.8-1.ubuntu.12.04_amd64.deb
+</span></span><span style="display:flex;"><span>% sudo dpkg -i chef-server_11.0.8-1.ubuntu.12.04_amd64.deb
+</span></span><span style="display:flex;"><span>% sudo chef-server-ctl reconfigure
+</span></span><span style="display:flex;"><span>% knife configure -i
+</span></span><span style="display:flex;"><span>&lt; 適当に答える &gt;
+</span></span></code></pre></div><p>&lsquo;knife configure -i&rsquo; で自分用の秘密鍵が生成出来ます。</p>
 <h4 id="workstation-ノードでの準備">workstation ノードでの準備<a hidden class="anchor" aria-hidden="true" href="#workstation-ノードでの準備">#</a></h4>
 <p>ほぼ全ての操作を workstation ノードで行います。knife.rb や秘密鍵の設置等につい
 ては方法を割愛します。このへんはモヤモヤと説明しますが、皆さんならご存知かと思
 いますので..。</p>
 <p>github より rackspace 管理の Chef Cookbooks を取得する。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo
-% cd ~/openstack-chef-repo
-</code></pre></div><p>v.4.0.0 とい現在 (2013/07/25) 最新リリース版をチェックアウトする。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% git checkout v4.0.0
-% git submodule init
-% git submodule sync
-% git submodule update
-</code></pre></div><p>&lsquo;chef server&rsquo; ノードへ Cookbooks をアップロードする</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife cookbook upload -o cookbooks -a
-</code></pre></div><p>&lsquo;chef-server&rsquo; ノードへ Roles をアップロードする</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife role from file roles/*rb
-</code></pre></div><p>今回の構成用の environment &lsquo;swift-ha&rsquo; を用意します。ここでは各 Cookbooks の
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% git clone https://github.com/rcbops/chef-cookbooks.git ~/openstack-chef-repo
+</span></span><span style="display:flex;"><span>% cd ~/openstack-chef-repo
+</span></span></code></pre></div><p>v.4.0.0 とい現在 (2013/07/25) 最新リリース版をチェックアウトする。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% git checkout v4.0.0
+</span></span><span style="display:flex;"><span>% git submodule init
+</span></span><span style="display:flex;"><span>% git submodule sync
+</span></span><span style="display:flex;"><span>% git submodule update
+</span></span></code></pre></div><p>&lsquo;chef server&rsquo; ノードへ Cookbooks をアップロードする</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% knife cookbook upload -o cookbooks -a
+</span></span></code></pre></div><p>&lsquo;chef-server&rsquo; ノードへ Roles をアップロードする</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% knife role from file roles/*rb
+</span></span></code></pre></div><p>今回の構成用の environment &lsquo;swift-ha&rsquo; を用意します。ここでは各 Cookbooks の
 Attributes を上書きし、一つの構成を組みます。Cookbooks 内でこの environment 名
 をキーに検索し自ノードと同環境のノードを見つけ出し、関連付けがされます。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
-  <span style="color:#f92672">&#34;name&#34;</span>: <span style="color:#e6db74">&#34;swift-ha&#34;</span>,
-  <span style="color:#f92672">&#34;description&#34;</span>: <span style="color:#e6db74">&#34;&#34;</span>,
-  <span style="color:#f92672">&#34;cookbook_versions&#34;</span>: {
-  },
-  <span style="color:#f92672">&#34;json_class&#34;</span>: <span style="color:#e6db74">&#34;Chef::Environment&#34;</span>,
-  <span style="color:#f92672">&#34;chef_type&#34;</span>: <span style="color:#e6db74">&#34;environment&#34;</span>,
-  <span style="color:#f92672">&#34;default_attributes&#34;</span>: {
-  },
-  <span style="color:#f92672">&#34;override_attributes&#34;</span>: {
-    <span style="color:#f92672">&#34;package_component&#34;</span>: <span style="color:#e6db74">&#34;grizzly&#34;</span>,
-    <span style="color:#f92672">&#34;osops_networks&#34;</span>: {
-      <span style="color:#f92672">&#34;management&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.0/24&#34;</span>,
-      <span style="color:#f92672">&#34;public&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.0/24&#34;</span>,
-      <span style="color:#f92672">&#34;nova&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.0/24&#34;</span>,
-      <span style="color:#f92672">&#34;swift&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.0/24&#34;</span>
-    },
-    <span style="color:#f92672">&#34;keystone&#34;</span>: {
-      <span style="color:#f92672">&#34;admin_user&#34;</span>: <span style="color:#e6db74">&#34;admin&#34;</span>,
-      <span style="color:#f92672">&#34;tenants&#34;</span>: [
-        <span style="color:#e6db74">&#34;admin&#34;</span>,
-        <span style="color:#e6db74">&#34;service&#34;</span>
-      ],
-      <span style="color:#f92672">&#34;users&#34;</span>: {
-        <span style="color:#f92672">&#34;admin&#34;</span>: {
-          <span style="color:#f92672">&#34;password&#34;</span>: <span style="color:#e6db74">&#34;secrete&#34;</span>,
-          <span style="color:#f92672">&#34;roles&#34;</span>: {
-            <span style="color:#f92672">&#34;admin&#34;</span>: [
-              <span style="color:#e6db74">&#34;admin&#34;</span>
-            ]
-          }
-        },
-        <span style="color:#f92672">&#34;demo&#34;</span>: {
-          <span style="color:#f92672">&#34;password&#34;</span>: <span style="color:#e6db74">&#34;demo&#34;</span>,
-          <span style="color:#f92672">&#34;default_tenant&#34;</span> : <span style="color:#e6db74">&#34;service&#34;</span>,
-          <span style="color:#f92672">&#34;roles&#34;</span>: {
-            <span style="color:#f92672">&#34;admin&#34;</span>: [ <span style="color:#e6db74">&#34;admin&#34;</span> ]
-          }
-        }
-      },
-      <span style="color:#f92672">&#34;db&#34;</span>: {
-        <span style="color:#f92672">&#34;password&#34;</span>: <span style="color:#e6db74">&#34;keystone&#34;</span>
-      }
-    },
-    <span style="color:#f92672">&#34;mysql&#34;</span>: {
-      <span style="color:#f92672">&#34;root_network_acl&#34;</span>: <span style="color:#e6db74">&#34;%&#34;</span>,
-      <span style="color:#f92672">&#34;allow_remote_root&#34;</span>: <span style="color:#66d9ef">true</span>,
-      <span style="color:#f92672">&#34;server_root_password&#34;</span>: <span style="color:#e6db74">&#34;secrete&#34;</span>,
-      <span style="color:#f92672">&#34;server_repl_password&#34;</span>: <span style="color:#e6db74">&#34;secrete&#34;</span>,
-      <span style="color:#f92672">&#34;server_debian_password&#34;</span>: <span style="color:#e6db74">&#34;secrete&#34;</span>
-    },
-    <span style="color:#f92672">&#34;monitoring&#34;</span>: {
-      <span style="color:#f92672">&#34;procmon_provider&#34;</span>: <span style="color:#e6db74">&#34;monit&#34;</span>,
-      <span style="color:#f92672">&#34;metric_provider&#34;</span>: <span style="color:#e6db74">&#34;collectd&#34;</span>
-    },
-    <span style="color:#f92672">&#34;vips&#34;</span>: {
-      <span style="color:#f92672">&#34;keystone-admin-api&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.11&#34;</span>,
-      <span style="color:#f92672">&#34;keystone-service-api&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.11&#34;</span>,
-      <span style="color:#f92672">&#34;keystone-internal-api&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.11&#34;</span>,
-      <span style="color:#f92672">&#34;mysql-db&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.12&#34;</span>,
-      <span style="color:#f92672">&#34;swift-proxy&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.11&#34;</span>
-    },
-    <span style="color:#f92672">&#34;developer_mode&#34;</span>: <span style="color:#66d9ef">false</span>,
-    <span style="color:#f92672">&#34;swift&#34;</span>: {
-      <span style="color:#f92672">&#34;swift_hash&#34;</span>: <span style="color:#e6db74">&#34;127005c8ea84&#34;</span>,
-      <span style="color:#f92672">&#34;authmode&#34;</span>: <span style="color:#e6db74">&#34;keystone&#34;</span>,
-      <span style="color:#f92672">&#34;authkey&#34;</span>: <span style="color:#e6db74">&#34;1f281c71-cf89-5b27-a2ad-ad873d3f2760&#34;</span>
-    }
-  }
-}
-</code></pre></div><p>生成した environment ファイル &lsquo;environments/swift-ha.json&rsquo; を Chef サーバへアッ
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;name&#34;</span>: <span style="color:#e6db74">&#34;swift-ha&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;description&#34;</span>: <span style="color:#e6db74">&#34;&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;cookbook_versions&#34;</span>: {
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;json_class&#34;</span>: <span style="color:#e6db74">&#34;Chef::Environment&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;chef_type&#34;</span>: <span style="color:#e6db74">&#34;environment&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;default_attributes&#34;</span>: {
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;override_attributes&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;package_component&#34;</span>: <span style="color:#e6db74">&#34;grizzly&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;osops_networks&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;management&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.0/24&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;public&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.0/24&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;nova&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.0/24&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;swift&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.0/24&#34;</span>
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;keystone&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;admin_user&#34;</span>: <span style="color:#e6db74">&#34;admin&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;tenants&#34;</span>: [
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;admin&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#e6db74">&#34;service&#34;</span>
+</span></span><span style="display:flex;"><span>      ],
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;users&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;admin&#34;</span>: {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;password&#34;</span>: <span style="color:#e6db74">&#34;secrete&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;roles&#34;</span>: {
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;admin&#34;</span>: [
+</span></span><span style="display:flex;"><span>              <span style="color:#e6db74">&#34;admin&#34;</span>
+</span></span><span style="display:flex;"><span>            ]
+</span></span><span style="display:flex;"><span>          }
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;demo&#34;</span>: {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;password&#34;</span>: <span style="color:#e6db74">&#34;demo&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;default_tenant&#34;</span> : <span style="color:#e6db74">&#34;service&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;roles&#34;</span>: {
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;admin&#34;</span>: [ <span style="color:#e6db74">&#34;admin&#34;</span> ]
+</span></span><span style="display:flex;"><span>          }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;db&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;password&#34;</span>: <span style="color:#e6db74">&#34;keystone&#34;</span>
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;mysql&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;root_network_acl&#34;</span>: <span style="color:#e6db74">&#34;%&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;allow_remote_root&#34;</span>: <span style="color:#66d9ef">true</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;server_root_password&#34;</span>: <span style="color:#e6db74">&#34;secrete&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;server_repl_password&#34;</span>: <span style="color:#e6db74">&#34;secrete&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;server_debian_password&#34;</span>: <span style="color:#e6db74">&#34;secrete&#34;</span>
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;monitoring&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;procmon_provider&#34;</span>: <span style="color:#e6db74">&#34;monit&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;metric_provider&#34;</span>: <span style="color:#e6db74">&#34;collectd&#34;</span>
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;vips&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;keystone-admin-api&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.11&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;keystone-service-api&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.11&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;keystone-internal-api&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.11&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;mysql-db&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.12&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;swift-proxy&#34;</span>: <span style="color:#e6db74">&#34;10.0.0.11&#34;</span>
+</span></span><span style="display:flex;"><span>    },
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;developer_mode&#34;</span>: <span style="color:#66d9ef">false</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;swift&#34;</span>: {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;swift_hash&#34;</span>: <span style="color:#e6db74">&#34;127005c8ea84&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;authmode&#34;</span>: <span style="color:#e6db74">&#34;keystone&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;authkey&#34;</span>: <span style="color:#e6db74">&#34;1f281c71-cf89-5b27-a2ad-ad873d3f2760&#34;</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>生成した environment ファイル &rsquo;environments/swift-ha.json&rsquo; を Chef サーバへアッ
 プロードします。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife environment from file environments/swift-ha.json
-</code></pre></div><h4 id="disk-デバイスの用意">disk デバイスの用意<a hidden class="anchor" aria-hidden="true" href="#disk-デバイスの用意">#</a></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% knife environment from file environments/swift-ha.json
+</span></span></code></pre></div><h4 id="disk-デバイスの用意">disk デバイスの用意<a hidden class="anchor" aria-hidden="true" href="#disk-デバイスの用意">#</a></h4>
 <p>swift-storageNN で オブジェクト格納用の Disk がある場合はパーティションを作成
 します。追加の Disk が無くても構わないと思います。後に Chef が使用可能な Disk
 デバイスを検知してくれます。ここでは例として /dev/sdb として認識されていること
@@ -323,81 +323,81 @@ Attributes を上書きし、一つの構成を組みます。Cookbooks 内で�
 ブジェクト格納用のパーティションを用意してもらえば大丈夫です。また GPT なパー
 ティションを切る必要があると思いますので (大きいから) fdisk ではなく gdisk を
 用いましょう。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% swift-storageNN% sudo apt-get update; apt-get -y install gdisk
-% swift-storageNN% sudo gdisk /dev/sdb
-</code></pre></div><h4 id="各ノードをブートストラップ">各ノードをブートストラップ<a hidden class="anchor" aria-hidden="true" href="#各ノードをブートストラップ">#</a></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% swift-storageNN% sudo apt-get update; apt-get -y install gdisk
+</span></span><span style="display:flex;"><span>% swift-storageNN% sudo gdisk /dev/sdb
+</span></span></code></pre></div><h4 id="各ノードをブートストラップ">各ノードをブートストラップ<a hidden class="anchor" aria-hidden="true" href="#各ノードをブートストラップ">#</a></h4>
 <p>いよいよデプロイします。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife bootstrap &lt;ip_swift-proxy01&gt; -N swift-proxy01 -r <span style="color:#e6db74">&#39;role[ha-swift-controller1]&#39;</span> -E swift-ha --sudo -x jedipunkz
-% knife bootstrap &lt;ip_swift-proxy02&gt; -N swift-proxy02 -r <span style="color:#e6db74">&#39;role[ha-swift-controller2]&#39;</span> -E swift-ha --sudo -x jedipunkz
-% knife bootstrap &lt;ip_swift-storage01&gt; -N swift-storage01 -r <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span><span style="color:#e6db74">&#39;role[swift-object-server]&#39;</span>,<span style="color:#e6db74">&#39;role[swift-container-server]&#39;</span>,<span style="color:#e6db74">&#39;role[swift-account-server]&#39;</span> -E swift-ha --sudo -x jedipunkz
-% knife bootstrap &lt;ip_swift-sotrage02&gt; -N swift-storage02 -r <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span><span style="color:#e6db74">&#39;role[swift-object-server]&#39;</span>,<span style="color:#e6db74">&#39;role[swift-container-server]&#39;</span>,<span style="color:#e6db74">&#39;role[swift-account-server]&#39;</span> -E swift-ha --sudo -x jedipunkz
-% knife bootstrap &lt;ip_swift-storage03&gt; -N swift-storage03 -r <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span><span style="color:#e6db74">&#39;role[swift-object-server]&#39;</span>,<span style="color:#e6db74">&#39;role[swift-container-server]&#39;</span>,<span style="color:#e6db74">&#39;role[swift-account-server]&#39;</span> -E swift-ha --sudo -x jedipunkz
-</code></pre></div><p>Chef サーバにノード情報が登録されているので各ストレージノードの zone 情報にシー
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% knife bootstrap &lt;ip_swift-proxy01&gt; -N swift-proxy01 -r <span style="color:#e6db74">&#39;role[ha-swift-controller1]&#39;</span> -E swift-ha --sudo -x jedipunkz
+</span></span><span style="display:flex;"><span>% knife bootstrap &lt;ip_swift-proxy02&gt; -N swift-proxy02 -r <span style="color:#e6db74">&#39;role[ha-swift-controller2]&#39;</span> -E swift-ha --sudo -x jedipunkz
+</span></span><span style="display:flex;"><span>% knife bootstrap &lt;ip_swift-storage01&gt; -N swift-storage01 -r <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span><span style="color:#e6db74">&#39;role[swift-object-server]&#39;</span>,<span style="color:#e6db74">&#39;role[swift-container-server]&#39;</span>,<span style="color:#e6db74">&#39;role[swift-account-server]&#39;</span> -E swift-ha --sudo -x jedipunkz
+</span></span><span style="display:flex;"><span>% knife bootstrap &lt;ip_swift-sotrage02&gt; -N swift-storage02 -r <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span><span style="color:#e6db74">&#39;role[swift-object-server]&#39;</span>,<span style="color:#e6db74">&#39;role[swift-container-server]&#39;</span>,<span style="color:#e6db74">&#39;role[swift-account-server]&#39;</span> -E swift-ha --sudo -x jedipunkz
+</span></span><span style="display:flex;"><span>% knife bootstrap &lt;ip_swift-storage03&gt; -N swift-storage03 -r <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span><span style="color:#e6db74">&#39;role[swift-object-server]&#39;</span>,<span style="color:#e6db74">&#39;role[swift-container-server]&#39;</span>,<span style="color:#e6db74">&#39;role[swift-account-server]&#39;</span> -E swift-ha --sudo -x jedipunkz
+</span></span></code></pre></div><p>Chef サーバにノード情報が登録されているので各ストレージノードの zone 情報にシー
 ケンシャル番号を付与します。これにより各ノードは自分の zone 情報を Chef サーバ
 から知ることが出来ます。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife exec -E <span style="color:#e6db74">&#34;nodes.find(:name =&gt; &#39;swift-storage01&#39;) {|n| n.set[&#39;swift&#39;][&#39;zone&#39;] = &#39;1&#39;; n.save }&#34;</span>
-% knife exec -E <span style="color:#e6db74">&#34;nodes.find(:name =&gt; &#39;swift-storage02&#39;) {|n| n.set[&#39;swift&#39;][&#39;zone&#39;] = &#39;2&#39;; n.save }&#34;</span>
-% knife exec -E <span style="color:#e6db74">&#34;nodes.find(:name =&gt; &#39;swift-storage03&#39;) {|n| n.set[&#39;swift&#39;][&#39;zone&#39;] = &#39;3&#39;; n.save }&#34;</span>
-</code></pre></div><p>Account, Container, Object に対して適切に割り当てられたか確認を行います。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife exec -E <span style="color:#e6db74">&#39;search(:node,&#34;role:swift-account-server&#34;) \
-</span><span style="color:#e6db74">  { |n| z=n[:swift][:zone]||&#34;not defined&#34;; puts &#34;#{n.name} has the role \
-</span><span style="color:#e6db74">  role [swift-account-server] and is in swift zone #{z}&#34;; }&#39;</span>
-% knife exec -E <span style="color:#e6db74">&#39;search(:node,&#34;role:swift-container-server&#34;) \
-</span><span style="color:#e6db74">  { |n| z=n[:swift][:zone]||&#34;not defined&#34;; puts &#34;#{n.name} has the role \
-</span><span style="color:#e6db74">  [swift-container-server] and is in swift zone #{z}&#34;; }&#39;</span>
-% knife exec -E <span style="color:#e6db74">&#39;search(:node,&#34;role:swift-object-server&#34;) \
-</span><span style="color:#e6db74">  { |n| z=n[:swift][:zone]||&#34;not defined&#34;; puts &#34;#{n.name} has the role \
-</span><span style="color:#e6db74">  [swift-object-server] and is in swift zone #{z}&#34;; }&#39;</span>
-</code></pre></div><p>また、先ほど用意した Swift 用ディスクデバイスを Chef がディスカバ出来るか確認
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% knife exec -E <span style="color:#e6db74">&#34;nodes.find(:name =&gt; &#39;swift-storage01&#39;) {|n| n.set[&#39;swift&#39;][&#39;zone&#39;] = &#39;1&#39;; n.save }&#34;</span>
+</span></span><span style="display:flex;"><span>% knife exec -E <span style="color:#e6db74">&#34;nodes.find(:name =&gt; &#39;swift-storage02&#39;) {|n| n.set[&#39;swift&#39;][&#39;zone&#39;] = &#39;2&#39;; n.save }&#34;</span>
+</span></span><span style="display:flex;"><span>% knife exec -E <span style="color:#e6db74">&#34;nodes.find(:name =&gt; &#39;swift-storage03&#39;) {|n| n.set[&#39;swift&#39;][&#39;zone&#39;] = &#39;3&#39;; n.save }&#34;</span>
+</span></span></code></pre></div><p>Account, Container, Object に対して適切に割り当てられたか確認を行います。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% knife exec -E <span style="color:#e6db74">&#39;search(:node,&#34;role:swift-account-server&#34;) \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  { |n| z=n[:swift][:zone]||&#34;not defined&#34;; puts &#34;#{n.name} has the role \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  role [swift-account-server] and is in swift zone #{z}&#34;; }&#39;</span>
+</span></span><span style="display:flex;"><span>% knife exec -E <span style="color:#e6db74">&#39;search(:node,&#34;role:swift-container-server&#34;) \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  { |n| z=n[:swift][:zone]||&#34;not defined&#34;; puts &#34;#{n.name} has the role \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  [swift-container-server] and is in swift zone #{z}&#34;; }&#39;</span>
+</span></span><span style="display:flex;"><span>% knife exec -E <span style="color:#e6db74">&#39;search(:node,&#34;role:swift-object-server&#34;) \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  { |n| z=n[:swift][:zone]||&#34;not defined&#34;; puts &#34;#{n.name} has the role \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  [swift-object-server] and is in swift zone #{z}&#34;; }&#39;</span>
+</span></span></code></pre></div><p>また、先ほど用意した Swift 用ディスクデバイスを Chef がディスカバ出来るか確認
 を行います。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife exec -E <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  <span style="color:#e6db74">&#39;search(:node,&#34;role:swift-object-server OR \
-</span><span style="color:#e6db74">  role:swift-account-server \
-</span><span style="color:#e6db74">  OR role:swift-container-server&#34;) \
-</span><span style="color:#e6db74">  { |n| puts &#34;#{n.name}&#34;; \
-</span><span style="color:#e6db74">  begin; n[:swift][:state][:devs].each do |d| \
-</span><span style="color:#e6db74">  puts &#34;\tdevice #{d[1][&#34;device&#34;]}&#34;; \
-</span><span style="color:#e6db74">  end; rescue; puts \
-</span><span style="color:#e6db74">  &#34;no candidate drives found&#34;; end; }&#39;</span>
-</code></pre></div><p>またディスカバされたディスクデバイス /dev/sdb1 が既にマウントされているかどう
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% knife exec -E <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  <span style="color:#e6db74">&#39;search(:node,&#34;role:swift-object-server OR \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  role:swift-account-server \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  OR role:swift-container-server&#34;) \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  { |n| puts &#34;#{n.name}&#34;; \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  begin; n[:swift][:state][:devs].each do |d| \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  puts &#34;\tdevice #{d[1][&#34;device&#34;]}&#34;; \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  end; rescue; puts \
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  &#34;no candidate drives found&#34;; end; }&#39;</span>
+</span></span></code></pre></div><p>またディスカバされたディスクデバイス /dev/sdb1 が既にマウントされているかどう
 か確認します。</p>
 <p>swift-strageNN# df</p>
 <p>&lsquo;swift-proxy01&rsquo; ノードにて再度 chef-client を実行し /etc/swift/ring-workspace/generate-rings.sh を
 更新する。上記 zone 情報に従って内容が更新される。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">swift-proxy01# chef-client
-</code></pre></div><p>生成された generate-rails.sh を実行。&lsquo;exit 0&rsquo; の行をコメントアウトして実行すること。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">swift-proxy01# cd /etc/swift/ring-workspace
-swift-proxy01# ./generate-rings.sh
-</code></pre></div><p>/etc/swift/ring-workstation/rings 配下に Rings ファイルが生成されたはずです。確
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>swift-proxy01# chef-client
+</span></span></code></pre></div><p>生成された generate-rails.sh を実行。&rsquo;exit 0&rsquo; の行をコメントアウトして実行すること。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>swift-proxy01# cd /etc/swift/ring-workspace
+</span></span><span style="display:flex;"><span>swift-proxy01# ./generate-rings.sh
+</span></span></code></pre></div><p>/etc/swift/ring-workstation/rings 配下に Rings ファイルが生成されたはずです。確
 認してみてください。この Rings ファイルを git サーバにプッシュします。git サー
 バは既に &lsquo;swift-proxy01&rsquo; ノード上に構築されています。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">swift-proxy01# cd /etc/swift/ring-workspace/rings
-swift-proxy01# git add account.builder container.builder object.builder
-swift-proxy01# git add account.ring.gz container.ring.gz object.ring.gz
-swift-proxy01# git commit -m <span style="color:#e6db74">&#34;initial commit&#34;</span>
-swift-proxy01# git push
-</code></pre></div><p>git サーバにプッシュされた Rings ファイルを各ノードに配布します。配布の方法は
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>swift-proxy01# cd /etc/swift/ring-workspace/rings
+</span></span><span style="display:flex;"><span>swift-proxy01# git add account.builder container.builder object.builder
+</span></span><span style="display:flex;"><span>swift-proxy01# git add account.ring.gz container.ring.gz object.ring.gz
+</span></span><span style="display:flex;"><span>swift-proxy01# git commit -m <span style="color:#e6db74">&#34;initial commit&#34;</span>
+</span></span><span style="display:flex;"><span>swift-proxy01# git push
+</span></span></code></pre></div><p>git サーバにプッシュされた Rings ファイルを各ノードに配布します。配布の方法は
 各ノードで chef-client を実行することです。これは knife ssh 等を用いても構いま
 せん。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">swift-proxy01# chef-client
-swift-proxy02# chef-client
-swift-storage01# chef-client
-swift-storage02# chef-client
-swift-storage03# chef-client
-</code></pre></div><p>swift-storageNN の計3台が登録されたかどうかを確認します。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">swift-proxy# swift-recon --md5
-</code></pre></div><h2 id="動作確認">動作確認<a hidden class="anchor" aria-hidden="true" href="#動作確認">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>swift-proxy01# chef-client
+</span></span><span style="display:flex;"><span>swift-proxy02# chef-client
+</span></span><span style="display:flex;"><span>swift-storage01# chef-client
+</span></span><span style="display:flex;"><span>swift-storage02# chef-client
+</span></span><span style="display:flex;"><span>swift-storage03# chef-client
+</span></span></code></pre></div><p>swift-storageNN の計3台が登録されたかどうかを確認します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>swift-proxy# swift-recon --md5
+</span></span></code></pre></div><h2 id="動作確認">動作確認<a hidden class="anchor" aria-hidden="true" href="#動作確認">#</a></h2>
 <p>動作確認をしましょう。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">swift-storage01# source swift-openrc
-swift-storage01# swift post container01
-swift-storage01# echo <span style="color:#e6db74">&#34;test&#34;</span> &gt; test
-swift-storage01# swift upload container01 test
-swift-storage01# swift list
-swift-storage01# swift list container01
-</code></pre></div><p>また、これらの操作が swift-proxy01, swift-proxy02 の片系を落とした状態でも可能
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>swift-storage01# source swift-openrc
+</span></span><span style="display:flex;"><span>swift-storage01# swift post container01
+</span></span><span style="display:flex;"><span>swift-storage01# echo <span style="color:#e6db74">&#34;test&#34;</span> &gt; test
+</span></span><span style="display:flex;"><span>swift-storage01# swift upload container01 test
+</span></span><span style="display:flex;"><span>swift-storage01# swift list
+</span></span><span style="display:flex;"><span>swift-storage01# swift list container01
+</span></span></code></pre></div><p>また、これらの操作が swift-proxy01, swift-proxy02 の片系を落とした状態でも可能
 かどうかも確認しましょう。</p>
 <h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
 <p>swift-proxy 片系の障害時にも読み込み系・書き込み系の操作が可能なことを確認出来

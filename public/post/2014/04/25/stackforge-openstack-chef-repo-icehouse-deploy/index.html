@@ -21,7 +21,7 @@ openstack-chef-repo はまだ &lsquo;stable/icehouse&rsquo; ブランチが生�
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2014/04/25/stackforge-openstack-chef-repo-icehouse-deploy/" />
 <link crossorigin="anonymous" href="/assets/css/stylesheet.min.44044074f4b4d7b018bfd3febcc1fa76eb874db64213f920feacf263e3028a73.css" integrity="sha256-RARAdPS017AYv9P&#43;vMH6duuHTbZCE/kg/qzyY&#43;MCinM=" rel="preload stylesheet" as="style">
-<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.2840b7fccd34145847db71a290569594bdbdb00047097f75d6495d162f5d7dff.js" integrity="sha256-KEC3/M00FFhH23GikFaVlL29sABHCX911kldFi9dff8="
     onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/pix/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
@@ -30,7 +30,7 @@ openstack-chef-repo はまだ &lsquo;stable/icehouse&rsquo; ブランチが生�
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.92.1" />
+<meta name="generator" content="Hugo 0.97.3" />
 <noscript>
     <style>
         #theme-toggle,
@@ -113,7 +113,7 @@ openstack-chef-repo はまだ &lsquo;stable/icehouse&rsquo; ブランチが生�
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkz です。\nまたまた OpenStack のデプロイをどうするか？についてです。\n今まで自分の中では Rackspace Private Cloud で使われている Rackspace 管理の rcbops/chef-cookbooks が今現在使うならベストの選択だと思っていました。これは内 部で Chef が使われていてしかも Cookbooks が Github 上で公開されています。 Apache ライセンスで使えるので、サービス構築にも使えちゃうというモノ。\n先日、ある OpenStack コアデベロッパーの方から「jedipunkz さん、やっぱり rcbops がいいですか？運営とかどうなっているんでしょう？マージの規準とかどうなのかな？」 と質問受けました。確かにマージの基準は Rackspace Private Cloud がベースになり ますし、管理しているエンジニアの一覧を見ていると Rackspace 社のエンジニアがメ インですし、今後どうなるのか分からない…。\n逃げ道は用意したほうが良さそう。\nということで、以前自分も暑かったことのある StackForge の openstack-chef-repo を久々に使ってみました。Icehouse 構成がこの時点で既に組めるようになっていて、 以前よりだい〜ぶ完成度増した感があります。今回は nova-network 構成を作ってみた のですが、Neutron 構成ももちろん出来そうなので後に調べてまた公開したいです。\nStackForge とは StackForge は OpenStack のデプロイ・CI の仕組みとして公式に用いられているもの。 公式サイトは下記の場所にある。\nhttp://ci.openstack.org/stackforge.html\nStackForge の openstack-chef-repo は下記の場所にある。\nhttps://github.com/stackforge/openstack-chef-repo\nopenstack-chef-repo はまだ ‘stable/icehouse’ ブランチが生成されていない。が直 ちに master からブランチが切られる様子。\n目的 StackForge の openstack-chef-repo を用いて Icehouse リリース版の OpenStack を デプロイするための方法を記す。今回は未だ ‘stable/icehouse’ ブランチが無いので master ブランチを用いて Icehouse リリース版 OpenStack を構築する。\n構成 構成はこんな感じ。\n +-----------------+ | GW Router | +--+-----------------+ | | | +-------------------+-------------------+-------------------------------------- | |eth0 |eth0 |eth0 VM Network (fixed) | +-----------------+ +-----------------+ +-----------------+ +-----------------+ | | Controller Node | | Compute Node | | Compute Node | | Chef Workstation| | +-----------------+ +-----------------+ +-----------------+ +-----------------+ | |eth1 |eth1 |eth1 | +--+-------------------+-------------------+-------------------+------------------ API/Management Network  Nova-Network 構成 今回は fixed network 用の NIC を eth0(物理 NIC) にアサイン fixed network 用のネットワークをパブリックにする API/Management Network 側に全ての API を出す。またここから The Internet に迂回出来るようにする VM Network も GW を介して The Internet へ迂回出来るようにする 全ての操作は ‘Chef Workstaion’ から行う Compute ノードはキャパシティの許す限り何台でも可  IP 一覧 (この記事での例)\n Controller : 10.200.9.46 (eth0), 10.200.10.46 (eth1) Compute : 10.200.9.47 (eth0), 10.200.10.47 (eth1) Compute : 10.200.9.48 (eth0), 10.200.10.48 (eth1)  手順 openstack-chef-repo をワークステーションノード上で取得する。\n% git clone https://github.com/stackforge/openstack-chef-repo.git % cd openstack-chef-repo Berksfile があるのでこれを用いて Chef Cookbooks を取得する。\n% berks install --path=./cookbooks Roles, Cookbooks を Chef サーバにアップロードする。\n% knife cookbook upload -o cookbooks -a % knife role from file roles/*.rb 1 Environment に対して 1 OpenStack クラスタである。今回構築するクラスタのため の Environment を作成する。\n下記を environments/icehouse-nova-network.rb として生成する。\nname \"icehouse-nova-network\" description \"separated nodes environment\" override_attributes( \"release\" = \"icehouse\", \"osops_networks\" = { \"management\" = \"10.200.10.0/24\", \"public\" = \"10.200.10.0/24\", \"nova\" = \"10.200.10.0/24\" }, \"mysql\" = { \"bind_address\" = \"0.0.0.0\", \"root_network_acl\" = \"%\", \"allow_remote_root\" = true, \"server_root_password\" = \"secrete\", \"server_repl_password\" = \"secrete\", \"server_debian_password\" = \"secrete\" }, \"nova\" = { \"network\" = { \"fixed_range\" = \"172.18.0.0/24\", \"public_interface\" = \"eth0\" } }, \"rabbitmq\" = { \"address\" = \"10.200.10.46\", \"port\" = \"5672\" }, \"openstack\" = { \"developer_mode\" = true, \"compute\" = { \"rabbit\" = { \"host\" = \"10.200.10.46\" }, \"novnc_proxy\" = { \"bind_interface\" = \"eth1\" }, \"libvirt\" = { \"bind_interface\" = \"eth1\" }, \"network\" = { \"fixed_range\" = \"10.200.9.0/24\" }, \"rabbit_server_chef_role\" = \"os-ops-messaging\", \"networks\" = [ { \"label\" = \"private\", \"ipv4_cidr\" = \"10.200.9.0/24\", \"num_networks\" = \"1\", \"network_size\" = \"255\", \"bridge\" = \"br200\", \"bridge_dev\" = \"eth0\", \"dns1\" = \"8.8.8.8\", \"dns2\" = \"8.8.4.4\", \"multi_host\" = \"T\" } ] }, \"identity\" = { \"bind_interface\" = \"eth1\", \"users\" = { \"demo\" = { \"password\" = \"demo\", \"default_tenant\" = \"service\", \"roles\" = { \"Member\" = [ \"Member\" ] } } } }, \"image\" = { \"api\" = { \"bind_interface\" = \"eth1\" }, \"debug\" = true, \"identity_service_chef_role\" = \"os-identity\", \"rabbit_server_chef_role\" = \"os-ops-messaging\", \"registry\" = { \"bind_interface\" = \"eth1\" }, \"syslog\" = { \"use\" = false }, \"upload_image\" = { \"cirros\" = \"http://hypnotoad/cirros-0.3.0-x86_64-disk.img\", }, \"upload_images\" = [ \"cirros\" ] }, \"network\" = { \"api\" = { \"bind_interface\" = \"eth1\", } }, \"db\" = { \"bind_interface\" = \"eth1\", \"compute\" = { \"host\" = \"10.200.10.46\" }, \"identity\" = { \"host\" = \"10.200.10.46\" }, \"image\" = { \"host\" = \"10.200.10.46\" }, \"network\" = { \"host\" = \"10.200.10.46\" }, \"volume\" = { \"host\" = \"10.200.10.46\" }, \"dashboard\" = { \"host\" = \"10.200.10.46\" } }, \"mq\" = { \"bind_interface\" = \"eth1\", \"host\" = \"10.200.10.46\", \"user\" = \"guest\", \"vhost\" = \"/nova\", \"servers\" = \"10.200.10.46\", \"compute\" = { \"service_type\" = \"rabbitmq\", \"rabbit\" = { \"host\" = \"10.200.10.46\", \"port\" = \"5672\" } }, \"block-storage\" = { \"service_type\" = \"rabbitmq\", \"rabbit\" = { \"host\" = \"10.200.10.46\", \"port\" = \"5672\" } } }, \"endpoints\" = { \"compute-api-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8774\", \"path\" = \"/v2/%(tenant_id)s\" }, \"compute-api\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8774\", \"path\" = \"/v2/%(tenant_id)s\" }, \"compute-ec2-admin-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8773\", \"path\" = \"/services/Admin\" }, \"compute-ec2-admin\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8773\", \"path\" = \"/services/Admin\" }, \"compute-ec2-api-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8773\", \"path\" = \"/services/Cloud\" }, \"compute-ec2-api\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8773\", \"path\" = \"/services/Cloud\" }, \"compute-xvpvnc-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"6081\", \"path\" = \"/console\" }, \"compute-xvpvnc\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"6081\", \"path\" = \"/console\" }, \"compute-novnc-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"6080\", \"path\" = \"/vnc_auto.html\" }, \"compute-novnc\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"6080\", \"path\" = \"/vnc_auto.html\" }, \"compute-vnc\" = { \"host\" = \"0.0.0.0\", \"scheme\" = \"http\", \"port\" = \"6080\", \"path\" = \"/vnc_auto.html\" }, \"image-api-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"9292\", \"path\" = \"/v2\" }, \"image-api\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"9292\", \"path\" = \"/v2\" }, \"image-registry-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"9191\", \"path\" = \"/v2\" }, \"image-registry\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"9191\", \"path\" = \"/v2\" }, \"identity-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"5000\", \"path\" = \"/v2.0\" }, \"identity-api\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"5000\", \"path\" = \"/v2.0\" }, \"identity-admin\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"35357\", \"path\" = \"/v2.0\" }, \"volume-api-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8776\", \"path\" = \"/v1/%(tenant_id)s\" }, \"block-storage-api\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8776\", \"path\" = \"/v1/%(tenant_id)s\" }, \"telemetry-api-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8777\", \"path\" = \"/v1\" }, \"telemetry-api\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8777\", \"path\" = \"/v1\" }, \"network-api-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"9696\", \"path\" = \"/v2\" }, \"network-api\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"9696\", \"path\" = \"/v2\" }, \"orchestration-api-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8004\", \"path\" = \"/v1/%(tenant_id)s\" }, \"orchestration-api\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8004\", \"path\" = \"/v1/%(tenant_id)s\" }, \"orchestration-api-cfn-bind\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8000\", \"path\" = \"/v1\" }, \"orchestration-api-cfn\" = { \"host\" = \"10.200.10.46\", \"scheme\" = \"http\", \"port\" = \"8000\", \"path\" = \"/v1\" }, \"mq\" = { \"port\" = \"5672\" } } } ) 生成した environment を Chef サーバにアップロードする。\n% knife environment from file environments/icehouse-nova-network.rb Spiceweasel をインストールする。Spiceweasel は yml ファイルを元に knife の操作 を書き出して、またそれを一気に実行することが出来るツールです。\n% gem install spiceweasel --no-ri --no-rdoc % rbenv rehash infrastructure.yml を下記の通り修正する。\nberksfile: options: '--no-freeze --halt-on-frozen' cookbooks: - apache2: - apt: - aws: - build-essential: - chef_handler: - database: - dmg: - erlang: - git: - homebrew: - iptables: - logrotate: - memcached: - mysql: - openssl: - openstack-block-storage: - openstack-common: - openstack-compute: - openstack-dashboard: - openstack-identity: - openstack-image: - openstack-network: - openstack-object-storage: - openstack-ops-messaging: - openstack-ops-database: - openstack-orchestration: - openstack-telemetry: - pacman: - postgresql: - python: - rabbitmq: - runit: - selinux: - statsd: - windows: - xfs: - yum: - yum-epel: - yum-erlang_solutions: roles: - allinone-compute: - os-compute-single-controller: - os-base: - os-ops-caching: - os-ops-messaging: - os-ops-database: - os-block-storage: - os-block-storage-api: - os-block-storage-scheduler: - os-block-storage-volume: - os-client: - os-compute-api: - os-compute-api-ec2: - os-compute-api-metadata: - os-compute-api-os-compute: - os-compute-cert: - os-compute-conductor: - os-compute-scheduler: - os-compute-setup: - os-compute-vncproxy: - os-compute-worker: - os-dashboard: - os-identity: - os-image: - os-image-api: - os-image-registry: - os-image-upload: - os-telemetry-agent-central: - os-telemetry-agent-compute: - os-telemetry-api: - os-telemetry-collector: - os-network: - os-network-server: - os-network-l3-agent: - os-network-dhcp-agent: - os-network-metadata-agent: - os-network-openvswitch: - os-object-storage: - os-object-storage-account: - os-object-storage-container: - os-object-storage-management: - os-object-storage-object: - os-object-storage-proxy: environments: - icehouse-nova-network: nodes: - 10.200.10.46: run_list: role[os-compute-single-controller] options: -N opstall01 -E icehouse-nova-network --sudo -x thirai - 10.200.10.47: run_list: role[os-compute-worker] options: -N opstall02 -E icehouse-nova-network --sudo -x thirai - 10.200.10.48: run_list: role[os-compute-worker] options: -N opstall03 -E icehouse-nova-network --sudo -x thirai ※ nodes: 項にはデプロイしたいノードと Roles を割り当て列挙する。\nspiceweasel を実行する。この時点ではこれから実行されるコマンドの一覧が表示され るのみである。\n% spiceweasel infrastructure.yml berks upload --no-freeze --halt-on-frozen -b ./Berksfile knife cookbook upload apache2 apt aws build-essential chef_handler database dmg erlang git homebrew iptables logrotate memcached mysql openssl openstack-block-storage openstack-common openstack-compute openstack-dashboard openstack-identity openstack-image openstack-network openstack-object-storage openstack-ops-messaging openstack-ops-database openstack-orchestration openstack-telemetry pacman postgresql python rabbitmq runit selinux statsd windows xfs yum yum-epel yum-erlang_solutions knife environment from file separated.rb knife role from file allinone-compute.rb os-base.rb os-block-storage-api.rb os-block-storage-scheduler.rb os-block-storage-volume.rb os-block-storage.rb os-client.rb os-compute-api-ec2.rb os-compute-api-metadata.rb os-compute-api-os-compute.rb os-compute-api.rb os-compute-cert.rb os-compute-conductor.rb os-compute-scheduler.rb os-compute-setup.rb os-compute-single-controller.rb os-compute-vncproxy.rb os-compute-worker.rb os-dashboard.rb os-identity.rb os-image-api.rb os-image-registry.rb os-image-upload.rb os-image.rb os-network-dhcp-agent.rb os-network-l3-agent.rb os-network-metadata-agent.rb os-network-openvswitch.rb os-network-server.rb os-network.rb os-object-storage-account.rb os-object-storage-container.rb os-object-storage-management.rb os-object-storage-object.rb os-object-storage-proxy.rb os-object-storage.rb os-ops-caching.rb os-ops-database.rb os-ops-messaging.rb os-telemetry-agent-central.rb os-telemetry-agent-compute.rb os-telemetry-api.rb os-telemetry-collector.rb knife bootstrap 10.200.10.46 -N opstall01 -E separated --sudo -x thirai -r 'role[os-compute-single-controller]' knife bootstrap 10.200.10.47 -N opstall02 -E separated --sudo -x thirai -r 'role[os-compute-worker]' knife bootstrap 10.200.10.48 -N opstall03 -E separated --sudo -x thirai -r 'role[os-compute-worker]' -e オプションを付与すると実際にこれらのコマンドが実行される。実行してデプロイを行う。\n% spiceweasel -e infrastructure.yml この時点で、下記の操作も行われる。\n Nova-Network 上に仮想ネットワークの生成 OS イメージのダウンロードと登録 (Environment に記したモノ)  Cinder の設定 デプロイ完了したところで cinder-volume プロセスは稼働しているが物理ディスクの アサインが済んでいない。これは Chef では指定出来ないので手動で行う。\n予め Cinder 用の物理ディスクを Controller ノードに付与する。(ここでは /dev/sdb1)\ncontroller% sudo -i controller# pvcreate /dev/sdb1 controller# vgcreate cinder-volumes /dev/sdb1 controller# service cinder-volume restart これで完了。\n使ってみる ではデプロイした OpenStack を使って仮想マシンを作ってみる。\ncontroller% sudo -i controller# source openrc controller# nova keypair-add novakey01  novakey01 controller# chmod 400 novakey01 controller# nova boot --image cirros --flavor 1 --key_name novakey01 cirros01 controller# nova list +--------------------------------------+----------+--------+------------+-------------+--------------------+ | ID | Name | Status | Task State | Power State | Networks | +--------------------------------------+----------+--------+------------+-------------+--------------------+ | e6687359-1aef-4105-a8db-894600001610 | cirros01 | ACTIVE | - | Running | private=10.200.9.2 | +--------------------------------------+----------+--------+------------+-------------+--------------------+ controller# ssh -i novakey01 -l cirros 10.200.9.2 vm# ping www.goo.ne.jp 仮想マシンが生成され The Internet に対して通信が行えたことを確認。\n次に仮想ディスクを生成して上記で作成した仮想マシンに付与する。\ncontroller# cinder create --display-name vol01 1 +--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+ | ID | Status | Display Name | Size | Volume Type | Bootable | Attached to | +--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+ | 0f3726a0-c2f5-45bc-bcf2-1f6eb746f5c8 | available | vol02 | 1 | None | false | b286387c-2311-4134-ab59-850fee3e4650 | +--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+ controller# nova volume-attach e6687359-1aef-4105-a8db-894600001610 0f3726a0-c2f5-45bc-bcf2-1f6eb746f5c8 auto controller# ssh -i novakey01 -l cirros 10.200.9.2 vm# mkfs.ext4 /dev/vdb vm# mount -t ext4 /dev/vdb /mnt vm# df -h | grep mnt /dev/vdb 976M 1.3M 908M 1% /mnt 仮想ディスクを仮想マシンに付与しマウントできることを確認出来た。\nまとめ 今回は Nova-Network 構成の Icehouse を構築出来た。Nova-Network は Havana でサポート終了との話が延期 になっていることは聞いていたが Icehouse でもしっかり動いている。また後に Neutron 構成も調査を行う。 Neutron 構成は下記の Environments を参考にすると動作するかもしれない。\nhttps://github.com/stackforge/openstack-chef-repo/blob/master/environments/vagrant-multi-neutron.json\nキーとなるのは、\n\"network\": { \"debug\": \"True\", \"dhcp\": { \"enable_isolated_metadata\": \"True\" }, \"metadata\": { \"nova_metadata_ip\": \"192.168.3.60\" }, \"openvswitch\": { \"tunnel_id_ranges\": \"1:1000\", \"enable_tunneling\": \"True\", \"tenant_network_type\": \"gre\", \"local_ip_interface\": \"eth2\" }, \"api\": { \"bind_interface\": \"eth1\" } }, この辺り。\n残っている問題点 VNC コンソールにアクセス出来ない。調べたのですが、environment の修正で直せる問 題ではないように見えました。\ncookbooks/openstack-compute/templates/default/nova.conf.rb を確認すると下記の ようになっています。\n##### VNCPROXY ##### novncproxy_base_url=%= @novncproxy_base_url % xvpvncproxy_base_url=%= @xvpvncproxy_base_url % # This is only required on the server running xvpvncproxy xvpvncproxy_host=%= @xvpvncproxy_bind_host % xvpvncproxy_port=%= @xvpvncproxy_bind_port % # This is only required on the server running novncproxy novncproxy_host=%= @novncproxy_bind_host % novncproxy_port=%= @novncproxy_bind_port % vncserver_listen=%= @vncserver_listen % vncserver_proxyclient_address= @vncserver_proxyclient_address % vncserver_listen, vncserver_proxyclient_address はそれぞれ\n @vncserver_listen @vncserver_proxyclient_address  という変数が格納されることになっている。\nでは cookbooks/openstack-compute/recipes/nova-common.rb を確認すると、\ntemplate '/etc/nova/nova.conf' do source 'nova.conf.erb' owner node['openstack']['compute']['user'] group node['openstack']['compute']['group'] mode 00644 variables( sql_connection: sql_connection, novncproxy_base_url: novnc_endpoint.to_s, xvpvncproxy_base_url: xvpvnc_endpoint.to_s, xvpvncproxy_bind_host: xvpvnc_bind.host, xvpvncproxy_bind_port: xvpvnc_bind.port, novncproxy_bind_host: novnc_bind.host, novncproxy_bind_port: novnc_bind.port, vncserver_listen: vnc_endpoint.host, vncserver_proxyclient_address: vnc_endpoint.host, 以下略 となっている。vncserver_listen, vncserver_proxyclient_address 共に vnc_endpoint.host が格納されることになっている。vnc_endpont.host は\nvnc_endpoint = endpoint 'compute-vnc' || {} となっており、Attributes の\n\"compute-vnc\" = { \"host\" = \"0.0.0.0\", \"scheme\" = \"http\", \"port\" = \"6080\", \"path\" = \"/vnc_auto.html\" }, の設定が入ることになる。つまり上記のような Attributes だと vncserver_listen, vncserver_proxyclient_address 共に ‘0.0.0.0’ のアドレスが controller, compute ノードの双方に入ってしまい、NoVNC が正しく格納しないことになる。\n解決したらまたここに更新版を載せたいと思いまーす！\n以上です。\n",
+  "articleBody": "こんにちは。@jedipunkz です。\nまたまた OpenStack のデプロイをどうするか？についてです。\n今まで自分の中では Rackspace Private Cloud で使われている Rackspace 管理の rcbops/chef-cookbooks が今現在使うならベストの選択だと思っていました。これは内 部で Chef が使われていてしかも Cookbooks が Github 上で公開されています。 Apache ライセンスで使えるので、サービス構築にも使えちゃうというモノ。\n先日、ある OpenStack コアデベロッパーの方から「jedipunkz さん、やっぱり rcbops がいいですか？運営とかどうなっているんでしょう？マージの規準とかどうなのかな？」 と質問受けました。確かにマージの基準は Rackspace Private Cloud がベースになり ますし、管理しているエンジニアの一覧を見ていると Rackspace 社のエンジニアがメ インですし、今後どうなるのか分からない…。\n逃げ道は用意したほうが良さそう。\nということで、以前自分も暑かったことのある StackForge の openstack-chef-repo を久々に使ってみました。Icehouse 構成がこの時点で既に組めるようになっていて、 以前よりだい〜ぶ完成度増した感があります。今回は nova-network 構成を作ってみた のですが、Neutron 構成ももちろん出来そうなので後に調べてまた公開したいです。\nStackForge とは StackForge は OpenStack のデプロイ・CI の仕組みとして公式に用いられているもの。 公式サイトは下記の場所にある。\nhttp://ci.openstack.org/stackforge.html\nStackForge の openstack-chef-repo は下記の場所にある。\nhttps://github.com/stackforge/openstack-chef-repo\nopenstack-chef-repo はまだ ‘stable/icehouse’ ブランチが生成されていない。が直 ちに master からブランチが切られる様子。\n目的 StackForge の openstack-chef-repo を用いて Icehouse リリース版の OpenStack を デプロイするための方法を記す。今回は未だ ‘stable/icehouse’ ブランチが無いので master ブランチを用いて Icehouse リリース版 OpenStack を構築する。\n構成 構成はこんな感じ。\n +-----------------+ | GW Router | +--+-----------------+ | | | +-------------------+-------------------+-------------------------------------- | |eth0 |eth0 |eth0 VM Network (fixed) | +-----------------+ +-----------------+ +-----------------+ +-----------------+ | | Controller Node | | Compute Node | | Compute Node | | Chef Workstation| | +-----------------+ +-----------------+ +-----------------+ +-----------------+ | |eth1 |eth1 |eth1 | +--+-------------------+-------------------+-------------------+------------------ API/Management Network  Nova-Network 構成 今回は fixed network 用の NIC を eth0(物理 NIC) にアサイン fixed network 用のネットワークをパブリックにする API/Management Network 側に全ての API を出す。またここから The Internet に迂回出来るようにする VM Network も GW を介して The Internet へ迂回出来るようにする 全ての操作は ‘Chef Workstaion’ から行う Compute ノードはキャパシティの許す限り何台でも可  IP 一覧 (この記事での例)\n Controller : 10.200.9.46 (eth0), 10.200.10.46 (eth1) Compute : 10.200.9.47 (eth0), 10.200.10.47 (eth1) Compute : 10.200.9.48 (eth0), 10.200.10.48 (eth1)  手順 openstack-chef-repo をワークステーションノード上で取得する。\n% git clone https://github.com/stackforge/openstack-chef-repo.git % cd openstack-chef-repo Berksfile があるのでこれを用いて Chef Cookbooks を取得する。\n% berks install --path=./cookbooks Roles, Cookbooks を Chef サーバにアップロードする。\n% knife cookbook upload -o cookbooks -a % knife role from file roles/*.rb 1 Environment に対して 1 OpenStack クラスタである。今回構築するクラスタのため の Environment を作成する。\n下記を environments/icehouse-nova-network.rb として生成する。\nname \"icehouse-nova-network\" description \"separated nodes environment\"  override_attributes(  \"release\" = \"icehouse\",  \"osops_networks\" = {  \"management\" = \"10.200.10.0/24\",  \"public\" = \"10.200.10.0/24\",  \"nova\" = \"10.200.10.0/24\"  },  \"mysql\" = {  \"bind_address\" = \"0.0.0.0\",  \"root_network_acl\" = \"%\",  \"allow_remote_root\" = true,  \"server_root_password\" = \"secrete\",  \"server_repl_password\" = \"secrete\",  \"server_debian_password\" = \"secrete\"  },  \"nova\" = {  \"network\" = {  \"fixed_range\" = \"172.18.0.0/24\",  \"public_interface\" = \"eth0\"  }  },  \"rabbitmq\" = {  \"address\" = \"10.200.10.46\",  \"port\" = \"5672\"  },  \"openstack\" = {  \"developer_mode\" = true,  \"compute\" = {  \"rabbit\" = {  \"host\" = \"10.200.10.46\"  },  \"novnc_proxy\" = {  \"bind_interface\" = \"eth1\"  },  \"libvirt\" = {  \"bind_interface\" = \"eth1\"  },  \"network\" = {  \"fixed_range\" = \"10.200.9.0/24\"  },  \"rabbit_server_chef_role\" = \"os-ops-messaging\",  \"networks\" = [  {  \"label\" = \"private\",  \"ipv4_cidr\" = \"10.200.9.0/24\",  \"num_networks\" = \"1\",  \"network_size\" = \"255\",  \"bridge\" = \"br200\",  \"bridge_dev\" = \"eth0\",  \"dns1\" = \"8.8.8.8\",  \"dns2\" = \"8.8.4.4\",  \"multi_host\" = \"T\"  }  ]  },  \"identity\" = {  \"bind_interface\" = \"eth1\",  \"users\" = {  \"demo\" = {  \"password\" = \"demo\",  \"default_tenant\" = \"service\",  \"roles\" = {  \"Member\" = [ \"Member\" ]  }  }  }  },  \"image\" = {  \"api\" = {  \"bind_interface\" = \"eth1\"  },  \"debug\" = true,  \"identity_service_chef_role\" = \"os-identity\",  \"rabbit_server_chef_role\" = \"os-ops-messaging\",  \"registry\" = {  \"bind_interface\" = \"eth1\"  },  \"syslog\" = {  \"use\" = false  },  \"upload_image\" = {  \"cirros\" = \"http://hypnotoad/cirros-0.3.0-x86_64-disk.img\",  },  \"upload_images\" = [  \"cirros\"  ]  },  \"network\" = {  \"api\" = {  \"bind_interface\" = \"eth1\",  }  },  \"db\" = {  \"bind_interface\" = \"eth1\",  \"compute\" = {  \"host\" = \"10.200.10.46\"  },  \"identity\" = {  \"host\" = \"10.200.10.46\"  },  \"image\" = {  \"host\" = \"10.200.10.46\"  },  \"network\" = {  \"host\" = \"10.200.10.46\"  },  \"volume\" = {  \"host\" = \"10.200.10.46\"  },  \"dashboard\" = {  \"host\" = \"10.200.10.46\"  }  },  \"mq\" = {  \"bind_interface\" = \"eth1\",  \"host\" = \"10.200.10.46\",  \"user\" = \"guest\",  \"vhost\" = \"/nova\",  \"servers\" = \"10.200.10.46\",  \"compute\" = {  \"service_type\" = \"rabbitmq\",  \"rabbit\" = {  \"host\" = \"10.200.10.46\",  \"port\" = \"5672\"  }  },  \"block-storage\" = {  \"service_type\" = \"rabbitmq\",  \"rabbit\" = {  \"host\" = \"10.200.10.46\",  \"port\" = \"5672\"  }  }  },  \"endpoints\" = {  \"compute-api-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8774\",  \"path\" = \"/v2/%(tenant_id)s\"  },  \"compute-api\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8774\",  \"path\" = \"/v2/%(tenant_id)s\"  },  \"compute-ec2-admin-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8773\",  \"path\" = \"/services/Admin\"  },  \"compute-ec2-admin\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8773\",  \"path\" = \"/services/Admin\"  },  \"compute-ec2-api-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8773\",  \"path\" = \"/services/Cloud\"  },  \"compute-ec2-api\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8773\",  \"path\" = \"/services/Cloud\"  },  \"compute-xvpvnc-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"6081\",  \"path\" = \"/console\"  },  \"compute-xvpvnc\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"6081\",  \"path\" = \"/console\"  },  \"compute-novnc-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"6080\",  \"path\" = \"/vnc_auto.html\"  },  \"compute-novnc\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"6080\",  \"path\" = \"/vnc_auto.html\"  },  \"compute-vnc\" = {  \"host\" = \"0.0.0.0\",  \"scheme\" = \"http\",  \"port\" = \"6080\",  \"path\" = \"/vnc_auto.html\"  },  \"image-api-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"9292\",  \"path\" = \"/v2\"  },  \"image-api\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"9292\",  \"path\" = \"/v2\"  },  \"image-registry-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"9191\",  \"path\" = \"/v2\"  },  \"image-registry\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"9191\",  \"path\" = \"/v2\"  },  \"identity-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"5000\",  \"path\" = \"/v2.0\"  },  \"identity-api\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"5000\",  \"path\" = \"/v2.0\"  },  \"identity-admin\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"35357\",  \"path\" = \"/v2.0\"  },  \"volume-api-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8776\",  \"path\" = \"/v1/%(tenant_id)s\"  },  \"block-storage-api\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8776\",  \"path\" = \"/v1/%(tenant_id)s\"  },  \"telemetry-api-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8777\",  \"path\" = \"/v1\"  },  \"telemetry-api\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8777\",  \"path\" = \"/v1\"  },  \"network-api-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"9696\",  \"path\" = \"/v2\"  },  \"network-api\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"9696\",  \"path\" = \"/v2\"  },  \"orchestration-api-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8004\",  \"path\" = \"/v1/%(tenant_id)s\"  },  \"orchestration-api\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8004\",  \"path\" = \"/v1/%(tenant_id)s\"  },  \"orchestration-api-cfn-bind\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8000\",  \"path\" = \"/v1\"  },  \"orchestration-api-cfn\" = {  \"host\" = \"10.200.10.46\",  \"scheme\" = \"http\",  \"port\" = \"8000\",  \"path\" = \"/v1\"  },  \"mq\" = {  \"port\" = \"5672\"  }  }  } ) 生成した environment を Chef サーバにアップロードする。\n% knife environment from file environments/icehouse-nova-network.rb Spiceweasel をインストールする。Spiceweasel は yml ファイルを元に knife の操作 を書き出して、またそれを一気に実行することが出来るツールです。\n% gem install spiceweasel --no-ri --no-rdoc % rbenv rehash infrastructure.yml を下記の通り修正する。\nberksfile:  options: '--no-freeze --halt-on-frozen'  cookbooks: - apache2: - apt: - aws: - build-essential: - chef_handler: - database: - dmg: - erlang: - git: - homebrew: - iptables: - logrotate: - memcached: - mysql: - openssl: - openstack-block-storage: - openstack-common: - openstack-compute: - openstack-dashboard: - openstack-identity: - openstack-image: - openstack-network: - openstack-object-storage: - openstack-ops-messaging: - openstack-ops-database: - openstack-orchestration: - openstack-telemetry: - pacman: - postgresql: - python: - rabbitmq: - runit: - selinux: - statsd: - windows: - xfs: - yum: - yum-epel: - yum-erlang_solutions:  roles: - allinone-compute: - os-compute-single-controller: - os-base: - os-ops-caching: - os-ops-messaging: - os-ops-database: - os-block-storage: - os-block-storage-api: - os-block-storage-scheduler: - os-block-storage-volume: - os-client: - os-compute-api: - os-compute-api-ec2: - os-compute-api-metadata: - os-compute-api-os-compute: - os-compute-cert: - os-compute-conductor: - os-compute-scheduler: - os-compute-setup: - os-compute-vncproxy: - os-compute-worker: - os-dashboard: - os-identity: - os-image: - os-image-api: - os-image-registry: - os-image-upload: - os-telemetry-agent-central: - os-telemetry-agent-compute: - os-telemetry-api: - os-telemetry-collector: - os-network: - os-network-server: - os-network-l3-agent: - os-network-dhcp-agent: - os-network-metadata-agent: - os-network-openvswitch: - os-object-storage: - os-object-storage-account: - os-object-storage-container: - os-object-storage-management: - os-object-storage-object: - os-object-storage-proxy:  environments: - icehouse-nova-network:  nodes: - 10.200.10.46:  run_list: role[os-compute-single-controller]  options: -N opstall01 -E icehouse-nova-network --sudo -x thirai - 10.200.10.47:  run_list: role[os-compute-worker]  options: -N opstall02 -E icehouse-nova-network --sudo -x thirai - 10.200.10.48:  run_list: role[os-compute-worker]  options: -N opstall03 -E icehouse-nova-network --sudo -x thirai ※ nodes: 項にはデプロイしたいノードと Roles を割り当て列挙する。\nspiceweasel を実行する。この時点ではこれから実行されるコマンドの一覧が表示され るのみである。\n% spiceweasel infrastructure.yml berks upload --no-freeze --halt-on-frozen -b ./Berksfile knife cookbook upload apache2 apt aws build-essential chef_handler database dmg erlang git homebrew iptables logrotate memcached mysql openssl openstack-block-storage openstack-common openstack-compute openstack-dashboard openstack-identity openstack-image openstack-network openstack-object-storage openstack-ops-messaging openstack-ops-database openstack-orchestration openstack-telemetry pacman postgresql python rabbitmq runit selinux statsd windows xfs yum yum-epel yum-erlang_solutions knife environment from file separated.rb knife role from file allinone-compute.rb os-base.rb os-block-storage-api.rb os-block-storage-scheduler.rb os-block-storage-volume.rb os-block-storage.rb os-client.rb os-compute-api-ec2.rb os-compute-api-metadata.rb os-compute-api-os-compute.rb os-compute-api.rb os-compute-cert.rb os-compute-conductor.rb os-compute-scheduler.rb os-compute-setup.rb os-compute-single-controller.rb os-compute-vncproxy.rb os-compute-worker.rb os-dashboard.rb os-identity.rb os-image-api.rb os-image-registry.rb os-image-upload.rb os-image.rb os-network-dhcp-agent.rb os-network-l3-agent.rb os-network-metadata-agent.rb os-network-openvswitch.rb os-network-server.rb os-network.rb os-object-storage-account.rb os-object-storage-container.rb os-object-storage-management.rb os-object-storage-object.rb os-object-storage-proxy.rb os-object-storage.rb os-ops-caching.rb os-ops-database.rb os-ops-messaging.rb os-telemetry-agent-central.rb os-telemetry-agent-compute.rb os-telemetry-api.rb os-telemetry-collector.rb knife bootstrap 10.200.10.46 -N opstall01 -E separated --sudo -x thirai -r 'role[os-compute-single-controller]' knife bootstrap 10.200.10.47 -N opstall02 -E separated --sudo -x thirai -r 'role[os-compute-worker]' knife bootstrap 10.200.10.48 -N opstall03 -E separated --sudo -x thirai -r 'role[os-compute-worker]' -e オプションを付与すると実際にこれらのコマンドが実行される。実行してデプロイを行う。\n% spiceweasel -e infrastructure.yml この時点で、下記の操作も行われる。\n Nova-Network 上に仮想ネットワークの生成 OS イメージのダウンロードと登録 (Environment に記したモノ)  Cinder の設定 デプロイ完了したところで cinder-volume プロセスは稼働しているが物理ディスクの アサインが済んでいない。これは Chef では指定出来ないので手動で行う。\n予め Cinder 用の物理ディスクを Controller ノードに付与する。(ここでは /dev/sdb1)\ncontroller% sudo -i controller# pvcreate /dev/sdb1 controller# vgcreate cinder-volumes /dev/sdb1 controller# service cinder-volume restart これで完了。\n使ってみる ではデプロイした OpenStack を使って仮想マシンを作ってみる。\ncontroller% sudo -i controller# source openrc controller# nova keypair-add novakey01  novakey01 controller# chmod 400 novakey01 controller# nova boot --image cirros --flavor 1 --key_name novakey01 cirros01 controller# nova list +--------------------------------------+----------+--------+------------+-------------+--------------------+ | ID | Name | Status | Task State | Power State | Networks | +--------------------------------------+----------+--------+------------+-------------+--------------------+ | e6687359-1aef-4105-a8db-894600001610 | cirros01 | ACTIVE | - | Running | private=10.200.9.2 | +--------------------------------------+----------+--------+------------+-------------+--------------------+ controller# ssh -i novakey01 -l cirros 10.200.9.2 vm# ping www.goo.ne.jp 仮想マシンが生成され The Internet に対して通信が行えたことを確認。\n次に仮想ディスクを生成して上記で作成した仮想マシンに付与する。\ncontroller# cinder create --display-name vol01 1 +--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+ | ID | Status | Display Name | Size | Volume Type | Bootable | Attached to | +--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+ | 0f3726a0-c2f5-45bc-bcf2-1f6eb746f5c8 | available | vol02 | 1 | None | false | b286387c-2311-4134-ab59-850fee3e4650 | +--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+ controller# nova volume-attach e6687359-1aef-4105-a8db-894600001610 0f3726a0-c2f5-45bc-bcf2-1f6eb746f5c8 auto controller# ssh -i novakey01 -l cirros 10.200.9.2 vm# mkfs.ext4 /dev/vdb vm# mount -t ext4 /dev/vdb /mnt vm# df -h | grep mnt /dev/vdb 976M 1.3M 908M 1% /mnt 仮想ディスクを仮想マシンに付与しマウントできることを確認出来た。\nまとめ 今回は Nova-Network 構成の Icehouse を構築出来た。Nova-Network は Havana でサポート終了との話が延期 になっていることは聞いていたが Icehouse でもしっかり動いている。また後に Neutron 構成も調査を行う。 Neutron 構成は下記の Environments を参考にすると動作するかもしれない。\nhttps://github.com/stackforge/openstack-chef-repo/blob/master/environments/vagrant-multi-neutron.json\nキーとなるのは、\n \"network\": {  \"debug\": \"True\",  \"dhcp\": {  \"enable_isolated_metadata\": \"True\"  },  \"metadata\": {  \"nova_metadata_ip\": \"192.168.3.60\"  },  \"openvswitch\": {  \"tunnel_id_ranges\": \"1:1000\",  \"enable_tunneling\": \"True\",  \"tenant_network_type\": \"gre\",  \"local_ip_interface\": \"eth2\"  },  \"api\": {  \"bind_interface\": \"eth1\"  }  }, この辺り。\n残っている問題点 VNC コンソールにアクセス出来ない。調べたのですが、environment の修正で直せる問 題ではないように見えました。\ncookbooks/openstack-compute/templates/default/nova.conf.rb を確認すると下記の ようになっています。\n##### VNCPROXY ##### novncproxy_base_url=%= @novncproxy_base_url % xvpvncproxy_base_url=%= @xvpvncproxy_base_url % # This is only required on the server running xvpvncproxy xvpvncproxy_host=%= @xvpvncproxy_bind_host % xvpvncproxy_port=%= @xvpvncproxy_bind_port % # This is only required on the server running novncproxy novncproxy_host=%= @novncproxy_bind_host % novncproxy_port=%= @novncproxy_bind_port % vncserver_listen=%= @vncserver_listen % vncserver_proxyclient_address= @vncserver_proxyclient_address % vncserver_listen, vncserver_proxyclient_address はそれぞれ\n @vncserver_listen @vncserver_proxyclient_address  という変数が格納されることになっている。\nでは cookbooks/openstack-compute/recipes/nova-common.rb を確認すると、\ntemplate '/etc/nova/nova.conf' do  source 'nova.conf.erb'  owner node['openstack']['compute']['user']  group node['openstack']['compute']['group']  mode 00644  variables(  sql_connection: sql_connection,  novncproxy_base_url: novnc_endpoint.to_s,  xvpvncproxy_base_url: xvpvnc_endpoint.to_s,  xvpvncproxy_bind_host: xvpvnc_bind.host,  xvpvncproxy_bind_port: xvpvnc_bind.port,  novncproxy_bind_host: novnc_bind.host,  novncproxy_bind_port: novnc_bind.port,  vncserver_listen: vnc_endpoint.host,  vncserver_proxyclient_address: vnc_endpoint.host,  以下略 となっている。vncserver_listen, vncserver_proxyclient_address 共に vnc_endpoint.host が格納されることになっている。vnc_endpont.host は\nvnc_endpoint = endpoint 'compute-vnc' || {} となっており、Attributes の\n \"compute-vnc\" = {  \"host\" = \"0.0.0.0\",  \"scheme\" = \"http\",  \"port\" = \"6080\",  \"path\" = \"/vnc_auto.html\"  }, の設定が入ることになる。つまり上記のような Attributes だと vncserver_listen, vncserver_proxyclient_address 共に ‘0.0.0.0’ のアドレスが controller, compute ノードの双方に入ってしまい、NoVNC が正しく格納しないことになる。\n解決したらまたここに更新版を載せたいと思いまーす！\n以上です。\n",
   "wordCount" : "1817",
   "inLanguage": "en",
   "datePublished": "2014-04-25T00:00:00Z",
@@ -253,451 +253,451 @@ master ブランチを用いて Icehouse リリース版 OpenStack を構築す�
 </ul>
 <h2 id="手順">手順<a hidden class="anchor" aria-hidden="true" href="#手順">#</a></h2>
 <p>openstack-chef-repo をワークステーションノード上で取得する。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% git clone https://github.com/stackforge/openstack-chef-repo.git
-% cd openstack-chef-repo
-</code></pre></div><p>Berksfile があるのでこれを用いて Chef Cookbooks を取得する。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% berks install --path<span style="color:#f92672">=</span>./cookbooks
-</code></pre></div><p>Roles, Cookbooks を Chef サーバにアップロードする。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife cookbook upload -o cookbooks -a
-% knife role from file roles/*.rb
-</code></pre></div><p>1 Environment に対して 1 OpenStack クラスタである。今回構築するクラスタのため
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% git clone https://github.com/stackforge/openstack-chef-repo.git
+</span></span><span style="display:flex;"><span>% cd openstack-chef-repo
+</span></span></code></pre></div><p>Berksfile があるのでこれを用いて Chef Cookbooks を取得する。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% berks install --path<span style="color:#f92672">=</span>./cookbooks
+</span></span></code></pre></div><p>Roles, Cookbooks を Chef サーバにアップロードする。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% knife cookbook upload -o cookbooks -a
+</span></span><span style="display:flex;"><span>% knife role from file roles/*.rb
+</span></span></code></pre></div><p>1 Environment に対して 1 OpenStack クラスタである。今回構築するクラスタのため
 の Environment を作成する。</p>
 <p>下記を environments/icehouse-nova-network.rb として生成する。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json"><span style="color:#960050;background-color:#1e0010">name</span> <span style="color:#e6db74">&#34;icehouse-nova-network&#34;</span>
-<span style="color:#960050;background-color:#1e0010">description</span> <span style="color:#e6db74">&#34;separated nodes environment&#34;</span>
-
-<span style="color:#960050;background-color:#1e0010">override_attributes(</span>
-    <span style="color:#e6db74">&#34;release&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;icehouse&#34;</span><span style="color:#960050;background-color:#1e0010">,</span>
-    <span style="color:#e6db74">&#34;osops_networks&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-      <span style="color:#f92672">&#34;management&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.0/24&#34;</span>,
-      <span style="color:#f92672">&#34;public&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.0/24&#34;</span>,
-      <span style="color:#f92672">&#34;nova&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.0/24&#34;</span>
-    }<span style="color:#960050;background-color:#1e0010">,</span>
-    <span style="color:#e6db74">&#34;mysql&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-      <span style="color:#f92672">&#34;bind_address&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;0.0.0.0&#34;</span>,
-      <span style="color:#f92672">&#34;root_network_acl&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;%&#34;</span>,
-      <span style="color:#f92672">&#34;allow_remote_root&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#66d9ef">true</span>,
-      <span style="color:#f92672">&#34;server_root_password&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;secrete&#34;</span>,
-      <span style="color:#f92672">&#34;server_repl_password&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;secrete&#34;</span>,
-      <span style="color:#f92672">&#34;server_debian_password&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;secrete&#34;</span>
-    }<span style="color:#960050;background-color:#1e0010">,</span>
-    <span style="color:#e6db74">&#34;nova&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-      <span style="color:#f92672">&#34;network&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-        <span style="color:#f92672">&#34;fixed_range&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;172.18.0.0/24&#34;</span>,
-        <span style="color:#f92672">&#34;public_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth0&#34;</span>
-      }
-    }<span style="color:#960050;background-color:#1e0010">,</span>
-    <span style="color:#e6db74">&#34;rabbitmq&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-      <span style="color:#f92672">&#34;address&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-      <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;5672&#34;</span>
-    }<span style="color:#960050;background-color:#1e0010">,</span>
-    <span style="color:#e6db74">&#34;openstack&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-      <span style="color:#f92672">&#34;developer_mode&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#66d9ef">true</span>,
-      <span style="color:#f92672">&#34;compute&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-        <span style="color:#f92672">&#34;rabbit&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
-        },
-        <span style="color:#f92672">&#34;novnc_proxy&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>
-        },
-        <span style="color:#f92672">&#34;libvirt&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>
-        },
-        <span style="color:#f92672">&#34;network&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;fixed_range&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.9.0/24&#34;</span>
-        },
-        <span style="color:#f92672">&#34;rabbit_server_chef_role&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;os-ops-messaging&#34;</span>,
-        <span style="color:#f92672">&#34;networks&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> [
-        {
-          <span style="color:#f92672">&#34;label&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;private&#34;</span>,
-          <span style="color:#f92672">&#34;ipv4_cidr&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.9.0/24&#34;</span>,
-          <span style="color:#f92672">&#34;num_networks&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;1&#34;</span>,
-          <span style="color:#f92672">&#34;network_size&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;255&#34;</span>,
-          <span style="color:#f92672">&#34;bridge&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;br200&#34;</span>,
-          <span style="color:#f92672">&#34;bridge_dev&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth0&#34;</span>,
-          <span style="color:#f92672">&#34;dns1&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8.8.8.8&#34;</span>,
-          <span style="color:#f92672">&#34;dns2&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8.8.4.4&#34;</span>,
-          <span style="color:#f92672">&#34;multi_host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;T&#34;</span>
-        }
-        ]
-      },
-      <span style="color:#f92672">&#34;identity&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-        <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>,
-        <span style="color:#f92672">&#34;users&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;demo&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-            <span style="color:#f92672">&#34;password&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;demo&#34;</span>,
-            <span style="color:#f92672">&#34;default_tenant&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;service&#34;</span>,
-            <span style="color:#f92672">&#34;roles&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-              <span style="color:#f92672">&#34;Member&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> [ <span style="color:#e6db74">&#34;Member&#34;</span> ]
-            }
-          }
-        }
-      },
-      <span style="color:#f92672">&#34;image&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-        <span style="color:#f92672">&#34;api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>
-        },
-        <span style="color:#f92672">&#34;debug&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#66d9ef">true</span>,
-        <span style="color:#f92672">&#34;identity_service_chef_role&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;os-identity&#34;</span>,
-        <span style="color:#f92672">&#34;rabbit_server_chef_role&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;os-ops-messaging&#34;</span>,
-        <span style="color:#f92672">&#34;registry&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>
-        },
-        <span style="color:#f92672">&#34;syslog&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;use&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#66d9ef">false</span>
-        },
-        <span style="color:#f92672">&#34;upload_image&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;cirros&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http://hypnotoad/cirros-0.3.0-x86_64-disk.img&#34;</span>,
-        },
-        <span style="color:#f92672">&#34;upload_images&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> [
-          <span style="color:#e6db74">&#34;cirros&#34;</span>
-        ]
-      },
-      <span style="color:#f92672">&#34;network&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-        <span style="color:#f92672">&#34;api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>,
-        }
-      },
-      <span style="color:#f92672">&#34;db&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-        <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>,
-        <span style="color:#f92672">&#34;compute&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
-        },
-        <span style="color:#f92672">&#34;identity&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
-        },
-        <span style="color:#f92672">&#34;image&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
-        },
-        <span style="color:#f92672">&#34;network&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
-        },
-        <span style="color:#f92672">&#34;volume&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
-        },
-        <span style="color:#f92672">&#34;dashboard&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
-        }
-      },
-      <span style="color:#f92672">&#34;mq&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-        <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>,
-        <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-        <span style="color:#f92672">&#34;user&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;guest&#34;</span>,
-        <span style="color:#f92672">&#34;vhost&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/nova&#34;</span>,
-        <span style="color:#f92672">&#34;servers&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-        <span style="color:#f92672">&#34;compute&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;service_type&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;rabbitmq&#34;</span>,
-          <span style="color:#f92672">&#34;rabbit&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-            <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-            <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;5672&#34;</span>
-          }
-        },
-        <span style="color:#f92672">&#34;block-storage&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;service_type&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;rabbitmq&#34;</span>,
-          <span style="color:#f92672">&#34;rabbit&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-            <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-            <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;5672&#34;</span>
-          }
-        }
-      },
-      <span style="color:#f92672">&#34;endpoints&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-        <span style="color:#f92672">&#34;compute-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8774&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2/%(tenant_id)s&#34;</span>
-        },
-        <span style="color:#f92672">&#34;compute-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8774&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2/%(tenant_id)s&#34;</span>
-        },
-        <span style="color:#f92672">&#34;compute-ec2-admin-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8773&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/services/Admin&#34;</span>
-        },
-        <span style="color:#f92672">&#34;compute-ec2-admin&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8773&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/services/Admin&#34;</span>
-        },
-        <span style="color:#f92672">&#34;compute-ec2-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8773&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/services/Cloud&#34;</span>
-        },
-        <span style="color:#f92672">&#34;compute-ec2-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8773&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/services/Cloud&#34;</span>
-        },
-        <span style="color:#f92672">&#34;compute-xvpvnc-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;6081&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/console&#34;</span>
-        },
-        <span style="color:#f92672">&#34;compute-xvpvnc&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;6081&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/console&#34;</span>
-        },
-        <span style="color:#f92672">&#34;compute-novnc-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;6080&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/vnc_auto.html&#34;</span>
-        },
-        <span style="color:#f92672">&#34;compute-novnc&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;6080&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/vnc_auto.html&#34;</span>
-        },
-        <span style="color:#f92672">&#34;compute-vnc&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;0.0.0.0&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;6080&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/vnc_auto.html&#34;</span>
-        },
-        <span style="color:#f92672">&#34;image-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;9292&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2&#34;</span>
-        },
-        <span style="color:#f92672">&#34;image-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;9292&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2&#34;</span>
-        },
-        <span style="color:#f92672">&#34;image-registry-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;9191&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2&#34;</span>
-        },
-        <span style="color:#f92672">&#34;image-registry&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;9191&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2&#34;</span>
-        },
-        <span style="color:#f92672">&#34;identity-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;5000&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2.0&#34;</span>
-        },
-        <span style="color:#f92672">&#34;identity-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;5000&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2.0&#34;</span>
-        },
-        <span style="color:#f92672">&#34;identity-admin&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;35357&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2.0&#34;</span>
-        },
-        <span style="color:#f92672">&#34;volume-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8776&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1/%(tenant_id)s&#34;</span>
-        },
-        <span style="color:#f92672">&#34;block-storage-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8776&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1/%(tenant_id)s&#34;</span>
-        },
-        <span style="color:#f92672">&#34;telemetry-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8777&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1&#34;</span>
-        },
-        <span style="color:#f92672">&#34;telemetry-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8777&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1&#34;</span>
-        },
-        <span style="color:#f92672">&#34;network-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;9696&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2&#34;</span>
-        },
-        <span style="color:#f92672">&#34;network-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;9696&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2&#34;</span>
-        },
-        <span style="color:#f92672">&#34;orchestration-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8004&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1/%(tenant_id)s&#34;</span>
-        },
-        <span style="color:#f92672">&#34;orchestration-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8004&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1/%(tenant_id)s&#34;</span>
-        },
-        <span style="color:#f92672">&#34;orchestration-api-cfn-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8000&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1&#34;</span>
-        },
-        <span style="color:#f92672">&#34;orchestration-api-cfn&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
-          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8000&#34;</span>,
-          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1&#34;</span>
-        },
-        <span style="color:#f92672">&#34;mq&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;5672&#34;</span>
-        }
-      }
-    }
-<span style="color:#960050;background-color:#1e0010">)</span>
-</code></pre></div><p>生成した environment を Chef サーバにアップロードする。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife environment from file environments/icehouse-nova-network.rb
-</code></pre></div><p>Spiceweasel をインストールする。Spiceweasel は yml ファイルを元に knife の操作
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">name</span> <span style="color:#e6db74">&#34;icehouse-nova-network&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">description</span> <span style="color:#e6db74">&#34;separated nodes environment&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">override_attributes(</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;release&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;icehouse&#34;</span><span style="color:#960050;background-color:#1e0010">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;osops_networks&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;management&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.0/24&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;public&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.0/24&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;nova&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.0/24&#34;</span>
+</span></span><span style="display:flex;"><span>    }<span style="color:#960050;background-color:#1e0010">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;mysql&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;bind_address&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;0.0.0.0&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;root_network_acl&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;%&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;allow_remote_root&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#66d9ef">true</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;server_root_password&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;secrete&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;server_repl_password&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;secrete&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;server_debian_password&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;secrete&#34;</span>
+</span></span><span style="display:flex;"><span>    }<span style="color:#960050;background-color:#1e0010">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;nova&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;network&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;fixed_range&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;172.18.0.0/24&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;public_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth0&#34;</span>
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }<span style="color:#960050;background-color:#1e0010">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;rabbitmq&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;address&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;5672&#34;</span>
+</span></span><span style="display:flex;"><span>    }<span style="color:#960050;background-color:#1e0010">,</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;openstack&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;developer_mode&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#66d9ef">true</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;compute&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;rabbit&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;novnc_proxy&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;libvirt&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;network&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;fixed_range&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.9.0/24&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;rabbit_server_chef_role&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;os-ops-messaging&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;networks&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> [
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;label&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;private&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;ipv4_cidr&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.9.0/24&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;num_networks&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;1&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;network_size&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;255&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;bridge&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;br200&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;bridge_dev&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth0&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;dns1&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8.8.8.8&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;dns2&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8.8.4.4&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;multi_host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;T&#34;</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>        ]
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;identity&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;users&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;demo&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;password&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;demo&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;default_tenant&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;service&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;roles&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>              <span style="color:#f92672">&#34;Member&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> [ <span style="color:#e6db74">&#34;Member&#34;</span> ]
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>          }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;image&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;debug&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#66d9ef">true</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;identity_service_chef_role&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;os-identity&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;rabbit_server_chef_role&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;os-ops-messaging&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;registry&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;syslog&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;use&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;upload_image&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;cirros&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http://hypnotoad/cirros-0.3.0-x86_64-disk.img&#34;</span>,
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;upload_images&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> [
+</span></span><span style="display:flex;"><span>          <span style="color:#e6db74">&#34;cirros&#34;</span>
+</span></span><span style="display:flex;"><span>        ]
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;network&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>,
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;db&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;identity&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;image&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;network&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;volume&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;dashboard&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;mq&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;bind_interface&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;eth1&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;user&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;guest&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;vhost&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/nova&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;servers&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;service_type&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;rabbitmq&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;rabbit&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;5672&#34;</span>
+</span></span><span style="display:flex;"><span>          }
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;block-storage&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;service_type&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;rabbitmq&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;rabbit&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;5672&#34;</span>
+</span></span><span style="display:flex;"><span>          }
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;endpoints&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8774&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2/%(tenant_id)s&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8774&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2/%(tenant_id)s&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute-ec2-admin-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8773&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/services/Admin&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute-ec2-admin&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8773&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/services/Admin&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute-ec2-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8773&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/services/Cloud&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute-ec2-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8773&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/services/Cloud&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute-xvpvnc-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;6081&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/console&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute-xvpvnc&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;6081&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/console&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute-novnc-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;6080&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/vnc_auto.html&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute-novnc&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;6080&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/vnc_auto.html&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;compute-vnc&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;0.0.0.0&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;6080&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/vnc_auto.html&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;image-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;9292&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;image-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;9292&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;image-registry-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;9191&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;image-registry&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;9191&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;identity-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;5000&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2.0&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;identity-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;5000&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2.0&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;identity-admin&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;35357&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2.0&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;volume-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8776&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1/%(tenant_id)s&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;block-storage-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8776&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1/%(tenant_id)s&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;telemetry-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8777&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;telemetry-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8777&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;network-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;9696&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;network-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;9696&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v2&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;orchestration-api-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8004&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1/%(tenant_id)s&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;orchestration-api&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8004&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1/%(tenant_id)s&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;orchestration-api-cfn-bind&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8000&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;orchestration-api-cfn&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;10.200.10.46&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;8000&#34;</span>,
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/v1&#34;</span>
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;mq&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;5672&#34;</span>
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span><span style="color:#960050;background-color:#1e0010">)</span>
+</span></span></code></pre></div><p>生成した environment を Chef サーバにアップロードする。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% knife environment from file environments/icehouse-nova-network.rb
+</span></span></code></pre></div><p>Spiceweasel をインストールする。Spiceweasel は yml ファイルを元に knife の操作
 を書き出して、またそれを一気に実行することが出来るツールです。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% gem install spiceweasel --no-ri --no-rdoc
-% rbenv rehash
-</code></pre></div><p>infrastructure.yml を下記の通り修正する。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">berksfile:
-    options: <span style="color:#e6db74">&#39;--no-freeze --halt-on-frozen&#39;</span>
-
-cookbooks:
-- apache2:
-- apt:
-- aws:
-- build-essential:
-- chef_handler:
-- database:
-- dmg:
-- erlang:
-- git:
-- homebrew:
-- iptables:
-- logrotate:
-- memcached:
-- mysql:
-- openssl:
-- openstack-block-storage:
-- openstack-common:
-- openstack-compute:
-- openstack-dashboard:
-- openstack-identity:
-- openstack-image:
-- openstack-network:
-- openstack-object-storage:
-- openstack-ops-messaging:
-- openstack-ops-database:
-- openstack-orchestration:
-- openstack-telemetry:
-- pacman:
-- postgresql:
-- python:
-- rabbitmq:
-- runit:
-- selinux:
-- statsd:
-- windows:
-- xfs:
-- yum:
-- yum-epel:
-- yum-erlang_solutions:
-
-roles:
-- allinone-compute:
-- os-compute-single-controller:
-- os-base:
-- os-ops-caching:
-- os-ops-messaging:
-- os-ops-database:
-- os-block-storage:
-- os-block-storage-api:
-- os-block-storage-scheduler:
-- os-block-storage-volume:
-- os-client:
-- os-compute-api:
-- os-compute-api-ec2:
-- os-compute-api-metadata:
-- os-compute-api-os-compute:
-- os-compute-cert:
-- os-compute-conductor:
-- os-compute-scheduler:
-- os-compute-setup:
-- os-compute-vncproxy:
-- os-compute-worker:
-- os-dashboard:
-- os-identity:
-- os-image:
-- os-image-api:
-- os-image-registry:
-- os-image-upload:
-- os-telemetry-agent-central:
-- os-telemetry-agent-compute:
-- os-telemetry-api:
-- os-telemetry-collector:
-- os-network:
-- os-network-server:
-- os-network-l3-agent:
-- os-network-dhcp-agent:
-- os-network-metadata-agent:
-- os-network-openvswitch:
-- os-object-storage:
-- os-object-storage-account:
-- os-object-storage-container:
-- os-object-storage-management:
-- os-object-storage-object:
-- os-object-storage-proxy:
-
-environments:
-- icehouse-nova-network:
-
-nodes:
-- 10.200.10.46:
-    run_list: role<span style="color:#f92672">[</span>os-compute-single-controller<span style="color:#f92672">]</span>
-    options: -N opstall01 -E icehouse-nova-network --sudo -x thirai
-- 10.200.10.47:
-    run_list: role<span style="color:#f92672">[</span>os-compute-worker<span style="color:#f92672">]</span>
-    options: -N opstall02 -E icehouse-nova-network --sudo -x thirai
-- 10.200.10.48:
-    run_list: role<span style="color:#f92672">[</span>os-compute-worker<span style="color:#f92672">]</span>
-    options: -N opstall03 -E icehouse-nova-network --sudo -x thirai
-</code></pre></div><p>※ nodes: 項にはデプロイしたいノードと Roles を割り当て列挙する。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% gem install spiceweasel --no-ri --no-rdoc
+</span></span><span style="display:flex;"><span>% rbenv rehash
+</span></span></code></pre></div><p>infrastructure.yml を下記の通り修正する。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>berksfile:
+</span></span><span style="display:flex;"><span>    options: <span style="color:#e6db74">&#39;--no-freeze --halt-on-frozen&#39;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>cookbooks:
+</span></span><span style="display:flex;"><span>- apache2:
+</span></span><span style="display:flex;"><span>- apt:
+</span></span><span style="display:flex;"><span>- aws:
+</span></span><span style="display:flex;"><span>- build-essential:
+</span></span><span style="display:flex;"><span>- chef_handler:
+</span></span><span style="display:flex;"><span>- database:
+</span></span><span style="display:flex;"><span>- dmg:
+</span></span><span style="display:flex;"><span>- erlang:
+</span></span><span style="display:flex;"><span>- git:
+</span></span><span style="display:flex;"><span>- homebrew:
+</span></span><span style="display:flex;"><span>- iptables:
+</span></span><span style="display:flex;"><span>- logrotate:
+</span></span><span style="display:flex;"><span>- memcached:
+</span></span><span style="display:flex;"><span>- mysql:
+</span></span><span style="display:flex;"><span>- openssl:
+</span></span><span style="display:flex;"><span>- openstack-block-storage:
+</span></span><span style="display:flex;"><span>- openstack-common:
+</span></span><span style="display:flex;"><span>- openstack-compute:
+</span></span><span style="display:flex;"><span>- openstack-dashboard:
+</span></span><span style="display:flex;"><span>- openstack-identity:
+</span></span><span style="display:flex;"><span>- openstack-image:
+</span></span><span style="display:flex;"><span>- openstack-network:
+</span></span><span style="display:flex;"><span>- openstack-object-storage:
+</span></span><span style="display:flex;"><span>- openstack-ops-messaging:
+</span></span><span style="display:flex;"><span>- openstack-ops-database:
+</span></span><span style="display:flex;"><span>- openstack-orchestration:
+</span></span><span style="display:flex;"><span>- openstack-telemetry:
+</span></span><span style="display:flex;"><span>- pacman:
+</span></span><span style="display:flex;"><span>- postgresql:
+</span></span><span style="display:flex;"><span>- python:
+</span></span><span style="display:flex;"><span>- rabbitmq:
+</span></span><span style="display:flex;"><span>- runit:
+</span></span><span style="display:flex;"><span>- selinux:
+</span></span><span style="display:flex;"><span>- statsd:
+</span></span><span style="display:flex;"><span>- windows:
+</span></span><span style="display:flex;"><span>- xfs:
+</span></span><span style="display:flex;"><span>- yum:
+</span></span><span style="display:flex;"><span>- yum-epel:
+</span></span><span style="display:flex;"><span>- yum-erlang_solutions:
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>roles:
+</span></span><span style="display:flex;"><span>- allinone-compute:
+</span></span><span style="display:flex;"><span>- os-compute-single-controller:
+</span></span><span style="display:flex;"><span>- os-base:
+</span></span><span style="display:flex;"><span>- os-ops-caching:
+</span></span><span style="display:flex;"><span>- os-ops-messaging:
+</span></span><span style="display:flex;"><span>- os-ops-database:
+</span></span><span style="display:flex;"><span>- os-block-storage:
+</span></span><span style="display:flex;"><span>- os-block-storage-api:
+</span></span><span style="display:flex;"><span>- os-block-storage-scheduler:
+</span></span><span style="display:flex;"><span>- os-block-storage-volume:
+</span></span><span style="display:flex;"><span>- os-client:
+</span></span><span style="display:flex;"><span>- os-compute-api:
+</span></span><span style="display:flex;"><span>- os-compute-api-ec2:
+</span></span><span style="display:flex;"><span>- os-compute-api-metadata:
+</span></span><span style="display:flex;"><span>- os-compute-api-os-compute:
+</span></span><span style="display:flex;"><span>- os-compute-cert:
+</span></span><span style="display:flex;"><span>- os-compute-conductor:
+</span></span><span style="display:flex;"><span>- os-compute-scheduler:
+</span></span><span style="display:flex;"><span>- os-compute-setup:
+</span></span><span style="display:flex;"><span>- os-compute-vncproxy:
+</span></span><span style="display:flex;"><span>- os-compute-worker:
+</span></span><span style="display:flex;"><span>- os-dashboard:
+</span></span><span style="display:flex;"><span>- os-identity:
+</span></span><span style="display:flex;"><span>- os-image:
+</span></span><span style="display:flex;"><span>- os-image-api:
+</span></span><span style="display:flex;"><span>- os-image-registry:
+</span></span><span style="display:flex;"><span>- os-image-upload:
+</span></span><span style="display:flex;"><span>- os-telemetry-agent-central:
+</span></span><span style="display:flex;"><span>- os-telemetry-agent-compute:
+</span></span><span style="display:flex;"><span>- os-telemetry-api:
+</span></span><span style="display:flex;"><span>- os-telemetry-collector:
+</span></span><span style="display:flex;"><span>- os-network:
+</span></span><span style="display:flex;"><span>- os-network-server:
+</span></span><span style="display:flex;"><span>- os-network-l3-agent:
+</span></span><span style="display:flex;"><span>- os-network-dhcp-agent:
+</span></span><span style="display:flex;"><span>- os-network-metadata-agent:
+</span></span><span style="display:flex;"><span>- os-network-openvswitch:
+</span></span><span style="display:flex;"><span>- os-object-storage:
+</span></span><span style="display:flex;"><span>- os-object-storage-account:
+</span></span><span style="display:flex;"><span>- os-object-storage-container:
+</span></span><span style="display:flex;"><span>- os-object-storage-management:
+</span></span><span style="display:flex;"><span>- os-object-storage-object:
+</span></span><span style="display:flex;"><span>- os-object-storage-proxy:
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>environments:
+</span></span><span style="display:flex;"><span>- icehouse-nova-network:
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>nodes:
+</span></span><span style="display:flex;"><span>- 10.200.10.46:
+</span></span><span style="display:flex;"><span>    run_list: role<span style="color:#f92672">[</span>os-compute-single-controller<span style="color:#f92672">]</span>
+</span></span><span style="display:flex;"><span>    options: -N opstall01 -E icehouse-nova-network --sudo -x thirai
+</span></span><span style="display:flex;"><span>- 10.200.10.47:
+</span></span><span style="display:flex;"><span>    run_list: role<span style="color:#f92672">[</span>os-compute-worker<span style="color:#f92672">]</span>
+</span></span><span style="display:flex;"><span>    options: -N opstall02 -E icehouse-nova-network --sudo -x thirai
+</span></span><span style="display:flex;"><span>- 10.200.10.48:
+</span></span><span style="display:flex;"><span>    run_list: role<span style="color:#f92672">[</span>os-compute-worker<span style="color:#f92672">]</span>
+</span></span><span style="display:flex;"><span>    options: -N opstall03 -E icehouse-nova-network --sudo -x thirai
+</span></span></code></pre></div><p>※ nodes: 項にはデプロイしたいノードと Roles を割り当て列挙する。</p>
 <p>spiceweasel を実行する。この時点ではこれから実行されるコマンドの一覧が表示され
 るのみである。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% spiceweasel infrastructure.yml
-berks upload --no-freeze --halt-on-frozen -b ./Berksfile
-knife cookbook upload apache2 apt aws build-essential chef_handler database dmg erlang git homebrew iptables logrotate memcached mysql openssl openstack-block-storage openstack-common openstack-compute openstack-dashboard openstack-identity openstack-image openstack-network openstack-object-storage openstack-ops-messaging openstack-ops-database openstack-orchestration openstack-telemetry pacman postgresql python rabbitmq runit selinux statsd windows xfs yum yum-epel yum-erlang_solutions
-knife environment from file separated.rb
-knife role from file allinone-compute.rb os-base.rb os-block-storage-api.rb os-block-storage-scheduler.rb os-block-storage-volume.rb os-block-storage.rb os-client.rb os-compute-api-ec2.rb os-compute-api-metadata.rb os-compute-api-os-compute.rb os-compute-api.rb os-compute-cert.rb os-compute-conductor.rb os-compute-scheduler.rb os-compute-setup.rb os-compute-single-controller.rb os-compute-vncproxy.rb os-compute-worker.rb os-dashboard.rb os-identity.rb os-image-api.rb os-image-registry.rb os-image-upload.rb os-image.rb os-network-dhcp-agent.rb os-network-l3-agent.rb os-network-metadata-agent.rb os-network-openvswitch.rb os-network-server.rb os-network.rb os-object-storage-account.rb os-object-storage-container.rb os-object-storage-management.rb os-object-storage-object.rb os-object-storage-proxy.rb os-object-storage.rb os-ops-caching.rb os-ops-database.rb os-ops-messaging.rb os-telemetry-agent-central.rb os-telemetry-agent-compute.rb os-telemetry-api.rb os-telemetry-collector.rb
-knife bootstrap 10.200.10.46 -N opstall01 -E separated --sudo -x thirai -r <span style="color:#e6db74">&#39;role[os-compute-single-controller]&#39;</span>
-knife bootstrap 10.200.10.47 -N opstall02 -E separated --sudo -x thirai -r <span style="color:#e6db74">&#39;role[os-compute-worker]&#39;</span>
-knife bootstrap 10.200.10.48 -N opstall03 -E separated --sudo -x thirai -r <span style="color:#e6db74">&#39;role[os-compute-worker]&#39;</span>
-</code></pre></div><p>-e オプションを付与すると実際にこれらのコマンドが実行される。実行してデプロイを行う。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% spiceweasel -e infrastructure.yml
-</code></pre></div><p>この時点で、下記の操作も行われる。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% spiceweasel infrastructure.yml
+</span></span><span style="display:flex;"><span>berks upload --no-freeze --halt-on-frozen -b ./Berksfile
+</span></span><span style="display:flex;"><span>knife cookbook upload apache2 apt aws build-essential chef_handler database dmg erlang git homebrew iptables logrotate memcached mysql openssl openstack-block-storage openstack-common openstack-compute openstack-dashboard openstack-identity openstack-image openstack-network openstack-object-storage openstack-ops-messaging openstack-ops-database openstack-orchestration openstack-telemetry pacman postgresql python rabbitmq runit selinux statsd windows xfs yum yum-epel yum-erlang_solutions
+</span></span><span style="display:flex;"><span>knife environment from file separated.rb
+</span></span><span style="display:flex;"><span>knife role from file allinone-compute.rb os-base.rb os-block-storage-api.rb os-block-storage-scheduler.rb os-block-storage-volume.rb os-block-storage.rb os-client.rb os-compute-api-ec2.rb os-compute-api-metadata.rb os-compute-api-os-compute.rb os-compute-api.rb os-compute-cert.rb os-compute-conductor.rb os-compute-scheduler.rb os-compute-setup.rb os-compute-single-controller.rb os-compute-vncproxy.rb os-compute-worker.rb os-dashboard.rb os-identity.rb os-image-api.rb os-image-registry.rb os-image-upload.rb os-image.rb os-network-dhcp-agent.rb os-network-l3-agent.rb os-network-metadata-agent.rb os-network-openvswitch.rb os-network-server.rb os-network.rb os-object-storage-account.rb os-object-storage-container.rb os-object-storage-management.rb os-object-storage-object.rb os-object-storage-proxy.rb os-object-storage.rb os-ops-caching.rb os-ops-database.rb os-ops-messaging.rb os-telemetry-agent-central.rb os-telemetry-agent-compute.rb os-telemetry-api.rb os-telemetry-collector.rb
+</span></span><span style="display:flex;"><span>knife bootstrap 10.200.10.46 -N opstall01 -E separated --sudo -x thirai -r <span style="color:#e6db74">&#39;role[os-compute-single-controller]&#39;</span>
+</span></span><span style="display:flex;"><span>knife bootstrap 10.200.10.47 -N opstall02 -E separated --sudo -x thirai -r <span style="color:#e6db74">&#39;role[os-compute-worker]&#39;</span>
+</span></span><span style="display:flex;"><span>knife bootstrap 10.200.10.48 -N opstall03 -E separated --sudo -x thirai -r <span style="color:#e6db74">&#39;role[os-compute-worker]&#39;</span>
+</span></span></code></pre></div><p>-e オプションを付与すると実際にこれらのコマンドが実行される。実行してデプロイを行う。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% spiceweasel -e infrastructure.yml
+</span></span></code></pre></div><p>この時点で、下記の操作も行われる。</p>
 <ul>
 <li>Nova-Network 上に仮想ネットワークの生成</li>
 <li>OS イメージのダウンロードと登録 (Environment に記したモノ)</li>
@@ -706,119 +706,119 @@ knife bootstrap 10.200.10.48 -N opstall03 -E separated --sudo -x thirai -r <span
 <p>デプロイ完了したところで cinder-volume プロセスは稼働しているが物理ディスクの
 アサインが済んでいない。これは Chef では指定出来ないので手動で行う。</p>
 <p>予め Cinder 用の物理ディスクを Controller ノードに付与する。(ここでは /dev/sdb1)</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% sudo -i
-controller# pvcreate /dev/sdb1
-controller# vgcreate cinder-volumes /dev/sdb1
-controller# service cinder-volume restart
-</code></pre></div><p>これで完了。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>controller% sudo -i
+</span></span><span style="display:flex;"><span>controller# pvcreate /dev/sdb1
+</span></span><span style="display:flex;"><span>controller# vgcreate cinder-volumes /dev/sdb1
+</span></span><span style="display:flex;"><span>controller# service cinder-volume restart
+</span></span></code></pre></div><p>これで完了。</p>
 <h2 id="使ってみる">使ってみる<a hidden class="anchor" aria-hidden="true" href="#使ってみる">#</a></h2>
 <p>ではデプロイした OpenStack を使って仮想マシンを作ってみる。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller% sudo -i
-controller# source openrc
-controller# nova keypair-add novakey01 &gt; novakey01
-controller# chmod <span style="color:#ae81ff">400</span> novakey01
-controller# nova boot --image cirros --flavor <span style="color:#ae81ff">1</span> --key_name novakey01 cirros01
-controller# nova list 
-+--------------------------------------+----------+--------+------------+-------------+--------------------+
-| ID                                   | Name     | Status | Task State | Power State | Networks           |
-+--------------------------------------+----------+--------+------------+-------------+--------------------+
-| e6687359-1aef-4105-a8db-894600001610 | cirros01 | ACTIVE | -          | Running     | private<span style="color:#f92672">=</span>10.200.9.2 |
-+--------------------------------------+----------+--------+------------+-------------+--------------------+
-controller# ssh -i novakey01 -l cirros 10.200.9.2
-vm# ping www.goo.ne.jp
-</code></pre></div><p>仮想マシンが生成され The Internet に対して通信が行えたことを確認。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>controller% sudo -i
+</span></span><span style="display:flex;"><span>controller# source openrc
+</span></span><span style="display:flex;"><span>controller# nova keypair-add novakey01 &gt; novakey01
+</span></span><span style="display:flex;"><span>controller# chmod <span style="color:#ae81ff">400</span> novakey01
+</span></span><span style="display:flex;"><span>controller# nova boot --image cirros --flavor <span style="color:#ae81ff">1</span> --key_name novakey01 cirros01
+</span></span><span style="display:flex;"><span>controller# nova list 
+</span></span><span style="display:flex;"><span>+--------------------------------------+----------+--------+------------+-------------+--------------------+
+</span></span><span style="display:flex;"><span>| ID                                   | Name     | Status | Task State | Power State | Networks           |
+</span></span><span style="display:flex;"><span>+--------------------------------------+----------+--------+------------+-------------+--------------------+
+</span></span><span style="display:flex;"><span>| e6687359-1aef-4105-a8db-894600001610 | cirros01 | ACTIVE | -          | Running     | private<span style="color:#f92672">=</span>10.200.9.2 |
+</span></span><span style="display:flex;"><span>+--------------------------------------+----------+--------+------------+-------------+--------------------+
+</span></span><span style="display:flex;"><span>controller# ssh -i novakey01 -l cirros 10.200.9.2
+</span></span><span style="display:flex;"><span>vm# ping www.goo.ne.jp
+</span></span></code></pre></div><p>仮想マシンが生成され The Internet に対して通信が行えたことを確認。</p>
 <p>次に仮想ディスクを生成して上記で作成した仮想マシンに付与する。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">controller# cinder create --display-name vol01 <span style="color:#ae81ff">1</span>
-+--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+
-|                  ID                  |  Status   | Display Name | Size | Volume Type | Bootable |             Attached to              |
-+--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+
-| 0f3726a0-c2f5-45bc-bcf2-1f6eb746f5c8 | available |    vol02     |  <span style="color:#ae81ff">1</span>   |     None    |  false   | b286387c-2311-4134-ab59-850fee3e4650 |
-+--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+
-controller# nova volume-attach e6687359-1aef-4105-a8db-894600001610 0f3726a0-c2f5-45bc-bcf2-1f6eb746f5c8 auto
-controller# ssh -i novakey01 -l cirros 10.200.9.2
-vm# mkfs.ext4 /dev/vdb
-vm# mount -t ext4 /dev/vdb /mnt
-vm# df -h | grep mnt
-/dev/vdb        976M  1.3M  908M   1% /mnt
-</code></pre></div><p>仮想ディスクを仮想マシンに付与しマウントできることを確認出来た。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>controller# cinder create --display-name vol01 <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>+--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+
+</span></span><span style="display:flex;"><span>|                  ID                  |  Status   | Display Name | Size | Volume Type | Bootable |             Attached to              |
+</span></span><span style="display:flex;"><span>+--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+
+</span></span><span style="display:flex;"><span>| 0f3726a0-c2f5-45bc-bcf2-1f6eb746f5c8 | available |    vol02     |  <span style="color:#ae81ff">1</span>   |     None    |  false   | b286387c-2311-4134-ab59-850fee3e4650 |
+</span></span><span style="display:flex;"><span>+--------------------------------------+-----------+--------------+------+-------------+----------+--------------------------------------+
+</span></span><span style="display:flex;"><span>controller# nova volume-attach e6687359-1aef-4105-a8db-894600001610 0f3726a0-c2f5-45bc-bcf2-1f6eb746f5c8 auto
+</span></span><span style="display:flex;"><span>controller# ssh -i novakey01 -l cirros 10.200.9.2
+</span></span><span style="display:flex;"><span>vm# mkfs.ext4 /dev/vdb
+</span></span><span style="display:flex;"><span>vm# mount -t ext4 /dev/vdb /mnt
+</span></span><span style="display:flex;"><span>vm# df -h | grep mnt
+</span></span><span style="display:flex;"><span>/dev/vdb        976M  1.3M  908M   1% /mnt
+</span></span></code></pre></div><p>仮想ディスクを仮想マシンに付与しマウントできることを確認出来た。</p>
 <h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
 <p>今回は Nova-Network 構成の Icehouse を構築出来た。Nova-Network は Havana でサポート終了との話が延期
 になっていることは聞いていたが Icehouse でもしっかり動いている。また後に Neutron 構成も調査を行う。
 Neutron 構成は下記の Environments を参考にすると動作するかもしれない。</p>
 <p><a href="https://github.com/stackforge/openstack-chef-repo/blob/master/environments/vagrant-multi-neutron.json">https://github.com/stackforge/openstack-chef-repo/blob/master/environments/vagrant-multi-neutron.json</a></p>
 <p>キーとなるのは、</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">    <span style="color:#e6db74">&#34;network&#34;</span><span style="color:#960050;background-color:#1e0010">:</span> {
-      <span style="color:#f92672">&#34;debug&#34;</span>: <span style="color:#e6db74">&#34;True&#34;</span>,
-      <span style="color:#f92672">&#34;dhcp&#34;</span>: {
-        <span style="color:#f92672">&#34;enable_isolated_metadata&#34;</span>: <span style="color:#e6db74">&#34;True&#34;</span>
-      },
-      <span style="color:#f92672">&#34;metadata&#34;</span>: {
-        <span style="color:#f92672">&#34;nova_metadata_ip&#34;</span>: <span style="color:#e6db74">&#34;192.168.3.60&#34;</span>
-      },
-      <span style="color:#f92672">&#34;openvswitch&#34;</span>: {
-        <span style="color:#f92672">&#34;tunnel_id_ranges&#34;</span>: <span style="color:#e6db74">&#34;1:1000&#34;</span>,
-        <span style="color:#f92672">&#34;enable_tunneling&#34;</span>: <span style="color:#e6db74">&#34;True&#34;</span>,
-        <span style="color:#f92672">&#34;tenant_network_type&#34;</span>: <span style="color:#e6db74">&#34;gre&#34;</span>,
-        <span style="color:#f92672">&#34;local_ip_interface&#34;</span>: <span style="color:#e6db74">&#34;eth2&#34;</span>
-      },
-      <span style="color:#f92672">&#34;api&#34;</span>: {
-        <span style="color:#f92672">&#34;bind_interface&#34;</span>: <span style="color:#e6db74">&#34;eth1&#34;</span>
-      }
-    }<span style="color:#960050;background-color:#1e0010">,</span>
-</code></pre></div><p>この辺り。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;network&#34;</span><span style="color:#960050;background-color:#1e0010">:</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;debug&#34;</span>: <span style="color:#e6db74">&#34;True&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;dhcp&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;enable_isolated_metadata&#34;</span>: <span style="color:#e6db74">&#34;True&#34;</span>
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;metadata&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;nova_metadata_ip&#34;</span>: <span style="color:#e6db74">&#34;192.168.3.60&#34;</span>
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;openvswitch&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;tunnel_id_ranges&#34;</span>: <span style="color:#e6db74">&#34;1:1000&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;enable_tunneling&#34;</span>: <span style="color:#e6db74">&#34;True&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;tenant_network_type&#34;</span>: <span style="color:#e6db74">&#34;gre&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;local_ip_interface&#34;</span>: <span style="color:#e6db74">&#34;eth2&#34;</span>
+</span></span><span style="display:flex;"><span>      },
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;api&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;bind_interface&#34;</span>: <span style="color:#e6db74">&#34;eth1&#34;</span>
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }<span style="color:#960050;background-color:#1e0010">,</span>
+</span></span></code></pre></div><p>この辺り。</p>
 <h2 id="残っている問題点">残っている問題点<a hidden class="anchor" aria-hidden="true" href="#残っている問題点">#</a></h2>
 <p>VNC コンソールにアクセス出来ない。調べたのですが、environment の修正で直せる問
 題ではないように見えました。</p>
 <p>cookbooks/openstack-compute/templates/default/nova.conf.rb を確認すると下記の
 ようになっています。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ruby" data-lang="ruby"><span style="color:#75715e">##### VNCPROXY #####</span>
-novncproxy_base_url<span style="color:#f92672">=&lt;</span><span style="color:#e6db74">%= @novncproxy_base_url %&gt;
-</span><span style="color:#e6db74">xvpvncproxy_base_url=</span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">%= @xvpvncproxy_base_url %&gt;
-</span><span style="color:#e6db74">
-</span><span style="color:#e6db74"># This is only required on the server running xvpvncproxy
-</span><span style="color:#e6db74">xvpvncproxy_host=</span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">%= @xvpvncproxy_bind_host %&gt;
-</span><span style="color:#e6db74">xvpvncproxy_port=</span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">%= @xvpvncproxy_bind_port %&gt;
-</span><span style="color:#e6db74">
-</span><span style="color:#e6db74"># This is only required on the server running novncproxy
-</span><span style="color:#e6db74">novncproxy_host=</span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">%= @novncproxy_bind_host %&gt;
-</span><span style="color:#e6db74">novncproxy_port=</span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">%= @novncproxy_bind_port %&gt;
-</span><span style="color:#e6db74">
-</span><span style="color:#e6db74">vncserver_listen=</span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">%= @vncserver_listen %&gt;
-</span><span style="color:#e6db74">vncserver_proxyclient_address=</span><span style="color:#f92672">&lt;%=</span> @vncserver_proxyclient_address <span style="color:#f92672">%&gt;</span>
-</code></pre></div><p>vncserver_listen, vncserver_proxyclient_address はそれぞれ</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ruby" data-lang="ruby"><span style="display:flex;"><span><span style="color:#75715e">##### VNCPROXY #####</span>
+</span></span><span style="display:flex;"><span>novncproxy_base_url<span style="color:#f92672">=&lt;</span><span style="color:#e6db74">%= @novncproxy_base_url %&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">xvpvncproxy_base_url=</span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">%= @xvpvncproxy_base_url %&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"># This is only required on the server running xvpvncproxy
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">xvpvncproxy_host=</span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">%= @xvpvncproxy_bind_host %&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">xvpvncproxy_port=</span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">%= @xvpvncproxy_bind_port %&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74"># This is only required on the server running novncproxy
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">novncproxy_host=</span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">%= @novncproxy_bind_host %&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">novncproxy_port=</span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">%= @novncproxy_bind_port %&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">vncserver_listen=</span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">%= @vncserver_listen %&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">vncserver_proxyclient_address=</span><span style="color:#f92672">&lt;%=</span> @vncserver_proxyclient_address <span style="color:#f92672">%&gt;</span>
+</span></span></code></pre></div><p>vncserver_listen, vncserver_proxyclient_address はそれぞれ</p>
 <ul>
 <li>@vncserver_listen</li>
 <li>@vncserver_proxyclient_address</li>
 </ul>
 <p>という変数が格納されることになっている。</p>
 <p>では cookbooks/openstack-compute/recipes/nova-common.rb を確認すると、</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ruby" data-lang="ruby">template <span style="color:#e6db74">&#39;/etc/nova/nova.conf&#39;</span> <span style="color:#66d9ef">do</span>
-  source <span style="color:#e6db74">&#39;nova.conf.erb&#39;</span>
-  owner node<span style="color:#f92672">[</span><span style="color:#e6db74">&#39;openstack&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;compute&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;user&#39;</span><span style="color:#f92672">]</span>
-  group node<span style="color:#f92672">[</span><span style="color:#e6db74">&#39;openstack&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;compute&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;group&#39;</span><span style="color:#f92672">]</span>
-  mode <span style="color:#ae81ff">00644</span>
-  variables(
-    <span style="color:#e6db74">sql_connection</span>: sql_connection,
-    <span style="color:#e6db74">novncproxy_base_url</span>: novnc_endpoint<span style="color:#f92672">.</span>to_s,
-    <span style="color:#e6db74">xvpvncproxy_base_url</span>: xvpvnc_endpoint<span style="color:#f92672">.</span>to_s,
-    <span style="color:#e6db74">xvpvncproxy_bind_host</span>: xvpvnc_bind<span style="color:#f92672">.</span>host,
-    <span style="color:#e6db74">xvpvncproxy_bind_port</span>: xvpvnc_bind<span style="color:#f92672">.</span>port,
-    <span style="color:#e6db74">novncproxy_bind_host</span>: novnc_bind<span style="color:#f92672">.</span>host,
-    <span style="color:#e6db74">novncproxy_bind_port</span>: novnc_bind<span style="color:#f92672">.</span>port,
-    <span style="color:#e6db74">vncserver_listen</span>: vnc_endpoint<span style="color:#f92672">.</span>host,
-    <span style="color:#e6db74">vncserver_proxyclient_address</span>: vnc_endpoint<span style="color:#f92672">.</span>host,
-    <span style="color:#960050;background-color:#1e0010">以下略</span>
-</code></pre></div><p>となっている。vncserver_listen, vncserver_proxyclient_address 共に
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ruby" data-lang="ruby"><span style="display:flex;"><span>template <span style="color:#e6db74">&#39;/etc/nova/nova.conf&#39;</span> <span style="color:#66d9ef">do</span>
+</span></span><span style="display:flex;"><span>  source <span style="color:#e6db74">&#39;nova.conf.erb&#39;</span>
+</span></span><span style="display:flex;"><span>  owner node<span style="color:#f92672">[</span><span style="color:#e6db74">&#39;openstack&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;compute&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;user&#39;</span><span style="color:#f92672">]</span>
+</span></span><span style="display:flex;"><span>  group node<span style="color:#f92672">[</span><span style="color:#e6db74">&#39;openstack&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;compute&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;group&#39;</span><span style="color:#f92672">]</span>
+</span></span><span style="display:flex;"><span>  mode <span style="color:#ae81ff">00644</span>
+</span></span><span style="display:flex;"><span>  variables(
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">sql_connection</span>: sql_connection,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">novncproxy_base_url</span>: novnc_endpoint<span style="color:#f92672">.</span>to_s,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">xvpvncproxy_base_url</span>: xvpvnc_endpoint<span style="color:#f92672">.</span>to_s,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">xvpvncproxy_bind_host</span>: xvpvnc_bind<span style="color:#f92672">.</span>host,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">xvpvncproxy_bind_port</span>: xvpvnc_bind<span style="color:#f92672">.</span>port,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">novncproxy_bind_host</span>: novnc_bind<span style="color:#f92672">.</span>host,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">novncproxy_bind_port</span>: novnc_bind<span style="color:#f92672">.</span>port,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">vncserver_listen</span>: vnc_endpoint<span style="color:#f92672">.</span>host,
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">vncserver_proxyclient_address</span>: vnc_endpoint<span style="color:#f92672">.</span>host,
+</span></span><span style="display:flex;"><span>    <span style="color:#960050;background-color:#1e0010">以下略</span>
+</span></span></code></pre></div><p>となっている。vncserver_listen, vncserver_proxyclient_address 共に
 vnc_endpoint.host が格納されることになっている。vnc_endpont.host は</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ruby" data-lang="ruby">vnc_endpoint <span style="color:#f92672">=</span> endpoint <span style="color:#e6db74">&#39;compute-vnc&#39;</span> <span style="color:#f92672">||</span> {}
-</code></pre></div><p>となっており、Attributes の</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">    <span style="color:#e6db74">&#34;compute-vnc&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
-      <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;0.0.0.0&#34;</span>,
-      <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
-      <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;6080&#34;</span>,
-      <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/vnc_auto.html&#34;</span>
-    }<span style="color:#960050;background-color:#1e0010">,</span>
-</code></pre></div><p>の設定が入ることになる。つまり上記のような Attributes だと vncserver_listen, vncserver_proxyclient_address 共に
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ruby" data-lang="ruby"><span style="display:flex;"><span>vnc_endpoint <span style="color:#f92672">=</span> endpoint <span style="color:#e6db74">&#39;compute-vnc&#39;</span> <span style="color:#f92672">||</span> {}
+</span></span></code></pre></div><p>となっており、Attributes の</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;compute-vnc&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;host&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;0.0.0.0&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;scheme&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;http&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;port&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;6080&#34;</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">&#34;path&#34;</span> <span style="color:#960050;background-color:#1e0010">=&gt;</span> <span style="color:#e6db74">&#34;/vnc_auto.html&#34;</span>
+</span></span><span style="display:flex;"><span>    }<span style="color:#960050;background-color:#1e0010">,</span>
+</span></span></code></pre></div><p>の設定が入ることになる。つまり上記のような Attributes だと vncserver_listen, vncserver_proxyclient_address 共に
 &lsquo;0.0.0.0&rsquo; のアドレスが controller, compute ノードの双方に入ってしまい、NoVNC が正しく格納しないことになる。</p>
 <p>解決したらまたここに更新版を載せたいと思いまーす！</p>
 <p>以上です。</p>

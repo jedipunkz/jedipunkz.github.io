@@ -16,7 +16,7 @@
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/mesos-dcos-vagrant/" />
 <link crossorigin="anonymous" href="/assets/css/stylesheet.min.44044074f4b4d7b018bfd3febcc1fa76eb874db64213f920feacf263e3028a73.css" integrity="sha256-RARAdPS017AYv9P&#43;vMH6duuHTbZCE/kg/qzyY&#43;MCinM=" rel="preload stylesheet" as="style">
-<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.2840b7fccd34145847db71a290569594bdbdb00047097f75d6495d162f5d7dff.js" integrity="sha256-KEC3/M00FFhH23GikFaVlL29sABHCX911kldFi9dff8="
     onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/pix/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
@@ -25,7 +25,7 @@
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.92.1" />
+<meta name="generator" content="Hugo 0.97.3" />
 <noscript>
     <style>
         #theme-toggle,
@@ -98,7 +98,7 @@ if (!doNotTrack) {
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkz です。\n今回は DC/OS (https://dcos.io/) を Vagrant を使って構築し評価してみようと思います。 DC/OS はその名の通りデータセンタ OS として利用されることを期待され開発された OS で内部で Docker と Mesos が稼働しています。\n一昔前に Mesos のマルチノード構成は構築したことあったのですが、DC/OS はデプロイ方法が全く変わっていました。 はじめに想定する構成から説明していきます。\n想定する構成 本来 DC/OS は public, private ネットワーク構成ですが利用するレポジトリではこのような構成が想定されていました。\n+----+ +----+ +----+ +------+ | m1 | | a1 | | p1 | | boot | +----+ +----+ +----+ +------+ | | | | +------+------+------+--------- 192.168.65/24 各ノードは下記の通り動作します。\n m1 : Mesos マスタ, Marathon a1 : Mesos スレーブ(Private Agent) p1 : Mesos スレーブ(Public Agent) boot : DC/OS インストレーションノード  前提の環境 Vagrant が動作するマシンであれば問題ないと思いますが私は下記の構成で利用しました。 比較的たくさんのマシンリソースを使うのでメモリ 8GB はほしいところです。\n Mac OSX Vagrant Virtualbox  事前の準備 事前の手順を記します。\n 予め用意された dcos-vagrant を取得する  $ git clone https://github.com/dcos/dcos-vagrant  Mac OSX の hosts ファイルをダイナミック編集する Vagrant プラグインをインストール  $ vagrant plugin install vagrant-hostmanager 構築手順 それでは構築手順です。\n DC/OS が利用する config を環境変数に指定指定  $ export DCOS_CONFIG_PATH=etc/config-1.7.yaml  DC/OS をレポジトリのルートディレクトリに保存  DC/OS 1.7.0 (Early Access)(2016/06/21現在) をダウンロードしてレポジトリのルートディレクトリにインストール\n$ cd dcos-vagrant $ wget https://downloads.dcos.io/dcos/EarlyAccess/dcos_generate_config.sh  VagrantConfig を作成  ‘VagrantConfig.yaml.example’ というファイルがレポジトリ内ルートディレクトリにあるのでこれを元に下記の通りファイルを生成。元のファイルのままだと比較的大きな CPU/Mem リソースが必要になるので環境に合わせてリソース量を指定。\nm1: ip: 192.168.65.90 cpus: 1 memory: 512 type: master a1: ip: 192.168.65.111 cpus: 1 memory: 1024 memory-reserved: 512 type: agent-private p1: ip: 192.168.65.60 cpus: 1 memory: 1024 memory-reserved: 512 type: agent-public aliases: - spring.acme.org - oinker.acme.org boot: ip: 192.168.65.50 cpus: 1 memory: 1024 type: boot  デプロイを実施  $ vagrant up m1 a1 p1 boot DC/OS の UI インストールが完了すると下記のアドレスで DC/OS の UI にアクセスできます。\nhttp://m1.dcos/\nMarathon の UI 下記のアドレスで Marathon の UI にアクセスできます Marathon は分散型の Linux Init 機構のようなものです。\nhttp://m1.dcos:8080/\nChronos の UI 下記のアドレスで Chronos の UI にアクセスできる Chronos は分散型のジョブスケジューラーであり cron のようなものです。\nhttp://a1.dcos:1370/\nMarathon で redis サーバを立ち上げる テストで redis サーバを立ち上げてみる。Mesos-Slave (今回の環境だと a1 ホスト) 上に Docker コンテナとして redis サーバが立ち上がることになる。\n Marathon の UI にて “Create Application” を選択 General タブの ID に任意の名前を入力 General タブの Command 欄に ‘redis-server’ を入力 Docker Container タブの Image 欄に ‘redis’ を入力 ‘Create Application’ を選択  結果、下記の通りアプリケーションが生成される\n※ 20160625 下記追記\n構成 ここからは Mesosphere DC/OS の内部構成を理解していきます。主となる mesos-master, mesos-slave の構成は下記の通り。\n Mesos-Master Node 構成  +--------------+ | mesos-master | +--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+ | zookeeper | | mesos-dns | | marathon | | adminRouter | | minuteman | | exhibitor | +--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+ | mesos-master node | +-------------------------------------------------------------------------------------+                Mesos-Slave (Mesos-Agent) Node 構成                +-------------+ +---+---+---+---+ | m-executor | | c | c | c | c | +-------------+ +---+---+---+---+ | mesos-slave | | docker-daemon | +-------------------------------+ | mesos-slave node | +-------------------------------+ 各プロセスの役割 上記の図の各要素を参考資料を元にまとめました。\n mesos-master  masos-slave node からの情報を受け取り mesos-slave へプロセスを分配する 役割。mesos-master は zookeeper によってリーダー選出により冗長構成が保 たれている。\n mesos-dns  mesos フレームワーク内での DNS 解決を行うプロセス。各 mesos-master ノー ド上に稼働している。通常の DNS でいうコンテンツ DNS (Authoritative DNS)になっており mesos-master からクラスタ情報を受け取って DNS レコー ド登録、それを mesos-slave が DNS 参照する。mesos-slave が内部レコード に無い DNS 名を解決しに来た際にはインターネット上の root DNS へ問い合 わせ実施。\n marathon  コンテナオーケストレーションを司り mesos-slave へ支持を出しコンテナを 稼働する役割。各 mesos-master 上で稼働し zookeeper 越しに mesos-master のカレントリーダを探しだしリクエストを創出。他に下記の機能を持っている。 ‘HA’, ‘ロードバランス’, ‘アプリのヘルスチェック’, ‘Web UI’, ‘REST API’, ‘Metrics’。\n adminRouter  実態は nginx。各サービスの認証と Proxy の役割を担っている。\n minuteman  L4 レイヤのロードバランサ。各 mesos-master ノードで稼働。\n zookeeper  mesos-master プロセスを冗長構成させるためのソフトウェア。\n exhibitor  zookeeper のコンフィギュレーションを実施。\n mesos-slave  Task を実行する役割。内部で meosos-executor (上記 m-executor) を実行し ている。\n m-executor (mesos-executor)  mesos-slave ノード上でサービスのための TASK を稼働させる。\n起動シーケンス ここからは mesos-master, mesos-slave の起動シーケンスについて、まとめてきます。\nmesos-master\n exhibitor が起動し zookeeper のコンフィギュレーションを実施し zookeeper を起動 mesos-master が起動。自分自身をレジスト後、他の mesos-master ノードを探索 mesos-dns が起動 mesos-dns が leader.mesos にカレントリーダの mesos-master を登録 marathon が起動し zookeeper 越しに mesos-master を探索。 adminRouter が起動し各 UI (mesos, marathon, exhibitor) が閲覧可能に。  mesos-slave\n leader.mesos に ping を打って mesos-master のカレントリーダを見つけ出し mesos-slave 稼働。 mesos-master に対して自分自身を ‘agent’ として登録。 mesos-master はその登録された IP アドレスを元に接続を試みる mesos-slave が TASK 実行可能な状態に  まとめと考察 一昔前の Mesos + Marathon + Chronos とはだいぶデプロイ方法が変わっていた。だが構成には大きな変化は見られない。 AWS のような public, private ネットワークが別れたプラットフォームでは mesos-slave (DC/OS 的には Agent とも呼ぶ)は public agent, private agent として別けて管理される模様。public agent は AWS の ELB 等で分散され各コンテナ上のアプリにクエリがインターネットからのリクエストに応える。private agent はプライベートネットワーク上に配置されて public agent からのリクエストにも応える。また、mesos-master 達は別途 admin なネットワークに配置するのが Mesosphare の推奨らしい。\nだがしかし public, private を別けずに DC/OS を構成することも可能なように思えた。下記のように p1 を削除して構成して物理・仮想ロードバランサでリクエストを private agent に送出することでも DC/OS は機能するので。\n$ vagrant up m1 a1 boot ちなみに a2, a3, … と数を増やすことで private agent ノードを増やすことが可能。\nあとマニュアルインストール手順(公式)を実施してみて解ったが、pulic, private ネットワークを各ノードにアタッチして mesos-master, mesos-slave, またその他の各機能はプライベートネットワークを、外部からのリクエストに応えるためのパブリックネットワーク、といった構成も可能でした。\n参考 URL  手順は右記のものを利用。 https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md https://docs.mesosphere.com/1.7/overview/architecture/ https://docs.mesosphere.com/1.7/overview/security/  ",
+  "articleBody": "こんにちは。@jedipunkz です。\n今回は DC/OS (https://dcos.io/) を Vagrant を使って構築し評価してみようと思います。 DC/OS はその名の通りデータセンタ OS として利用されることを期待され開発された OS で内部で Docker と Mesos が稼働しています。\n一昔前に Mesos のマルチノード構成は構築したことあったのですが、DC/OS はデプロイ方法が全く変わっていました。 はじめに想定する構成から説明していきます。\n想定する構成 本来 DC/OS は public, private ネットワーク構成ですが利用するレポジトリではこのような構成が想定されていました。\n+----+ +----+ +----+ +------+ | m1 | | a1 | | p1 | | boot | +----+ +----+ +----+ +------+ | | | | +------+------+------+--------- 192.168.65/24 各ノードは下記の通り動作します。\n m1 : Mesos マスタ, Marathon a1 : Mesos スレーブ(Private Agent) p1 : Mesos スレーブ(Public Agent) boot : DC/OS インストレーションノード  前提の環境 Vagrant が動作するマシンであれば問題ないと思いますが私は下記の構成で利用しました。 比較的たくさんのマシンリソースを使うのでメモリ 8GB はほしいところです。\n Mac OSX Vagrant Virtualbox  事前の準備 事前の手順を記します。\n 予め用意された dcos-vagrant を取得する  $ git clone https://github.com/dcos/dcos-vagrant  Mac OSX の hosts ファイルをダイナミック編集する Vagrant プラグインをインストール  $ vagrant plugin install vagrant-hostmanager 構築手順 それでは構築手順です。\n DC/OS が利用する config を環境変数に指定指定  $ export DCOS_CONFIG_PATH=etc/config-1.7.yaml  DC/OS をレポジトリのルートディレクトリに保存  DC/OS 1.7.0 (Early Access)(2016/06/21現在) をダウンロードしてレポジトリのルートディレクトリにインストール\n$ cd dcos-vagrant $ wget https://downloads.dcos.io/dcos/EarlyAccess/dcos_generate_config.sh  VagrantConfig を作成  ‘VagrantConfig.yaml.example’ というファイルがレポジトリ内ルートディレクトリにあるのでこれを元に下記の通りファイルを生成。元のファイルのままだと比較的大きな CPU/Mem リソースが必要になるので環境に合わせてリソース量を指定。\nm1:  ip: 192.168.65.90  cpus: 1  memory: 512  type: master a1:  ip: 192.168.65.111  cpus: 1  memory: 1024  memory-reserved: 512  type: agent-private p1:  ip: 192.168.65.60  cpus: 1  memory: 1024  memory-reserved: 512  type: agent-public  aliases:  - spring.acme.org  - oinker.acme.org boot:  ip: 192.168.65.50  cpus: 1  memory: 1024  type: boot  デプロイを実施  $ vagrant up m1 a1 p1 boot DC/OS の UI インストールが完了すると下記のアドレスで DC/OS の UI にアクセスできます。\nhttp://m1.dcos/\nMarathon の UI 下記のアドレスで Marathon の UI にアクセスできます Marathon は分散型の Linux Init 機構のようなものです。\nhttp://m1.dcos:8080/\nChronos の UI 下記のアドレスで Chronos の UI にアクセスできる Chronos は分散型のジョブスケジューラーであり cron のようなものです。\nhttp://a1.dcos:1370/\nMarathon で redis サーバを立ち上げる テストで redis サーバを立ち上げてみる。Mesos-Slave (今回の環境だと a1 ホスト) 上に Docker コンテナとして redis サーバが立ち上がることになる。\n Marathon の UI にて “Create Application” を選択 General タブの ID に任意の名前を入力 General タブの Command 欄に ‘redis-server’ を入力 Docker Container タブの Image 欄に ‘redis’ を入力 ‘Create Application’ を選択  結果、下記の通りアプリケーションが生成される\n※ 20160625 下記追記\n構成 ここからは Mesosphere DC/OS の内部構成を理解していきます。主となる mesos-master, mesos-slave の構成は下記の通り。\n Mesos-Master Node 構成  +--------------+ | mesos-master | +--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+ | zookeeper | | mesos-dns | | marathon | | adminRouter | | minuteman | | exhibitor | +--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+ | mesos-master node | +-------------------------------------------------------------------------------------+                Mesos-Slave (Mesos-Agent) Node 構成                +-------------+ +---+---+---+---+ | m-executor | | c | c | c | c | +-------------+ +---+---+---+---+ | mesos-slave | | docker-daemon | +-------------------------------+ | mesos-slave node | +-------------------------------+ 各プロセスの役割 上記の図の各要素を参考資料を元にまとめました。\n mesos-master  masos-slave node からの情報を受け取り mesos-slave へプロセスを分配する 役割。mesos-master は zookeeper によってリーダー選出により冗長構成が保 たれている。\n mesos-dns  mesos フレームワーク内での DNS 解決を行うプロセス。各 mesos-master ノー ド上に稼働している。通常の DNS でいうコンテンツ DNS (Authoritative DNS)になっており mesos-master からクラスタ情報を受け取って DNS レコー ド登録、それを mesos-slave が DNS 参照する。mesos-slave が内部レコード に無い DNS 名を解決しに来た際にはインターネット上の root DNS へ問い合 わせ実施。\n marathon  コンテナオーケストレーションを司り mesos-slave へ支持を出しコンテナを 稼働する役割。各 mesos-master 上で稼働し zookeeper 越しに mesos-master のカレントリーダを探しだしリクエストを創出。他に下記の機能を持っている。 ‘HA’, ‘ロードバランス’, ‘アプリのヘルスチェック’, ‘Web UI’, ‘REST API’, ‘Metrics’。\n adminRouter  実態は nginx。各サービスの認証と Proxy の役割を担っている。\n minuteman  L4 レイヤのロードバランサ。各 mesos-master ノードで稼働。\n zookeeper  mesos-master プロセスを冗長構成させるためのソフトウェア。\n exhibitor  zookeeper のコンフィギュレーションを実施。\n mesos-slave  Task を実行する役割。内部で meosos-executor (上記 m-executor) を実行し ている。\n m-executor (mesos-executor)  mesos-slave ノード上でサービスのための TASK を稼働させる。\n起動シーケンス ここからは mesos-master, mesos-slave の起動シーケンスについて、まとめてきます。\nmesos-master\n exhibitor が起動し zookeeper のコンフィギュレーションを実施し zookeeper を起動 mesos-master が起動。自分自身をレジスト後、他の mesos-master ノードを探索 mesos-dns が起動 mesos-dns が leader.mesos にカレントリーダの mesos-master を登録 marathon が起動し zookeeper 越しに mesos-master を探索。 adminRouter が起動し各 UI (mesos, marathon, exhibitor) が閲覧可能に。  mesos-slave\n leader.mesos に ping を打って mesos-master のカレントリーダを見つけ出し mesos-slave 稼働。 mesos-master に対して自分自身を ‘agent’ として登録。 mesos-master はその登録された IP アドレスを元に接続を試みる mesos-slave が TASK 実行可能な状態に  まとめと考察 一昔前の Mesos + Marathon + Chronos とはだいぶデプロイ方法が変わっていた。だが構成には大きな変化は見られない。 AWS のような public, private ネットワークが別れたプラットフォームでは mesos-slave (DC/OS 的には Agent とも呼ぶ)は public agent, private agent として別けて管理される模様。public agent は AWS の ELB 等で分散され各コンテナ上のアプリにクエリがインターネットからのリクエストに応える。private agent はプライベートネットワーク上に配置されて public agent からのリクエストにも応える。また、mesos-master 達は別途 admin なネットワークに配置するのが Mesosphare の推奨らしい。\nだがしかし public, private を別けずに DC/OS を構成することも可能なように思えた。下記のように p1 を削除して構成して物理・仮想ロードバランサでリクエストを private agent に送出することでも DC/OS は機能するので。\n$ vagrant up m1 a1 boot ちなみに a2, a3, … と数を増やすことで private agent ノードを増やすことが可能。\nあとマニュアルインストール手順(公式)を実施してみて解ったが、pulic, private ネットワークを各ノードにアタッチして mesos-master, mesos-slave, またその他の各機能はプライベートネットワークを、外部からのリクエストに応えるためのパブリックネットワーク、といった構成も可能でした。\n参考 URL  手順は右記のものを利用。 https://github.com/dcos/dcos-vagrant/blob/master/docs/deploy.md https://docs.mesosphere.com/1.7/overview/architecture/ https://docs.mesosphere.com/1.7/overview/security/  ",
   "wordCount" : "580",
   "inLanguage": "en",
   "datePublished": "2016-06-21T17:05:25+09:00",
@@ -187,12 +187,12 @@ Docker と Mesos が稼働しています。</p>
 はじめに想定する構成から説明していきます。</p>
 <h2 id="想定する構成">想定する構成<a hidden class="anchor" aria-hidden="true" href="#想定する構成">#</a></h2>
 <p>本来 DC/OS は public, private ネットワーク構成ですが利用するレポジトリではこのような構成が想定されていました。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">+----+ +----+ +----+ +------+
-| m1 | | a1 | | p1 | | boot |
-+----+ +----+ +----+ +------+
-|      |      |      |
-+------+------+------+--------- 192.168.65/24
-</code></pre></div><p>各ノードは下記の通り動作します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>+----+ +----+ +----+ +------+
+</span></span><span style="display:flex;"><span>| m1 | | a1 | | p1 | | boot |
+</span></span><span style="display:flex;"><span>+----+ +----+ +----+ +------+
+</span></span><span style="display:flex;"><span>|      |      |      |
+</span></span><span style="display:flex;"><span>+------+------+------+--------- 192.168.65/24
+</span></span></code></pre></div><p>各ノードは下記の通り動作します。</p>
 <ul>
 <li>m1 : Mesos マスタ, Marathon</li>
 <li>a1 : Mesos スレーブ(Private Agent)</li>
@@ -212,57 +212,57 @@ Docker と Mesos が稼働しています。</p>
 <ul>
 <li>予め用意された dcos-vagrant を取得する</li>
 </ul>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ git clone https://github.com/dcos/dcos-vagrant
-</code></pre></div><ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>$ git clone https://github.com/dcos/dcos-vagrant
+</span></span></code></pre></div><ul>
 <li>Mac OSX の hosts ファイルをダイナミック編集する Vagrant プラグインをインストール</li>
 </ul>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ vagrant plugin install vagrant-hostmanager
-</code></pre></div><h2 id="構築手順">構築手順<a hidden class="anchor" aria-hidden="true" href="#構築手順">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>$ vagrant plugin install vagrant-hostmanager
+</span></span></code></pre></div><h2 id="構築手順">構築手順<a hidden class="anchor" aria-hidden="true" href="#構築手順">#</a></h2>
 <p>それでは構築手順です。</p>
 <ul>
 <li>DC/OS が利用する config を環境変数に指定指定</li>
 </ul>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ export DCOS_CONFIG_PATH<span style="color:#f92672">=</span>etc/config-1.7.yaml
-</code></pre></div><ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>$ export DCOS_CONFIG_PATH<span style="color:#f92672">=</span>etc/config-1.7.yaml
+</span></span></code></pre></div><ul>
 <li>DC/OS をレポジトリのルートディレクトリに保存</li>
 </ul>
 <p>DC/OS 1.7.0 (Early Access)(2016/06/21現在) をダウンロードしてレポジトリのルートディレクトリにインストール</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ cd dcos-vagrant
-$ wget https://downloads.dcos.io/dcos/EarlyAccess/dcos_generate_config.sh
-</code></pre></div><ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>$ cd dcos-vagrant
+</span></span><span style="display:flex;"><span>$ wget https://downloads.dcos.io/dcos/EarlyAccess/dcos_generate_config.sh
+</span></span></code></pre></div><ul>
 <li>VagrantConfig を作成</li>
 </ul>
 <p>&lsquo;VagrantConfig.yaml.example&rsquo; というファイルがレポジトリ内ルートディレクトリにあるのでこれを元に下記の通りファイルを生成。元のファイルのままだと比較的大きな CPU/Mem リソースが必要になるので環境に合わせてリソース量を指定。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yaml" data-lang="yaml"><span style="color:#f92672">m1</span>:
-  <span style="color:#f92672">ip</span>: <span style="color:#ae81ff">192.168.65.90</span>
-  <span style="color:#f92672">cpus</span>: <span style="color:#ae81ff">1</span>
-  <span style="color:#f92672">memory</span>: <span style="color:#ae81ff">512</span>
-  <span style="color:#f92672">type</span>: <span style="color:#ae81ff">master</span>
-<span style="color:#f92672">a1</span>:
-  <span style="color:#f92672">ip</span>: <span style="color:#ae81ff">192.168.65.111</span>
-  <span style="color:#f92672">cpus</span>: <span style="color:#ae81ff">1</span>
-  <span style="color:#f92672">memory</span>: <span style="color:#ae81ff">1024</span>
-  <span style="color:#f92672">memory-reserved</span>: <span style="color:#ae81ff">512</span>
-  <span style="color:#f92672">type</span>: <span style="color:#ae81ff">agent-private</span>
-<span style="color:#f92672">p1</span>:
-  <span style="color:#f92672">ip</span>: <span style="color:#ae81ff">192.168.65.60</span>
-  <span style="color:#f92672">cpus</span>: <span style="color:#ae81ff">1</span>
-  <span style="color:#f92672">memory</span>: <span style="color:#ae81ff">1024</span>
-  <span style="color:#f92672">memory-reserved</span>: <span style="color:#ae81ff">512</span>
-  <span style="color:#f92672">type</span>: <span style="color:#ae81ff">agent-public</span>
-  <span style="color:#f92672">aliases</span>:
-  - <span style="color:#ae81ff">spring.acme.org</span>
-  - <span style="color:#ae81ff">oinker.acme.org</span>
-<span style="color:#f92672">boot</span>:
-  <span style="color:#f92672">ip</span>: <span style="color:#ae81ff">192.168.65.50</span>
-  <span style="color:#f92672">cpus</span>: <span style="color:#ae81ff">1</span>
-  <span style="color:#f92672">memory</span>: <span style="color:#ae81ff">1024</span>
-  <span style="color:#f92672">type</span>: <span style="color:#ae81ff">boot</span>
-</code></pre></div><ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">m1</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">ip</span>: <span style="color:#ae81ff">192.168.65.90</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">cpus</span>: <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">memory</span>: <span style="color:#ae81ff">512</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">type</span>: <span style="color:#ae81ff">master</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">a1</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">ip</span>: <span style="color:#ae81ff">192.168.65.111</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">cpus</span>: <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">memory</span>: <span style="color:#ae81ff">1024</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">memory-reserved</span>: <span style="color:#ae81ff">512</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">type</span>: <span style="color:#ae81ff">agent-private</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">p1</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">ip</span>: <span style="color:#ae81ff">192.168.65.60</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">cpus</span>: <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">memory</span>: <span style="color:#ae81ff">1024</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">memory-reserved</span>: <span style="color:#ae81ff">512</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">type</span>: <span style="color:#ae81ff">agent-public</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">aliases</span>:
+</span></span><span style="display:flex;"><span>  - <span style="color:#ae81ff">spring.acme.org</span>
+</span></span><span style="display:flex;"><span>  - <span style="color:#ae81ff">oinker.acme.org</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">boot</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">ip</span>: <span style="color:#ae81ff">192.168.65.50</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">cpus</span>: <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">memory</span>: <span style="color:#ae81ff">1024</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">type</span>: <span style="color:#ae81ff">boot</span>
+</span></span></code></pre></div><ul>
 <li>デプロイを実施</li>
 </ul>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ vagrant up m1 a1 p1 boot
-</code></pre></div><h2 id="dcos-の-ui">DC/OS の UI<a hidden class="anchor" aria-hidden="true" href="#dcos-の-ui">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>$ vagrant up m1 a1 p1 boot
+</span></span></code></pre></div><h2 id="dcos-の-ui">DC/OS の UI<a hidden class="anchor" aria-hidden="true" href="#dcos-の-ui">#</a></h2>
 <p>インストールが完了すると下記のアドレスで DC/OS の UI にアクセスできます。</p>
 <p><a href="http://m1.dcos/">http://m1.dcos/</a></p>
 <img src="http://jedipunkz.github.io/pix/dcos-mesos.png" width="70%">
@@ -293,14 +293,14 @@ Chronos は分散型のジョブスケジューラーであり cron のような
 <ul>
 <li>Mesos-Master Node 構成</li>
 </ul>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">+--------------+
-| mesos-master |
-+--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+
-|   zookeeper  | | mesos-dns | | marathon | | adminRouter | | minuteman | | exhibitor |
-+--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+
-|                  mesos-master node                                                  |
-+-------------------------------------------------------------------------------------+
-</code></pre></div><ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>+--------------+
+</span></span><span style="display:flex;"><span>| mesos-master |
+</span></span><span style="display:flex;"><span>+--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+
+</span></span><span style="display:flex;"><span>|   zookeeper  | | mesos-dns | | marathon | | adminRouter | | minuteman | | exhibitor |
+</span></span><span style="display:flex;"><span>+--------------+ +-----------+ +----------+ +-------------+ +-----------+ +-----------+
+</span></span><span style="display:flex;"><span>|                  mesos-master node                                                  |
+</span></span><span style="display:flex;"><span>+-------------------------------------------------------------------------------------+
+</span></span></code></pre></div><ul>
 <li>
 <ul>
 <li>
@@ -331,14 +331,14 @@ Chronos は分散型のジョブスケジューラーであり cron のような
 </ul>
 </li>
 </ul>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">+-------------+ +---+---+---+---+
-| m-executor  | | c | c | c | c |
-+-------------+ +---+---+---+---+
-| mesos-slave | | docker-daemon |
-+-------------------------------+
-|        mesos-slave node       |
-+-------------------------------+
-</code></pre></div><h2 id="各プロセスの役割">各プロセスの役割<a hidden class="anchor" aria-hidden="true" href="#各プロセスの役割">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>+-------------+ +---+---+---+---+
+</span></span><span style="display:flex;"><span>| m-executor  | | c | c | c | c |
+</span></span><span style="display:flex;"><span>+-------------+ +---+---+---+---+
+</span></span><span style="display:flex;"><span>| mesos-slave | | docker-daemon |
+</span></span><span style="display:flex;"><span>+-------------------------------+
+</span></span><span style="display:flex;"><span>|        mesos-slave node       |
+</span></span><span style="display:flex;"><span>+-------------------------------+
+</span></span></code></pre></div><h2 id="各プロセスの役割">各プロセスの役割<a hidden class="anchor" aria-hidden="true" href="#各プロセスの役割">#</a></h2>
 <p>上記の図の各要素を参考資料を元にまとめました。</p>
 <ul>
 <li>mesos-master</li>
@@ -410,8 +410,8 @@ API&rsquo;, &lsquo;Metrics&rsquo;。</p>
 <p>一昔前の Mesos + Marathon + Chronos とはだいぶデプロイ方法が変わっていた。だが構成には大きな変化は見られない。
 AWS のような public, private ネットワークが別れたプラットフォームでは mesos-slave (DC/OS 的には Agent とも呼ぶ)は public agent, private agent として別けて管理される模様。public agent は AWS の ELB 等で分散され各コンテナ上のアプリにクエリがインターネットからのリクエストに応える。private agent はプライベートネットワーク上に配置されて public agent からのリクエストにも応える。また、mesos-master 達は別途 admin なネットワークに配置するのが Mesosphare の推奨らしい。</p>
 <p>だがしかし public, private を別けずに DC/OS を構成することも可能なように思えた。下記のように p1 を削除して構成して物理・仮想ロードバランサでリクエストを private agent に送出することでも DC/OS は機能するので。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">$ vagrant up m1 a1 boot
-</code></pre></div><p>ちなみに a2, a3, &hellip; と数を増やすことで private agent ノードを増やすことが可能。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>$ vagrant up m1 a1 boot
+</span></span></code></pre></div><p>ちなみに a2, a3, &hellip; と数を増やすことで private agent ノードを増やすことが可能。</p>
 <p>あとマニュアルインストール手順(公式)を実施してみて解ったが、pulic, private ネットワークを各ノードにアタッチして mesos-master, mesos-slave, またその他の各機能はプライベートネットワークを、外部からのリクエストに応えるためのパブリックネットワーク、といった構成も可能でした。</p>
 <h2 id="参考-url">参考 URL<a hidden class="anchor" aria-hidden="true" href="#参考-url">#</a></h2>
 <ul>
