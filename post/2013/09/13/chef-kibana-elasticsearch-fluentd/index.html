@@ -16,7 +16,7 @@ Cookbook の準備 お決まり。Cookbooks の取得に Berkshelf を用いる�
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2013/09/13/chef-kibana-elasticsearch-fluentd/" />
 <link crossorigin="anonymous" href="/assets/css/stylesheet.min.44044074f4b4d7b018bfd3febcc1fa76eb874db64213f920feacf263e3028a73.css" integrity="sha256-RARAdPS017AYv9P&#43;vMH6duuHTbZCE/kg/qzyY&#43;MCinM=" rel="preload stylesheet" as="style">
-<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.2840b7fccd34145847db71a290569594bdbdb00047097f75d6495d162f5d7dff.js" integrity="sha256-KEC3/M00FFhH23GikFaVlL29sABHCX911kldFi9dff8="
     onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/pix/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
@@ -25,7 +25,7 @@ Cookbook の準備 お決まり。Cookbooks の取得に Berkshelf を用いる�
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.92.1" />
+<meta name="generator" content="Hugo 0.97.3" />
 <noscript>
     <style>
         #theme-toggle,
@@ -98,7 +98,7 @@ Cookbook の準備 お決まり。Cookbooks の取得に Berkshelf を用いる�
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkz です。\n前回 kibana + elasticsearch + fluentd を構築する方法を載せたのだけど手動で構築 したので格好悪いなぁと思っていました。いうことで！ Chef でデプロイする方法を調 べてみました。\n意外と簡単に出来たし、スッキリした形でデプロイ出来たのでオススメです。\n前提の環境は…  Ubuntu 12.04 LTS precise Chef サーバ構成 入力するログは nginx (例) オールインワン構成  Cookbook が他の OS に対応しているか確認していないので Ubuntu を前提にしていま す。Chef サーバのデプロイや knife の設定は済んでいるものとして説明していきます。 例で nginx のログを入力します。なので nginx も Chef でデプロイします。ここは他 のものに置き換えてもらっても大丈夫です。手順を省略化するためオールインワン構成 で説明します。nginx, fluentd は複数のノードに配置することも手順を読み替えれば もちろん可能です。\nCookbook の準備 お決まり。Cookbooks の取得に Berkshelf を用いる。\n% cd chef-repo % gem install berkshelf % ${EDITOR} Berksfile cookbook 'elasticsearch', git: 'https://github.com/elasticsearch/cookbook-elasticsearch.git' cookbook 'td-agent', git: 'https://github.com/treasure-data/chef-td-agent.git' cookbook 'kibana', git: 'https://github.com/realityforge/chef-kibana.git' cookbook 'nginx', git: 'https://github.com/opscode-cookbooks/nginx.git' Cookbooks を取得します。\n% berks install --path=./cookbooks elasticsearch デプロイ準備 elasticsearch の Role を作成する。java, elasticsearch レシピを指定。また Java に openjdk7 を override_attributes にて指定する。openjdk6 だと elasticsearch が起動し なかった。尚、デフォルトは 6 です。Environment で override_attributes を指定し てもらっても構わないです。\n% ${EDITOR} roles/elasticsearch.rb name \"elasticsearch\" description \"Base role applied to elasticsearch nodes.\" run_list( \"recipe[java]\", \"recipe[elasticsearch]\" ) override_attributes \"java\" = { \"install_flavor\" = \"openjdk\", \"jdk_version\" = \"7\" } fluentd デプロイの準備 td-agent (fluentd) の Role を作成する。override_attributes にて td-agent のプ ラグインを指定。配列で複数指定可能。こちらも同じく Role で override_attributes を指定したが Environments で指定しても構わないです。あと公式の README には attributes に直接 plugins を指定するよう書いてありましたが、構成毎に plugins は変えたいと思うので、この様に Roles, Environments で指定するのが良いと思います。\n% ${EDITOR}  roles/td-agent.rb name \"td-agent\" description \"Base role applied to td-agent nodes.\" run_list( \"recipe[td-agent]\" ) override_attributes \"td_agent\" = { \"plugins\" = [ \"elasticsearch\" ] } td-agent.conf の template を作成。今回は nginx の /var/log/nginx/localhost.access.log を入力する。これは例なので好きなログを指定 可能。\n% ${EDITOR}  cookbooks/td-agent/templates/default/td-agent.conf.erb source type tail format nginx path /var/log/nginx/localhost.access.log tag foo01.nginx.access /source index_name adminpack type_name nginx type elasticsearch include_tag_key true tag_key @log_name host localhost port 9200 logstash_format true flush_interval 10s atch デプロイ Cookbooks, Roles を Chef サーバにアップロード。\n% knife cookbook upload -o cookbooks -a % knife role from file roles/*.rb knife bootstrap しデプロイ！\n% knife bootstrap  -N  -r \\  'role[td-agent]','role[elasticsearch]','recipe[kibana]','recipe[nginx]' \\  --sudo -x  下記の URL にブラウザでアクセスし nginx のログを生成。\nhttp:/// 下記の URL にて Kibana の UI 越しにログ解析結果を確認出来る。\nhttp://:5601 まとめ fluentd plugins は複数指定可能。環境毎に td-agent.conf を変更したいという要望 があると思うけど fluentd の Recipe を修正する必要がありそう。それとも td-agent.conf 自体でうまくさばけるのかな？調べてない。オールインワン構成で説明 しましたが、elasticsearch + kibana のノードに対して、複数の nginx(なんでも良い)\n td-agent ノードの構成が一般的だと思います。手順を読み替えてやってみてくださ い。その場合 kibana の Cookbook の attributes 中に elasticsearch の IP アドレ ス・ポートを記す箇所があるので Role, Environments で上書きしてあげてください。  default['kibana']['elasticsearch']['hosts'] = ['127.0.0.1'] default['kibana']['elasticsearch']['port'] = 9200 あと td-agent/templates/default/td-agent.conf.erb の中に記した host, port の指 定も elasticsearch のホスト情報に書き換えてあげてください。\nhost localhost port 9200 以上です。意外と簡単に出来ました。スッキリ。\n",
+  "articleBody": "こんにちは。@jedipunkz です。\n前回 kibana + elasticsearch + fluentd を構築する方法を載せたのだけど手動で構築 したので格好悪いなぁと思っていました。いうことで！ Chef でデプロイする方法を調 べてみました。\n意外と簡単に出来たし、スッキリした形でデプロイ出来たのでオススメです。\n前提の環境は…  Ubuntu 12.04 LTS precise Chef サーバ構成 入力するログは nginx (例) オールインワン構成  Cookbook が他の OS に対応しているか確認していないので Ubuntu を前提にしていま す。Chef サーバのデプロイや knife の設定は済んでいるものとして説明していきます。 例で nginx のログを入力します。なので nginx も Chef でデプロイします。ここは他 のものに置き換えてもらっても大丈夫です。手順を省略化するためオールインワン構成 で説明します。nginx, fluentd は複数のノードに配置することも手順を読み替えれば もちろん可能です。\nCookbook の準備 お決まり。Cookbooks の取得に Berkshelf を用いる。\n% cd chef-repo % gem install berkshelf % ${EDITOR} Berksfile cookbook 'elasticsearch', git: 'https://github.com/elasticsearch/cookbook-elasticsearch.git' cookbook 'td-agent', git: 'https://github.com/treasure-data/chef-td-agent.git' cookbook 'kibana', git: 'https://github.com/realityforge/chef-kibana.git' cookbook 'nginx', git: 'https://github.com/opscode-cookbooks/nginx.git' Cookbooks を取得します。\n% berks install --path=./cookbooks elasticsearch デプロイ準備 elasticsearch の Role を作成する。java, elasticsearch レシピを指定。また Java に openjdk7 を override_attributes にて指定する。openjdk6 だと elasticsearch が起動し なかった。尚、デフォルトは 6 です。Environment で override_attributes を指定し てもらっても構わないです。\n% ${EDITOR} roles/elasticsearch.rb name \"elasticsearch\" description \"Base role applied to elasticsearch nodes.\" run_list(  \"recipe[java]\",  \"recipe[elasticsearch]\" ) override_attributes \"java\" = { \"install_flavor\" = \"openjdk\", \"jdk_version\" = \"7\" } fluentd デプロイの準備 td-agent (fluentd) の Role を作成する。override_attributes にて td-agent のプ ラグインを指定。配列で複数指定可能。こちらも同じく Role で override_attributes を指定したが Environments で指定しても構わないです。あと公式の README には attributes に直接 plugins を指定するよう書いてありましたが、構成毎に plugins は変えたいと思うので、この様に Roles, Environments で指定するのが良いと思います。\n% ${EDITOR}  roles/td-agent.rb name \"td-agent\" description \"Base role applied to td-agent nodes.\" run_list(  \"recipe[td-agent]\" ) override_attributes \"td_agent\" = {  \"plugins\" = [ \"elasticsearch\" ]  } td-agent.conf の template を作成。今回は nginx の /var/log/nginx/localhost.access.log を入力する。これは例なので好きなログを指定 可能。\n% ${EDITOR}  cookbooks/td-agent/templates/default/td-agent.conf.erb source  type tail  format nginx  path /var/log/nginx/localhost.access.log  tag foo01.nginx.access /source index_name adminpack type_name nginx type elasticsearch include_tag_key true tag_key @log_name host localhost port 9200 logstash_format true flush_interval 10s atch デプロイ Cookbooks, Roles を Chef サーバにアップロード。\n% knife cookbook upload -o cookbooks -a % knife role from file roles/*.rb knife bootstrap しデプロイ！\n% knife bootstrap  -N  -r \\  'role[td-agent]','role[elasticsearch]','recipe[kibana]','recipe[nginx]' \\  --sudo -x  下記の URL にブラウザでアクセスし nginx のログを生成。\nhttp:/// 下記の URL にて Kibana の UI 越しにログ解析結果を確認出来る。\nhttp://:5601 まとめ fluentd plugins は複数指定可能。環境毎に td-agent.conf を変更したいという要望 があると思うけど fluentd の Recipe を修正する必要がありそう。それとも td-agent.conf 自体でうまくさばけるのかな？調べてない。オールインワン構成で説明 しましたが、elasticsearch + kibana のノードに対して、複数の nginx(なんでも良い)\n td-agent ノードの構成が一般的だと思います。手順を読み替えてやってみてくださ い。その場合 kibana の Cookbook の attributes 中に elasticsearch の IP アドレ ス・ポートを記す箇所があるので Role, Environments で上書きしてあげてください。  default['kibana']['elasticsearch']['hosts'] = ['127.0.0.1'] default['kibana']['elasticsearch']['port'] = 9200 あと td-agent/templates/default/td-agent.conf.erb の中に記した host, port の指 定も elasticsearch のホスト情報に書き換えてあげてください。\nhost localhost port 9200 以上です。意外と簡単に出来ました。スッキリ。\n",
   "wordCount" : "336",
   "inLanguage": "en",
   "datePublished": "2013-09-13T00:00:00Z",
@@ -199,74 +199,74 @@ Cookbook の準備 お決まり。Cookbooks の取得に Berkshelf を用いる�
 もちろん可能です。</p>
 <h2 id="cookbook-の準備">Cookbook の準備<a hidden class="anchor" aria-hidden="true" href="#cookbook-の準備">#</a></h2>
 <p>お決まり。Cookbooks の取得に Berkshelf を用いる。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% cd chef-repo
-% gem install berkshelf
-% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> Berksfile
-cookbook <span style="color:#e6db74">&#39;elasticsearch&#39;</span>, git: <span style="color:#e6db74">&#39;https://github.com/elasticsearch/cookbook-elasticsearch.git&#39;</span>
-cookbook <span style="color:#e6db74">&#39;td-agent&#39;</span>, git: <span style="color:#e6db74">&#39;https://github.com/treasure-data/chef-td-agent.git&#39;</span>
-cookbook <span style="color:#e6db74">&#39;kibana&#39;</span>, git: <span style="color:#e6db74">&#39;https://github.com/realityforge/chef-kibana.git&#39;</span>
-cookbook <span style="color:#e6db74">&#39;nginx&#39;</span>, git: <span style="color:#e6db74">&#39;https://github.com/opscode-cookbooks/nginx.git&#39;</span>
-</code></pre></div><p>Cookbooks を取得します。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% berks install --path<span style="color:#f92672">=</span>./cookbooks
-</code></pre></div><h2 id="elasticsearch-デプロイ準備">elasticsearch デプロイ準備<a hidden class="anchor" aria-hidden="true" href="#elasticsearch-デプロイ準備">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% cd chef-repo
+</span></span><span style="display:flex;"><span>% gem install berkshelf
+</span></span><span style="display:flex;"><span>% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> Berksfile
+</span></span><span style="display:flex;"><span>cookbook <span style="color:#e6db74">&#39;elasticsearch&#39;</span>, git: <span style="color:#e6db74">&#39;https://github.com/elasticsearch/cookbook-elasticsearch.git&#39;</span>
+</span></span><span style="display:flex;"><span>cookbook <span style="color:#e6db74">&#39;td-agent&#39;</span>, git: <span style="color:#e6db74">&#39;https://github.com/treasure-data/chef-td-agent.git&#39;</span>
+</span></span><span style="display:flex;"><span>cookbook <span style="color:#e6db74">&#39;kibana&#39;</span>, git: <span style="color:#e6db74">&#39;https://github.com/realityforge/chef-kibana.git&#39;</span>
+</span></span><span style="display:flex;"><span>cookbook <span style="color:#e6db74">&#39;nginx&#39;</span>, git: <span style="color:#e6db74">&#39;https://github.com/opscode-cookbooks/nginx.git&#39;</span>
+</span></span></code></pre></div><p>Cookbooks を取得します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% berks install --path<span style="color:#f92672">=</span>./cookbooks
+</span></span></code></pre></div><h2 id="elasticsearch-デプロイ準備">elasticsearch デプロイ準備<a hidden class="anchor" aria-hidden="true" href="#elasticsearch-デプロイ準備">#</a></h2>
 <p>elasticsearch の Role を作成する。java, elasticsearch レシピを指定。また Java
 に openjdk7 を override_attributes にて指定する。openjdk6 だと elasticsearch が起動し
 なかった。尚、デフォルトは 6 です。Environment で override_attributes を指定し
 てもらっても構わないです。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> roles/elasticsearch.rb
-name <span style="color:#e6db74">&#34;elasticsearch&#34;</span>
-description <span style="color:#e6db74">&#34;Base role applied to elasticsearch nodes.&#34;</span>
-run_list<span style="color:#f92672">(</span>
-  <span style="color:#e6db74">&#34;recipe[java]&#34;</span>,
-  <span style="color:#e6db74">&#34;recipe[elasticsearch]&#34;</span>
-<span style="color:#f92672">)</span>
-override_attributes <span style="color:#e6db74">&#34;java&#34;</span> <span style="color:#f92672">=</span>&gt; <span style="color:#f92672">{</span> <span style="color:#e6db74">&#34;install_flavor&#34;</span> <span style="color:#f92672">=</span>&gt; <span style="color:#e6db74">&#34;openjdk&#34;</span>, <span style="color:#e6db74">&#34;jdk_version&#34;</span> <span style="color:#f92672">=</span>&gt; <span style="color:#e6db74">&#34;7&#34;</span> <span style="color:#f92672">}</span>
-</code></pre></div><h2 id="fluentd-デプロイの準備">fluentd デプロイの準備<a hidden class="anchor" aria-hidden="true" href="#fluentd-デプロイの準備">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> roles/elasticsearch.rb
+</span></span><span style="display:flex;"><span>name <span style="color:#e6db74">&#34;elasticsearch&#34;</span>
+</span></span><span style="display:flex;"><span>description <span style="color:#e6db74">&#34;Base role applied to elasticsearch nodes.&#34;</span>
+</span></span><span style="display:flex;"><span>run_list<span style="color:#f92672">(</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#34;recipe[java]&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#34;recipe[elasticsearch]&#34;</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">)</span>
+</span></span><span style="display:flex;"><span>override_attributes <span style="color:#e6db74">&#34;java&#34;</span> <span style="color:#f92672">=</span>&gt; <span style="color:#f92672">{</span> <span style="color:#e6db74">&#34;install_flavor&#34;</span> <span style="color:#f92672">=</span>&gt; <span style="color:#e6db74">&#34;openjdk&#34;</span>, <span style="color:#e6db74">&#34;jdk_version&#34;</span> <span style="color:#f92672">=</span>&gt; <span style="color:#e6db74">&#34;7&#34;</span> <span style="color:#f92672">}</span>
+</span></span></code></pre></div><h2 id="fluentd-デプロイの準備">fluentd デプロイの準備<a hidden class="anchor" aria-hidden="true" href="#fluentd-デプロイの準備">#</a></h2>
 <p>td-agent (fluentd) の Role を作成する。override_attributes にて td-agent のプ
 ラグインを指定。配列で複数指定可能。こちらも同じく Role で override_attributes
 を指定したが Environments で指定しても構わないです。あと公式の README には
 attributes に直接 plugins を指定するよう書いてありましたが、構成毎に plugins
 は変えたいと思うので、この様に Roles, Environments で指定するのが良いと思います。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ruby" data-lang="ruby"><span style="color:#e6db74">% ${EDITOR} </span> roles<span style="color:#f92672">/</span>td<span style="color:#f92672">-</span>agent<span style="color:#f92672">.</span>rb
-name <span style="color:#e6db74">&#34;td-agent&#34;</span>
-description <span style="color:#e6db74">&#34;Base role applied to td-agent nodes.&#34;</span>
-run_list(
-  <span style="color:#e6db74">&#34;recipe[td-agent]&#34;</span>
-)
-override_attributes <span style="color:#e6db74">&#34;td_agent&#34;</span> <span style="color:#f92672">=&gt;</span> {
-                      <span style="color:#e6db74">&#34;plugins&#34;</span> <span style="color:#f92672">=&gt;</span> <span style="color:#f92672">[</span> <span style="color:#e6db74">&#34;elasticsearch&#34;</span> <span style="color:#f92672">]</span>
-                    }
-</code></pre></div><p>td-agent.conf の template を作成。今回は nginx の
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ruby" data-lang="ruby"><span style="display:flex;"><span><span style="color:#e6db74">% ${EDITOR} </span> roles<span style="color:#f92672">/</span>td<span style="color:#f92672">-</span>agent<span style="color:#f92672">.</span>rb
+</span></span><span style="display:flex;"><span>name <span style="color:#e6db74">&#34;td-agent&#34;</span>
+</span></span><span style="display:flex;"><span>description <span style="color:#e6db74">&#34;Base role applied to td-agent nodes.&#34;</span>
+</span></span><span style="display:flex;"><span>run_list(
+</span></span><span style="display:flex;"><span>  <span style="color:#e6db74">&#34;recipe[td-agent]&#34;</span>
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>override_attributes <span style="color:#e6db74">&#34;td_agent&#34;</span> <span style="color:#f92672">=&gt;</span> {
+</span></span><span style="display:flex;"><span>                      <span style="color:#e6db74">&#34;plugins&#34;</span> <span style="color:#f92672">=&gt;</span> <span style="color:#f92672">[</span> <span style="color:#e6db74">&#34;elasticsearch&#34;</span> <span style="color:#f92672">]</span>
+</span></span><span style="display:flex;"><span>                    }
+</span></span></code></pre></div><p>td-agent.conf の template を作成。今回は nginx の
 /var/log/nginx/localhost.access.log を入力する。これは例なので好きなログを指定
 可能。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ruby" data-lang="ruby"><span style="color:#e6db74">% ${EDITOR} </span> cookbooks<span style="color:#f92672">/</span>td<span style="color:#f92672">-</span>agent<span style="color:#f92672">/</span>templates<span style="color:#f92672">/</span>default<span style="color:#f92672">/</span>td<span style="color:#f92672">-</span>agent<span style="color:#f92672">.</span>conf<span style="color:#f92672">.</span>erb
-<span style="color:#f92672">&lt;</span>source<span style="color:#f92672">&gt;</span>
-  type tail
-  format nginx
-  path <span style="color:#e6db74">/var/</span>log<span style="color:#f92672">/</span>nginx<span style="color:#f92672">/</span>localhost<span style="color:#f92672">.</span>access<span style="color:#f92672">.</span>log
-  tag foo01<span style="color:#f92672">.</span>nginx<span style="color:#f92672">.</span>access
-<span style="color:#f92672">&lt;</span><span style="color:#e6db74">/source&gt;
-</span><span style="color:#e6db74">
-</span><span style="color:#e6db74">&lt;match *.nginx.*&gt;
-</span><span style="color:#e6db74">  index_name adminpack
-</span><span style="color:#e6db74">  type_name nginx
-</span><span style="color:#e6db74">  type elasticsearch
-</span><span style="color:#e6db74">  include_tag_key true
-</span><span style="color:#e6db74">  tag_key @log_name
-</span><span style="color:#e6db74">  host localhost
-</span><span style="color:#e6db74">  port 9200
-</span><span style="color:#e6db74">  logstash_format true
-</span><span style="color:#e6db74">  flush_interval 10s
-</span><span style="color:#e6db74">&lt;/m</span>atch<span style="color:#f92672">&gt;</span>    
-</code></pre></div><h2 id="デプロイ">デプロイ<a hidden class="anchor" aria-hidden="true" href="#デプロイ">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ruby" data-lang="ruby"><span style="display:flex;"><span><span style="color:#e6db74">% ${EDITOR} </span> cookbooks<span style="color:#f92672">/</span>td<span style="color:#f92672">-</span>agent<span style="color:#f92672">/</span>templates<span style="color:#f92672">/</span>default<span style="color:#f92672">/</span>td<span style="color:#f92672">-</span>agent<span style="color:#f92672">.</span>conf<span style="color:#f92672">.</span>erb
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;</span>source<span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>  type tail
+</span></span><span style="display:flex;"><span>  format nginx
+</span></span><span style="display:flex;"><span>  path <span style="color:#e6db74">/var/</span>log<span style="color:#f92672">/</span>nginx<span style="color:#f92672">/</span>localhost<span style="color:#f92672">.</span>access<span style="color:#f92672">.</span>log
+</span></span><span style="display:flex;"><span>  tag foo01<span style="color:#f92672">.</span>nginx<span style="color:#f92672">.</span>access
+</span></span><span style="display:flex;"><span><span style="color:#f92672">&lt;</span><span style="color:#e6db74">/source&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">&lt;match *.nginx.*&gt;
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  index_name adminpack
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  type_name nginx
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  type elasticsearch
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  include_tag_key true
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  tag_key @log_name
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  host localhost
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  port 9200
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  logstash_format true
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">  flush_interval 10s
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">&lt;/m</span>atch<span style="color:#f92672">&gt;</span>    
+</span></span></code></pre></div><h2 id="デプロイ">デプロイ<a hidden class="anchor" aria-hidden="true" href="#デプロイ">#</a></h2>
 <p>Cookbooks, Roles を Chef サーバにアップロード。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife cookbook upload -o cookbooks -a
-% knife role from file roles/*.rb
-</code></pre></div><p>knife bootstrap しデプロイ！</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% knife bootstrap &lt;ip_addr&gt; -N &lt;hostname&gt; -r <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  <span style="color:#e6db74">&#39;role[td-agent]&#39;</span>,<span style="color:#e6db74">&#39;role[elasticsearch]&#39;</span>,<span style="color:#e6db74">&#39;recipe[kibana]&#39;</span>,<span style="color:#e6db74">&#39;recipe[nginx]&#39;</span> <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  --sudo -x &lt;username&gt;
-</code></pre></div><p>下記の URL にブラウザでアクセスし nginx のログを生成。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% knife cookbook upload -o cookbooks -a
+</span></span><span style="display:flex;"><span>% knife role from file roles/*.rb
+</span></span></code></pre></div><p>knife bootstrap しデプロイ！</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% knife bootstrap &lt;ip_addr&gt; -N &lt;hostname&gt; -r <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  <span style="color:#e6db74">&#39;role[td-agent]&#39;</span>,<span style="color:#e6db74">&#39;role[elasticsearch]&#39;</span>,<span style="color:#e6db74">&#39;recipe[kibana]&#39;</span>,<span style="color:#e6db74">&#39;recipe[nginx]&#39;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  --sudo -x &lt;username&gt;
+</span></span></code></pre></div><p>下記の URL にブラウザでアクセスし nginx のログを生成。</p>
 <pre tabindex="0"><code>http://&lt;ip_addr&gt;/
 </code></pre><p>下記の URL にて Kibana の UI 越しにログ解析結果を確認出来る。</p>
 <pre tabindex="0"><code>http://&lt;ip_addr&gt;:5601
@@ -280,9 +280,9 @@ td-agent.conf 自体でうまくさばけるのかな？調べてない。オー
 い。その場合 kibana の Cookbook の attributes 中に elasticsearch の IP アドレ
 ス・ポートを記す箇所があるので Role, Environments で上書きしてあげてください。</li>
 </ul>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-ruby" data-lang="ruby">default<span style="color:#f92672">[</span><span style="color:#e6db74">&#39;kibana&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;elasticsearch&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;hosts&#39;</span><span style="color:#f92672">]</span> <span style="color:#f92672">=</span> <span style="color:#f92672">[</span><span style="color:#e6db74">&#39;127.0.0.1&#39;</span><span style="color:#f92672">]</span>
-default<span style="color:#f92672">[</span><span style="color:#e6db74">&#39;kibana&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;elasticsearch&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;port&#39;</span><span style="color:#f92672">]</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">9200</span>
-</code></pre></div><p>あと td-agent/templates/default/td-agent.conf.erb の中に記した host, port の指
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-ruby" data-lang="ruby"><span style="display:flex;"><span>default<span style="color:#f92672">[</span><span style="color:#e6db74">&#39;kibana&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;elasticsearch&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;hosts&#39;</span><span style="color:#f92672">]</span> <span style="color:#f92672">=</span> <span style="color:#f92672">[</span><span style="color:#e6db74">&#39;127.0.0.1&#39;</span><span style="color:#f92672">]</span>
+</span></span><span style="display:flex;"><span>default<span style="color:#f92672">[</span><span style="color:#e6db74">&#39;kibana&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;elasticsearch&#39;</span><span style="color:#f92672">][</span><span style="color:#e6db74">&#39;port&#39;</span><span style="color:#f92672">]</span> <span style="color:#f92672">=</span> <span style="color:#ae81ff">9200</span>
+</span></span></code></pre></div><p>あと td-agent/templates/default/td-agent.conf.erb の中に記した host, port の指
 定も elasticsearch のホスト情報に書き換えてあげてください。</p>
 <pre tabindex="0"><code>host localhost
 port 9200

@@ -17,7 +17,7 @@ S3 は皆さんご存知のオブジェクトストレージです。CircleCI �
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2015/11/15/circleci-codedeploy/" />
 <link crossorigin="anonymous" href="/assets/css/stylesheet.min.44044074f4b4d7b018bfd3febcc1fa76eb874db64213f920feacf263e3028a73.css" integrity="sha256-RARAdPS017AYv9P&#43;vMH6duuHTbZCE/kg/qzyY&#43;MCinM=" rel="preload stylesheet" as="style">
-<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.2840b7fccd34145847db71a290569594bdbdb00047097f75d6495d162f5d7dff.js" integrity="sha256-KEC3/M00FFhH23GikFaVlL29sABHCX911kldFi9dff8="
     onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/pix/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
@@ -26,7 +26,7 @@ S3 は皆さんご存知のオブジェクトストレージです。CircleCI �
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.92.1" />
+<meta name="generator" content="Hugo 0.97.3" />
 <noscript>
     <style>
         #theme-toggle,
@@ -101,7 +101,7 @@ S3 は皆さんご存知のオブジェクトストレージです。CircleCI �
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkz です。\n最近、業務で CircleCI を扱っていて、だいぶ “出来ること・出来ないこと” や “出来ないこと に対する回避方法” 等のノウハウが若干溜まってきたので共有したいなと思います。\nこの記事の前提… ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、 それの回避方法等…についてまとめています。\nCirlceCI と併用するサービスについて CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが 省けそう。ってことで\n AWS S3 (https://aws.amazon.com/jp/s3/) AWS CodeDeploy (https://aws.amazon.com/jp/codedeploy/)  を併用することを考えました。\nS3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、 ビルドした結果を格納します。私の務めている会社ではプログラミング言語として Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り 戻すことが出来そうです。\nまた CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ ロイが可能になるサービスです。東京リージョンでは 2015/08 から利用が可能になり ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内 のインスタンスに対してもデプロイが可能なところです。\nTips 的な情報として +++\ncircle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい と思います。\nGit push からデプロイまでを自動で行う circle.yml Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の circle.yml を紹介します。全体の流れとしては…\n レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする  となります。\nmachine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: \"-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M\" services: - docker dependencies: pre: - (事前に実行したいコマンド・スクリプトを記述) cache_directories: - \"~/.sbt\" test: override: - sbt compile deployment: production: branch: master codedeploy: codedeploy-sample: application_root: / region: ap-northeast-1 revision_location: revision_type: S3 s3_location: bucket: circleci-sample-bucket key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip deployment_group: codedeploy-sample-group それぞれのパラメータの意味 上記 circle.yml の重要なパラメータのみ説明していきます。 私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき ると思いますので読み替えてください。\n machine - environment : 全体で適用できる環境変数を定義します dependencies - pre : 事前に実行したいコマンド等を定義できます test - overide : テストを実行するコマンドを書きます。 deployment - production - branch : 適用するブランチ名と本番環境であることを記述します。 ‘codedeploy-sample’ : CodeDeploy 上にサンプルで作成した ‘Application’ 名です s3_location - bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します s3_location - key_pattern : S3 バケットに収めるファイル名指定です deployment_group : CodeDeploy で定義する ‘Deployment-Group’ 名です  より詳細な説明を読みたい場合は下記の URL に描いてあります。\nhttps://circleci.com/docs/configuration\nS3 のみににデプロイする例 上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて 実行したい場面もありそうです。流れとしては…\n レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される  です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の API を直接叩けば出来そうです。\nhttp://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html\nこのリファレンスにある “CreateDeployment” については後に例をあげます。\nただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。\nよって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば 上記の流れが組めそうです。\nmachine: environment: SBT_VERSION: 0.13.9 SBT_OPTS: \"-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M\" services: - docker dependencies: pre: - sudo pip install awscli cache_directories: - \"~/.sbt\" test: override: - sbt compile deployment: master: branch: master commands: - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip . - aws s3 cp sample-code-${CIRCLE_PROJECT_REPONAME}-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip s3://// --region ap-northeast-1 事前に awscli をインストールしているだけです。\nS3 バケットに格納された成果物を CodeDeploy を使って手動でデプロイするには下記 のコマンドで実施できます。\n$ aws deploy create-deployment \\  --application-name codedeploy-sample \\  --deployment-config-name CodeDeployDefault.OneAtATime \\  --deployment-group-name codedeploy-sample-group \\  --description \"deploy test\" \\  --s3-location bucket=,bundleType=zip,key= { \"deploymentId\": \"d-2B4OAMT0B\" } deploymentId は CodeDeploy 上の Application に紐付いた ID です。CodeDeploy の API を叩くか AWS コンソールで確認可能です。\nCircleCI の問題点とそれの回避方法  production と staging  1つのブランチで管理できる circle.yml は1つです。このファイルの中で定義できる ‘本番用’, ‘開発用’ の定義は deployment - production, staging の2種類になります。この2つで管理しきれない環境がある場合(例えば staging 以前の development 環境がある) は、レポジトリのブランチを別けて circle.yml を管理する方法があると思います。\n 複数のデプロイ先があるレポジトリの運用  同一のレポジトリ内で管理しているコードのデプロイ先が複数ある場合は CodeDeploy 上で1つの Application に対して複数の Deployment-Group を作成することで対応できます。ただ、cirlce.yml で定義できるデプロイ先は deployment_group: の1つ( 厳密に言うと production, staging の2つ) になるので、こちらもブランチによる circle.yml の別管理で回避できそうです。\nこちらの問題については CircleCI 的にはおそらく「1つのレポジトリで管理するデプロイ先は1つに」というコンセプトなのかもしれません。\nAWS IAM ユーザにアタッチする Policy 作成 IAM ユーザを CircleCI に事前に設定しておくことで直接 AWS のリソースを操作出来るのですが、 そのユーザにアタッチしておくべき Policy について例をあげておきます。\n特定の S3 バケットにオブジェクト Put する Policy\n{ \"Version\": \"2012-10-17\", \"Statement\": [ { \"Sid\": \"Stmt1444196633000\", \"Effect\": \"Allow\", \"Action\": [ \"s3:PutObject\" ], \"Resource\": [ \"arn:aws:s3:::/*\" ] } ] } CodeDeploy の各 Action を実行する Policy\n{ \"Version\": \"2012-10-17\", \"Statement\": [ { \"Effect\": \"Allow\", \"Action\": [ \"codedeploy:RegisterApplicationRevision\", \"codedeploy:GetApplicationRevision\" ], \"Resource\": [ \"*\" ] }, { \"Effect\": \"Allow\", \"Action\": [ \"codedeploy:CreateDeployment\", \"codedeploy:GetDeployment\" ], \"Resource\": [ \"*\" ] }, { \"Effect\": \"Allow\", \"Action\": [ \"codedeploy:GetDeploymentConfig\" ], \"Resource\": [ \"*\" ] } ] } まとめ CodeDeploy, S3 を併用することで CircleCI を使っても VPC 内のプライベートインス タンスにデプロイできることが判りました。もし EC2 インスタンスを使っている場合 は他の方法も取れることが判っています。circle.yml 内の pre: で指定出来るコマン ド・スクリプトで EC2 インスタンスに紐付いているセキュリティグループに穴あけ処 理を記述すれば良さそうです。デプロイが終わったら穴を塞げばいいですね。この辺の 例については国内でもブログ記事にされている方がいらっしゃいますので参考にしてくだ さい。\n",
+  "articleBody": "こんにちは。@jedipunkz です。\n最近、業務で CircleCI を扱っていて、だいぶ “出来ること・出来ないこと” や “出来ないこと に対する回避方法” 等のノウハウが若干溜まってきたので共有したいなと思います。\nこの記事の前提… ここでは CodeDeploy の設定方法や、CircleCIの設定方法等に関しては記述しませ ん。あくまで、Tips 的な内容にしています。また運用する上で想定できる問題点と、 それの回避方法等…についてまとめています。\nCirlceCI と併用するサービスについて CircleCI は Github と連携してレポジトリ内の制御ファイル circle.yml に従ってテ スト・ビルド・デプロイを実施してくれる CI サービスです。ただ CircleCI は自分た ちの管理しているシステム外にあるので、AWS VPC を用いていると VPC 内のプライベー トインスタンスにデプロイするのが難しいです。プロキシ挟んで・・ってことは出来そ うですがプロキシの運用もしたくない、AWS のインフラリソースに任せることが出来た らインスタンス・インスタンス上のミドルウェアを運用しなくて済むので運用コストが 省けそう。ってことで\n AWS S3 (https://aws.amazon.com/jp/s3/) AWS CodeDeploy (https://aws.amazon.com/jp/codedeploy/)  を併用することを考えました。\nS3 は皆さんご存知のオブジェクトストレージです。CircleCI 用のバケットを作って、 ビルドした結果を格納します。私の務めている会社ではプログラミング言語として Scala を用いているので SBT というツールを使ってビルドします。その結果もバージョ ニングしつつ S3 バケットに格納できれば、万が一問題が発生した時にバイナリ毎切り 戻すことが出来そうです。\nまた CodeDeploy は EC2 インスタンス・またオンプレのインスタンスへコードのデプ ロイが可能になるサービスです。東京リージョンでは 2015/08 から利用が可能になり ました。これの便利なところは CircleCI 等の CI サービスから簡単に叩けて、VPC 内 のインスタンスに対してもデプロイが可能なところです。\nTips 的な情報として +++\ncircle.yml という CircleCI の制御ファイルがあります。Git レポジトリ内に格納することで CircleCI の動作を制御することが出来ます。この記事では circle.yml の紹介をメインとしたい と思います。\nGit push からデプロイまでを自動で行う circle.yml Github への push, merge をトリガーとしてデプロイまでの流れを自動で行う流れを組む場合の circle.yml を紹介します。全体の流れとしては…\n レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする  となります。\nmachine:  environment:  SBT_VERSION: 0.13.9  SBT_OPTS: \"-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M\"  services:  - docker  dependencies:  pre:  - (事前に実行したいコマンド・スクリプトを記述)  cache_directories:  - \"~/.sbt\"  test:  override:  - sbt compile  deployment:  production:  branch: master  codedeploy:  codedeploy-sample:  application_root: /  region: ap-northeast-1  revision_location:  revision_type: S3  s3_location:  bucket: circleci-sample-bucket  key_pattern: filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip  deployment_group: codedeploy-sample-group それぞれのパラメータの意味 上記 circle.yml の重要なパラメータのみ説明していきます。 私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき ると思いますので読み替えてください。\n machine - environment : 全体で適用できる環境変数を定義します dependencies - pre : 事前に実行したいコマンド等を定義できます test - overide : テストを実行するコマンドを書きます。 deployment - production - branch : 適用するブランチ名と本番環境であることを記述します。 ‘codedeploy-sample’ : CodeDeploy 上にサンプルで作成した ‘Application’ 名です s3_location - bucket : ビルドした成果物を S3 へ格納する際のバケット名を記します s3_location - key_pattern : S3 バケットに収めるファイル名指定です deployment_group : CodeDeploy で定義する ‘Deployment-Group’ 名です  より詳細な説明を読みたい場合は下記の URL に描いてあります。\nhttps://circleci.com/docs/configuration\nS3 のみににデプロイする例 上記の circle.yml ではビルドとデプロイを一気に処理するのですが、テスト・ビルドとデプロイを別けて 実行したい場面もありそうです。流れとしては…\n レポジトリに git push, merge ことがトリガで処理が走る circle.yml を元にテスト・ビルド(場合によってはテストのみ) が走る S3 バケットにビルドされた結果が格納される  です。S3 のバケットに格納されたアプリを CodeDeploy を使ってデプロイするのは CodeDeploy の API を直接叩けば出来そうです。\nhttp://docs.aws.amazon.com/codedeploy/latest/APIReference/API_CreateDeployment.html\nこのリファレンスにある “CreateDeployment” については後に例をあげます。\nただ、同様のサービスとして TravisCI 等は S3 にのみデプロイを実施する仕組みが用意されているのですが CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。\nよって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば 上記の流れが組めそうです。\nmachine:  environment:  SBT_VERSION: 0.13.9  SBT_OPTS: \"-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M\"  services:  - docker  dependencies:  pre:  - sudo pip install awscli  cache_directories:  - \"~/.sbt\"  test:  override:  - sbt compile  deployment:  master:  branch: master  commands:  - zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip .  - aws s3 cp  sample-code-${CIRCLE_PROJECT_REPONAME}-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip s3://// --region ap-northeast-1 事前に awscli をインストールしているだけです。\nS3 バケットに格納された成果物を CodeDeploy を使って手動でデプロイするには下記 のコマンドで実施できます。\n$ aws deploy create-deployment \\  --application-name codedeploy-sample \\  --deployment-config-name CodeDeployDefault.OneAtATime \\  --deployment-group-name codedeploy-sample-group \\  --description \"deploy test\" \\  --s3-location bucket=,bundleType=zip,key=  {  \"deploymentId\": \"d-2B4OAMT0B\"  } deploymentId は CodeDeploy 上の Application に紐付いた ID です。CodeDeploy の API を叩くか AWS コンソールで確認可能です。\nCircleCI の問題点とそれの回避方法  production と staging  1つのブランチで管理できる circle.yml は1つです。このファイルの中で定義できる ‘本番用’, ‘開発用’ の定義は deployment - production, staging の2種類になります。この2つで管理しきれない環境がある場合(例えば staging 以前の development 環境がある) は、レポジトリのブランチを別けて circle.yml を管理する方法があると思います。\n 複数のデプロイ先があるレポジトリの運用  同一のレポジトリ内で管理しているコードのデプロイ先が複数ある場合は CodeDeploy 上で1つの Application に対して複数の Deployment-Group を作成することで対応できます。ただ、cirlce.yml で定義できるデプロイ先は deployment_group: の1つ( 厳密に言うと production, staging の2つ) になるので、こちらもブランチによる circle.yml の別管理で回避できそうです。\nこちらの問題については CircleCI 的にはおそらく「1つのレポジトリで管理するデプロイ先は1つに」というコンセプトなのかもしれません。\nAWS IAM ユーザにアタッチする Policy 作成 IAM ユーザを CircleCI に事前に設定しておくことで直接 AWS のリソースを操作出来るのですが、 そのユーザにアタッチしておくべき Policy について例をあげておきます。\n特定の S3 バケットにオブジェクト Put する Policy\n{  \"Version\": \"2012-10-17\",  \"Statement\": [  {  \"Sid\": \"Stmt1444196633000\",  \"Effect\": \"Allow\",  \"Action\": [  \"s3:PutObject\"  ],  \"Resource\": [  \"arn:aws:s3:::/*\"  ]  }  ] } CodeDeploy の各 Action を実行する Policy\n{  \"Version\": \"2012-10-17\",  \"Statement\": [  {  \"Effect\": \"Allow\",  \"Action\": [  \"codedeploy:RegisterApplicationRevision\",  \"codedeploy:GetApplicationRevision\"  ],  \"Resource\": [  \"*\"  ]  },  {  \"Effect\": \"Allow\",  \"Action\": [  \"codedeploy:CreateDeployment\",  \"codedeploy:GetDeployment\"  ],  \"Resource\": [  \"*\"  ]  },  {  \"Effect\": \"Allow\",  \"Action\": [  \"codedeploy:GetDeploymentConfig\"  ],  \"Resource\": [  \"*\"  ]  }  ] } まとめ CodeDeploy, S3 を併用することで CircleCI を使っても VPC 内のプライベートインス タンスにデプロイできることが判りました。もし EC2 インスタンスを使っている場合 は他の方法も取れることが判っています。circle.yml 内の pre: で指定出来るコマン ド・スクリプトで EC2 インスタンスに紐付いているセキュリティグループに穴あけ処 理を記述すれば良さそうです。デプロイが終わったら穴を塞げばいいですね。この辺の 例については国内でもブログ記事にされている方がいらっしゃいますので参考にしてくだ さい。\n",
   "wordCount" : "511",
   "inLanguage": "en",
   "datePublished": "2015-11-15T00:00:00Z",
@@ -226,37 +226,37 @@ circle.yml を紹介します。全体の流れとしては&hellip;</p>
 <li>CodeDeploy が実行され S3 バケット内のビルドされた成果物を対象のインスタンスにデプロイする</li>
 </ul>
 <p>となります。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yml" data-lang="yml"><span style="color:#f92672">machine</span>:
-  <span style="color:#f92672">environment</span>:
-    <span style="color:#f92672">SBT_VERSION</span>: <span style="color:#ae81ff">0.13.9</span>
-    <span style="color:#f92672">SBT_OPTS</span>: <span style="color:#e6db74">&#34;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&#34;</span>
-  <span style="color:#f92672">services</span>:
-    - <span style="color:#ae81ff">docker</span>
-
-<span style="color:#f92672">dependencies</span>:
-  <span style="color:#f92672">pre</span>:
-    - <span style="color:#ae81ff">(事前に実行したいコマンド・スクリプトを記述)</span>
-  <span style="color:#f92672">cache_directories</span>:
-    - <span style="color:#e6db74">&#34;~/.sbt&#34;</span>
-
-<span style="color:#f92672">test</span>:
-  <span style="color:#f92672">override</span>:
-    - <span style="color:#ae81ff">sbt compile</span>
-
-<span style="color:#f92672">deployment</span>:
-  <span style="color:#f92672">production</span>:
-    <span style="color:#f92672">branch</span>: <span style="color:#ae81ff">master</span>
-    <span style="color:#f92672">codedeploy</span>:
-      <span style="color:#f92672">codedeploy-sample</span>:
-        <span style="color:#f92672">application_root</span>: <span style="color:#ae81ff">/</span>
-        <span style="color:#f92672">region</span>: <span style="color:#ae81ff">ap-northeast-1</span>
-        <span style="color:#f92672">revision_location</span>:
-          <span style="color:#f92672">revision_type</span>: <span style="color:#ae81ff">S3</span>
-          <span style="color:#f92672">s3_location</span>:
-            <span style="color:#f92672">bucket</span>: <span style="color:#ae81ff">circleci-sample-bucket</span>
-            <span style="color:#f92672">key_pattern</span>: <span style="color:#ae81ff">filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip</span>
-        <span style="color:#f92672">deployment_group</span>: <span style="color:#ae81ff">codedeploy-sample-group</span>
-</code></pre></div><h4 id="それぞれのパラメータの意味">それぞれのパラメータの意味<a hidden class="anchor" aria-hidden="true" href="#それぞれのパラメータの意味">#</a></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yml" data-lang="yml"><span style="display:flex;"><span><span style="color:#f92672">machine</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">environment</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">SBT_VERSION</span>: <span style="color:#ae81ff">0.13.9</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">SBT_OPTS</span>: <span style="color:#e6db74">&#34;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&#34;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">services</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#ae81ff">docker</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">dependencies</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">pre</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#ae81ff">(事前に実行したいコマンド・スクリプトを記述)</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">cache_directories</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#e6db74">&#34;~/.sbt&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">test</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">override</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#ae81ff">sbt compile</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">deployment</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">production</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">branch</span>: <span style="color:#ae81ff">master</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">codedeploy</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">codedeploy-sample</span>:
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">application_root</span>: <span style="color:#ae81ff">/</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">region</span>: <span style="color:#ae81ff">ap-northeast-1</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">revision_location</span>:
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">revision_type</span>: <span style="color:#ae81ff">S3</span>
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">s3_location</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">bucket</span>: <span style="color:#ae81ff">circleci-sample-bucket</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">key_pattern</span>: <span style="color:#ae81ff">filename-{CIRCLE_BRANCH}-{CIRCLE_BUILD_NUM}.zip</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">deployment_group</span>: <span style="color:#ae81ff">codedeploy-sample-group</span>
+</span></span></code></pre></div><h4 id="それぞれのパラメータの意味">それぞれのパラメータの意味<a hidden class="anchor" aria-hidden="true" href="#それぞれのパラメータの意味">#</a></h4>
 <p>上記 circle.yml の重要なパラメータのみ説明していきます。
 私が務めている会社は Scala を使っていると冒頭に説明しましたがテスト・ビルドに
 SBT を使うのでこのような記述になっています。Ruby や Python でも同様に記述でき
@@ -289,43 +289,43 @@ API を直接叩けば出来そうです。</p>
 CircleCI にはこの機能はありませんでした。サポートに問い合わせもしたのですが、あまり良い回答ではありませんでした。</p>
 <p>よって、下記のように awscli をテストコンテナ起動の度にインストールして S3 にアクセスすれば
 上記の流れが組めそうです。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yml" data-lang="yml"><span style="color:#f92672">machine</span>:
-  <span style="color:#f92672">environment</span>:
-    <span style="color:#f92672">SBT_VERSION</span>: <span style="color:#ae81ff">0.13.9</span>
-    <span style="color:#f92672">SBT_OPTS</span>: <span style="color:#e6db74">&#34;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&#34;</span>
-  <span style="color:#f92672">services</span>:
-    - <span style="color:#ae81ff">docker</span>
-
-<span style="color:#f92672">dependencies</span>:
-  <span style="color:#f92672">pre</span>:
-    - <span style="color:#ae81ff">sudo pip install awscli</span>
-  <span style="color:#f92672">cache_directories</span>:
-    - <span style="color:#e6db74">&#34;~/.sbt&#34;</span>
-
-<span style="color:#f92672">test</span>:
-  <span style="color:#f92672">override</span>:
-    - <span style="color:#ae81ff">sbt compile</span>
-
-<span style="color:#f92672">deployment</span>:
-  <span style="color:#f92672">master</span>:
-    <span style="color:#f92672">branch</span>: <span style="color:#ae81ff">master</span>
-    <span style="color:#f92672">commands</span>:
-      - <span style="color:#ae81ff">zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip .</span>
-      - <span style="color:#ae81ff">aws s3 cp</span>
-        <span style="color:#ae81ff">sample-code-${CIRCLE_PROJECT_REPONAME}-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip s3://&lt;バケット名&gt;/&lt;ディレクトリ&gt;/ --region ap-northeast-1</span>
-</code></pre></div><p>事前に awscli をインストールしているだけです。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yml" data-lang="yml"><span style="display:flex;"><span><span style="color:#f92672">machine</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">environment</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">SBT_VERSION</span>: <span style="color:#ae81ff">0.13.9</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">SBT_OPTS</span>: <span style="color:#e6db74">&#34;-Xms512M -Xmx1536M -Xss1M -XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=256M&#34;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">services</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#ae81ff">docker</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">dependencies</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">pre</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#ae81ff">sudo pip install awscli</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">cache_directories</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#e6db74">&#34;~/.sbt&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">test</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">override</span>:
+</span></span><span style="display:flex;"><span>    - <span style="color:#ae81ff">sbt compile</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">deployment</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">master</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">branch</span>: <span style="color:#ae81ff">master</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">commands</span>:
+</span></span><span style="display:flex;"><span>      - <span style="color:#ae81ff">zip -r sample-code-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip .</span>
+</span></span><span style="display:flex;"><span>      - <span style="color:#ae81ff">aws s3 cp</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#ae81ff">sample-code-${CIRCLE_PROJECT_REPONAME}-${CIRCLE_BRANCH}-${CIRCLE_BUILD_NUM}.zip s3://&lt;バケット名&gt;/&lt;ディレクトリ&gt;/ --region ap-northeast-1</span>
+</span></span></code></pre></div><p>事前に awscli をインストールしているだけです。</p>
 <p>S3 バケットに格納された成果物を CodeDeploy を使って手動でデプロイするには下記
 のコマンドで実施できます。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ aws deploy create-deployment <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  --application-name codedeploy-sample <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  --deployment-config-name CodeDeployDefault.OneAtATime <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  --deployment-group-name codedeploy-sample-group <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  --description <span style="color:#e6db74">&#34;deploy test&#34;</span> <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  --s3-location bucket<span style="color:#f92672">=</span>&lt;バケット名&gt;,bundleType<span style="color:#f92672">=</span>zip,key<span style="color:#f92672">=</span>&lt;ファイル名&gt;
-  <span style="color:#f92672">{</span>
-    <span style="color:#e6db74">&#34;deploymentId&#34;</span>: <span style="color:#e6db74">&#34;d-2B4OAMT0B&#34;</span>
-   <span style="color:#f92672">}</span>
-</code></pre></div><p>deploymentId は CodeDeploy 上の Application に紐付いた ID です。CodeDeploy の
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ aws deploy create-deployment <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  --application-name codedeploy-sample <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  --deployment-config-name CodeDeployDefault.OneAtATime <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  --deployment-group-name codedeploy-sample-group <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  --description <span style="color:#e6db74">&#34;deploy test&#34;</span> <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  --s3-location bucket<span style="color:#f92672">=</span>&lt;バケット名&gt;,bundleType<span style="color:#f92672">=</span>zip,key<span style="color:#f92672">=</span>&lt;ファイル名&gt;
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">{</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#e6db74">&#34;deploymentId&#34;</span>: <span style="color:#e6db74">&#34;d-2B4OAMT0B&#34;</span>
+</span></span><span style="display:flex;"><span>   <span style="color:#f92672">}</span>
+</span></span></code></pre></div><p>deploymentId は CodeDeploy 上の Application に紐付いた ID です。CodeDeploy の
 API を叩くか AWS コンソールで確認可能です。</p>
 <h4 id="circleci-の問題点とそれの回避方法">CircleCI の問題点とそれの回避方法<a hidden class="anchor" aria-hidden="true" href="#circleci-の問題点とそれの回避方法">#</a></h4>
 <ul>
@@ -345,57 +345,57 @@ Deployment-Group を作成することで対応できます。ただ、cirlce.ym
 <p>IAM ユーザを CircleCI に事前に設定しておくことで直接 AWS のリソースを操作出来るのですが、
 そのユーザにアタッチしておくべき Policy について例をあげておきます。</p>
 <p>特定の S3 バケットにオブジェクト Put する Policy</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
-    <span style="color:#f92672">&#34;Version&#34;</span>: <span style="color:#e6db74">&#34;2012-10-17&#34;</span>,
-    <span style="color:#f92672">&#34;Statement&#34;</span>: [
-        {
-            <span style="color:#f92672">&#34;Sid&#34;</span>: <span style="color:#e6db74">&#34;Stmt1444196633000&#34;</span>,
-            <span style="color:#f92672">&#34;Effect&#34;</span>: <span style="color:#e6db74">&#34;Allow&#34;</span>,
-            <span style="color:#f92672">&#34;Action&#34;</span>: [
-                <span style="color:#e6db74">&#34;s3:PutObject&#34;</span>
-            ],
-            <span style="color:#f92672">&#34;Resource&#34;</span>: [
-                <span style="color:#e6db74">&#34;arn:aws:s3:::&lt;S3 バケット名&gt;/*&#34;</span>
-            ]
-        }
-    ]
-}
-</code></pre></div><p>CodeDeploy の各 Action を実行する Policy</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
-    <span style="color:#f92672">&#34;Version&#34;</span>: <span style="color:#e6db74">&#34;2012-10-17&#34;</span>,
-    <span style="color:#f92672">&#34;Statement&#34;</span>: [
-        {
-            <span style="color:#f92672">&#34;Effect&#34;</span>: <span style="color:#e6db74">&#34;Allow&#34;</span>,
-            <span style="color:#f92672">&#34;Action&#34;</span>: [
-                <span style="color:#e6db74">&#34;codedeploy:RegisterApplicationRevision&#34;</span>,
-                <span style="color:#e6db74">&#34;codedeploy:GetApplicationRevision&#34;</span>
-            ],
-            <span style="color:#f92672">&#34;Resource&#34;</span>: [
-                <span style="color:#e6db74">&#34;*&#34;</span>
-            ]
-        },
-        {
-            <span style="color:#f92672">&#34;Effect&#34;</span>: <span style="color:#e6db74">&#34;Allow&#34;</span>,
-            <span style="color:#f92672">&#34;Action&#34;</span>: [
-                <span style="color:#e6db74">&#34;codedeploy:CreateDeployment&#34;</span>,
-                <span style="color:#e6db74">&#34;codedeploy:GetDeployment&#34;</span>
-            ],
-            <span style="color:#f92672">&#34;Resource&#34;</span>: [
-                <span style="color:#e6db74">&#34;*&#34;</span>
-            ]
-        },
-        {
-            <span style="color:#f92672">&#34;Effect&#34;</span>: <span style="color:#e6db74">&#34;Allow&#34;</span>,
-            <span style="color:#f92672">&#34;Action&#34;</span>: [
-                <span style="color:#e6db74">&#34;codedeploy:GetDeploymentConfig&#34;</span>
-            ],
-            <span style="color:#f92672">&#34;Resource&#34;</span>: [
-                <span style="color:#e6db74">&#34;*&#34;</span>
-            ]
-        }
-    ]
-}
-</code></pre></div><h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;Version&#34;</span>: <span style="color:#e6db74">&#34;2012-10-17&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;Statement&#34;</span>: [
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Sid&#34;</span>: <span style="color:#e6db74">&#34;Stmt1444196633000&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Effect&#34;</span>: <span style="color:#e6db74">&#34;Allow&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Action&#34;</span>: [
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;s3:PutObject&#34;</span>
+</span></span><span style="display:flex;"><span>            ],
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Resource&#34;</span>: [
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;arn:aws:s3:::&lt;S3 バケット名&gt;/*&#34;</span>
+</span></span><span style="display:flex;"><span>            ]
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    ]
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>CodeDeploy の各 Action を実行する Policy</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;Version&#34;</span>: <span style="color:#e6db74">&#34;2012-10-17&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;Statement&#34;</span>: [
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Effect&#34;</span>: <span style="color:#e6db74">&#34;Allow&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Action&#34;</span>: [
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;codedeploy:RegisterApplicationRevision&#34;</span>,
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;codedeploy:GetApplicationRevision&#34;</span>
+</span></span><span style="display:flex;"><span>            ],
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Resource&#34;</span>: [
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;*&#34;</span>
+</span></span><span style="display:flex;"><span>            ]
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Effect&#34;</span>: <span style="color:#e6db74">&#34;Allow&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Action&#34;</span>: [
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;codedeploy:CreateDeployment&#34;</span>,
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;codedeploy:GetDeployment&#34;</span>
+</span></span><span style="display:flex;"><span>            ],
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Resource&#34;</span>: [
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;*&#34;</span>
+</span></span><span style="display:flex;"><span>            ]
+</span></span><span style="display:flex;"><span>        },
+</span></span><span style="display:flex;"><span>        {
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Effect&#34;</span>: <span style="color:#e6db74">&#34;Allow&#34;</span>,
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Action&#34;</span>: [
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;codedeploy:GetDeploymentConfig&#34;</span>
+</span></span><span style="display:flex;"><span>            ],
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">&#34;Resource&#34;</span>: [
+</span></span><span style="display:flex;"><span>                <span style="color:#e6db74">&#34;*&#34;</span>
+</span></span><span style="display:flex;"><span>            ]
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    ]
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
 <p>CodeDeploy, S3 を併用することで CircleCI を使っても VPC 内のプライベートインス
 タンスにデプロイできることが判りました。もし EC2 インスタンスを使っている場合
 は他の方法も取れることが判っています。circle.yml 内の pre: で指定出来るコマン

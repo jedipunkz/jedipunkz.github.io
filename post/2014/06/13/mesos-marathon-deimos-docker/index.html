@@ -23,7 +23,7 @@ Mesos &#43; Marathon &#43; Deimos &#43; Docker をオールインワン構成で
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2014/06/13/mesos-marathon-deimos-docker/" />
 <link crossorigin="anonymous" href="/assets/css/stylesheet.min.44044074f4b4d7b018bfd3febcc1fa76eb874db64213f920feacf263e3028a73.css" integrity="sha256-RARAdPS017AYv9P&#43;vMH6duuHTbZCE/kg/qzyY&#43;MCinM=" rel="preload stylesheet" as="style">
-<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.2840b7fccd34145847db71a290569594bdbdb00047097f75d6495d162f5d7dff.js" integrity="sha256-KEC3/M00FFhH23GikFaVlL29sABHCX911kldFi9dff8="
     onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/pix/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
@@ -32,7 +32,7 @@ Mesos &#43; Marathon &#43; Deimos &#43; Docker をオールインワン構成で
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.92.1" />
+<meta name="generator" content="Hugo 0.97.3" />
 <noscript>
     <style>
         #theme-toggle,
@@ -119,7 +119,7 @@ Mesos &#43; Marathon &#43; Deimos &#43; Docker をオールインワン構成で
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkz です。\n以前 Mesos, Docker について記事にしました。\nhttp://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/ http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/\nTwitter で Docker 関連のオーケストレーションツールについて呟いていたら @everpeace さんから こんな情報をもらいました。\n@jedipunkz 元々meos-dockerっていうmesos executorがあったんですけど、mesosがcontainer部分をpluggableにしたので、それに合わせてdeimosっていうmesos用のexternal containerizer が作られました。\n— Shingo Omura (@everpeace) 2014, 6月 12  Deimos !!! 知らなかった。Mesos の Docker プラグインらしく下記の場所にありました。\nhttps://github.com/mesosphere/deimos\n色々調べいたら、こんな資料が見つかりました。どうやらまだ公開されて4日しか経っていないようです。\nhttp://mesosphere.io/learn/run-docker-on-mesosphere/\nMesos + Marathon + Deimos + Docker をオールインワン構成で構築する手順が書かれています。\n内容はほぼ同じですが、一応自分がやってみて理解したことをまとめたいので下記に記していきます。\n構築してみる 手順をまとめてスクリプトにしました。パッケージは Ubuntu 13.10 用のようですが 14.04 のホスト で実行出来ました。14.04 のパッケージはまだ見つかっていません。\n#!/bin/bash # disable ipv6 echo 'net.ipv6.conf.all.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf echo 'net.ipv6.conf.default.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf sudo sysctl -p # install related tools sudo apt-get update sudo apt-get -y install curl python-setuptools python-pip python-dev python-protobuf # install zookeeper sudo apt-get -y install zookeeperd echo 1 | sudo dd of=/var/lib/zookeeper/myid # install docker sudo apt-get -y install docker.io sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker sudo sed -i '$acomplete -F _docker docker' /etc/bash_completion.d/docker.io sudo docker pull libmesos/ubuntu # install mesos curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.deb -o /tmp/mesos.deb sudo dpkg -i /tmp/mesos.deb sudo mkdir -p /etc/mesos-master echo in_memory | sudo dd of=/etc/mesos-master/registry curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.egg -o /tmp/mesos.egg sudo easy_install /tmp/mesos.egg # install marathon curl -fL http://downloads.mesosphere.io/marathon/marathon_0.5.0-xcon2_noarch.deb -o /tmp/marathon.deb sudo dpkg -i /tmp/marathon.deb # restart each services sudo service docker.io restart sudo service zookeeper restart sudo service mesos-master restart sudo service mesos-slave restart # install deimos sudo pip install deimos sudo mkdir -p /etc/mesos-slave ## Configure Deimos as a containerizer echo /usr/bin/deimos | sudo dd of=/etc/mesos-slave/containerizer_path echo external | sudo dd of=/etc/mesos-slave/isolation プロセスの確認 実行が終わると各プロセスが確認出来ます。オプションでどのプロセスが何を見ているか大体 わかりますので見ていきます。\nmesos-master mesos-master は zookeeper を参照して 5050 番ポートで起動しているようです。\n% ps ax | grep mesos-master 1224 ? Ssl 0:30 /usr/local/sbin/mesos-master --zk=zk://localhost:2181/mesos --port=5050 --log_dir=/var/log/mesos --registry=in_memory mesos-slave mesos-slave は同じく zookeeper を参照して containerizer を deimos として稼働していることが わかります。\n% ps ax | grep mesos-slave 1225 ? Ssl 0:12 /usr/local/sbin/mesos-slave --master=zk://localhost:2181/mesos --log_dir=/var/log/mesos --containerizer_path=/usr/bin/deimos --isolation=external zookeeper zookeeper は OpenJDK7 で稼働している Java プロセスです。\n% ps ax | grep zookeeper 1073 ? Ssl 1:07 /usr/bin/java -cp /etc/zookeeper/conf:/usr/share/java/jline.jar:/usr/share/java/log4j-1.2.jar:/usr/share/java/xercesImpl.jar:/usr/share/java/xmlParserAPIs.jar:/usr/share/java/netty.jar:/usr/share/java/slf4j-api.jar:/usr/share/java/slf4j-log4j12.jar:/usr/share/java/zookeeper.jar -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=false -Dzookeeper.log.dir=/var/log/zookeeper -Dzookeeper.root.logger=INFO,ROLLINGFILE org.apache.zookeeper.server.quorum.QuorumPeerMain /etc/zookeeper/conf/zoo.cfg docker docker が起動していることも確認できます。設定は特にしていないです。\n% ps axuw | grep docker root 831 0.0 0.3 364776 14924 ? Sl 01:30 0:01 /usr/bin/docker.io -d Marathon の WebUI にアクセス Marathon の WebUI にアクセスしてみましょう。\nまだ何も Tasks が実行されていないので一覧には何も表示されないと思います。\nTasks の実行 Marathon API に対してクエリを発行することで Mesos の Tasks として Docker コンテナを稼働させることが出来ます。 下記のファイルを ubuntu.json として保存。\n{ \"container\": { \"image\": \"docker:///libmesos/ubuntu\" }, \"id\": \"ubuntu\", \"instances\": \"1\", \"cpus\": \".5\", \"mem\": \"512\", \"uris\": [ ] } 下記の通り localhost:8080 が Marathon API の Endpoint になっているのでここに対して作成した JSON を POST します。\n% curl -X POST -H \"Content-Type: application/json\" localhost:8080/v2/apps -d@ubuntu.json Tasks の一覧を取得してみます。\n% curl -X GET -H \"Content-Type: application/json\" localhost:8080/v2/apps {\"apps\":[{\"id\":\"ubuntu\",\"cmd\":\"\",\"env\":{},\"instances\":1,\"cpus\":0.5,\"mem\":512.0,\"executor\":\"\",\"constraints\":[],\"uris\":[],\"ports\":[13049],\"taskRateLimit\":1.0,\"container\":{\"image\":\"docker:///libmesos/ubuntu\",\"options\":[]},\"version\":\"2014-06-13T01:45:58.693Z\",\"tasksStaged\":1,\"tasksRunning\":0}]} Tasks の一覧が JSON で返ってきます。id : ubuntu, インスタンス数 : 1, CPU 0.5, メモリー : 512MB で Task が稼働していることが確認出来ます。\nここで WebUI 側も見てみましょう。\n一つ Task が稼働していることが確認出来ると思います。\nその Task をクリックすると詳細が表示されます。\n次に Tasks のスケーリングを行ってみましょう。 下記の通り ubuntu.json を修正し instances : 2 とする。これによってインスタンス数が2に増えます。\n{ \"container\": { \"image\": \"docker:///libmesos/ubuntu\" }, \"id\": \"ubuntu\", \"instances\": \"2\", \"cpus\": \".5\", \"mem\": \"512\", \"uris\": [ ] } 修正した JSON を POST します。\n% curl -X PUT -H \"Content-Type: application/json\" localhost:8080/v2/apps/ubuntu -d@ubuntu.json Tasks の一覧を取得し containers が 2 になっていることが確認できます。\n% curl -X GET -H \"Content-Type: application/json\" localhost:8080/v2/apps {\"apps\":[{\"id\":\"ubuntu\",\"cmd\":\"\",\"env\":{},\"instances\":2,\"cpus\":0.5,\"mem\":512.0,\"executor\":\"\",\"constraints\":[],\"uris\":[],\"ports\":[17543],\"taskRateLimit\":1.0,\"container\":{\"image\":\"docker:///libmesos/ubuntu\",\"options\":[]},\"version\":\"2014-06-13T02:40:04.536Z\",\"tasksStaged\":3,\"tasksRunning\":0}]} 最後に Tasks を削除してみましょう。\n% curl -X DELETE -H \"Content-Type: application/json\" localhost:8080/v2/apps/ubuntu Tasks が削除されたことを確認します。\n% curl -X GET -H \"Content-Type: application/json\" localhost:8080/v2/apps {\"apps\":[]} Marathon API v2 Marathon API v2 について下記の URL に仕様が載っています。上記に記したクエリ以外にも色々載っているので 動作を確認してみるといいと思います。\nhttps://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md\nまとめ オールインワン構成が出来ました。また動作確認も無事出来ています。 以前試した時よりも大分、手順が簡潔になった印象があります。また参考資料中に\n“checkout our other multi-node tutorials on how to scale Docker in your data center.”\nとありますが、まだ見つかっていません(´・ω・｀)見つかった方教えてくださいー。\n以前試した時は Mesos-Master の冗長化が出来なかったので今回こそ Multi Mesos-Masters, Multi Mesos-Slaves の構成を作ってみたいと思います。\nまた今月？になって続々と Docker のオーケストレーションツールを各社が公開しています。\ncenturion New Relic が開発したオーケストレーションツール。 https://github.com/newrelic/centurion\nhelios Spotify が開発したオーケストレーションツール。 https://github.com/spotify/helios\nfleet CoreOS 標準搭載。 https://github.com/coreos/fleet\ngeard RedHat が Red Hat Enterprise Linux Atomic Host に搭載しているツール。 http://openshift.github.io/geard/\nKubernetes Google が開発したオーケストレーションツール。 https://github.com/GoogleCloudPlatform/kubernetes\nshipper Python のコードで Docker をオーケストレーション出来るツール。 https://github.com/mailgun/shipper\n幾つか試したのですが、まだまだ動く所までいかないツールがありました。github の README にも “絶賛開発中なのでプロダクトレディではない” と書かれています。これからでしょう。\n",
+  "articleBody": "こんにちは。@jedipunkz です。\n以前 Mesos, Docker について記事にしました。\nhttp://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/ http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/\nTwitter で Docker 関連のオーケストレーションツールについて呟いていたら @everpeace さんから こんな情報をもらいました。\n@jedipunkz 元々meos-dockerっていうmesos executorがあったんですけど、mesosがcontainer部分をpluggableにしたので、それに合わせてdeimosっていうmesos用のexternal containerizer が作られました。\n— Shingo Omura (@everpeace) 2014, 6月 12  Deimos !!! 知らなかった。Mesos の Docker プラグインらしく下記の場所にありました。\nhttps://github.com/mesosphere/deimos\n色々調べいたら、こんな資料が見つかりました。どうやらまだ公開されて4日しか経っていないようです。\nhttp://mesosphere.io/learn/run-docker-on-mesosphere/\nMesos + Marathon + Deimos + Docker をオールインワン構成で構築する手順が書かれています。\n内容はほぼ同じですが、一応自分がやってみて理解したことをまとめたいので下記に記していきます。\n構築してみる 手順をまとめてスクリプトにしました。パッケージは Ubuntu 13.10 用のようですが 14.04 のホスト で実行出来ました。14.04 のパッケージはまだ見つかっていません。\n#!/bin/bash # disable ipv6 echo 'net.ipv6.conf.all.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf echo 'net.ipv6.conf.default.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf sudo sysctl -p  # install related tools sudo apt-get update sudo apt-get -y install curl python-setuptools python-pip python-dev python-protobuf  # install zookeeper sudo apt-get -y install zookeeperd echo 1 | sudo dd of=/var/lib/zookeeper/myid  # install docker sudo apt-get -y install docker.io sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker sudo sed -i '$acomplete -F _docker docker' /etc/bash_completion.d/docker.io sudo docker pull libmesos/ubuntu  # install mesos curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.deb -o /tmp/mesos.deb sudo dpkg -i /tmp/mesos.deb sudo mkdir -p /etc/mesos-master echo in_memory | sudo dd of=/etc/mesos-master/registry curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.egg -o /tmp/mesos.egg sudo easy_install /tmp/mesos.egg  # install marathon curl -fL http://downloads.mesosphere.io/marathon/marathon_0.5.0-xcon2_noarch.deb -o /tmp/marathon.deb sudo dpkg -i /tmp/marathon.deb  # restart each services sudo service docker.io restart sudo service zookeeper restart sudo service mesos-master restart sudo service mesos-slave restart  # install deimos sudo pip install deimos sudo mkdir -p /etc/mesos-slave  ## Configure Deimos as a containerizer echo /usr/bin/deimos | sudo dd of=/etc/mesos-slave/containerizer_path echo external | sudo dd of=/etc/mesos-slave/isolation プロセスの確認 実行が終わると各プロセスが確認出来ます。オプションでどのプロセスが何を見ているか大体 わかりますので見ていきます。\nmesos-master mesos-master は zookeeper を参照して 5050 番ポートで起動しているようです。\n% ps ax | grep mesos-master  1224 ? Ssl 0:30 /usr/local/sbin/mesos-master --zk=zk://localhost:2181/mesos --port=5050 --log_dir=/var/log/mesos --registry=in_memory mesos-slave mesos-slave は同じく zookeeper を参照して containerizer を deimos として稼働していることが わかります。\n% ps ax | grep mesos-slave  1225 ? Ssl 0:12 /usr/local/sbin/mesos-slave --master=zk://localhost:2181/mesos --log_dir=/var/log/mesos --containerizer_path=/usr/bin/deimos --isolation=external zookeeper zookeeper は OpenJDK7 で稼働している Java プロセスです。\n% ps ax | grep zookeeper  1073 ? Ssl 1:07 /usr/bin/java -cp /etc/zookeeper/conf:/usr/share/java/jline.jar:/usr/share/java/log4j-1.2.jar:/usr/share/java/xercesImpl.jar:/usr/share/java/xmlParserAPIs.jar:/usr/share/java/netty.jar:/usr/share/java/slf4j-api.jar:/usr/share/java/slf4j-log4j12.jar:/usr/share/java/zookeeper.jar -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=false -Dzookeeper.log.dir=/var/log/zookeeper -Dzookeeper.root.logger=INFO,ROLLINGFILE org.apache.zookeeper.server.quorum.QuorumPeerMain /etc/zookeeper/conf/zoo.cfg docker docker が起動していることも確認できます。設定は特にしていないです。\n% ps axuw | grep docker root 831 0.0 0.3 364776 14924 ? Sl 01:30 0:01 /usr/bin/docker.io -d Marathon の WebUI にアクセス Marathon の WebUI にアクセスしてみましょう。\nまだ何も Tasks が実行されていないので一覧には何も表示されないと思います。\nTasks の実行 Marathon API に対してクエリを発行することで Mesos の Tasks として Docker コンテナを稼働させることが出来ます。 下記のファイルを ubuntu.json として保存。\n{  \"container\": {  \"image\": \"docker:///libmesos/ubuntu\"  },  \"id\": \"ubuntu\",  \"instances\": \"1\",  \"cpus\": \".5\",  \"mem\": \"512\",  \"uris\": [ ] } 下記の通り localhost:8080 が Marathon API の Endpoint になっているのでここに対して作成した JSON を POST します。\n% curl -X POST -H \"Content-Type: application/json\" localhost:8080/v2/apps -d@ubuntu.json Tasks の一覧を取得してみます。\n% curl -X GET -H \"Content-Type: application/json\" localhost:8080/v2/apps {\"apps\":[{\"id\":\"ubuntu\",\"cmd\":\"\",\"env\":{},\"instances\":1,\"cpus\":0.5,\"mem\":512.0,\"executor\":\"\",\"constraints\":[],\"uris\":[],\"ports\":[13049],\"taskRateLimit\":1.0,\"container\":{\"image\":\"docker:///libmesos/ubuntu\",\"options\":[]},\"version\":\"2014-06-13T01:45:58.693Z\",\"tasksStaged\":1,\"tasksRunning\":0}]} Tasks の一覧が JSON で返ってきます。id : ubuntu, インスタンス数 : 1, CPU 0.5, メモリー : 512MB で Task が稼働していることが確認出来ます。\nここで WebUI 側も見てみましょう。\n一つ Task が稼働していることが確認出来ると思います。\nその Task をクリックすると詳細が表示されます。\n次に Tasks のスケーリングを行ってみましょう。 下記の通り ubuntu.json を修正し instances : 2 とする。これによってインスタンス数が2に増えます。\n{  \"container\": {  \"image\": \"docker:///libmesos/ubuntu\"  },  \"id\": \"ubuntu\",  \"instances\": \"2\",  \"cpus\": \".5\",  \"mem\": \"512\",  \"uris\": [ ] } 修正した JSON を POST します。\n% curl -X PUT -H \"Content-Type: application/json\" localhost:8080/v2/apps/ubuntu -d@ubuntu.json Tasks の一覧を取得し containers が 2 になっていることが確認できます。\n% curl -X GET -H \"Content-Type: application/json\" localhost:8080/v2/apps {\"apps\":[{\"id\":\"ubuntu\",\"cmd\":\"\",\"env\":{},\"instances\":2,\"cpus\":0.5,\"mem\":512.0,\"executor\":\"\",\"constraints\":[],\"uris\":[],\"ports\":[17543],\"taskRateLimit\":1.0,\"container\":{\"image\":\"docker:///libmesos/ubuntu\",\"options\":[]},\"version\":\"2014-06-13T02:40:04.536Z\",\"tasksStaged\":3,\"tasksRunning\":0}]} 最後に Tasks を削除してみましょう。\n% curl -X DELETE -H \"Content-Type: application/json\" localhost:8080/v2/apps/ubuntu Tasks が削除されたことを確認します。\n% curl -X GET -H \"Content-Type: application/json\" localhost:8080/v2/apps {\"apps\":[]} Marathon API v2 Marathon API v2 について下記の URL に仕様が載っています。上記に記したクエリ以外にも色々載っているので 動作を確認してみるといいと思います。\nhttps://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md\nまとめ オールインワン構成が出来ました。また動作確認も無事出来ています。 以前試した時よりも大分、手順が簡潔になった印象があります。また参考資料中に\n“checkout our other multi-node tutorials on how to scale Docker in your data center.”\nとありますが、まだ見つかっていません(´・ω・｀)見つかった方教えてくださいー。\n以前試した時は Mesos-Master の冗長化が出来なかったので今回こそ Multi Mesos-Masters, Multi Mesos-Slaves の構成を作ってみたいと思います。\nまた今月？になって続々と Docker のオーケストレーションツールを各社が公開しています。\ncenturion New Relic が開発したオーケストレーションツール。 https://github.com/newrelic/centurion\nhelios Spotify が開発したオーケストレーションツール。 https://github.com/spotify/helios\nfleet CoreOS 標準搭載。 https://github.com/coreos/fleet\ngeard RedHat が Red Hat Enterprise Linux Atomic Host に搭載しているツール。 http://openshift.github.io/geard/\nKubernetes Google が開発したオーケストレーションツール。 https://github.com/GoogleCloudPlatform/kubernetes\nshipper Python のコードで Docker をオーケストレーション出来るツール。 https://github.com/mailgun/shipper\n幾つか試したのですが、まだまだ動く所までいかないツールがありました。github の README にも “絶賛開発中なのでプロダクトレディではない” と書かれています。これからでしょう。\n",
   "wordCount" : "582",
   "inLanguage": "en",
   "datePublished": "2014-06-13T00:00:00Z",
@@ -217,94 +217,94 @@ Mesos &#43; Marathon &#43; Deimos &#43; Docker をオールインワン構成で
 <h2 id="構築してみる">構築してみる<a hidden class="anchor" aria-hidden="true" href="#構築してみる">#</a></h2>
 <p>手順をまとめてスクリプトにしました。パッケージは Ubuntu 13.10 用のようですが 14.04 のホスト
 で実行出来ました。14.04 のパッケージはまだ見つかっていません。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#75715e">#!/bin/bash
-</span><span style="color:#75715e"></span><span style="color:#75715e"># disable ipv6</span>
-echo <span style="color:#e6db74">&#39;net.ipv6.conf.all.disable_ipv6 = 1&#39;</span> | sudo tee -a /etc/sysctl.conf
-echo <span style="color:#e6db74">&#39;net.ipv6.conf.default.disable_ipv6 = 1&#39;</span> | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
-
-<span style="color:#75715e"># install related tools</span>
-sudo apt-get update
-sudo apt-get -y install curl python-setuptools python-pip python-dev python-protobuf
-
-<span style="color:#75715e"># install zookeeper</span>
-sudo apt-get -y install zookeeperd
-echo <span style="color:#ae81ff">1</span> | sudo dd of<span style="color:#f92672">=</span>/var/lib/zookeeper/myid
-
-<span style="color:#75715e"># install docker</span>
-sudo apt-get -y install docker.io
-sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker
-sudo sed -i <span style="color:#e6db74">&#39;$acomplete -F _docker docker&#39;</span> /etc/bash_completion.d/docker.io
-sudo docker pull libmesos/ubuntu
-
-<span style="color:#75715e"># install mesos</span>
-curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.deb -o /tmp/mesos.deb
-sudo dpkg -i /tmp/mesos.deb
-sudo mkdir -p /etc/mesos-master
-echo in_memory  | sudo dd of<span style="color:#f92672">=</span>/etc/mesos-master/registry
-curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.egg -o /tmp/mesos.egg
-sudo easy_install /tmp/mesos.egg
-
-<span style="color:#75715e"># install marathon</span>
-curl -fL http://downloads.mesosphere.io/marathon/marathon_0.5.0-xcon2_noarch.deb -o /tmp/marathon.deb
-sudo dpkg -i /tmp/marathon.deb
-
-<span style="color:#75715e"># restart each services</span>
-sudo service docker.io restart
-sudo service zookeeper restart
-sudo service mesos-master restart
-sudo service mesos-slave restart
-
-<span style="color:#75715e"># install deimos</span>
-sudo pip install deimos
-sudo mkdir -p /etc/mesos-slave
-
-<span style="color:#75715e">## Configure Deimos as a containerizer</span>
-echo /usr/bin/deimos  | sudo dd of<span style="color:#f92672">=</span>/etc/mesos-slave/containerizer_path
-echo external     | sudo dd of<span style="color:#f92672">=</span>/etc/mesos-slave/isolation
-</code></pre></div><h2 id="プロセスの確認">プロセスの確認<a hidden class="anchor" aria-hidden="true" href="#プロセスの確認">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e">#!/bin/bash
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#75715e"># disable ipv6</span>
+</span></span><span style="display:flex;"><span>echo <span style="color:#e6db74">&#39;net.ipv6.conf.all.disable_ipv6 = 1&#39;</span> | sudo tee -a /etc/sysctl.conf
+</span></span><span style="display:flex;"><span>echo <span style="color:#e6db74">&#39;net.ipv6.conf.default.disable_ipv6 = 1&#39;</span> | sudo tee -a /etc/sysctl.conf
+</span></span><span style="display:flex;"><span>sudo sysctl -p
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># install related tools</span>
+</span></span><span style="display:flex;"><span>sudo apt-get update
+</span></span><span style="display:flex;"><span>sudo apt-get -y install curl python-setuptools python-pip python-dev python-protobuf
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># install zookeeper</span>
+</span></span><span style="display:flex;"><span>sudo apt-get -y install zookeeperd
+</span></span><span style="display:flex;"><span>echo <span style="color:#ae81ff">1</span> | sudo dd of<span style="color:#f92672">=</span>/var/lib/zookeeper/myid
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># install docker</span>
+</span></span><span style="display:flex;"><span>sudo apt-get -y install docker.io
+</span></span><span style="display:flex;"><span>sudo ln -sf /usr/bin/docker.io /usr/local/bin/docker
+</span></span><span style="display:flex;"><span>sudo sed -i <span style="color:#e6db74">&#39;$acomplete -F _docker docker&#39;</span> /etc/bash_completion.d/docker.io
+</span></span><span style="display:flex;"><span>sudo docker pull libmesos/ubuntu
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># install mesos</span>
+</span></span><span style="display:flex;"><span>curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.deb -o /tmp/mesos.deb
+</span></span><span style="display:flex;"><span>sudo dpkg -i /tmp/mesos.deb
+</span></span><span style="display:flex;"><span>sudo mkdir -p /etc/mesos-master
+</span></span><span style="display:flex;"><span>echo in_memory  | sudo dd of<span style="color:#f92672">=</span>/etc/mesos-master/registry
+</span></span><span style="display:flex;"><span>curl -fL http://downloads.mesosphere.io/master/ubuntu/13.10/mesos_0.19.0-xcon3_amd64.egg -o /tmp/mesos.egg
+</span></span><span style="display:flex;"><span>sudo easy_install /tmp/mesos.egg
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># install marathon</span>
+</span></span><span style="display:flex;"><span>curl -fL http://downloads.mesosphere.io/marathon/marathon_0.5.0-xcon2_noarch.deb -o /tmp/marathon.deb
+</span></span><span style="display:flex;"><span>sudo dpkg -i /tmp/marathon.deb
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># restart each services</span>
+</span></span><span style="display:flex;"><span>sudo service docker.io restart
+</span></span><span style="display:flex;"><span>sudo service zookeeper restart
+</span></span><span style="display:flex;"><span>sudo service mesos-master restart
+</span></span><span style="display:flex;"><span>sudo service mesos-slave restart
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># install deimos</span>
+</span></span><span style="display:flex;"><span>sudo pip install deimos
+</span></span><span style="display:flex;"><span>sudo mkdir -p /etc/mesos-slave
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">## Configure Deimos as a containerizer</span>
+</span></span><span style="display:flex;"><span>echo /usr/bin/deimos  | sudo dd of<span style="color:#f92672">=</span>/etc/mesos-slave/containerizer_path
+</span></span><span style="display:flex;"><span>echo external     | sudo dd of<span style="color:#f92672">=</span>/etc/mesos-slave/isolation
+</span></span></code></pre></div><h2 id="プロセスの確認">プロセスの確認<a hidden class="anchor" aria-hidden="true" href="#プロセスの確認">#</a></h2>
 <p>実行が終わると各プロセスが確認出来ます。オプションでどのプロセスが何を見ているか大体
 わかりますので見ていきます。</p>
 <h4 id="mesos-master">mesos-master<a hidden class="anchor" aria-hidden="true" href="#mesos-master">#</a></h4>
 <p>mesos-master は zookeeper を参照して 5050 番ポートで起動しているようです。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ps ax | grep mesos-master
- <span style="color:#ae81ff">1224</span> ?        Ssl    0:30 /usr/local/sbin/mesos-master --zk<span style="color:#f92672">=</span>zk://localhost:2181/mesos --port<span style="color:#f92672">=</span><span style="color:#ae81ff">5050</span> --log_dir<span style="color:#f92672">=</span>/var/log/mesos --registry<span style="color:#f92672">=</span>in_memory
-</code></pre></div><h4 id="mesos-slave">mesos-slave<a hidden class="anchor" aria-hidden="true" href="#mesos-slave">#</a></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% ps ax | grep mesos-master
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">1224</span> ?        Ssl    0:30 /usr/local/sbin/mesos-master --zk<span style="color:#f92672">=</span>zk://localhost:2181/mesos --port<span style="color:#f92672">=</span><span style="color:#ae81ff">5050</span> --log_dir<span style="color:#f92672">=</span>/var/log/mesos --registry<span style="color:#f92672">=</span>in_memory
+</span></span></code></pre></div><h4 id="mesos-slave">mesos-slave<a hidden class="anchor" aria-hidden="true" href="#mesos-slave">#</a></h4>
 <p>mesos-slave は同じく zookeeper を参照して containerizer を deimos として稼働していることが
 わかります。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ps ax | grep mesos-slave
- <span style="color:#ae81ff">1225</span> ?        Ssl    0:12 /usr/local/sbin/mesos-slave --master<span style="color:#f92672">=</span>zk://localhost:2181/mesos --log_dir<span style="color:#f92672">=</span>/var/log/mesos --containerizer_path<span style="color:#f92672">=</span>/usr/bin/deimos --isolation<span style="color:#f92672">=</span>external
-</code></pre></div><h4 id="zookeeper">zookeeper<a hidden class="anchor" aria-hidden="true" href="#zookeeper">#</a></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% ps ax | grep mesos-slave
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">1225</span> ?        Ssl    0:12 /usr/local/sbin/mesos-slave --master<span style="color:#f92672">=</span>zk://localhost:2181/mesos --log_dir<span style="color:#f92672">=</span>/var/log/mesos --containerizer_path<span style="color:#f92672">=</span>/usr/bin/deimos --isolation<span style="color:#f92672">=</span>external
+</span></span></code></pre></div><h4 id="zookeeper">zookeeper<a hidden class="anchor" aria-hidden="true" href="#zookeeper">#</a></h4>
 <p>zookeeper は OpenJDK7 で稼働している Java プロセスです。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ps ax | grep zookeeper
- <span style="color:#ae81ff">1073</span> ?        Ssl    1:07 /usr/bin/java -cp /etc/zookeeper/conf:/usr/share/java/jline.jar:/usr/share/java/log4j-1.2.jar:/usr/share/java/xercesImpl.jar:/usr/share/java/xmlParserAPIs.jar:/usr/share/java/netty.jar:/usr/share/java/slf4j-api.jar:/usr/share/java/slf4j-log4j12.jar:/usr/share/java/zookeeper.jar -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only<span style="color:#f92672">=</span>false -Dzookeeper.log.dir<span style="color:#f92672">=</span>/var/log/zookeeper -Dzookeeper.root.logger<span style="color:#f92672">=</span>INFO,ROLLINGFILE org.apache.zookeeper.server.quorum.QuorumPeerMain /etc/zookeeper/conf/zoo.cfg
-</code></pre></div><h4 id="docker">docker<a hidden class="anchor" aria-hidden="true" href="#docker">#</a></h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% ps ax | grep zookeeper
+</span></span><span style="display:flex;"><span> <span style="color:#ae81ff">1073</span> ?        Ssl    1:07 /usr/bin/java -cp /etc/zookeeper/conf:/usr/share/java/jline.jar:/usr/share/java/log4j-1.2.jar:/usr/share/java/xercesImpl.jar:/usr/share/java/xmlParserAPIs.jar:/usr/share/java/netty.jar:/usr/share/java/slf4j-api.jar:/usr/share/java/slf4j-log4j12.jar:/usr/share/java/zookeeper.jar -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only<span style="color:#f92672">=</span>false -Dzookeeper.log.dir<span style="color:#f92672">=</span>/var/log/zookeeper -Dzookeeper.root.logger<span style="color:#f92672">=</span>INFO,ROLLINGFILE org.apache.zookeeper.server.quorum.QuorumPeerMain /etc/zookeeper/conf/zoo.cfg
+</span></span></code></pre></div><h4 id="docker">docker<a hidden class="anchor" aria-hidden="true" href="#docker">#</a></h4>
 <p>docker が起動していることも確認できます。設定は特にしていないです。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ps axuw | grep docker
-root       <span style="color:#ae81ff">831</span>  0.0  0.3 <span style="color:#ae81ff">364776</span> <span style="color:#ae81ff">14924</span> ?        Sl   01:30   0:01 /usr/bin/docker.io -d
-</code></pre></div><h2 id="marathon-の-webui-にアクセス">Marathon の WebUI にアクセス<a hidden class="anchor" aria-hidden="true" href="#marathon-の-webui-にアクセス">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% ps axuw | grep docker
+</span></span><span style="display:flex;"><span>root       <span style="color:#ae81ff">831</span>  0.0  0.3 <span style="color:#ae81ff">364776</span> <span style="color:#ae81ff">14924</span> ?        Sl   01:30   0:01 /usr/bin/docker.io -d
+</span></span></code></pre></div><h2 id="marathon-の-webui-にアクセス">Marathon の WebUI にアクセス<a hidden class="anchor" aria-hidden="true" href="#marathon-の-webui-にアクセス">#</a></h2>
 <p>Marathon の WebUI にアクセスしてみましょう。</p>
 <img src="http://jedipunkz.github.com/pix/deimos_01.png">
 <p>まだ何も Tasks が実行されていないので一覧には何も表示されないと思います。</p>
 <h2 id="tasks-の実行">Tasks の実行<a hidden class="anchor" aria-hidden="true" href="#tasks-の実行">#</a></h2>
 <p>Marathon API に対してクエリを発行することで Mesos の Tasks として Docker コンテナを稼働させることが出来ます。
 下記のファイルを ubuntu.json として保存。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
-    <span style="color:#f92672">&#34;container&#34;</span>: {
-    <span style="color:#f92672">&#34;image&#34;</span>: <span style="color:#e6db74">&#34;docker:///libmesos/ubuntu&#34;</span>
-  },
-  <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;ubuntu&#34;</span>,
-  <span style="color:#f92672">&#34;instances&#34;</span>: <span style="color:#e6db74">&#34;1&#34;</span>,
-  <span style="color:#f92672">&#34;cpus&#34;</span>: <span style="color:#e6db74">&#34;.5&#34;</span>,
-  <span style="color:#f92672">&#34;mem&#34;</span>: <span style="color:#e6db74">&#34;512&#34;</span>,
-  <span style="color:#f92672">&#34;uris&#34;</span>: [ ]
-}
-</code></pre></div><p>下記の通り localhost:8080 が Marathon API の Endpoint になっているのでここに対して作成した JSON を POST します。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -X POST -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> localhost:8080/v2/apps -d@ubuntu.json
-</code></pre></div><p>Tasks の一覧を取得してみます。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -X GET -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> localhost:8080/v2/apps
-<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;apps&#34;</span>:<span style="color:#f92672">[{</span><span style="color:#e6db74">&#34;id&#34;</span>:<span style="color:#e6db74">&#34;ubuntu&#34;</span>,<span style="color:#e6db74">&#34;cmd&#34;</span>:<span style="color:#e6db74">&#34;&#34;</span>,<span style="color:#e6db74">&#34;env&#34;</span>:<span style="color:#f92672">{}</span>,<span style="color:#e6db74">&#34;instances&#34;</span>:1,<span style="color:#e6db74">&#34;cpus&#34;</span>:0.5,<span style="color:#e6db74">&#34;mem&#34;</span>:512.0,<span style="color:#e6db74">&#34;executor&#34;</span>:<span style="color:#e6db74">&#34;&#34;</span>,<span style="color:#e6db74">&#34;constraints&#34;</span>:<span style="color:#f92672">[]</span>,<span style="color:#e6db74">&#34;uris&#34;</span>:<span style="color:#f92672">[]</span>,<span style="color:#e6db74">&#34;ports&#34;</span>:<span style="color:#f92672">[</span>13049<span style="color:#f92672">]</span>,<span style="color:#e6db74">&#34;taskRateLimit&#34;</span>:1.0,<span style="color:#e6db74">&#34;container&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;image&#34;</span>:<span style="color:#e6db74">&#34;docker:///libmesos/ubuntu&#34;</span>,<span style="color:#e6db74">&#34;options&#34;</span>:<span style="color:#f92672">[]}</span>,<span style="color:#e6db74">&#34;version&#34;</span>:<span style="color:#e6db74">&#34;2014-06-13T01:45:58.693Z&#34;</span>,<span style="color:#e6db74">&#34;tasksStaged&#34;</span>:1,<span style="color:#e6db74">&#34;tasksRunning&#34;</span>:0<span style="color:#f92672">}]}</span>
-</code></pre></div><p>Tasks の一覧が JSON で返ってきます。id : ubuntu, インスタンス数 : 1, CPU 0.5, メモリー : 512MB で
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;container&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;image&#34;</span>: <span style="color:#e6db74">&#34;docker:///libmesos/ubuntu&#34;</span>
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;ubuntu&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;instances&#34;</span>: <span style="color:#e6db74">&#34;1&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;cpus&#34;</span>: <span style="color:#e6db74">&#34;.5&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;mem&#34;</span>: <span style="color:#e6db74">&#34;512&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;uris&#34;</span>: [ ]
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>下記の通り localhost:8080 が Marathon API の Endpoint になっているのでここに対して作成した JSON を POST します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -X POST -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> localhost:8080/v2/apps -d@ubuntu.json
+</span></span></code></pre></div><p>Tasks の一覧を取得してみます。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -X GET -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> localhost:8080/v2/apps
+</span></span><span style="display:flex;"><span><span style="color:#f92672">{</span><span style="color:#e6db74">&#34;apps&#34;</span>:<span style="color:#f92672">[{</span><span style="color:#e6db74">&#34;id&#34;</span>:<span style="color:#e6db74">&#34;ubuntu&#34;</span>,<span style="color:#e6db74">&#34;cmd&#34;</span>:<span style="color:#e6db74">&#34;&#34;</span>,<span style="color:#e6db74">&#34;env&#34;</span>:<span style="color:#f92672">{}</span>,<span style="color:#e6db74">&#34;instances&#34;</span>:1,<span style="color:#e6db74">&#34;cpus&#34;</span>:0.5,<span style="color:#e6db74">&#34;mem&#34;</span>:512.0,<span style="color:#e6db74">&#34;executor&#34;</span>:<span style="color:#e6db74">&#34;&#34;</span>,<span style="color:#e6db74">&#34;constraints&#34;</span>:<span style="color:#f92672">[]</span>,<span style="color:#e6db74">&#34;uris&#34;</span>:<span style="color:#f92672">[]</span>,<span style="color:#e6db74">&#34;ports&#34;</span>:<span style="color:#f92672">[</span>13049<span style="color:#f92672">]</span>,<span style="color:#e6db74">&#34;taskRateLimit&#34;</span>:1.0,<span style="color:#e6db74">&#34;container&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;image&#34;</span>:<span style="color:#e6db74">&#34;docker:///libmesos/ubuntu&#34;</span>,<span style="color:#e6db74">&#34;options&#34;</span>:<span style="color:#f92672">[]}</span>,<span style="color:#e6db74">&#34;version&#34;</span>:<span style="color:#e6db74">&#34;2014-06-13T01:45:58.693Z&#34;</span>,<span style="color:#e6db74">&#34;tasksStaged&#34;</span>:1,<span style="color:#e6db74">&#34;tasksRunning&#34;</span>:0<span style="color:#f92672">}]}</span>
+</span></span></code></pre></div><p>Tasks の一覧が JSON で返ってきます。id : ubuntu, インスタンス数 : 1, CPU 0.5, メモリー : 512MB で
 Task が稼働していることが確認出来ます。</p>
 <p>ここで WebUI 側も見てみましょう。</p>
 <img src="http://jedipunkz.github.com/pix/deimos_05.png">
@@ -313,27 +313,27 @@ Task が稼働していることが確認出来ます。</p>
 <p>その Task をクリックすると詳細が表示されます。</p>
 <p>次に Tasks のスケーリングを行ってみましょう。
 下記の通り ubuntu.json を修正し instances : 2 とする。これによってインスタンス数が2に増えます。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-json" data-lang="json">{
-    <span style="color:#f92672">&#34;container&#34;</span>: {
-    <span style="color:#f92672">&#34;image&#34;</span>: <span style="color:#e6db74">&#34;docker:///libmesos/ubuntu&#34;</span>
-  },
-  <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;ubuntu&#34;</span>,
-  <span style="color:#f92672">&#34;instances&#34;</span>: <span style="color:#e6db74">&#34;2&#34;</span>,
-  <span style="color:#f92672">&#34;cpus&#34;</span>: <span style="color:#e6db74">&#34;.5&#34;</span>,
-  <span style="color:#f92672">&#34;mem&#34;</span>: <span style="color:#e6db74">&#34;512&#34;</span>,
-  <span style="color:#f92672">&#34;uris&#34;</span>: [ ]
-}
-</code></pre></div><p>修正した JSON を POST します。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -X PUT -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> localhost:8080/v2/apps/ubuntu -d@ubuntu.json
-</code></pre></div><p>Tasks の一覧を取得し containers が 2 になっていることが確認できます。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -X GET -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> localhost:8080/v2/apps
-<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;apps&#34;</span>:<span style="color:#f92672">[{</span><span style="color:#e6db74">&#34;id&#34;</span>:<span style="color:#e6db74">&#34;ubuntu&#34;</span>,<span style="color:#e6db74">&#34;cmd&#34;</span>:<span style="color:#e6db74">&#34;&#34;</span>,<span style="color:#e6db74">&#34;env&#34;</span>:<span style="color:#f92672">{}</span>,<span style="color:#e6db74">&#34;instances&#34;</span>:2,<span style="color:#e6db74">&#34;cpus&#34;</span>:0.5,<span style="color:#e6db74">&#34;mem&#34;</span>:512.0,<span style="color:#e6db74">&#34;executor&#34;</span>:<span style="color:#e6db74">&#34;&#34;</span>,<span style="color:#e6db74">&#34;constraints&#34;</span>:<span style="color:#f92672">[]</span>,<span style="color:#e6db74">&#34;uris&#34;</span>:<span style="color:#f92672">[]</span>,<span style="color:#e6db74">&#34;ports&#34;</span>:<span style="color:#f92672">[</span>17543<span style="color:#f92672">]</span>,<span style="color:#e6db74">&#34;taskRateLimit&#34;</span>:1.0,<span style="color:#e6db74">&#34;container&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;image&#34;</span>:<span style="color:#e6db74">&#34;docker:///libmesos/ubuntu&#34;</span>,<span style="color:#e6db74">&#34;options&#34;</span>:<span style="color:#f92672">[]}</span>,<span style="color:#e6db74">&#34;version&#34;</span>:<span style="color:#e6db74">&#34;2014-06-13T02:40:04.536Z&#34;</span>,<span style="color:#e6db74">&#34;tasksStaged&#34;</span>:3,<span style="color:#e6db74">&#34;tasksRunning&#34;</span>:0<span style="color:#f92672">}]}</span>
-</code></pre></div><p>最後に Tasks を削除してみましょう。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -X DELETE -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> localhost:8080/v2/apps/ubuntu
-</code></pre></div><p>Tasks が削除されたことを確認します。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -X GET -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> localhost:8080/v2/apps
-<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;apps&#34;</span>:<span style="color:#f92672">[]}</span>
-</code></pre></div><h2 id="marathon-api-v2">Marathon API v2<a hidden class="anchor" aria-hidden="true" href="#marathon-api-v2">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;container&#34;</span>: {
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;image&#34;</span>: <span style="color:#e6db74">&#34;docker:///libmesos/ubuntu&#34;</span>
+</span></span><span style="display:flex;"><span>  },
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;id&#34;</span>: <span style="color:#e6db74">&#34;ubuntu&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;instances&#34;</span>: <span style="color:#e6db74">&#34;2&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;cpus&#34;</span>: <span style="color:#e6db74">&#34;.5&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;mem&#34;</span>: <span style="color:#e6db74">&#34;512&#34;</span>,
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">&#34;uris&#34;</span>: [ ]
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>修正した JSON を POST します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -X PUT -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> localhost:8080/v2/apps/ubuntu -d@ubuntu.json
+</span></span></code></pre></div><p>Tasks の一覧を取得し containers が 2 になっていることが確認できます。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -X GET -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> localhost:8080/v2/apps
+</span></span><span style="display:flex;"><span><span style="color:#f92672">{</span><span style="color:#e6db74">&#34;apps&#34;</span>:<span style="color:#f92672">[{</span><span style="color:#e6db74">&#34;id&#34;</span>:<span style="color:#e6db74">&#34;ubuntu&#34;</span>,<span style="color:#e6db74">&#34;cmd&#34;</span>:<span style="color:#e6db74">&#34;&#34;</span>,<span style="color:#e6db74">&#34;env&#34;</span>:<span style="color:#f92672">{}</span>,<span style="color:#e6db74">&#34;instances&#34;</span>:2,<span style="color:#e6db74">&#34;cpus&#34;</span>:0.5,<span style="color:#e6db74">&#34;mem&#34;</span>:512.0,<span style="color:#e6db74">&#34;executor&#34;</span>:<span style="color:#e6db74">&#34;&#34;</span>,<span style="color:#e6db74">&#34;constraints&#34;</span>:<span style="color:#f92672">[]</span>,<span style="color:#e6db74">&#34;uris&#34;</span>:<span style="color:#f92672">[]</span>,<span style="color:#e6db74">&#34;ports&#34;</span>:<span style="color:#f92672">[</span>17543<span style="color:#f92672">]</span>,<span style="color:#e6db74">&#34;taskRateLimit&#34;</span>:1.0,<span style="color:#e6db74">&#34;container&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;image&#34;</span>:<span style="color:#e6db74">&#34;docker:///libmesos/ubuntu&#34;</span>,<span style="color:#e6db74">&#34;options&#34;</span>:<span style="color:#f92672">[]}</span>,<span style="color:#e6db74">&#34;version&#34;</span>:<span style="color:#e6db74">&#34;2014-06-13T02:40:04.536Z&#34;</span>,<span style="color:#e6db74">&#34;tasksStaged&#34;</span>:3,<span style="color:#e6db74">&#34;tasksRunning&#34;</span>:0<span style="color:#f92672">}]}</span>
+</span></span></code></pre></div><p>最後に Tasks を削除してみましょう。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -X DELETE -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> localhost:8080/v2/apps/ubuntu
+</span></span></code></pre></div><p>Tasks が削除されたことを確認します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -X GET -H <span style="color:#e6db74">&#34;Content-Type: application/json&#34;</span> localhost:8080/v2/apps
+</span></span><span style="display:flex;"><span><span style="color:#f92672">{</span><span style="color:#e6db74">&#34;apps&#34;</span>:<span style="color:#f92672">[]}</span>
+</span></span></code></pre></div><h2 id="marathon-api-v2">Marathon API v2<a hidden class="anchor" aria-hidden="true" href="#marathon-api-v2">#</a></h2>
 <p>Marathon API v2 について下記の URL に仕様が載っています。上記に記したクエリ以外にも色々載っているので
 動作を確認してみるといいと思います。</p>
 <p><a href="https://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md">https://github.com/mesosphere/marathon/blob/master/docs/api/http/REST_template.md</a></p>

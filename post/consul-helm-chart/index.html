@@ -17,7 +17,7 @@ Hashicorp の Github にて Consul の Helm Chart が公開されています。
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/consul-helm-chart/" />
 <link crossorigin="anonymous" href="/assets/css/stylesheet.min.44044074f4b4d7b018bfd3febcc1fa76eb874db64213f920feacf263e3028a73.css" integrity="sha256-RARAdPS017AYv9P&#43;vMH6duuHTbZCE/kg/qzyY&#43;MCinM=" rel="preload stylesheet" as="style">
-<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.2840b7fccd34145847db71a290569594bdbdb00047097f75d6495d162f5d7dff.js" integrity="sha256-KEC3/M00FFhH23GikFaVlL29sABHCX911kldFi9dff8="
     onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/pix/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
@@ -26,7 +26,7 @@ Hashicorp の Github にて Consul の Helm Chart が公開されています。
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.92.1" />
+<meta name="generator" content="Hugo 0.97.3" />
 <noscript>
     <style>
         #theme-toggle,
@@ -101,7 +101,7 @@ Hashicorp の Github にて Consul の Helm Chart が公開されています。
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkz です。\n今回は Hashicorp の Consul クラスタを Kubernetes 上で稼働させる方法について調べてみました。\nHashicorp Consul はサービスディスカバリが行えるソフトウェアで、私も以前居た職場で利用していました。アプリケーション間で互いに接続先を確認し合う事が出来ます。以前構築した Consul クラスタはインスタンス上に直に起動していたのですが最近だとどうやってデプロイするのか興味を持ち Kubernetes 上にデプロイする方法を調べた所 Helm を使って簡単にデプロイ出来る事が分かりました。\nまた今回は minikube を使って複数のレプリカを起動するようにしていますが、Helm Chart を用いると Kubernetes のノード毎に Consul Pod が1つずつ起動するようになっていて、ノードの障害を考慮した可用性という点でも優れているなぁと感じました。また Kubernetes の Pod ですのでプロセスが落ちた際に即座に再起動が行われるという点でも優れています。勿論 Consul クラスタの Leader が落ちた場合には Leader Election (リーダ昇格のための選挙) が行われ、直ちに隣接した Kubernetes ノード上の Consul Pod がリーダーに昇格します。といった意味でも Kubernetes 上に Consul をデプロイするという考えは優れているのではないでしょうか。\nRequirements 下記のソフトウェアが事前に必要です。この手順では予めこれらがインストールされていることとして記していきます。\n minikube kubectl helm  Consul クラスタ起動までの手順 早速ですが手順を記していきます。\nHashicorp の Github にて Consul の Helm Chart が公開されています。helm search しても出てきますが、今回は Github のものを用いました。\ngit clone https://github.com/hashicorp/consul-helm.git cd consul-helm git checkout v0.7.0 次にコンフィギュレーションを記した yaml ファイルを生成 (修正) します。本来、Kubernetes のノード毎に1つずつの Pod が起動するようになっていて、逆に言うと1ノードに複数の Consul Pod は起動しません。今回は手元も端末の minikube でお手軽に試せるようレポジトリ上のファイル value.yml を下記のように修正加えました。この手順は Github の Issue https://github.com/hashicorp/consul-helm/issues/13 で記されています。\nもちろん、minikube ではなく Kubernetes 環境を利用できる方はこの手順は飛ばして構いません。\n# 下記はコメントアウト # affinity: | # podAntiAffinity: # requiredDuringSchedulingIgnoredDuringExecution: # - labelSelector: # matchLabels: # app: {{ template \"consul.name\" . }} # release: \"{{ .Release.Name }}\" # component: server # topologyKey: kubernetes.io/hostname # minikube 用に下記を有効にする affinity: |podAntiAffinity: preferredDuringSchedulingIgnoredDuringExecution: - weight: 1 podAffinityTerm: topologyKey: kubernetes.io/hostname labelSelector: matchExpressions: - key: component operator: In values: - \"{{ .Release.Name }}-{{ .Values.Component }}\" kubectl, helm コマンドが minikube を向くように下記のようにコマンドを実行します。\nkubectl config use-context minikube helm init Consul クラスタを helm を用いてデプロイします。下記のコマンドでデプロイが一気に完了します。\nhelm install --name consul . 暫くすると下記の通り Pods, Services の状態が確認出来ると思います。\n$ kubectl get pods NAME READY STATUS RESTARTS AGE consul-q5s62 1/1 Running 0 21m consul-server-0 1/1 Running 0 21m consul-server-1 1/1 Running 0 21m consul-server-2 1/1 Running 0 21m $ kubectl get services NAME TYPE CLUSTER-IP EXTERNAL-IP PORT(S) AGE consul-dns ClusterIP 10.108.171.87  53/TCP,53/UDP 22m consul-server ClusterIP None  8500/TCP,8301/TCP,8301/UDP,8302/TCP,8302/UDP,8300/TCP,8600/TCP,8600/UDP 22m consul-ui ClusterIP 10.107.40.197  80/TCP 22m kubernetes ClusterIP 10.96.0.1  443/TCP 48m 起動した Consul クラスタの状態を確認してみます。consul members コマンドを各 Pod 上で実行すると、クラスタに Join しているノード (この場合 Consul Pod) の状態を一覧表示出来ます。minikube ノードにも consul-agent が起動していることが確認出来ます。\n$ for i in {0..2}; do kubectl exec consul-server-$i -- sh -c 'consul members'; done Node Address Status Type Build Protocol DC Segment consul-server-0 172.17.0.6:8301 alive server 1.4.4 2 dc1  consul-server-1 172.17.0.7:8301 alive server 1.4.4 2 dc1  consul-server-2 172.17.0.8:8301 alive server 1.4.4 2 dc1  minikube 172.17.0.5:8301 alive client 1.4.4 2 dc1  Node Address Status Type Build Protocol DC Segment consul-server-0 172.17.0.6:8301 alive server 1.4.4 2 dc1  consul-server-1 172.17.0.7:8301 alive server 1.4.4 2 dc1  consul-server-2 172.17.0.8:8301 alive server 1.4.4 2 dc1  minikube 172.17.0.5:8301 alive client 1.4.4 2 dc1  Node Address Status Type Build Protocol DC Segment consul-server-0 172.17.0.6:8301 alive server 1.4.4 2 dc1  consul-server-1 172.17.0.7:8301 alive server 1.4.4 2 dc1  consul-server-2 172.17.0.8:8301 alive server 1.4.4 2 dc1  minikube 172.17.0.5:8301 alive client 1.4.4 2 dc1  次に Consul のリーダーがどの Pod なのかを確認してみます。下記の結果から consule-server-2 という Pod がリーダーだと分かります。\n$ for i in {0..2}; do kubectl exec consul-server-$i -- sh -c 'consul info | grep leader'; done leader = false leader_addr = 172.17.0.8:8300 leader = false leader_addr = 172.17.0.8:8300 leader = true leader_addr = 172.17.0.8:8300 この状態で consule-server-2 Pod を削除してみます。削除しても Kubernetes Pod なので即座に再作成・起動がされるのですが、Consul 的には「リーダーが落ちた」という判断が下り、リーダー選出のための選挙が consule-server-0, consul-server-1 の 2 Pods で行われます。\n$ kubectl delete pod consul-server-2 下記が consul-server-0 で確認した Consul プロセスのログになります。“consul: New leader elected: consul-server-1” と表示され新たに consul-server-1 Pod がリーダーに選出されたことが確認出来ます。\n$ kubectl logs consul-server-0  2019/04/26 07:31:22 [INFO] serf: EventMemberLeave: consul-server-2.dc1 172.17.0.8 2019/04/26 07:31:22 [INFO] consul: Handled member-leave event for server \"consul-server-2.dc1\" in area \"wan\" 2019/04/26 07:31:26 [INFO] serf: EventMemberLeave: consul-server-2 172.17.0.8 2019/04/26 07:31:26 [INFO] consul: Removing LAN server consul-server-2 (Addr: tcp/172.17.0.8:8300) (DC: dc1) 2019/04/26 07:31:29 [WARN] raft: Rejecting vote request from 172.17.0.7:8300 since we have a leader: 172.17.0.8:8300 2019/04/26 07:31:33 [WARN] raft: Heartbeat timeout from \"172.17.0.8:8300\" reached, starting election 2019/04/26 07:31:33 [INFO] raft: Node at 172.17.0.6:8300 [Candidate] entering Candidate state in term 3 2019/04/26 07:31:36 [ERR] agent: Coordinate update error: No cluster leader 2019/04/26 07:31:36 [INFO] serf: EventMemberJoin: consul-server-2 172.17.0.8 2019/04/26 07:31:36 [INFO] consul: Adding LAN server consul-server-2 (Addr: tcp/172.17.0.8:8300) (DC: dc1) 2019/04/26 07:31:37 [INFO] serf: EventMemberJoin: consul-server-2.dc1 172.17.0.8 2019/04/26 07:31:37 [INFO] consul: Handled member-join event for server \"consul-server-2.dc1\" in area \"wan\" 2019/04/26 07:31:37 [INFO] raft: Node at 172.17.0.6:8300 [Follower] entering Follower state (Leader: \"\") 2019/04/26 07:31:37 [INFO] consul: New leader elected: consul-server-1  先程と同様にリーダーの確認を下記の通り行います。\n$ for i in {0..2}; do kubectl exec consul-server-$i -- sh -c 'consul info | grep leader'; done leader = false leader_addr = 172.17.0.7:8300 leader = true leader_addr = 172.17.0.7:8300 leader = false leader_addr = 172.17.0.7:8300 コンフィギュレーションの例 今回レポジトリ上にある value.yaml を一部修正しただけでしたが、yaml 内にある各設定値を変更することで構成を変更することが可能です。各設定値については下記のサイトに詳細が記されています。公式のドキュメントになります。\nhttps://www.consul.io/docs/platform/k8s/helm.html\n設定値の例をあげると…\n server - replicas  replicas はレプリカ数。Consul クラスタの Pod 数になります。但し冒頭で述べたとおり Consul Helm Chat は各 Kubernetes ノードに対して 1 Pod の原則で起動しますので、その点認識しておく必要があります。\n server - bootstrapExpect  何台の Consul クラスタ Pod が起動していればリーダー選出を行うか？の設定値です。\n server - storageClass  デフォルトはローカルディスクです。Ceph 等を選択することも可能です。\n client - grpc  agent が gRPC リスナを持つかどうかです。true に設定すると gRPC リスナが 8502 番ポートで起動します。\nまとめ Kubernetes 上で Helm を使って簡単に Consul クラスタをデプロイ出来る事が分かりました。また運用を考慮された設計になっていることも確認出来ました。ロードバランサを用いずとも、アプリケーション間、API 間で互いに正常に可動している先をディスカバリし接続し合えるという点で Consul はとても有用なので Kubernetes を用いたアーキテクチャにも適しているのではないでしょうか。\n",
+  "articleBody": "こんにちは。@jedipunkz です。\n今回は Hashicorp の Consul クラスタを Kubernetes 上で稼働させる方法について調べてみました。\nHashicorp Consul はサービスディスカバリが行えるソフトウェアで、私も以前居た職場で利用していました。アプリケーション間で互いに接続先を確認し合う事が出来ます。以前構築した Consul クラスタはインスタンス上に直に起動していたのですが最近だとどうやってデプロイするのか興味を持ち Kubernetes 上にデプロイする方法を調べた所 Helm を使って簡単にデプロイ出来る事が分かりました。\nまた今回は minikube を使って複数のレプリカを起動するようにしていますが、Helm Chart を用いると Kubernetes のノード毎に Consul Pod が1つずつ起動するようになっていて、ノードの障害を考慮した可用性という点でも優れているなぁと感じました。また Kubernetes の Pod ですのでプロセスが落ちた際に即座に再起動が行われるという点でも優れています。勿論 Consul クラスタの Leader が落ちた場合には Leader Election (リーダ昇格のための選挙) が行われ、直ちに隣接した Kubernetes ノード上の Consul Pod がリーダーに昇格します。といった意味でも Kubernetes 上に Consul をデプロイするという考えは優れているのではないでしょうか。\nRequirements 下記のソフトウェアが事前に必要です。この手順では予めこれらがインストールされていることとして記していきます。\n minikube kubectl helm  Consul クラスタ起動までの手順 早速ですが手順を記していきます。\nHashicorp の Github にて Consul の Helm Chart が公開されています。helm search しても出てきますが、今回は Github のものを用いました。\ngit clone https://github.com/hashicorp/consul-helm.git cd consul-helm git checkout v0.7.0 次にコンフィギュレーションを記した yaml ファイルを生成 (修正) します。本来、Kubernetes のノード毎に1つずつの Pod が起動するようになっていて、逆に言うと1ノードに複数の Consul Pod は起動しません。今回は手元も端末の minikube でお手軽に試せるようレポジトリ上のファイル value.yml を下記のように修正加えました。この手順は Github の Issue https://github.com/hashicorp/consul-helm/issues/13 で記されています。\nもちろん、minikube ではなく Kubernetes 環境を利用できる方はこの手順は飛ばして構いません。\n # 下記はコメントアウト  # affinity: |  # podAntiAffinity:  # requiredDuringSchedulingIgnoredDuringExecution:  # - labelSelector:  # matchLabels:  # app: {{ template \"consul.name\" . }}  # release: \"{{ .Release.Name }}\"  # component: server  # topologyKey: kubernetes.io/hostname   # minikube 用に下記を有効にする  affinity: |podAntiAffinity: preferredDuringSchedulingIgnoredDuringExecution: - weight: 1 podAffinityTerm: topologyKey: kubernetes.io/hostname labelSelector: matchExpressions: - key: component operator: In values: - \"{{ .Release.Name }}-{{ .Values.Component }}\" kubectl, helm コマンドが minikube を向くように下記のようにコマンドを実行します。\nkubectl config use-context minikube helm init Consul クラスタを helm を用いてデプロイします。下記のコマンドでデプロイが一気に完了します。\nhelm install --name consul . 暫くすると下記の通り Pods, Services の状態が確認出来ると思います。\n$ kubectl get pods NAME READY STATUS RESTARTS AGE consul-q5s62 1/1 Running 0 21m consul-server-0 1/1 Running 0 21m consul-server-1 1/1 Running 0 21m consul-server-2 1/1 Running 0 21m $ kubectl get services NAME TYPE CLUSTER-IP EXTERNAL-IP PORT(S) AGE consul-dns ClusterIP 10.108.171.87  53/TCP,53/UDP 22m consul-server ClusterIP None  8500/TCP,8301/TCP,8301/UDP,8302/TCP,8302/UDP,8300/TCP,8600/TCP,8600/UDP 22m consul-ui ClusterIP 10.107.40.197  80/TCP 22m kubernetes ClusterIP 10.96.0.1  443/TCP 48m 起動した Consul クラスタの状態を確認してみます。consul members コマンドを各 Pod 上で実行すると、クラスタに Join しているノード (この場合 Consul Pod) の状態を一覧表示出来ます。minikube ノードにも consul-agent が起動していることが確認出来ます。\n$ for i in {0..2}; do kubectl exec consul-server-$i -- sh -c 'consul members'; done Node Address Status Type Build Protocol DC Segment consul-server-0 172.17.0.6:8301 alive server 1.4.4 2 dc1  consul-server-1 172.17.0.7:8301 alive server 1.4.4 2 dc1  consul-server-2 172.17.0.8:8301 alive server 1.4.4 2 dc1  minikube 172.17.0.5:8301 alive client 1.4.4 2 dc1  Node Address Status Type Build Protocol DC Segment consul-server-0 172.17.0.6:8301 alive server 1.4.4 2 dc1  consul-server-1 172.17.0.7:8301 alive server 1.4.4 2 dc1  consul-server-2 172.17.0.8:8301 alive server 1.4.4 2 dc1  minikube 172.17.0.5:8301 alive client 1.4.4 2 dc1  Node Address Status Type Build Protocol DC Segment consul-server-0 172.17.0.6:8301 alive server 1.4.4 2 dc1  consul-server-1 172.17.0.7:8301 alive server 1.4.4 2 dc1  consul-server-2 172.17.0.8:8301 alive server 1.4.4 2 dc1  minikube 172.17.0.5:8301 alive client 1.4.4 2 dc1  次に Consul のリーダーがどの Pod なのかを確認してみます。下記の結果から consule-server-2 という Pod がリーダーだと分かります。\n$ for i in {0..2}; do kubectl exec consul-server-$i -- sh -c 'consul info | grep leader'; done  leader = false  leader_addr = 172.17.0.8:8300  leader = false  leader_addr = 172.17.0.8:8300  leader = true  leader_addr = 172.17.0.8:8300 この状態で consule-server-2 Pod を削除してみます。削除しても Kubernetes Pod なので即座に再作成・起動がされるのですが、Consul 的には「リーダーが落ちた」という判断が下り、リーダー選出のための選挙が consule-server-0, consul-server-1 の 2 Pods で行われます。\n$ kubectl delete pod consul-server-2 下記が consul-server-0 で確認した Consul プロセスのログになります。“consul: New leader elected: consul-server-1” と表示され新たに consul-server-1 Pod がリーダーに選出されたことが確認出来ます。\n$ kubectl logs consul-server-0  2019/04/26 07:31:22 [INFO] serf: EventMemberLeave: consul-server-2.dc1 172.17.0.8 2019/04/26 07:31:22 [INFO] consul: Handled member-leave event for server \"consul-server-2.dc1\" in area \"wan\" 2019/04/26 07:31:26 [INFO] serf: EventMemberLeave: consul-server-2 172.17.0.8 2019/04/26 07:31:26 [INFO] consul: Removing LAN server consul-server-2 (Addr: tcp/172.17.0.8:8300) (DC: dc1) 2019/04/26 07:31:29 [WARN] raft: Rejecting vote request from 172.17.0.7:8300 since we have a leader: 172.17.0.8:8300 2019/04/26 07:31:33 [WARN] raft: Heartbeat timeout from \"172.17.0.8:8300\" reached, starting election 2019/04/26 07:31:33 [INFO] raft: Node at 172.17.0.6:8300 [Candidate] entering Candidate state in term 3 2019/04/26 07:31:36 [ERR] agent: Coordinate update error: No cluster leader 2019/04/26 07:31:36 [INFO] serf: EventMemberJoin: consul-server-2 172.17.0.8 2019/04/26 07:31:36 [INFO] consul: Adding LAN server consul-server-2 (Addr: tcp/172.17.0.8:8300) (DC: dc1) 2019/04/26 07:31:37 [INFO] serf: EventMemberJoin: consul-server-2.dc1 172.17.0.8 2019/04/26 07:31:37 [INFO] consul: Handled member-join event for server \"consul-server-2.dc1\" in area \"wan\" 2019/04/26 07:31:37 [INFO] raft: Node at 172.17.0.6:8300 [Follower] entering Follower state (Leader: \"\") 2019/04/26 07:31:37 [INFO] consul: New leader elected: consul-server-1  先程と同様にリーダーの確認を下記の通り行います。\n$ for i in {0..2}; do kubectl exec consul-server-$i -- sh -c 'consul info | grep leader'; done  leader = false  leader_addr = 172.17.0.7:8300  leader = true  leader_addr = 172.17.0.7:8300  leader = false  leader_addr = 172.17.0.7:8300 コンフィギュレーションの例 今回レポジトリ上にある value.yaml を一部修正しただけでしたが、yaml 内にある各設定値を変更することで構成を変更することが可能です。各設定値については下記のサイトに詳細が記されています。公式のドキュメントになります。\nhttps://www.consul.io/docs/platform/k8s/helm.html\n設定値の例をあげると…\n server - replicas  replicas はレプリカ数。Consul クラスタの Pod 数になります。但し冒頭で述べたとおり Consul Helm Chat は各 Kubernetes ノードに対して 1 Pod の原則で起動しますので、その点認識しておく必要があります。\n server - bootstrapExpect  何台の Consul クラスタ Pod が起動していればリーダー選出を行うか？の設定値です。\n server - storageClass  デフォルトはローカルディスクです。Ceph 等を選択することも可能です。\n client - grpc  agent が gRPC リスナを持つかどうかです。true に設定すると gRPC リスナが 8502 番ポートで起動します。\nまとめ Kubernetes 上で Helm を使って簡単に Consul クラスタをデプロイ出来る事が分かりました。また運用を考慮された設計になっていることも確認出来ました。ロードバランサを用いずとも、アプリケーション間、API 間で互いに正常に可動している先をディスカバリし接続し合えるという点で Consul はとても有用なので Kubernetes を用いたアーキテクチャにも適しているのではないでしょうか。\n",
   "wordCount" : "728",
   "inLanguage": "en",
   "datePublished": "2019-04-26T17:08:02+09:00",
@@ -196,107 +196,107 @@ Hashicorp の Github にて Consul の Helm Chart が公開されています。
 <h3 id="consul-クラスタ起動までの手順">Consul クラスタ起動までの手順<a hidden class="anchor" aria-hidden="true" href="#consul-クラスタ起動までの手順">#</a></h3>
 <p>早速ですが手順を記していきます。</p>
 <p>Hashicorp の Github にて Consul の Helm Chart が公開されています。<code>helm search</code> しても出てきますが、今回は Github のものを用いました。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">git clone https://github.com/hashicorp/consul-helm.git
-cd consul-helm
-git checkout v0.7.0
-</code></pre></div><p>次にコンフィギュレーションを記した yaml ファイルを生成 (修正) します。本来、Kubernetes のノード毎に1つずつの Pod が起動するようになっていて、逆に言うと1ノードに複数の Consul Pod は起動しません。今回は手元も端末の minikube でお手軽に試せるようレポジトリ上のファイル value.yml を下記のように修正加えました。この手順は Github の Issue <a href="https://github.com/hashicorp/consul-helm/issues/13">https://github.com/hashicorp/consul-helm/issues/13</a> で記されています。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>git clone https://github.com/hashicorp/consul-helm.git
+</span></span><span style="display:flex;"><span>cd consul-helm
+</span></span><span style="display:flex;"><span>git checkout v0.7.0
+</span></span></code></pre></div><p>次にコンフィギュレーションを記した yaml ファイルを生成 (修正) します。本来、Kubernetes のノード毎に1つずつの Pod が起動するようになっていて、逆に言うと1ノードに複数の Consul Pod は起動しません。今回は手元も端末の minikube でお手軽に試せるようレポジトリ上のファイル value.yml を下記のように修正加えました。この手順は Github の Issue <a href="https://github.com/hashicorp/consul-helm/issues/13">https://github.com/hashicorp/consul-helm/issues/13</a> で記されています。</p>
 <p>もちろん、minikube ではなく Kubernetes 環境を利用できる方はこの手順は飛ばして構いません。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-yaml" data-lang="yaml">  <span style="color:#75715e"># 下記はコメントアウト</span>
-  <span style="color:#75715e"># affinity: |</span>
-  <span style="color:#75715e">#   podAntiAffinity:</span>
-  <span style="color:#75715e">#     requiredDuringSchedulingIgnoredDuringExecution:</span>
-  <span style="color:#75715e">#       - labelSelector:</span>
-  <span style="color:#75715e">#           matchLabels:</span>
-  <span style="color:#75715e">#             app: {{ template &#34;consul.name&#34; . }}</span>
-  <span style="color:#75715e">#             release: &#34;{{ .Release.Name }}&#34;</span>
-  <span style="color:#75715e">#             component: server</span>
-  <span style="color:#75715e">#         topologyKey: kubernetes.io/hostname</span>
-
-  <span style="color:#75715e"># minikube 用に下記を有効にする</span>
-  <span style="color:#f92672">affinity</span>: |<span style="color:#e6db74">
-</span><span style="color:#e6db74">    podAntiAffinity:
-</span><span style="color:#e6db74">      preferredDuringSchedulingIgnoredDuringExecution:
-</span><span style="color:#e6db74">      - weight: 1
-</span><span style="color:#e6db74">        podAffinityTerm:
-</span><span style="color:#e6db74">          topologyKey: kubernetes.io/hostname
-</span><span style="color:#e6db74">          labelSelector:
-</span><span style="color:#e6db74">            matchExpressions:
-</span><span style="color:#e6db74">            - key: component
-</span><span style="color:#e6db74">              operator: In
-</span><span style="color:#e6db74">              values:
-</span><span style="color:#e6db74">              - &#34;{{ .Release.Name }}-{{ .Values.Component }}&#34;</span>    
-</code></pre></div><p>kubectl, helm コマンドが minikube を向くように下記のようにコマンドを実行します。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">kubectl config use-context minikube
-helm init
-</code></pre></div><p>Consul クラスタを helm を用いてデプロイします。下記のコマンドでデプロイが一気に完了します。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">helm install --name consul .
-</code></pre></div><p>暫くすると下記の通り Pods, Services の状態が確認出来ると思います。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ kubectl get pods
-NAME              READY   STATUS    RESTARTS   AGE
-consul-q5s62      1/1     Running   <span style="color:#ae81ff">0</span>          21m
-consul-server-0   1/1     Running   <span style="color:#ae81ff">0</span>          21m
-consul-server-1   1/1     Running   <span style="color:#ae81ff">0</span>          21m
-consul-server-2   1/1     Running   <span style="color:#ae81ff">0</span>          21m
-$ kubectl get services
-NAME            TYPE        CLUSTER-IP      EXTERNAL-IP   PORT<span style="color:#f92672">(</span>S<span style="color:#f92672">)</span>                                                                   AGE
-consul-dns      ClusterIP   10.108.171.87   &lt;none&gt;        53/TCP,53/UDP                                                             22m
-consul-server   ClusterIP   None            &lt;none&gt;        8500/TCP,8301/TCP,8301/UDP,8302/TCP,8302/UDP,8300/TCP,8600/TCP,8600/UDP   22m
-consul-ui       ClusterIP   10.107.40.197   &lt;none&gt;        80/TCP                                                                    22m
-kubernetes      ClusterIP   10.96.0.1       &lt;none&gt;        443/TCP                                                                   48m
-</code></pre></div><p>起動した Consul クラスタの状態を確認してみます。<code>consul members</code> コマンドを各 Pod 上で実行すると、クラスタに Join しているノード (この場合 Consul Pod) の状態を一覧表示出来ます。minikube ノードにも consul-agent が起動していることが確認出来ます。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ <span style="color:#66d9ef">for</span> i in <span style="color:#f92672">{</span>0..2<span style="color:#f92672">}</span>; <span style="color:#66d9ef">do</span> kubectl exec consul-server-$i -- sh -c <span style="color:#e6db74">&#39;consul members&#39;</span>; <span style="color:#66d9ef">done</span>
-Node             Address          Status  Type    Build  Protocol  DC   Segment
-consul-server-0  172.17.0.6:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
-consul-server-1  172.17.0.7:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
-consul-server-2  172.17.0.8:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
-minikube         172.17.0.5:8301  alive   client  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;default&gt;
-Node             Address          Status  Type    Build  Protocol  DC   Segment
-consul-server-0  172.17.0.6:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
-consul-server-1  172.17.0.7:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
-consul-server-2  172.17.0.8:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
-minikube         172.17.0.5:8301  alive   client  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;default&gt;
-Node             Address          Status  Type    Build  Protocol  DC   Segment
-consul-server-0  172.17.0.6:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
-consul-server-1  172.17.0.7:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
-consul-server-2  172.17.0.8:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
-minikube         172.17.0.5:8301  alive   client  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;default&gt;
-</code></pre></div><p>次に Consul のリーダーがどの Pod なのかを確認してみます。下記の結果から consule-server-2 という Pod がリーダーだと分かります。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ <span style="color:#66d9ef">for</span> i in <span style="color:#f92672">{</span>0..2<span style="color:#f92672">}</span>; <span style="color:#66d9ef">do</span> kubectl exec consul-server-$i -- sh -c <span style="color:#e6db74">&#39;consul info | grep leader&#39;</span>; <span style="color:#66d9ef">done</span>
-        leader <span style="color:#f92672">=</span> false
-        leader_addr <span style="color:#f92672">=</span> 172.17.0.8:8300
-        leader <span style="color:#f92672">=</span> false
-        leader_addr <span style="color:#f92672">=</span> 172.17.0.8:8300
-        leader <span style="color:#f92672">=</span> true
-        leader_addr <span style="color:#f92672">=</span> 172.17.0.8:8300
-</code></pre></div><p>この状態で consule-server-2 Pod を削除してみます。削除しても Kubernetes Pod なので即座に再作成・起動がされるのですが、Consul 的には「リーダーが落ちた」という判断が下り、リーダー選出のための選挙が consule-server-0, consul-server-1 の 2 Pods で行われます。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ kubectl delete pod consul-server-2
-</code></pre></div><p>下記が consul-server-0 で確認した Consul プロセスのログになります。&ldquo;consul: New leader elected: consul-server-1&rdquo; と表示され新たに consul-server-1 Pod がリーダーに選出されたことが確認出来ます。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span>  <span style="color:#75715e"># 下記はコメントアウト</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># affinity: |</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">#   podAntiAffinity:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">#     requiredDuringSchedulingIgnoredDuringExecution:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">#       - labelSelector:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">#           matchLabels:</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">#             app: {{ template &#34;consul.name&#34; . }}</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">#             release: &#34;{{ .Release.Name }}&#34;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">#             component: server</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">#         topologyKey: kubernetes.io/hostname</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e"># minikube 用に下記を有効にする</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">affinity</span>: |<span style="color:#e6db74">
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">    podAntiAffinity:
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">      preferredDuringSchedulingIgnoredDuringExecution:
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">      - weight: 1
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">        podAffinityTerm:
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">          topologyKey: kubernetes.io/hostname
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">          labelSelector:
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">            matchExpressions:
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">            - key: component
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">              operator: In
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">              values:
+</span></span></span><span style="display:flex;"><span><span style="color:#e6db74">              - &#34;{{ .Release.Name }}-{{ .Values.Component }}&#34;</span>    
+</span></span></code></pre></div><p>kubectl, helm コマンドが minikube を向くように下記のようにコマンドを実行します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>kubectl config use-context minikube
+</span></span><span style="display:flex;"><span>helm init
+</span></span></code></pre></div><p>Consul クラスタを helm を用いてデプロイします。下記のコマンドでデプロイが一気に完了します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>helm install --name consul .
+</span></span></code></pre></div><p>暫くすると下記の通り Pods, Services の状態が確認出来ると思います。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ kubectl get pods
+</span></span><span style="display:flex;"><span>NAME              READY   STATUS    RESTARTS   AGE
+</span></span><span style="display:flex;"><span>consul-q5s62      1/1     Running   <span style="color:#ae81ff">0</span>          21m
+</span></span><span style="display:flex;"><span>consul-server-0   1/1     Running   <span style="color:#ae81ff">0</span>          21m
+</span></span><span style="display:flex;"><span>consul-server-1   1/1     Running   <span style="color:#ae81ff">0</span>          21m
+</span></span><span style="display:flex;"><span>consul-server-2   1/1     Running   <span style="color:#ae81ff">0</span>          21m
+</span></span><span style="display:flex;"><span>$ kubectl get services
+</span></span><span style="display:flex;"><span>NAME            TYPE        CLUSTER-IP      EXTERNAL-IP   PORT<span style="color:#f92672">(</span>S<span style="color:#f92672">)</span>                                                                   AGE
+</span></span><span style="display:flex;"><span>consul-dns      ClusterIP   10.108.171.87   &lt;none&gt;        53/TCP,53/UDP                                                             22m
+</span></span><span style="display:flex;"><span>consul-server   ClusterIP   None            &lt;none&gt;        8500/TCP,8301/TCP,8301/UDP,8302/TCP,8302/UDP,8300/TCP,8600/TCP,8600/UDP   22m
+</span></span><span style="display:flex;"><span>consul-ui       ClusterIP   10.107.40.197   &lt;none&gt;        80/TCP                                                                    22m
+</span></span><span style="display:flex;"><span>kubernetes      ClusterIP   10.96.0.1       &lt;none&gt;        443/TCP                                                                   48m
+</span></span></code></pre></div><p>起動した Consul クラスタの状態を確認してみます。<code>consul members</code> コマンドを各 Pod 上で実行すると、クラスタに Join しているノード (この場合 Consul Pod) の状態を一覧表示出来ます。minikube ノードにも consul-agent が起動していることが確認出来ます。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ <span style="color:#66d9ef">for</span> i in <span style="color:#f92672">{</span>0..2<span style="color:#f92672">}</span>; <span style="color:#66d9ef">do</span> kubectl exec consul-server-$i -- sh -c <span style="color:#e6db74">&#39;consul members&#39;</span>; <span style="color:#66d9ef">done</span>
+</span></span><span style="display:flex;"><span>Node             Address          Status  Type    Build  Protocol  DC   Segment
+</span></span><span style="display:flex;"><span>consul-server-0  172.17.0.6:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
+</span></span><span style="display:flex;"><span>consul-server-1  172.17.0.7:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
+</span></span><span style="display:flex;"><span>consul-server-2  172.17.0.8:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
+</span></span><span style="display:flex;"><span>minikube         172.17.0.5:8301  alive   client  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;default&gt;
+</span></span><span style="display:flex;"><span>Node             Address          Status  Type    Build  Protocol  DC   Segment
+</span></span><span style="display:flex;"><span>consul-server-0  172.17.0.6:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
+</span></span><span style="display:flex;"><span>consul-server-1  172.17.0.7:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
+</span></span><span style="display:flex;"><span>consul-server-2  172.17.0.8:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
+</span></span><span style="display:flex;"><span>minikube         172.17.0.5:8301  alive   client  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;default&gt;
+</span></span><span style="display:flex;"><span>Node             Address          Status  Type    Build  Protocol  DC   Segment
+</span></span><span style="display:flex;"><span>consul-server-0  172.17.0.6:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
+</span></span><span style="display:flex;"><span>consul-server-1  172.17.0.7:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
+</span></span><span style="display:flex;"><span>consul-server-2  172.17.0.8:8301  alive   server  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;all&gt;
+</span></span><span style="display:flex;"><span>minikube         172.17.0.5:8301  alive   client  1.4.4  <span style="color:#ae81ff">2</span>         dc1  &lt;default&gt;
+</span></span></code></pre></div><p>次に Consul のリーダーがどの Pod なのかを確認してみます。下記の結果から consule-server-2 という Pod がリーダーだと分かります。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ <span style="color:#66d9ef">for</span> i in <span style="color:#f92672">{</span>0..2<span style="color:#f92672">}</span>; <span style="color:#66d9ef">do</span> kubectl exec consul-server-$i -- sh -c <span style="color:#e6db74">&#39;consul info | grep leader&#39;</span>; <span style="color:#66d9ef">done</span>
+</span></span><span style="display:flex;"><span>        leader <span style="color:#f92672">=</span> false
+</span></span><span style="display:flex;"><span>        leader_addr <span style="color:#f92672">=</span> 172.17.0.8:8300
+</span></span><span style="display:flex;"><span>        leader <span style="color:#f92672">=</span> false
+</span></span><span style="display:flex;"><span>        leader_addr <span style="color:#f92672">=</span> 172.17.0.8:8300
+</span></span><span style="display:flex;"><span>        leader <span style="color:#f92672">=</span> true
+</span></span><span style="display:flex;"><span>        leader_addr <span style="color:#f92672">=</span> 172.17.0.8:8300
+</span></span></code></pre></div><p>この状態で consule-server-2 Pod を削除してみます。削除しても Kubernetes Pod なので即座に再作成・起動がされるのですが、Consul 的には「リーダーが落ちた」という判断が下り、リーダー選出のための選挙が consule-server-0, consul-server-1 の 2 Pods で行われます。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ kubectl delete pod consul-server-2
+</span></span></code></pre></div><p>下記が consul-server-0 で確認した Consul プロセスのログになります。&ldquo;consul: New leader elected: consul-server-1&rdquo; と表示され新たに consul-server-1 Pod がリーダーに選出されたことが確認出来ます。</p>
 <pre tabindex="0"><code>$ kubectl logs consul-server-0
 &lt;snip&gt;
     2019/04/26 07:31:22 [INFO] serf: EventMemberLeave: consul-server-2.dc1 172.17.0.8
-    2019/04/26 07:31:22 [INFO] consul: Handled member-leave event for server &quot;consul-server-2.dc1&quot; in area &quot;wan&quot;
+    2019/04/26 07:31:22 [INFO] consul: Handled member-leave event for server &#34;consul-server-2.dc1&#34; in area &#34;wan&#34;
     2019/04/26 07:31:26 [INFO] serf: EventMemberLeave: consul-server-2 172.17.0.8
     2019/04/26 07:31:26 [INFO] consul: Removing LAN server consul-server-2 (Addr: tcp/172.17.0.8:8300) (DC: dc1)
     2019/04/26 07:31:29 [WARN] raft: Rejecting vote request from 172.17.0.7:8300 since we have a leader: 172.17.0.8:8300
-    2019/04/26 07:31:33 [WARN] raft: Heartbeat timeout from &quot;172.17.0.8:8300&quot; reached, starting election
+    2019/04/26 07:31:33 [WARN] raft: Heartbeat timeout from &#34;172.17.0.8:8300&#34; reached, starting election
     2019/04/26 07:31:33 [INFO] raft: Node at 172.17.0.6:8300 [Candidate] entering Candidate state in term 3
     2019/04/26 07:31:36 [ERR] agent: Coordinate update error: No cluster leader
     2019/04/26 07:31:36 [INFO] serf: EventMemberJoin: consul-server-2 172.17.0.8
     2019/04/26 07:31:36 [INFO] consul: Adding LAN server consul-server-2 (Addr: tcp/172.17.0.8:8300) (DC: dc1)
     2019/04/26 07:31:37 [INFO] serf: EventMemberJoin: consul-server-2.dc1 172.17.0.8
-    2019/04/26 07:31:37 [INFO] consul: Handled member-join event for server &quot;consul-server-2.dc1&quot; in area &quot;wan&quot;
-    2019/04/26 07:31:37 [INFO] raft: Node at 172.17.0.6:8300 [Follower] entering Follower state (Leader: &quot;&quot;)
+    2019/04/26 07:31:37 [INFO] consul: Handled member-join event for server &#34;consul-server-2.dc1&#34; in area &#34;wan&#34;
+    2019/04/26 07:31:37 [INFO] raft: Node at 172.17.0.6:8300 [Follower] entering Follower state (Leader: &#34;&#34;)
     2019/04/26 07:31:37 [INFO] consul: New leader elected: consul-server-1
 &lt;snip&gt;
 </code></pre><p>先程と同様にリーダーの確認を下記の通り行います。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ <span style="color:#66d9ef">for</span> i in <span style="color:#f92672">{</span>0..2<span style="color:#f92672">}</span>; <span style="color:#66d9ef">do</span> kubectl exec consul-server-$i -- sh -c <span style="color:#e6db74">&#39;consul info | grep leader&#39;</span>; <span style="color:#66d9ef">done</span>
-        leader <span style="color:#f92672">=</span> false
-        leader_addr <span style="color:#f92672">=</span> 172.17.0.7:8300
-        leader <span style="color:#f92672">=</span> true
-        leader_addr <span style="color:#f92672">=</span> 172.17.0.7:8300
-        leader <span style="color:#f92672">=</span> false
-        leader_addr <span style="color:#f92672">=</span> 172.17.0.7:8300
-</code></pre></div><h3 id="コンフィギュレーションの例">コンフィギュレーションの例<a hidden class="anchor" aria-hidden="true" href="#コンフィギュレーションの例">#</a></h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ <span style="color:#66d9ef">for</span> i in <span style="color:#f92672">{</span>0..2<span style="color:#f92672">}</span>; <span style="color:#66d9ef">do</span> kubectl exec consul-server-$i -- sh -c <span style="color:#e6db74">&#39;consul info | grep leader&#39;</span>; <span style="color:#66d9ef">done</span>
+</span></span><span style="display:flex;"><span>        leader <span style="color:#f92672">=</span> false
+</span></span><span style="display:flex;"><span>        leader_addr <span style="color:#f92672">=</span> 172.17.0.7:8300
+</span></span><span style="display:flex;"><span>        leader <span style="color:#f92672">=</span> true
+</span></span><span style="display:flex;"><span>        leader_addr <span style="color:#f92672">=</span> 172.17.0.7:8300
+</span></span><span style="display:flex;"><span>        leader <span style="color:#f92672">=</span> false
+</span></span><span style="display:flex;"><span>        leader_addr <span style="color:#f92672">=</span> 172.17.0.7:8300
+</span></span></code></pre></div><h3 id="コンフィギュレーションの例">コンフィギュレーションの例<a hidden class="anchor" aria-hidden="true" href="#コンフィギュレーションの例">#</a></h3>
 <p>今回レポジトリ上にある value.yaml を一部修正しただけでしたが、yaml 内にある各設定値を変更することで構成を変更することが可能です。各設定値については下記のサイトに詳細が記されています。公式のドキュメントになります。</p>
 <p><a href="https://www.consul.io/docs/platform/k8s/helm.html">https://www.consul.io/docs/platform/k8s/helm.html</a></p>
 <p>設定値の例をあげると&hellip;</p>

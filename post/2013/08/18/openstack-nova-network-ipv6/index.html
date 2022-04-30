@@ -16,7 +16,7 @@
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2013/08/18/openstack-nova-network-ipv6/" />
 <link crossorigin="anonymous" href="/assets/css/stylesheet.min.44044074f4b4d7b018bfd3febcc1fa76eb874db64213f920feacf263e3028a73.css" integrity="sha256-RARAdPS017AYv9P&#43;vMH6duuHTbZCE/kg/qzyY&#43;MCinM=" rel="preload stylesheet" as="style">
-<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.2840b7fccd34145847db71a290569594bdbdb00047097f75d6495d162f5d7dff.js" integrity="sha256-KEC3/M00FFhH23GikFaVlL29sABHCX911kldFi9dff8="
     onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/pix/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
@@ -25,7 +25,7 @@
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.92.1" />
+<meta name="generator" content="Hugo 0.97.3" />
 <noscript>
     <style>
         #theme-toggle,
@@ -98,7 +98,7 @@ if (!doNotTrack) {
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkz です\n今更なのかもしれませんが、OpenStack の nova-network を IPv6 対応する方法を調べ てみました。何故 nova-network なのか? 自宅の構成が nova-network だからです..。 以前は Quantum (現 Neutron) 構成で使っていましたが、ノードをコントローラとコン ピュートに別けた時に NIC が足らなくなり…。\nさて本題です。下記のサイトを参考にしました。ほぼそのままの手順ですが、自分のた めにもメモです。\n参考 URL http://docs.openstack.org/grizzly/openstack-compute/admin/content/configuring-compute-to-use-ipv6-addresses.html\n前提  OpenStack の構成は予め構築されている nova-network を用いている 構成はオールインワンでも複数台構成でも可能  手順 nova がインストールされているすべてのノードで python-netaddr をインストールし ます。私の場合は rcbops の chef cookbooks で構築したのですが、既にインストール されていました。\n% sudo apt-get install python-netaddr nova-network が稼働しているノードで radvd をインストールします。これは IPv6 を Advertise しているルータ等が予め備わっている環境であっても、インストー ルする必要があります。また /etc/radvd.conf が初め無いので radvd 単体では稼働し ませんが、問題ありません。OpenStack の場合 /var/lib/nova 配下のコンフィギュレー ションファイルを読み込んでくれます。\n% sudo apt-get install radvd /etc/sysctl.conf に下記の記述を追記します。RA の受信とフォワーディングを許可し ています。\n% ${EDITOR} /etc/sysctl.conf net.ipv6.conf.default.forwarding=1 net.ipv6.conf.all.forwarding = 1 net.ipv6.conf.all.accept_ra = 1 % sudo sysctl -p nova がインストールされている全てのノードで /etc/nova.conf に下記の行を追記し ます。\n% sudo ${EDITOR} /etc/nova/nova.conf use_ipv6=true # nova プロセスを再起動します。\n% cd /etc/init.d/; for i in $( ls nova-* ); do sudo service $i restart; done 次に IPv6 のレンジの仮想ネットワークを nova-manage コマンドで生成します。環境にあったレンジを 追加してください。\n% sudo nova-manage network create public --fixed_range_v4 x.x.x.x/24 \\  --fixed_range_v6 xxxx:xxx:xx:xxx::/64 --bridge=br300 --bridge_interface=eth0 \\  --dns1=8.8.8.8 --dns2=8.8.4.4 --multi_host=T ここで IPv4 のレンジも追加しなくてはならないようです。IPv6 オンリーで生成したところ、 nova-network が下記のエラーを吐いてハングアップしました。\nTRACE nova Stderr: 'Error: an inet prefix is expected rather than \"None\".\\n' また仮想ネットワーク生成時に指定した物理ネットワークインターフェース名は IPv6 が通信出来る セグメントのものを利用してください。(環境に合わせてください)\nあとは nova boot で仮想マシンを生成すると IPv4, IPv6 のデュアルスタックで起動してきます。\nまとめ OpenStack 外の構成についても IPv6 にもちろん対応している必要があります。上記の例だと OpenStack の eth0 側の IPv6 ネットワークを適切にルーティングしてくれるルータが必要です。 自分の場合は自宅で Vyatta を使って行いました。(今度その方法も記そうと思います) また floating ip は IPv6 には対応していないそうです。はじめこの方法を取ろうと思ったのですがダメでした。 上記のように public ネットワーク側のネットワークインターフェースをブリッジインターフェースにして public ネットワークを生成する方法で対応出来ますので問題ないかと。\nまた、Neutron 構成でも今度 IPv6 対応してみないと。:D\n",
+  "articleBody": "こんにちは。@jedipunkz です\n今更なのかもしれませんが、OpenStack の nova-network を IPv6 対応する方法を調べ てみました。何故 nova-network なのか? 自宅の構成が nova-network だからです..。 以前は Quantum (現 Neutron) 構成で使っていましたが、ノードをコントローラとコン ピュートに別けた時に NIC が足らなくなり…。\nさて本題です。下記のサイトを参考にしました。ほぼそのままの手順ですが、自分のた めにもメモです。\n参考 URL http://docs.openstack.org/grizzly/openstack-compute/admin/content/configuring-compute-to-use-ipv6-addresses.html\n前提  OpenStack の構成は予め構築されている nova-network を用いている 構成はオールインワンでも複数台構成でも可能  手順 nova がインストールされているすべてのノードで python-netaddr をインストールし ます。私の場合は rcbops の chef cookbooks で構築したのですが、既にインストール されていました。\n% sudo apt-get install python-netaddr nova-network が稼働しているノードで radvd をインストールします。これは IPv6 を Advertise しているルータ等が予め備わっている環境であっても、インストー ルする必要があります。また /etc/radvd.conf が初め無いので radvd 単体では稼働し ませんが、問題ありません。OpenStack の場合 /var/lib/nova 配下のコンフィギュレー ションファイルを読み込んでくれます。\n% sudo apt-get install radvd /etc/sysctl.conf に下記の記述を追記します。RA の受信とフォワーディングを許可し ています。\n% ${EDITOR} /etc/sysctl.conf net.ipv6.conf.default.forwarding=1 net.ipv6.conf.all.forwarding = 1 net.ipv6.conf.all.accept_ra = 1 % sudo sysctl -p nova がインストールされている全てのノードで /etc/nova.conf に下記の行を追記し ます。\n% sudo ${EDITOR} /etc/nova/nova.conf use_ipv6=true # nova プロセスを再起動します。\n% cd /etc/init.d/; for i in $( ls nova-* ); do sudo service $i restart; done 次に IPv6 のレンジの仮想ネットワークを nova-manage コマンドで生成します。環境にあったレンジを 追加してください。\n % sudo nova-manage network create public --fixed_range_v4 x.x.x.x/24 \\  --fixed_range_v6 xxxx:xxx:xx:xxx::/64 --bridge=br300 --bridge_interface=eth0 \\  --dns1=8.8.8.8 --dns2=8.8.4.4 --multi_host=T ここで IPv4 のレンジも追加しなくてはならないようです。IPv6 オンリーで生成したところ、 nova-network が下記のエラーを吐いてハングアップしました。\nTRACE nova Stderr: 'Error: an inet prefix is expected rather than \"None\".\\n' また仮想ネットワーク生成時に指定した物理ネットワークインターフェース名は IPv6 が通信出来る セグメントのものを利用してください。(環境に合わせてください)\nあとは nova boot で仮想マシンを生成すると IPv4, IPv6 のデュアルスタックで起動してきます。\nまとめ OpenStack 外の構成についても IPv6 にもちろん対応している必要があります。上記の例だと OpenStack の eth0 側の IPv6 ネットワークを適切にルーティングしてくれるルータが必要です。 自分の場合は自宅で Vyatta を使って行いました。(今度その方法も記そうと思います) また floating ip は IPv6 には対応していないそうです。はじめこの方法を取ろうと思ったのですがダメでした。 上記のように public ネットワーク側のネットワークインターフェースをブリッジインターフェースにして public ネットワークを生成する方法で対応出来ますので問題ないかと。\nまた、Neutron 構成でも今度 IPv6 対応してみないと。:D\n",
   "wordCount" : "203",
   "inLanguage": "en",
   "datePublished": "2013-08-18T00:00:00Z",
@@ -198,34 +198,34 @@ if (!doNotTrack) {
 <p>nova がインストールされているすべてのノードで python-netaddr をインストールし
 ます。私の場合は rcbops の chef cookbooks で構築したのですが、既にインストール
 されていました。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo apt-get install python-netaddr
-</code></pre></div><p>nova-network が稼働しているノードで radvd をインストールします。これは
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% sudo apt-get install python-netaddr
+</span></span></code></pre></div><p>nova-network が稼働しているノードで radvd をインストールします。これは
 IPv6 を Advertise しているルータ等が予め備わっている環境であっても、インストー
 ルする必要があります。また /etc/radvd.conf が初め無いので radvd 単体では稼働し
 ませんが、問題ありません。OpenStack の場合 /var/lib/nova 配下のコンフィギュレー
 ションファイルを読み込んでくれます。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo apt-get install radvd
-</code></pre></div><p>/etc/sysctl.conf に下記の記述を追記します。RA の受信とフォワーディングを許可し
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% sudo apt-get install radvd
+</span></span></code></pre></div><p>/etc/sysctl.conf に下記の記述を追記します。RA の受信とフォワーディングを許可し
 ています。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> /etc/sysctl.conf
-net.ipv6.conf.default.forwarding<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span>
-net.ipv6.conf.all.forwarding <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>
-net.ipv6.conf.all.accept_ra <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>
-% sudo sysctl -p
-</code></pre></div><p>nova がインストールされている全てのノードで /etc/nova.conf に下記の行を追記し
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> /etc/sysctl.conf
+</span></span><span style="display:flex;"><span>net.ipv6.conf.default.forwarding<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>net.ipv6.conf.all.forwarding <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>net.ipv6.conf.all.accept_ra <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>% sudo sysctl -p
+</span></span></code></pre></div><p>nova がインストールされている全てのノードで /etc/nova.conf に下記の行を追記し
 ます。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% sudo <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> /etc/nova/nova.conf
-use_ipv6<span style="color:#f92672">=</span>true <span style="color:#75715e"># &lt;- 追記</span>
-</code></pre></div><p>nova プロセスを再起動します。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% cd /etc/init.d/; <span style="color:#66d9ef">for</span> i in <span style="color:#66d9ef">$(</span> ls nova-* <span style="color:#66d9ef">)</span>; <span style="color:#66d9ef">do</span> sudo service $i restart; <span style="color:#66d9ef">done</span>
-</code></pre></div><p>次に IPv6 のレンジの仮想ネットワークを nova-manage コマンドで生成します。環境にあったレンジを
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% sudo <span style="color:#e6db74">${</span>EDITOR<span style="color:#e6db74">}</span> /etc/nova/nova.conf
+</span></span><span style="display:flex;"><span>use_ipv6<span style="color:#f92672">=</span>true <span style="color:#75715e"># &lt;- 追記</span>
+</span></span></code></pre></div><p>nova プロセスを再起動します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% cd /etc/init.d/; <span style="color:#66d9ef">for</span> i in <span style="color:#66d9ef">$(</span> ls nova-* <span style="color:#66d9ef">)</span>; <span style="color:#66d9ef">do</span> sudo service $i restart; <span style="color:#66d9ef">done</span>
+</span></span></code></pre></div><p>次に IPv6 のレンジの仮想ネットワークを nova-manage コマンドで生成します。環境にあったレンジを
 追加してください。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"> % sudo nova-manage network create public --fixed_range_v4 x.x.x.x/24 <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>   --fixed_range_v6 xxxx:xxx:xx:xxx::/64 --bridge<span style="color:#f92672">=</span>br300 --bridge_interface<span style="color:#f92672">=</span>eth0 <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>   --dns1<span style="color:#f92672">=</span>8.8.8.8 --dns2<span style="color:#f92672">=</span>8.8.4.4 --multi_host<span style="color:#f92672">=</span>T
-</code></pre></div><p>ここで IPv4 のレンジも追加しなくてはならないようです。IPv6 オンリーで生成したところ、
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span> % sudo nova-manage network create public --fixed_range_v4 x.x.x.x/24 <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>   --fixed_range_v6 xxxx:xxx:xx:xxx::/64 --bridge<span style="color:#f92672">=</span>br300 --bridge_interface<span style="color:#f92672">=</span>eth0 <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>   --dns1<span style="color:#f92672">=</span>8.8.8.8 --dns2<span style="color:#f92672">=</span>8.8.4.4 --multi_host<span style="color:#f92672">=</span>T
+</span></span></code></pre></div><p>ここで IPv4 のレンジも追加しなくてはならないようです。IPv6 オンリーで生成したところ、
 nova-network が下記のエラーを吐いてハングアップしました。</p>
-<pre tabindex="0"><code>TRACE nova Stderr: 'Error: an inet prefix is expected rather than &quot;None&quot;.\n'
+<pre tabindex="0"><code>TRACE nova Stderr: &#39;Error: an inet prefix is expected rather than &#34;None&#34;.\n&#39;
 </code></pre><p>また仮想ネットワーク生成時に指定した物理ネットワークインターフェース名は IPv6 が通信出来る
 セグメントのものを利用してください。(環境に合わせてください)</p>
 <p>あとは nova boot で仮想マシンを生成すると IPv4, IPv6 のデュアルスタックで起動してきます。</p>

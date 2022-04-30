@@ -18,7 +18,7 @@ http://coreos.com/
 <meta name="author" content="Theme PaperMod">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2013/12/09/coreos-etcd-cluster/" />
 <link crossorigin="anonymous" href="/assets/css/stylesheet.min.44044074f4b4d7b018bfd3febcc1fa76eb874db64213f920feacf263e3028a73.css" integrity="sha256-RARAdPS017AYv9P&#43;vMH6duuHTbZCE/kg/qzyY&#43;MCinM=" rel="preload stylesheet" as="style">
-<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.2840b7fccd34145847db71a290569594bdbdb00047097f75d6495d162f5d7dff.js" integrity="sha256-KEC3/M00FFhH23GikFaVlL29sABHCX911kldFi9dff8="
     onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/pix/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
@@ -27,7 +27,7 @@ http://coreos.com/
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.92.1" />
+<meta name="generator" content="Hugo 0.97.3" />
 <noscript>
     <style>
         #theme-toggle,
@@ -104,7 +104,7 @@ http://coreos.com/
   "keywords": [
     
   ],
-  "articleBody": "こんにちは。@jedipunkz です。\n皆さん CoreOS は利用されたことありますか？CoreOS は軽量な docker との相性の良 い OS です。下記が公式サイト。\nhttp://coreos.com/\n特徴としては下記の3つがあります。\n etcd systemd docker  ここではこの中の etcd について注目していきたいと思います。etcd はクラスタエイ ブルな KVS データベースです。コンフィギュレーションをクラスタ間で共有すること がなので、オーケストレーションの分野でも期待出来るのでは？と個人的に感じていま す。今回は etcd のクラスタ構成構築の手順とその基本動作の確認、またどう応用出来 るのか？について記していきたいと思います。\n参考 URL  http://coreos.com/using-coreos/etcd/ https://github.com/coreos/etcd  ビルド go 1.1 or later をインストールして etcd のコンパイル準備を行います。Ubuntu Saucy のパッケージを用いると容易に行えます。\n% apt-get -y install golang coreos/etcd を取得しビルド\n% git clone https://github.com/coreos/etcd % cd coreos % ./build % ./etcd --version v0.2.0-rc1-60-g73f04d5 CoreOS の用意 ここではたまたま手元にあった OpenStack を用いて CoreOS のイメージを登録してい みます。ベアメタルでも可能ですのでその場合は手順を読み替えて作業してみてくださ い。OpenStack 等クラウドプラットフォームを利用する場合は metadata サービスが必 須となるので注意してください。\n% wget http://storage.core-os.net/coreos/amd64-generic/dev-channel/coreos_production_openstack_image.img.bz2 % bunzip2 coreos_production_openstack_image.img.bz2 % glance image-create --name coreos-image --container-format ovf \\  --disk-format qcow2 --file coreos_production_openstack_image.img nova boot にて CoreOS を起動します。(下記は例)\n% nova keypair-add testkey01  testkey01.pem % nova boot --nic net-id .... --image coreos-image --flavor 1 --key_name testkey01 coreos01 CoreOS 上での etcd クラスタ起動 上記でコンパイルした etcd のバイナリを起動したインスタンス (CoreOS) に転送しま す。scp 等で転送してください。\nここでは 1 node 上で複数のポート番号を用いて 3 つの etcd を稼働することでクラ スタを構築します。\n7002 番ポートを peer addr として master を起動。listen ポートは 4002\n% ./etcd -peer-addr 127.0.0.1:7002 -addr 127.0.0.1:4002 -data-dir machines/machine1 -name machine1 上記の master を参照する slaves (残り2台) を起動。\n% ./etcd -peer-addr 127.0.0.1:7003 -addr 127.0.0.1:4003 -peers 127.0.0.1:7002 -data-dir machines/machine2 -name machine2 % ./etcd -peer-addr 127.0.0.1:7004 -addr 127.0.0.1:4004 -peers 127.0.0.1:7002 -data-dir machines/machine3 -name machine3 クラスタ構成内のノード情報を確認する。\n% curl -L http://127.0.0.1:4002/v2/machines [etcd] Dec 4 03:46:44.153 INFO | URLs: machine1 / machine1 (http://127.0.0.1:4002,http://127.0.0.1:4003,http://127.0.0.1:4004) http://127.0.0.1:4002, http://127.0.0.1:4003, http://127.0.0.1:4004 leader (master) 情報を確認する。\n% curl -L http://127.0.0.1:4002/v2/leader http://127.0.0.1:7002 上記で起動した master プロセスが leader (master) になっていることを確認出来る と思います。\nキーの投入と参照 テストでキーと値を入力してみましょう。‘foo’ キーに ‘bar’ という値を投入てくだ さい。\n% curl -L http://127.0.0.1:4002/v2/keys/foo -XPUT -d value=bar クラスタ内全てのプロセスから上記のキーの取得できることを確認します。\n% curl -L http://127.0.0.1:4002/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} % curl -L http://127.0.0.1:4003/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} % curl -L http://127.0.0.1:4004/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} master のシャットダウンと master 選挙後の動作確認 テストで master のプロセスをシャットダウンしてみます。\nmaster プロセスのシャットダウン\n% kill その他 2 つのプロセスから ‘foo’ キーの確認を行う。\n% curl -L http://127.0.0.1:4004/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} % curl -L http://127.0.0.1:4003/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} 勿論、旧 master からは確認出来ない。\n% curl -L http://127.0.0.1:4002/v2/keys/foo curl: (7) Failed connect to 127.0.0.1:4002; Connection refused 新 master の確認を行う。選挙の結果 3 つ目のプロセスが master に昇格しているこ とが確認出来る。\n% curl -L http://127.0.0.1:4003/v2/leader http://127.0.0.1:7004 考察とその応用性について とてもシンプルな KVS ではあるけど大きな可能性を秘めていると思っています。オー ケストレーション等への応用です。お互いのノード (今回はプロセス) 間で情報をやり とりできるので自律的なクラスタの構築も可能になるのでは？と思っています。\n‘etcenv’ という @mattn さんが開発したツールを見てみましょう。\nhttps://github.com/mattn/etcdenv\n下記、README から引用。\n$ curl http://127.0.0.1:4001/v1/keys/app/db -d value=\"newdb\" $ curl http://127.0.0.1:4001/v1/keys/app/cache -d value=\"new cache\" $ curl http://localhost:4001/v1/keys/app [{\"action\":\"GET\",\"key\":\"/app/db\",\"value\":\"newdb\",\"index\":4},{\"action\":\"GET\",\"key\":\"/app/cache\",\"value\":\"new cache\",\"index\":4}] $ etcdenv -key=/app/ DB=newdb CACHE=new cache $ etcdenv -key=/app/ ruby web.rb クラスタ間の情報を環境変数に落としこむツールです。自ノードの環境変数まで落ちれ ば、クラスタ構築も色々想像出来るのではないでしょうか？\n軽量で docker との相性も良くて etcd 等の仕組みも持っている CoreOS にはこれから も期待です。\n",
+  "articleBody": "こんにちは。@jedipunkz です。\n皆さん CoreOS は利用されたことありますか？CoreOS は軽量な docker との相性の良 い OS です。下記が公式サイト。\nhttp://coreos.com/\n特徴としては下記の3つがあります。\n etcd systemd docker  ここではこの中の etcd について注目していきたいと思います。etcd はクラスタエイ ブルな KVS データベースです。コンフィギュレーションをクラスタ間で共有すること がなので、オーケストレーションの分野でも期待出来るのでは？と個人的に感じていま す。今回は etcd のクラスタ構成構築の手順とその基本動作の確認、またどう応用出来 るのか？について記していきたいと思います。\n参考 URL  http://coreos.com/using-coreos/etcd/ https://github.com/coreos/etcd  ビルド go 1.1 or later をインストールして etcd のコンパイル準備を行います。Ubuntu Saucy のパッケージを用いると容易に行えます。\n% apt-get -y install golang coreos/etcd を取得しビルド\n% git clone https://github.com/coreos/etcd % cd coreos % ./build % ./etcd --version v0.2.0-rc1-60-g73f04d5 CoreOS の用意 ここではたまたま手元にあった OpenStack を用いて CoreOS のイメージを登録してい みます。ベアメタルでも可能ですのでその場合は手順を読み替えて作業してみてくださ い。OpenStack 等クラウドプラットフォームを利用する場合は metadata サービスが必 須となるので注意してください。\n% wget http://storage.core-os.net/coreos/amd64-generic/dev-channel/coreos_production_openstack_image.img.bz2 % bunzip2 coreos_production_openstack_image.img.bz2 % glance image-create --name coreos-image --container-format ovf \\  --disk-format qcow2 --file coreos_production_openstack_image.img nova boot にて CoreOS を起動します。(下記は例)\n% nova keypair-add testkey01  testkey01.pem % nova boot --nic net-id .... --image coreos-image --flavor 1 --key_name testkey01 coreos01 CoreOS 上での etcd クラスタ起動 上記でコンパイルした etcd のバイナリを起動したインスタンス (CoreOS) に転送しま す。scp 等で転送してください。\nここでは 1 node 上で複数のポート番号を用いて 3 つの etcd を稼働することでクラ スタを構築します。\n7002 番ポートを peer addr として master を起動。listen ポートは 4002\n% ./etcd -peer-addr 127.0.0.1:7002 -addr 127.0.0.1:4002 -data-dir machines/machine1 -name machine1 上記の master を参照する slaves (残り2台) を起動。\n% ./etcd -peer-addr 127.0.0.1:7003 -addr 127.0.0.1:4003 -peers 127.0.0.1:7002 -data-dir machines/machine2 -name machine2 % ./etcd -peer-addr 127.0.0.1:7004 -addr 127.0.0.1:4004 -peers 127.0.0.1:7002 -data-dir machines/machine3 -name machine3 クラスタ構成内のノード情報を確認する。\n% curl -L http://127.0.0.1:4002/v2/machines [etcd] Dec 4 03:46:44.153 INFO | URLs: machine1 / machine1 (http://127.0.0.1:4002,http://127.0.0.1:4003,http://127.0.0.1:4004) http://127.0.0.1:4002, http://127.0.0.1:4003, http://127.0.0.1:4004 leader (master) 情報を確認する。\n% curl -L http://127.0.0.1:4002/v2/leader http://127.0.0.1:7002 上記で起動した master プロセスが leader (master) になっていることを確認出来る と思います。\nキーの投入と参照 テストでキーと値を入力してみましょう。‘foo’ キーに ‘bar’ という値を投入てくだ さい。\n% curl -L http://127.0.0.1:4002/v2/keys/foo -XPUT -d value=bar クラスタ内全てのプロセスから上記のキーの取得できることを確認します。\n% curl -L http://127.0.0.1:4002/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} % curl -L http://127.0.0.1:4003/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} % curl -L http://127.0.0.1:4004/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} master のシャットダウンと master 選挙後の動作確認 テストで master のプロセスをシャットダウンしてみます。\nmaster プロセスのシャットダウン\n% kill その他 2 つのプロセスから ‘foo’ キーの確認を行う。\n% curl -L http://127.0.0.1:4004/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} % curl -L http://127.0.0.1:4003/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} 勿論、旧 master からは確認出来ない。\n% curl -L http://127.0.0.1:4002/v2/keys/foo  curl: (7) Failed connect to 127.0.0.1:4002; Connection refused 新 master の確認を行う。選挙の結果 3 つ目のプロセスが master に昇格しているこ とが確認出来る。\n% curl -L http://127.0.0.1:4003/v2/leader http://127.0.0.1:7004 考察とその応用性について とてもシンプルな KVS ではあるけど大きな可能性を秘めていると思っています。オー ケストレーション等への応用です。お互いのノード (今回はプロセス) 間で情報をやり とりできるので自律的なクラスタの構築も可能になるのでは？と思っています。\n’etcenv’ という @mattn さんが開発したツールを見てみましょう。\nhttps://github.com/mattn/etcdenv\n下記、README から引用。\n$ curl http://127.0.0.1:4001/v1/keys/app/db -d value=\"newdb\" $ curl http://127.0.0.1:4001/v1/keys/app/cache -d value=\"new cache\"  $ curl http://localhost:4001/v1/keys/app [{\"action\":\"GET\",\"key\":\"/app/db\",\"value\":\"newdb\",\"index\":4},{\"action\":\"GET\",\"key\":\"/app/cache\",\"value\":\"new cache\",\"index\":4}]  $ etcdenv -key=/app/ DB=newdb CACHE=new cache  $ etcdenv -key=/app/ ruby web.rb クラスタ間の情報を環境変数に落としこむツールです。自ノードの環境変数まで落ちれ ば、クラスタ構築も色々想像出来るのではないでしょうか？\n軽量で docker との相性も良くて etcd 等の仕組みも持っている CoreOS にはこれから も期待です。\n",
   "wordCount" : "358",
   "inLanguage": "en",
   "datePublished": "2013-12-09T00:00:00Z",
@@ -208,90 +208,90 @@ http://coreos.com/
 <h2 id="ビルド">ビルド<a hidden class="anchor" aria-hidden="true" href="#ビルド">#</a></h2>
 <p>go 1.1 or later をインストールして etcd のコンパイル準備を行います。Ubuntu
 Saucy のパッケージを用いると容易に行えます。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% apt-get -y install golang
-</code></pre></div><p>coreos/etcd を取得しビルド</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% git clone https://github.com/coreos/etcd
-% cd coreos
-% ./build
-% ./etcd --version
-v0.2.0-rc1-60-g73f04d5
-</code></pre></div><h2 id="coreos-の用意">CoreOS の用意<a hidden class="anchor" aria-hidden="true" href="#coreos-の用意">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% apt-get -y install golang
+</span></span></code></pre></div><p>coreos/etcd を取得しビルド</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% git clone https://github.com/coreos/etcd
+</span></span><span style="display:flex;"><span>% cd coreos
+</span></span><span style="display:flex;"><span>% ./build
+</span></span><span style="display:flex;"><span>% ./etcd --version
+</span></span><span style="display:flex;"><span>v0.2.0-rc1-60-g73f04d5
+</span></span></code></pre></div><h2 id="coreos-の用意">CoreOS の用意<a hidden class="anchor" aria-hidden="true" href="#coreos-の用意">#</a></h2>
 <p>ここではたまたま手元にあった OpenStack を用いて CoreOS のイメージを登録してい
 みます。ベアメタルでも可能ですのでその場合は手順を読み替えて作業してみてくださ
 い。OpenStack 等クラウドプラットフォームを利用する場合は metadata サービスが必
 須となるので注意してください。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% wget http://storage.core-os.net/coreos/amd64-generic/dev-channel/coreos_production_openstack_image.img.bz2
-% bunzip2 coreos_production_openstack_image.img.bz2
-% glance image-create --name coreos-image --container-format ovf <span style="color:#ae81ff">\
-</span><span style="color:#ae81ff"></span>  --disk-format qcow2 --file coreos_production_openstack_image.img
-</code></pre></div><p>nova boot にて CoreOS を起動します。(下記は例)</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% nova keypair-add testkey01 &gt; testkey01.pem
-% nova boot --nic net-id .... --image coreos-image --flavor <span style="color:#ae81ff">1</span> --key_name testkey01 coreos01
-</code></pre></div><h2 id="coreos-上での-etcd-クラスタ起動">CoreOS 上での etcd クラスタ起動<a hidden class="anchor" aria-hidden="true" href="#coreos-上での-etcd-クラスタ起動">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% wget http://storage.core-os.net/coreos/amd64-generic/dev-channel/coreos_production_openstack_image.img.bz2
+</span></span><span style="display:flex;"><span>% bunzip2 coreos_production_openstack_image.img.bz2
+</span></span><span style="display:flex;"><span>% glance image-create --name coreos-image --container-format ovf <span style="color:#ae81ff">\
+</span></span></span><span style="display:flex;"><span><span style="color:#ae81ff"></span>  --disk-format qcow2 --file coreos_production_openstack_image.img
+</span></span></code></pre></div><p>nova boot にて CoreOS を起動します。(下記は例)</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% nova keypair-add testkey01 &gt; testkey01.pem
+</span></span><span style="display:flex;"><span>% nova boot --nic net-id .... --image coreos-image --flavor <span style="color:#ae81ff">1</span> --key_name testkey01 coreos01
+</span></span></code></pre></div><h2 id="coreos-上での-etcd-クラスタ起動">CoreOS 上での etcd クラスタ起動<a hidden class="anchor" aria-hidden="true" href="#coreos-上での-etcd-クラスタ起動">#</a></h2>
 <p>上記でコンパイルした etcd のバイナリを起動したインスタンス (CoreOS) に転送しま
 す。scp 等で転送してください。</p>
 <p>ここでは 1 node 上で複数のポート番号を用いて 3 つの etcd を稼働することでクラ
 スタを構築します。</p>
 <p>7002 番ポートを peer addr として master を起動。listen ポートは 4002</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ./etcd -peer-addr 127.0.0.1:7002 -addr 127.0.0.1:4002 -data-dir machines/machine1 -name machine1
-</code></pre></div><p>上記の master を参照する slaves (残り2台) を起動。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% ./etcd -peer-addr 127.0.0.1:7003 -addr 127.0.0.1:4003 -peers 127.0.0.1:7002 -data-dir machines/machine2 -name machine2
-% ./etcd -peer-addr 127.0.0.1:7004 -addr 127.0.0.1:4004 -peers 127.0.0.1:7002 -data-dir machines/machine3 -name machine3
-</code></pre></div><p>クラスタ構成内のノード情報を確認する。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -L http://127.0.0.1:4002/v2/machines
-<span style="color:#f92672">[</span>etcd<span style="color:#f92672">]</span> Dec  <span style="color:#ae81ff">4</span> 03:46:44.153 INFO      | URLs: machine1 / machine1 <span style="color:#f92672">(</span>http://127.0.0.1:4002,http://127.0.0.1:4003,http://127.0.0.1:4004<span style="color:#f92672">)</span>
-http://127.0.0.1:4002, http://127.0.0.1:4003, http://127.0.0.1:4004
-</code></pre></div><p>leader (master) 情報を確認する。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -L http://127.0.0.1:4002/v2/leader
-http://127.0.0.1:7002
-</code></pre></div><p>上記で起動した master プロセスが leader (master) になっていることを確認出来る
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% ./etcd -peer-addr 127.0.0.1:7002 -addr 127.0.0.1:4002 -data-dir machines/machine1 -name machine1
+</span></span></code></pre></div><p>上記の master を参照する slaves (残り2台) を起動。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% ./etcd -peer-addr 127.0.0.1:7003 -addr 127.0.0.1:4003 -peers 127.0.0.1:7002 -data-dir machines/machine2 -name machine2
+</span></span><span style="display:flex;"><span>% ./etcd -peer-addr 127.0.0.1:7004 -addr 127.0.0.1:4004 -peers 127.0.0.1:7002 -data-dir machines/machine3 -name machine3
+</span></span></code></pre></div><p>クラスタ構成内のノード情報を確認する。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -L http://127.0.0.1:4002/v2/machines
+</span></span><span style="display:flex;"><span><span style="color:#f92672">[</span>etcd<span style="color:#f92672">]</span> Dec  <span style="color:#ae81ff">4</span> 03:46:44.153 INFO      | URLs: machine1 / machine1 <span style="color:#f92672">(</span>http://127.0.0.1:4002,http://127.0.0.1:4003,http://127.0.0.1:4004<span style="color:#f92672">)</span>
+</span></span><span style="display:flex;"><span>http://127.0.0.1:4002, http://127.0.0.1:4003, http://127.0.0.1:4004
+</span></span></code></pre></div><p>leader (master) 情報を確認する。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -L http://127.0.0.1:4002/v2/leader
+</span></span><span style="display:flex;"><span>http://127.0.0.1:7002
+</span></span></code></pre></div><p>上記で起動した master プロセスが leader (master) になっていることを確認出来る
 と思います。</p>
 <h2 id="キーの投入と参照">キーの投入と参照<a hidden class="anchor" aria-hidden="true" href="#キーの投入と参照">#</a></h2>
 <p>テストでキーと値を入力してみましょう。&lsquo;foo&rsquo; キーに &lsquo;bar&rsquo; という値を投入てくだ
 さい。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -L http://127.0.0.1:4002/v2/keys/foo -XPUT -d value<span style="color:#f92672">=</span>bar
-</code></pre></div><p>クラスタ内全てのプロセスから上記のキーの取得できることを確認します。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -L http://127.0.0.1:4002/v2/keys/foo
-<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;get&#34;</span>,<span style="color:#e6db74">&#34;node&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/foo&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;bar&#34;</span>,<span style="color:#e6db74">&#34;modifiedIndex&#34;</span>:4,<span style="color:#e6db74">&#34;createdIndex&#34;</span>:4<span style="color:#f92672">}}</span>
-% curl -L http://127.0.0.1:4003/v2/keys/foo
-<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;get&#34;</span>,<span style="color:#e6db74">&#34;node&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/foo&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;bar&#34;</span>,<span style="color:#e6db74">&#34;modifiedIndex&#34;</span>:4,<span style="color:#e6db74">&#34;createdIndex&#34;</span>:4<span style="color:#f92672">}}</span>
-% curl -L http://127.0.0.1:4004/v2/keys/foo
-<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;get&#34;</span>,<span style="color:#e6db74">&#34;node&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/foo&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;bar&#34;</span>,<span style="color:#e6db74">&#34;modifiedIndex&#34;</span>:4,<span style="color:#e6db74">&#34;createdIndex&#34;</span>:4<span style="color:#f92672">}}</span>
-</code></pre></div><h2 id="master-のシャットダウンと-master-選挙後の動作確認">master のシャットダウンと master 選挙後の動作確認<a hidden class="anchor" aria-hidden="true" href="#master-のシャットダウンと-master-選挙後の動作確認">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -L http://127.0.0.1:4002/v2/keys/foo -XPUT -d value<span style="color:#f92672">=</span>bar
+</span></span></code></pre></div><p>クラスタ内全てのプロセスから上記のキーの取得できることを確認します。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -L http://127.0.0.1:4002/v2/keys/foo
+</span></span><span style="display:flex;"><span><span style="color:#f92672">{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;get&#34;</span>,<span style="color:#e6db74">&#34;node&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/foo&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;bar&#34;</span>,<span style="color:#e6db74">&#34;modifiedIndex&#34;</span>:4,<span style="color:#e6db74">&#34;createdIndex&#34;</span>:4<span style="color:#f92672">}}</span>
+</span></span><span style="display:flex;"><span>% curl -L http://127.0.0.1:4003/v2/keys/foo
+</span></span><span style="display:flex;"><span><span style="color:#f92672">{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;get&#34;</span>,<span style="color:#e6db74">&#34;node&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/foo&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;bar&#34;</span>,<span style="color:#e6db74">&#34;modifiedIndex&#34;</span>:4,<span style="color:#e6db74">&#34;createdIndex&#34;</span>:4<span style="color:#f92672">}}</span>
+</span></span><span style="display:flex;"><span>% curl -L http://127.0.0.1:4004/v2/keys/foo
+</span></span><span style="display:flex;"><span><span style="color:#f92672">{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;get&#34;</span>,<span style="color:#e6db74">&#34;node&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/foo&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;bar&#34;</span>,<span style="color:#e6db74">&#34;modifiedIndex&#34;</span>:4,<span style="color:#e6db74">&#34;createdIndex&#34;</span>:4<span style="color:#f92672">}}</span>
+</span></span></code></pre></div><h2 id="master-のシャットダウンと-master-選挙後の動作確認">master のシャットダウンと master 選挙後の動作確認<a hidden class="anchor" aria-hidden="true" href="#master-のシャットダウンと-master-選挙後の動作確認">#</a></h2>
 <p>テストで master のプロセスをシャットダウンしてみます。</p>
 <p>master プロセスのシャットダウン</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% kill &lt;master プロセスの ID&gt;
-</code></pre></div><p>その他 2 つのプロセスから &lsquo;foo&rsquo; キーの確認を行う。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -L http://127.0.0.1:4004/v2/keys/foo
-<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;get&#34;</span>,<span style="color:#e6db74">&#34;node&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/foo&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;bar&#34;</span>,<span style="color:#e6db74">&#34;modifiedIndex&#34;</span>:4,<span style="color:#e6db74">&#34;createdIndex&#34;</span>:4<span style="color:#f92672">}}</span>
-% curl -L http://127.0.0.1:4003/v2/keys/foo
-<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;get&#34;</span>,<span style="color:#e6db74">&#34;node&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/foo&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;bar&#34;</span>,<span style="color:#e6db74">&#34;modifiedIndex&#34;</span>:4,<span style="color:#e6db74">&#34;createdIndex&#34;</span>:4<span style="color:#f92672">}}</span>
-</code></pre></div><p>勿論、旧 master からは確認出来ない。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -L http://127.0.0.1:4002/v2/keys/foo
- curl: <span style="color:#f92672">(</span>7<span style="color:#f92672">)</span> Failed connect to 127.0.0.1:4002; Connection refused
-</code></pre></div><p>新 master の確認を行う。選挙の結果 3 つ目のプロセスが master に昇格しているこ
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% kill &lt;master プロセスの ID&gt;
+</span></span></code></pre></div><p>その他 2 つのプロセスから &lsquo;foo&rsquo; キーの確認を行う。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -L http://127.0.0.1:4004/v2/keys/foo
+</span></span><span style="display:flex;"><span><span style="color:#f92672">{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;get&#34;</span>,<span style="color:#e6db74">&#34;node&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/foo&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;bar&#34;</span>,<span style="color:#e6db74">&#34;modifiedIndex&#34;</span>:4,<span style="color:#e6db74">&#34;createdIndex&#34;</span>:4<span style="color:#f92672">}}</span>
+</span></span><span style="display:flex;"><span>% curl -L http://127.0.0.1:4003/v2/keys/foo
+</span></span><span style="display:flex;"><span><span style="color:#f92672">{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;get&#34;</span>,<span style="color:#e6db74">&#34;node&#34;</span>:<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/foo&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;bar&#34;</span>,<span style="color:#e6db74">&#34;modifiedIndex&#34;</span>:4,<span style="color:#e6db74">&#34;createdIndex&#34;</span>:4<span style="color:#f92672">}}</span>
+</span></span></code></pre></div><p>勿論、旧 master からは確認出来ない。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -L http://127.0.0.1:4002/v2/keys/foo
+</span></span><span style="display:flex;"><span> curl: <span style="color:#f92672">(</span>7<span style="color:#f92672">)</span> Failed connect to 127.0.0.1:4002; Connection refused
+</span></span></code></pre></div><p>新 master の確認を行う。選挙の結果 3 つ目のプロセスが master に昇格しているこ
 とが確認出来る。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">% curl -L http://127.0.0.1:4003/v2/leader
-http://127.0.0.1:7004
-</code></pre></div><h2 id="考察とその応用性について">考察とその応用性について<a hidden class="anchor" aria-hidden="true" href="#考察とその応用性について">#</a></h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>% curl -L http://127.0.0.1:4003/v2/leader
+</span></span><span style="display:flex;"><span>http://127.0.0.1:7004
+</span></span></code></pre></div><h2 id="考察とその応用性について">考察とその応用性について<a hidden class="anchor" aria-hidden="true" href="#考察とその応用性について">#</a></h2>
 <p>とてもシンプルな KVS ではあるけど大きな可能性を秘めていると思っています。オー
 ケストレーション等への応用です。お互いのノード (今回はプロセス) 間で情報をやり
 とりできるので自律的なクラスタの構築も可能になるのでは？と思っています。</p>
-<p>&lsquo;etcenv&rsquo; という @mattn さんが開発したツールを見てみましょう。</p>
+<p>&rsquo;etcenv&rsquo; という @mattn さんが開発したツールを見てみましょう。</p>
 <p><a href="https://github.com/mattn/etcdenv">https://github.com/mattn/etcdenv</a></p>
 <p>下記、README から引用。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ curl http://127.0.0.1:4001/v1/keys/app/db -d value<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;newdb&#34;</span>
-$ curl http://127.0.0.1:4001/v1/keys/app/cache -d value<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;new cache&#34;</span>
-
-$ curl http://localhost:4001/v1/keys/app
-<span style="color:#f92672">[{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;GET&#34;</span>,<span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/app/db&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;newdb&#34;</span>,<span style="color:#e6db74">&#34;index&#34;</span>:4<span style="color:#f92672">}</span>,<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;GET&#34;</span>,<span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/app/cache&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;new cache&#34;</span>,<span style="color:#e6db74">&#34;index&#34;</span>:4<span style="color:#f92672">}]</span>
-
-$ etcdenv -key<span style="color:#f92672">=</span>/app/
-DB<span style="color:#f92672">=</span>newdb
-CACHE<span style="color:#f92672">=</span>new cache
-
-$ etcdenv -key<span style="color:#f92672">=</span>/app/ ruby web.rb
-</code></pre></div><p>クラスタ間の情報を環境変数に落としこむツールです。自ノードの環境変数まで落ちれ
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ curl http://127.0.0.1:4001/v1/keys/app/db -d value<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;newdb&#34;</span>
+</span></span><span style="display:flex;"><span>$ curl http://127.0.0.1:4001/v1/keys/app/cache -d value<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;new cache&#34;</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>$ curl http://localhost:4001/v1/keys/app
+</span></span><span style="display:flex;"><span><span style="color:#f92672">[{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;GET&#34;</span>,<span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/app/db&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;newdb&#34;</span>,<span style="color:#e6db74">&#34;index&#34;</span>:4<span style="color:#f92672">}</span>,<span style="color:#f92672">{</span><span style="color:#e6db74">&#34;action&#34;</span>:<span style="color:#e6db74">&#34;GET&#34;</span>,<span style="color:#e6db74">&#34;key&#34;</span>:<span style="color:#e6db74">&#34;/app/cache&#34;</span>,<span style="color:#e6db74">&#34;value&#34;</span>:<span style="color:#e6db74">&#34;new cache&#34;</span>,<span style="color:#e6db74">&#34;index&#34;</span>:4<span style="color:#f92672">}]</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>$ etcdenv -key<span style="color:#f92672">=</span>/app/
+</span></span><span style="display:flex;"><span>DB<span style="color:#f92672">=</span>newdb
+</span></span><span style="display:flex;"><span>CACHE<span style="color:#f92672">=</span>new cache
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>$ etcdenv -key<span style="color:#f92672">=</span>/app/ ruby web.rb
+</span></span></code></pre></div><p>クラスタ間の情報を環境変数に落としこむツールです。自ノードの環境変数まで落ちれ
 ば、クラスタ構築も色々想像出来るのではないでしょうか？</p>
 <p>軽量で docker との相性も良くて etcd 等の仕組みも持っている CoreOS にはこれから
 も期待です。</p>

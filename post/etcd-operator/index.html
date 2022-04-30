@@ -11,7 +11,7 @@
 <meta name="author" content="jedipunkz">
 <link rel="canonical" href="https://jedipunkz.github.io/post/etcd-operator/" />
 <link crossorigin="anonymous" href="/assets/css/stylesheet.min.44044074f4b4d7b018bfd3febcc1fa76eb874db64213f920feacf263e3028a73.css" integrity="sha256-RARAdPS017AYv9P&#43;vMH6duuHTbZCE/kg/qzyY&#43;MCinM=" rel="preload stylesheet" as="style">
-<script defer crossorigin="anonymous" src="/assets/js/highlight.min.7680afc38aa6b15ddf158a4f3780b7b1f7dde7e91d26f073e6229bb7a0793c92.js" integrity="sha256-doCvw4qmsV3fFYpPN4C3sffd5&#43;kdJvBz5iKbt6B5PJI="
+<script defer crossorigin="anonymous" src="/assets/js/highlight.min.2840b7fccd34145847db71a290569594bdbdb00047097f75d6495d162f5d7dff.js" integrity="sha256-KEC3/M00FFhH23GikFaVlL29sABHCX911kldFi9dff8="
     onload="hljs.initHighlightingOnLoad();"></script>
 <link rel="icon" href="https://jedipunkz.github.io/pix/favicon.ico">
 <link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
@@ -20,7 +20,7 @@
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.92.1" />
+<meta name="generator" content="Hugo 0.97.3" />
 <noscript>
     <style>
         #theme-toggle,
@@ -83,7 +83,7 @@ if (!doNotTrack) {
   "keywords": [
     
   ],
-  "articleBody": "こんにちは @jedipunkz です。\n今日は某アドベントカレンダーに参加していて記事を書いています。 記事だけ先出ししちゃいます..。\n今日は最近 coreos がリリースした ‘etcd-operator’ を触ってみようかと思います。ほぼ、README に書かれている手順通りに実施するのですが、所感を交えながら作業して記事にしてみたいと思います。\ncoreos が提供している etcd についてご存知ない方もいらっしゃると思いますが etcd は KVS ストレージでありながら Configuration Management Store として利用できる分散型ストレージです。Docker 等の環境を提供する coreos という軽量 OS 内でも etcd が起動していてクラスタで管理された情報をクラスタ内の各 OS が読み書きできる、といった機能を etcd が提供しています。 詳細については公式サイトを御覧ください。\netcd 公式サイト : https://coreos.com/etcd/docs/latest/\netcd-operator はこの etcd クラスタを kubernetes 上でクラスタ管理するための簡単に運用管理するためのソフトウェアになります。\netcd-operator 公式アナウンス : https://coreos.com/blog/introducing-the-etcd-operator.html\n後に実際に触れていきますが下記のような管理が可能になります。\n etcd クラスタの構築 etcd クラスタのスケールアップ・ダウン etcd Pod の障害時自動復旧 etcd イメージをオンラインで最新のモノにアップグレード  では早速利用してみたいと思います。\n必要な環境 下記の環境が事前に用意されている必要があります。\n Docker Kubernetes or minikube+kubernetes (https://github.com/kubernetes/minikube) etcdctl : https://github.com/coreos/etcd/tree/master/etcdctl  作業準備 下記のレポジトリをクローンします。\n$ git clone https://github.com/coreos/etcd-operator.git Operator のデプロイ 下記のような内容のファイルが記さているファイルを利用します。中身を確認しましょう。\n$ cat example/deployment.yaml apiVersion: extensions/v1beta1 kind: Deployment metadata: name: etcd-operator spec: replicas: 1 template: metadata: labels: name: etcd-operator spec: containers: - name: etcd-operator image: quay.io/coreos/etcd-operator env: - name: MY_POD_NAMESPACE valueFrom: fieldRef: fieldPath: metadata.namespace kind: Deployment で etcd-operator のイメージを使ってレプリカ数1のポッドを起動しているのが分かると思います。実際にデプロイします。\n$ kubectl create -f example/deployment.yaml どんなポッドが起動したか確認します。\nkubectl get pods NAME READY STATUS RESTARTS AGE etcd-operator-217127005-futo0 1/1 Running 0 1m あと、これは自分も知りませんでしたがサードパーティリソースという枠があるらしく下記のように確認することができます。\nkubectl get thirdpartyresources NAME DESCRIPTION VERSION(S) etcd-cluster.coreos.com Managed etcd clusters v1 replica数1 ですが、ポッドなのでポッド内のプロセスに問題があれば kubernetes が自動で修復 (場合によってポッドの再構築) されます。また replica 数を増やす運用も考えられそうです。\netcd クラスタの構築 下記の内容のファイルで etcd をデプロイします。中身を確認しましょう。 API は coreos.com/v1 で kind: EtcdCluster という情報が記されています。また version でイメージバージョンが記されているのかなということが後に確認できます。また size でレプリカ数が記されているようです。\n$ cat example/example-etcd-cluster.yaml apiVersion: \"coreos.com/v1\" kind: \"EtcdCluster\" metadata: name: \"etcd-cluster\" spec: size: 3 version: \"v3.1.0-alpha.1\" デプロイをしてみます。\n$ kubectl create -f example/example-etcd-cluster.yaml クラスタがデプロイされたか見てみます。3つのポッドが確認できます。やはりファイル中 size: 3 はレプリカ数だったようです。\n$ kubectl get pods --show-all NAME READY STATUS RESTARTS AGE etcd-cluster-0000 1/1 Running 0 1m etcd-cluster-0001 1/1 Running 0 36s etcd-cluster-0002 1/1 Running 0 21s 同様に Service について確認します。etcd-cluster-000[012] の3つが今回作った etcd クラスタです。\n$ kubectl get svc NAME CLUSTER-IP EXTERNAL-IP PORT(S) AGE etcd-cluster 10.0.0.80  2379/TCP 1m etcd-cluster-0000 10.0.0.13  2380/TCP,2379/TCP 1m etcd-cluster-0001 10.0.0.111  2380/TCP,2379/TCP 1m etcd-cluster-0002 10.0.0.183  2380/TCP,2379/TCP 50s kubernetes 10.0.0.1  443/TCP 5d etcd クラスタをスケールアウト では etcd クラスタのレプリカ数を増やすことでスケールアウトしてみます。が、今現在 (2016/12) 時点では一部不具合があるらしく回避策として下記の通り curl を用いてスケールアウトすることが可能なようです。\n下記の内容で body.json ファイルを用意します。size: 5 になっていることが確認できて、レプリカ数5になるのだなと判断できます。\n$ cat body.json { \"apiVersion\": \"coreos.com/v1\", \"kind\": \"EtcdCluster\", \"metadata\": { \"name\": \"etcd-cluster\", \"namespace\": \"default\" }, \"spec\": { \"size\": 5 } } ここで curl で実行するためプロキシを稼働します。\n$ kubectl proxy --port=8080 curl で先程作った body.json を PUT してみます。\ncurl -H 'Content-Type: application/json' -X PUT --data @body.json http://127.0.0.1:8080/apis/coreos.com/v1/namespaces/default/etcdclusters/etcd-cluster クラスタがスケールアウトされたか確認しましょう。\nkubectl get pods --show-all NAME READY STATUS RESTARTS AGE etcd-cluster-0000 1/1 Running 0 5m etcd-cluster-0001 1/1 Running 0 4m etcd-cluster-0002 1/1 Running 0 4m etcd-cluster-0003 1/1 Running 0 32s etcd-cluster-0004 1/1 Running 0 17s etcd-operator-217127005-futo0 1/1 Running 0 9m 5台構成のクラスタにスケールアウトしたことが確認できます。\netcd にアクセス 5台構成の etcd クラスタがデプロイできたので etcd に etcdctl を使ってアクセスしてみましょう。事前に etcdctl をインストールする必要があります。また私の環境もそうだったのですがローカルの Mac に minikube を使って kubernetes 環境を構築しているので下記のように nodePort を作るため作業が必要です。\n$ kubectl create -f example/example-etcd-cluster-nodeport-service.json $ export ETCDCTL_API=3 $ export ETCDCTL_ENDPOINTS=$(minikube service etcd-cluster-client-service --url) $ etcdctl put foo bar $ etcdctl get foo foo bar etcdctl でキー・値を入力・読み込みが可能であることが分かりました！\nポッドの自動復旧 kubernetes を普段使っている方は分かると思うのですがポッドを落としても kubernetes が自動復旧してくれます。ここで一つポッドを削除してみようと思います。\n$kubectl get pods NAME READY STATUS RESTARTS AGE etcd-cluster-0000 1/1 Running 0 11m etcd-cluster-0001 1/1 Running 0 11m etcd-cluster-0002 1/1 Running 0 11m etcd-cluster-0003 1/1 Running 0 6m etcd-cluster-0004 1/1 Running 0 6m etcd-operator-217127005-futo0 1/1 Running 0 16m $kubect delete pod etcd-cluster-0004 しばらくすると下記の通り etcd-cluster-0004 に代わり etcd-cluster-0005 が稼働していることが確認できると思います。\n$ kubectl get pods NAME READY STATUS RESTARTS AGE etcd-cluster-0000 1/1 Running 0 12m etcd-cluster-0001 1/1 Running 0 12m etcd-cluster-0002 1/1 Running 0 11m etcd-cluster-0003 1/1 Running 0 7m etcd-cluster-0005 1/1 Running 0 3s etcd-operator-217127005-futo0 1/1 Running 0 17m まとめ kubernetes の上で構成することでうまく kubernetes のメリットを活かしつつ etcd クラスタを構成できていると言えると思います。記事執筆時ではまだ不具合が幾つかありました (上記の curl で実施した箇所や、イメージのアップグレード) が、etcd を手動で構築するより kubernetes で構成するほうがメリットが多いことは明らかです。また kubernetes のポッドから kubernetes dns を介してサービスネームに直接アクセスできるのでポッドから etcd に情報を読み書きすることも容易になりそうです。\nですが etcd に収めるデータの性質によっては運用面で厳しくなることも想定できます。coreos 内で etcd クラスタを介して互いのコンテナ間でコンフィグを共有し合う使い方は非常に意味があると思うのですが、coreos 外の独自のソフトウェアがいろんな種別のデータを etcd クラスタに外から入出力することの意味はそれほど無いように思えます。であれば高耐久性で運用のし易い軽量な KVS ソフトウェアを使うべきだからです。\nまた今回紹介した etcd-operator とは別に coreos が同時にアナウンスした(https://coreos.com/blog/the-prometheus-operator.html) に関しても興味を持っているので後に触ってみたいと思います。\n何と言うか所感として最後に述べるとサーバレスが叫ばれている中でわざわざクラスタソフトウェアを自前で管理するのか？と疑問も確かに残ります。それこそクラウドプラットフォームが提供すべき機能だと思うからです..。\n",
+  "articleBody": "こんにちは @jedipunkz です。\n今日は某アドベントカレンダーに参加していて記事を書いています。 記事だけ先出ししちゃいます..。\n今日は最近 coreos がリリースした ’etcd-operator’ を触ってみようかと思います。ほぼ、README に書かれている手順通りに実施するのですが、所感を交えながら作業して記事にしてみたいと思います。\ncoreos が提供している etcd についてご存知ない方もいらっしゃると思いますが etcd は KVS ストレージでありながら Configuration Management Store として利用できる分散型ストレージです。Docker 等の環境を提供する coreos という軽量 OS 内でも etcd が起動していてクラスタで管理された情報をクラスタ内の各 OS が読み書きできる、といった機能を etcd が提供しています。 詳細については公式サイトを御覧ください。\netcd 公式サイト : https://coreos.com/etcd/docs/latest/\netcd-operator はこの etcd クラスタを kubernetes 上でクラスタ管理するための簡単に運用管理するためのソフトウェアになります。\netcd-operator 公式アナウンス : https://coreos.com/blog/introducing-the-etcd-operator.html\n後に実際に触れていきますが下記のような管理が可能になります。\n etcd クラスタの構築 etcd クラスタのスケールアップ・ダウン etcd Pod の障害時自動復旧 etcd イメージをオンラインで最新のモノにアップグレード  では早速利用してみたいと思います。\n必要な環境 下記の環境が事前に用意されている必要があります。\n Docker Kubernetes or minikube+kubernetes (https://github.com/kubernetes/minikube) etcdctl : https://github.com/coreos/etcd/tree/master/etcdctl  作業準備 下記のレポジトリをクローンします。\n$ git clone https://github.com/coreos/etcd-operator.git Operator のデプロイ 下記のような内容のファイルが記さているファイルを利用します。中身を確認しましょう。\n$ cat example/deployment.yaml apiVersion: extensions/v1beta1 kind: Deployment metadata: name: etcd-operator spec: replicas: 1 template: metadata: labels: name: etcd-operator spec: containers: - name: etcd-operator image: quay.io/coreos/etcd-operator env: - name: MY_POD_NAMESPACE valueFrom: fieldRef: fieldPath: metadata.namespace kind: Deployment で etcd-operator のイメージを使ってレプリカ数1のポッドを起動しているのが分かると思います。実際にデプロイします。\n$ kubectl create -f example/deployment.yaml どんなポッドが起動したか確認します。\nkubectl get pods NAME READY STATUS RESTARTS AGE etcd-operator-217127005-futo0 1/1 Running 0 1m あと、これは自分も知りませんでしたがサードパーティリソースという枠があるらしく下記のように確認することができます。\nkubectl get thirdpartyresources NAME DESCRIPTION VERSION(S) etcd-cluster.coreos.com Managed etcd clusters v1 replica数1 ですが、ポッドなのでポッド内のプロセスに問題があれば kubernetes が自動で修復 (場合によってポッドの再構築) されます。また replica 数を増やす運用も考えられそうです。\netcd クラスタの構築 下記の内容のファイルで etcd をデプロイします。中身を確認しましょう。 API は coreos.com/v1 で kind: EtcdCluster という情報が記されています。また version でイメージバージョンが記されているのかなということが後に確認できます。また size でレプリカ数が記されているようです。\n$ cat example/example-etcd-cluster.yaml apiVersion: \"coreos.com/v1\" kind: \"EtcdCluster\" metadata: name: \"etcd-cluster\" spec: size: 3 version: \"v3.1.0-alpha.1\" デプロイをしてみます。\n$ kubectl create -f example/example-etcd-cluster.yaml クラスタがデプロイされたか見てみます。3つのポッドが確認できます。やはりファイル中 size: 3 はレプリカ数だったようです。\n$ kubectl get pods --show-all NAME READY STATUS RESTARTS AGE etcd-cluster-0000 1/1 Running 0 1m etcd-cluster-0001 1/1 Running 0 36s etcd-cluster-0002 1/1 Running 0 21s 同様に Service について確認します。etcd-cluster-000[012] の3つが今回作った etcd クラスタです。\n$ kubectl get svc NAME CLUSTER-IP EXTERNAL-IP PORT(S) AGE etcd-cluster 10.0.0.80  2379/TCP 1m etcd-cluster-0000 10.0.0.13  2380/TCP,2379/TCP 1m etcd-cluster-0001 10.0.0.111  2380/TCP,2379/TCP 1m etcd-cluster-0002 10.0.0.183  2380/TCP,2379/TCP 50s kubernetes 10.0.0.1  443/TCP 5d etcd クラスタをスケールアウト では etcd クラスタのレプリカ数を増やすことでスケールアウトしてみます。が、今現在 (2016/12) 時点では一部不具合があるらしく回避策として下記の通り curl を用いてスケールアウトすることが可能なようです。\n下記の内容で body.json ファイルを用意します。size: 5 になっていることが確認できて、レプリカ数5になるのだなと判断できます。\n$ cat body.json { \"apiVersion\": \"coreos.com/v1\", \"kind\": \"EtcdCluster\", \"metadata\": { \"name\": \"etcd-cluster\", \"namespace\": \"default\" }, \"spec\": { \"size\": 5 } } ここで curl で実行するためプロキシを稼働します。\n$ kubectl proxy --port=8080 curl で先程作った body.json を PUT してみます。\ncurl -H 'Content-Type: application/json' -X PUT --data @body.json http://127.0.0.1:8080/apis/coreos.com/v1/namespaces/default/etcdclusters/etcd-cluster クラスタがスケールアウトされたか確認しましょう。\nkubectl get pods --show-all NAME READY STATUS RESTARTS AGE etcd-cluster-0000 1/1 Running 0 5m etcd-cluster-0001 1/1 Running 0 4m etcd-cluster-0002 1/1 Running 0 4m etcd-cluster-0003 1/1 Running 0 32s etcd-cluster-0004 1/1 Running 0 17s etcd-operator-217127005-futo0 1/1 Running 0 9m 5台構成のクラスタにスケールアウトしたことが確認できます。\netcd にアクセス 5台構成の etcd クラスタがデプロイできたので etcd に etcdctl を使ってアクセスしてみましょう。事前に etcdctl をインストールする必要があります。また私の環境もそうだったのですがローカルの Mac に minikube を使って kubernetes 環境を構築しているので下記のように nodePort を作るため作業が必要です。\n$ kubectl create -f example/example-etcd-cluster-nodeport-service.json $ export ETCDCTL_API=3 $ export ETCDCTL_ENDPOINTS=$(minikube service etcd-cluster-client-service --url) $ etcdctl put foo bar $ etcdctl get foo foo bar etcdctl でキー・値を入力・読み込みが可能であることが分かりました！\nポッドの自動復旧 kubernetes を普段使っている方は分かると思うのですがポッドを落としても kubernetes が自動復旧してくれます。ここで一つポッドを削除してみようと思います。\n$kubectl get pods NAME READY STATUS RESTARTS AGE etcd-cluster-0000 1/1 Running 0 11m etcd-cluster-0001 1/1 Running 0 11m etcd-cluster-0002 1/1 Running 0 11m etcd-cluster-0003 1/1 Running 0 6m etcd-cluster-0004 1/1 Running 0 6m etcd-operator-217127005-futo0 1/1 Running 0 16m $kubect delete pod etcd-cluster-0004 しばらくすると下記の通り etcd-cluster-0004 に代わり etcd-cluster-0005 が稼働していることが確認できると思います。\n$ kubectl get pods NAME READY STATUS RESTARTS AGE etcd-cluster-0000 1/1 Running 0 12m etcd-cluster-0001 1/1 Running 0 12m etcd-cluster-0002 1/1 Running 0 11m etcd-cluster-0003 1/1 Running 0 7m etcd-cluster-0005 1/1 Running 0 3s etcd-operator-217127005-futo0 1/1 Running 0 17m まとめ kubernetes の上で構成することでうまく kubernetes のメリットを活かしつつ etcd クラスタを構成できていると言えると思います。記事執筆時ではまだ不具合が幾つかありました (上記の curl で実施した箇所や、イメージのアップグレード) が、etcd を手動で構築するより kubernetes で構成するほうがメリットが多いことは明らかです。また kubernetes のポッドから kubernetes dns を介してサービスネームに直接アクセスできるのでポッドから etcd に情報を読み書きすることも容易になりそうです。\nですが etcd に収めるデータの性質によっては運用面で厳しくなることも想定できます。coreos 内で etcd クラスタを介して互いのコンテナ間でコンフィグを共有し合う使い方は非常に意味があると思うのですが、coreos 外の独自のソフトウェアがいろんな種別のデータを etcd クラスタに外から入出力することの意味はそれほど無いように思えます。であれば高耐久性で運用のし易い軽量な KVS ソフトウェアを使うべきだからです。\nまた今回紹介した etcd-operator とは別に coreos が同時にアナウンスした(https://coreos.com/blog/the-prometheus-operator.html) に関しても興味を持っているので後に触ってみたいと思います。\n何と言うか所感として最後に述べるとサーバレスが叫ばれている中でわざわざクラスタソフトウェアを自前で管理するのか？と疑問も確かに残ります。それこそクラウドプラットフォームが提供すべき機能だと思うからです..。\n",
   "wordCount" : "536",
   "inLanguage": "en",
   "datePublished": "2016-11-27T21:00:45+09:00",
@@ -170,7 +170,7 @@ if (!doNotTrack) {
   <div class="post-content"><p>こんにちは @jedipunkz です。</p>
 <p>今日は某アドベントカレンダーに参加していて記事を書いています。
 記事だけ先出ししちゃいます..。</p>
-<p>今日は最近 coreos がリリースした &lsquo;etcd-operator&rsquo; を触ってみようかと思います。ほぼ、README に書かれている手順通りに実施するのですが、所感を交えながら作業して記事にしてみたいと思います。</p>
+<p>今日は最近 coreos がリリースした &rsquo;etcd-operator&rsquo; を触ってみようかと思います。ほぼ、README に書かれている手順通りに実施するのですが、所感を交えながら作業して記事にしてみたいと思います。</p>
 <p>coreos が提供している etcd についてご存知ない方もいらっしゃると思いますが etcd は KVS ストレージでありながら Configuration Management Store として利用できる分散型ストレージです。Docker 等の環境を提供する coreos という軽量 OS 内でも etcd が起動していてクラスタで管理された情報をクラスタ内の各 OS が読み書きできる、といった機能を etcd が提供しています。
 詳細については公式サイトを御覧ください。</p>
 <p>etcd 公式サイト : <a href="https://coreos.com/etcd/docs/latest/">https://coreos.com/etcd/docs/latest/</a></p>
@@ -231,13 +231,13 @@ etcd-cluster.coreos.com   Managed etcd clusters   v1
 <p>下記の内容のファイルで etcd をデプロイします。中身を確認しましょう。
 API は coreos.com/v1 で kind: EtcdCluster という情報が記されています。また version でイメージバージョンが記されているのかなということが後に確認できます。また size でレプリカ数が記されているようです。</p>
 <pre tabindex="0"><code>$ cat example/example-etcd-cluster.yaml
-apiVersion: &quot;coreos.com/v1&quot;
-kind: &quot;EtcdCluster&quot;
+apiVersion: &#34;coreos.com/v1&#34;
+kind: &#34;EtcdCluster&#34;
 metadata:
-  name: &quot;etcd-cluster&quot;
+  name: &#34;etcd-cluster&#34;
 spec:
   size: 3
-  version: &quot;v3.1.0-alpha.1&quot;
+  version: &#34;v3.1.0-alpha.1&#34;
 </code></pre><p>デプロイをしてみます。</p>
 <pre tabindex="0"><code>$ kubectl create -f example/example-etcd-cluster.yaml
 </code></pre><p>クラスタがデプロイされたか見てみます。3つのポッドが確認できます。やはりファイル中 size: 3 はレプリカ数だったようです。</p>
@@ -259,20 +259,20 @@ kubernetes              10.0.0.1     &lt;none&gt;        443/TCP             5d
 <p>下記の内容で body.json ファイルを用意します。size: 5 になっていることが確認できて、レプリカ数5になるのだなと判断できます。</p>
 <pre tabindex="0"><code>$ cat body.json
 {
-  &quot;apiVersion&quot;: &quot;coreos.com/v1&quot;,
-  &quot;kind&quot;: &quot;EtcdCluster&quot;,
-  &quot;metadata&quot;: {
-    &quot;name&quot;: &quot;etcd-cluster&quot;,
-    &quot;namespace&quot;: &quot;default&quot;
+  &#34;apiVersion&#34;: &#34;coreos.com/v1&#34;,
+  &#34;kind&#34;: &#34;EtcdCluster&#34;,
+  &#34;metadata&#34;: {
+    &#34;name&#34;: &#34;etcd-cluster&#34;,
+    &#34;namespace&#34;: &#34;default&#34;
   },
-  &quot;spec&quot;: {
-    &quot;size&quot;: 5
+  &#34;spec&#34;: {
+    &#34;size&#34;: 5
   }
 }
 </code></pre><p>ここで curl で実行するためプロキシを稼働します。</p>
 <pre tabindex="0"><code>$ kubectl proxy --port=8080
 </code></pre><p>curl で先程作った body.json を PUT してみます。</p>
-<pre tabindex="0"><code>curl -H 'Content-Type: application/json' -X PUT --data @body.json http://127.0.0.1:8080/apis/coreos.com/v1/namespaces/default/etcdclusters/etcd-cluster
+<pre tabindex="0"><code>curl -H &#39;Content-Type: application/json&#39; -X PUT --data @body.json http://127.0.0.1:8080/apis/coreos.com/v1/namespaces/default/etcdclusters/etcd-cluster
 </code></pre><p>クラスタがスケールアウトされたか確認しましょう。</p>
 <pre tabindex="0"><code>kubectl get pods --show-all
 NAME                                     READY     STATUS    RESTARTS   AGE
