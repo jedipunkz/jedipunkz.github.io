@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.97.3" />
+<meta name="generator" content="Hugo 0.101.0" />
 <link rel="alternate" type="application/rss+xml" href="https://jedipunkz.github.io/post/index.xml">
 <noscript>
     <style>
@@ -117,6 +117,22 @@ if (!doNotTrack) {
 
 <article class="post-entry"> 
   <header class="entry-header">
+    <h2>OpenStack HA 構成を Chef でデプロイ
+    </h2>
+  </header>
+  <section class="entry-content">
+    <p>こんにちは。@jedipunkz です。
+OpenStack を運用する中でコントローラは重要です。コントローラノードが落ちると、 仮想マシンの操作等が利用出来ません。コントローラの冗長構成を取るポイントは公式 wiki サイトに記述あるのですが PaceMaker を使った構成でしんどいです。何より運用 する人が混乱する仕組みは避けたいです。
+RackSpace 社の管理している Chef Cookbooks の Roles に ‘ha-controller1’, ‘ha-controller2’ というモノがあります。今回はこれを使った HA 構成の構築方法に ついて書いていこうかと思います。
+構成 最小構成を作りたいと思います。HA のためのコントローラノード2台, コンピュートノー ド1台, Chef ワークショテーション1台, Chef サーバノード1台。
+&#43;----------------&#43;----------------&#43;----------------&#43;----------------&#43;--------------- public network | | | eth0 | | 10.0.0.0/24 &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; | controller01 | | controller01 | | compute01 | | chef server | | workstation | &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; | eth1 &#43;------------------------------------------------- fixed range network 172....</p>
+  </section>
+  <footer class="entry-footer"><span title='2013-07-17 00:00:00 +0000 UTC'>July 17, 2013</span>&nbsp;·&nbsp;3 min&nbsp;·&nbsp;Theme PaperMod</footer>
+  <a class="entry-link" aria-label="post link to OpenStack HA 構成を Chef でデプロイ" href="https://jedipunkz.github.io/post/2013/07/17/openstach-ha-chef-deploy/"></a>
+</article>
+
+<article class="post-entry"> 
+  <header class="entry-header">
     <h2>Chef で OpenStack デプロイ
     </h2>
   </header>
@@ -159,7 +175,7 @@ http://www.slideshare.net/guchi_hiro/open-centeropenstack
   <section class="entry-content">
     <p>こんにちは。@jedipunkz です。
 自動化の基盤を導入するために色々調べているのですが、監視も自動化しなくちゃ！と いうことで Sensu を調べてたのですが Chef との相性バッチリな感じで、自分的にイ ケてるなと思いました。
- 公式サイト http://www.sonian.com/cloud-monitoring-sensu/ ドキュメント http://docs.sensuapp.org/0.9/index.html  開発元が予め Chef の Cookbook (正確にはラッパー Cookbook 開発のための Cookbook で Include して使う) を用意してくれていたり、インストールを容易にする ための Omnibus 形式のパッケージの提供だったり。Omnibus なのでインストールと共 に Sensu が推奨する Ruby 一式も一緒にインストールされます。Chef と同じですね。
+公式サイト http://www.sonian.com/cloud-monitoring-sensu/ ドキュメント http://docs.sensuapp.org/0.9/index.html 開発元が予め Chef の Cookbook (正確にはラッパー Cookbook 開発のための Cookbook で Include して使う) を用意してくれていたり、インストールを容易にする ための Omnibus 形式のパッケージの提供だったり。Omnibus なのでインストールと共 に Sensu が推奨する Ruby 一式も一緒にインストールされます。Chef と同じですね。
 今回紹介したいのは、Chef で Sensu を構築・制御する方法です。
 &#43;--------------&#43; &#43;--------------&#43; | chef-server | | workstation | &#43;--------------&#43; &#43;--------------&#43; | | &#43;----------------&#43; | &#43;--------------&#43; | sensu-server | &#43;--------------&#43; | &#43;----------------&#43;----------------&#43;----------------&#43; | | | | &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; &#43;--------------&#43; | sensu-client | | sensu-client | | sensu-client | | sensu-client | ....</p>
   </section>
@@ -176,9 +192,9 @@ http://www.slideshare.net/guchi_hiro/open-centeropenstack
     <p>こんにちは。@jedipunkz です。
 require ‘chef’ して Ruby コードの中で chef を利用したいと思って色々調べていた のですが、そもそもリファレンスが無くサンプルコードもごくわずかしかネット上に見 つけられない状態でした。結局ソースコードを読んで理解していく世界なわけですが、 サンプルコードが幾つかあると他の人に役立つかなぁと思い、ブログに載せていこうか なぁと。
 まず Chef サーバへアクセスするためには下記の情報が必要です。
- ユーザ名 ユーザ用のクライアント鍵 Chef サーバの URL  これらは Chef::Config で記していきます。
+ユーザ名 ユーザ用のクライアント鍵 Chef サーバの URL これらは Chef::Config で記していきます。
 では早速サンプルコードです。まずは data bags 内データの一覧を取得するコードで す。data bags 内のデータを全で取得し配列で表示します。
-#!/usr/bin/env ruby  require &#39;rubygems&#39; require &#39;chef/rest&#39; require &#39;chef/search/query&#39;  Chef::Config[:node_name]=&#39;user01&#39; Chef::Config[:client_key]=&#39;/home/user01/user01.pem&#39; Chef::Config[:chef_server_url]=&#34;https://10.200.9.22&#34;  Chef::DataBag::list.each do |bag_name, url|  Chef::DataBag::load(bag_name).each do |item_name, url|  item = Chef::DataBagItem.load(bag_name, item_name).to_hash  puts item  end end 次は data bags にデータを入力するコードです。json_data という JSON 形式のデー タを test_data という data bag に放り込んでいます。...</p>
+#!/usr/bin/env ruby require &#39;rubygems&#39; require &#39;chef/rest&#39; require &#39;chef/search/query&#39; Chef::Config[:node_name]=&#39;user01&#39; Chef::Config[:client_key]=&#39;/home/user01/user01.pem&#39; Chef::Config[:chef_server_url]=&#34;https://10.200.9.22&#34; Chef::DataBag::list.each do |bag_name, url| Chef::DataBag::load(bag_name).each do |item_name, url| item = Chef::DataBagItem.load(bag_name, item_name).to_hash puts item end end 次は data bags にデータを入力するコードです。json_data という JSON 形式のデー タを test_data という data bag に放り込んでいます。...</p>
   </section>
   <footer class="entry-footer"><span title='2013-06-12 00:00:00 +0000 UTC'>June 12, 2013</span>&nbsp;·&nbsp;1 min&nbsp;·&nbsp;Theme PaperMod</footer>
   <a class="entry-link" aria-label="post link to Chef を Ruby コード内で利用する" href="https://jedipunkz.github.io/post/2013/06/12/chef-ruby-code/"></a>
@@ -194,7 +210,7 @@ require ‘chef’ して Ruby コードの中で chef を利用したいと思�
 Ceph を運用する上で考慮しなければいけないのがトラフィックの負荷です。特に OSD 同士のレプリケーション・ハートビートには相当トラフィックの負荷が掛かることが想 像出来ます。
 このため MDS, MON の通信に影響を与えないよう、OSD レプリケーション・ハートビー トのためのネットワークを別に設けるのがベストプラクティスな構成の様です。このネッ トワークのことをクラスターネットワークと Ceph 的に言うそうです。
 こんな接続になります。
- &#43;------&#43; |Client| &#43;------&#43; | &#43;-------&#43;-------&#43;-------&#43;-------&#43;------ public network | | | | | &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; | MON | | MDS | | OSD | | OSD | | OSD | &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; | | | ----------------&#43;-------&#43;-------&#43;------ cluster network  上図の様に MON, MDS は public ネットワークを介し OSD のレプリケーション・ハー トビートのみ cluster ネットワークを介します。Client と MDS との通信に影響を与 えない構成になります。...</p>
+&#43;------&#43; |Client| &#43;------&#43; | &#43;-------&#43;-------&#43;-------&#43;-------&#43;------ public network | | | | | &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; | MON | | MDS | | OSD | | OSD | | OSD | &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; | | | ----------------&#43;-------&#43;-------&#43;------ cluster network 上図の様に MON, MDS は public ネットワークを介し OSD のレプリケーション・ハー トビートのみ cluster ネットワークを介します。Client と MDS との通信に影響を与 えない構成になります。...</p>
   </section>
   <footer class="entry-footer"><span title='2013-05-25 00:00:00 +0000 UTC'>May 25, 2013</span>&nbsp;·&nbsp;3 min&nbsp;·&nbsp;Theme PaperMod</footer>
   <a class="entry-link" aria-label="post link to Ceph クラスターネットワーク構成" href="https://jedipunkz.github.io/post/2013/05/25/ceph-cluster-network/"></a>
@@ -211,7 +227,7 @@ OpenStack は MySQL のダンプや OS イメージ・スナップショット�
 この作業により Cinder の接続先ストレージが Ceph になるのと Glance の OS イメー ジ・スナップショットの保管先が Ceph になります。
 下記の参考資料が完成度高く、ほぼ内容はそのままです。若干付け足していますが。
 参考資料 http://ceph.com/docs/master/rbd/rbd-openstack/
-前提の構成 &#43;-------------&#43;-------------&#43;--------------------------------------------- Public/API Network | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | |vm|vm|.. | | | | | | | | controller| | network | &#43;-----------&#43; | ceph01 | | ceph01 | | ceph01 | | | | | | compute | | | | | | | | | | | | | | | | | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | | | &#43;-------------&#43;-----)-------&#43;-----)-------&#43;-------------&#43;-------------&#43;-- Management/API Network | | &#43;-------------&#43;-----------------------------------&#43;-- Data Network   Ceph は OpenStack の Management Network 上に配置 Ceph は3台構成 (何台でも可) OpenStack も3台構成 (何台でも可) 連携処理するのは controller, compute ノード  では早速手順ですが、OpenStack と Ceph の構築手順は割愛します。私の他の記事を参 考にしていただければと思います。...</p>
+前提の構成 &#43;-------------&#43;-------------&#43;--------------------------------------------- Public/API Network | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | |vm|vm|.. | | | | | | | | controller| | network | &#43;-----------&#43; | ceph01 | | ceph01 | | ceph01 | | | | | | compute | | | | | | | | | | | | | | | | | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | | | &#43;-------------&#43;-----)-------&#43;-----)-------&#43;-------------&#43;-------------&#43;-- Management/API Network | | &#43;-------------&#43;-----------------------------------&#43;-- Data Network Ceph は OpenStack の Management Network 上に配置 Ceph は3台構成 (何台でも可) OpenStack も3台構成 (何台でも可) 連携処理するのは controller, compute ノード では早速手順ですが、OpenStack と Ceph の構築手順は割愛します。私の他の記事を参 考にしていただければと思います。...</p>
   </section>
   <footer class="entry-footer"><span title='2013-05-19 00:00:00 +0000 UTC'>May 19, 2013</span>&nbsp;·&nbsp;3 min&nbsp;·&nbsp;Theme PaperMod</footer>
   <a class="entry-link" aria-label="post link to OpenStack &#43; Ceph 連携" href="https://jedipunkz.github.io/post/2013/05/19/openstack-ceph/"></a>
@@ -225,28 +241,13 @@ OpenStack は MySQL のダンプや OS イメージ・スナップショット�
   <section class="entry-content">
     <p>こんにちは。@jedipunkz です。 今回は Opscode Chef でユーザ・グループを作成する方法をまとめます。
 ‘users’ Cookbook を使います。
-% cd ${YOUR_CHEF_REPO} % ${EDITOR} Berksfile cookbook &#39;users&#39; % berks install --path ./cookbooks  data_bag を使ってユーザ・グループの管理をしたいので管理ディレクトリを作成しま す。
-% mkdir -p data_bags/users  data_bags/users/jedipunkz.json ファイルを作成します。必要に応じて内容を書き換えてください。
-{ &#34;id&#34;: &#34;jedipunkz&#34;, &#34;ssh_keys&#34;: &#34;ssh-rsa AAAABx92tstses jedipunkz@somewhere&#34;, &#34;groups&#34;: [ &#34;sysadmin&#34;, &#34;sudo&#34; ], &#34;uid&#34;: 2001, &#34;shell&#34;: &#34;\/usr\/bin\/zsh&#34;, &#34;comment&#34;: &#34;jedipunkz sysadmin&#34;, &#34;password&#34;: &#34;$1$s%H8BMHlB$7s3h30y9IB1SklftZXYhvssJ&#34; }  json ファイルの説明です。
- id : ユーザ名 ssh_keys : SSH 公開鍵 groups : 所属させるグループ uid : unix id sheell : ログインシェル comment : コメント passwd : ハッシュ化したパスワード  特にハッシュ化したパスワードは下記のコマンドで生成出来ます。...</p>
+% cd ${YOUR_CHEF_REPO} % ${EDITOR} Berksfile cookbook &#39;users&#39; % berks install --path ./cookbooks data_bag を使ってユーザ・グループの管理をしたいので管理ディレクトリを作成しま す。
+% mkdir -p data_bags/users data_bags/users/jedipunkz.json ファイルを作成します。必要に応じて内容を書き換えてください。
+{ &#34;id&#34;: &#34;jedipunkz&#34;, &#34;ssh_keys&#34;: &#34;ssh-rsa AAAABx92tstses jedipunkz@somewhere&#34;, &#34;groups&#34;: [ &#34;sysadmin&#34;, &#34;sudo&#34; ], &#34;uid&#34;: 2001, &#34;shell&#34;: &#34;\/usr\/bin\/zsh&#34;, &#34;comment&#34;: &#34;jedipunkz sysadmin&#34;, &#34;password&#34;: &#34;$1$s%H8BMHlB$7s3h30y9IB1SklftZXYhvssJ&#34; } json ファイルの説明です。
+id : ユーザ名 ssh_keys : SSH 公開鍵 groups : 所属させるグループ uid : unix id sheell : ログインシェル comment : コメント passwd : ハッシュ化したパスワード 特にハッシュ化したパスワードは下記のコマンドで生成出来ます。...</p>
   </section>
   <footer class="entry-footer"><span title='2013-05-18 00:00:00 +0000 UTC'>May 18, 2013</span>&nbsp;·&nbsp;1 min&nbsp;·&nbsp;Theme PaperMod</footer>
   <a class="entry-link" aria-label="post link to Chef Cookbook でユーザ・グループ追加" href="https://jedipunkz.github.io/post/2013/05/18/chef-cookbook-adding-users/"></a>
-</article>
-
-<article class="post-entry"> 
-  <header class="entry-header">
-    <h2>Ceph-Deploy で Ceph 分散ストレージ構築
-    </h2>
-  </header>
-  <section class="entry-content">
-    <p>今回は ceph-deploy というツールを使って Ceph ストレージを簡単に構築することが 出来るので紹介します。Ceph は分散ストレージでオブジェクトストレージとしてもブ ロックストレージとしても動作します。今回の構築ではブロックストレージとしてのみ の動作です。
-Ceph が公開しているのが ceph-deploy なわけですが、マニュアル操作に代わる構築方 法として公開しているようです。その他にも Chef Cookbook も公開されているようで す。
-それでは早速。
-今回の構成 &#43;--------&#43; &#43;--------&#43; &#43;--------&#43; | ceph01 | | ceph02 | | ceph03 | | osd | | osd | | osd | | mon | | mon | | mon | | mds | | mds | | mds | &#43;--------&#43; &#43;--------&#43; &#43;--------&#43; | 10.0.0.1 | 10.0.0.2 | 10.0.0.3 | | | &#43;----------&#43;----------&#43; | | 10....</p>
-  </section>
-  <footer class="entry-footer"><span title='2013-05-11 00:00:00 +0000 UTC'>May 11, 2013</span>&nbsp;·&nbsp;3 min&nbsp;·&nbsp;Theme PaperMod</footer>
-  <a class="entry-link" aria-label="post link to Ceph-Deploy で Ceph 分散ストレージ構築" href="https://jedipunkz.github.io/post/2013/05/11/ceph-deploy/"></a>
 </article>
 <footer class="page-footer">
   <nav class="pagination">
