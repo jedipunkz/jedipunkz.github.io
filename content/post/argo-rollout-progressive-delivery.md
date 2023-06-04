@@ -1,5 +1,5 @@
 ---
-title: "Minikube, Argo Rollout, Istio, Prometheus で試す Progressive Delivery"
+title: "手軽にローカルで Argo Rollouts, Istio, Prometheus で Progressive Delivery を試す"
 date: 2023-06-03T05:55:09+09:00
 Categories: ["infrastructure"]
 draft: false
