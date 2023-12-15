@@ -21,6 +21,9 @@ draft: false
 - ArgoCD (Rollouts)
 - Flux
 - PipeCD
+- OpenTelemetry
+- Envoy
+- X-Ray
 
 ### プログラミング言語
 
@@ -33,7 +36,6 @@ draft: false
 - Terraform
 - Ansible
 - AWS CDK
-
 
 ### テーマ
 
