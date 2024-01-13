@@ -10,14 +10,14 @@ OpenTelemetry を使って AWS (X-Ray, Cloudwatch Logs) にトレースとログ
 今回検証してみた構成は下記の様な構成です。AWS を用いた場合 ECS や EKS, Lambda で Go アプリを起動する事が通常ですが、今回は docker-compose で検証しました。ただ ECS, EKS に置き換えるのは比較的簡単だと思います。
 
 ```
-        trace post         PutTelemetryRecords
+        trace post          PutTelemetryRecords
 +--------+      +----------------+      +-----------------+
-| Go App | ---> | Otel Collector | -+-> |    AWS X-Ray    |
-+--------+      +----------------+  |   +-----------------+
-                                    |   +-----------------+
-                                    +-> | Cloudwatch Logs |
-                                        +-----------------+
-                                 PutLogEvents
+| Go App | -+-> | Otel Collector | ---> |    AWS X-Ray    |
++--------+  |   +----------------+      +-----------------+
+            |   +----------------+      +-----------------+
+            +-> |   Fluent-Bit   | ---> | Cloudwatch Logs |
+                +----------------+      +-----------------+
+                                PutLogEvents
 ```
 
 ## ログとトレースの紐づけ
@@ -52,36 +52,45 @@ import (
 )
 
 func initTracer() {
-	ctx := context.Background()
+        ctx := context.Background()
 
-	collectorAddress := os.Getenv("OTEL_COLLECTOR_ADDRESS")
-	if collectorAddress == "" {
-		collectorAddress = "otel-collector:4317"
-	}
+        collectorAddress := os.Getenv("OTEL_COLLECTOR_ADDRESS")
+        if collectorAddress == "" {
+                collectorAddress = "otel-collector:4317"
+        }
 
-	// gRPC通信を使用する
-	traceClient := otlptracegrpc.NewClient(
-		otlptracegrpc.WithEndpoint(collectorAddress),
-		otlptracegrpc.WithInsecure(),
-	)
+        // gRPCを使用してOpenTelemetry Collectorと通信するクライアントを作成します
+        traceClient := otlptracegrpc.NewClient(
+                otlptracegrpc.WithEndpoint(collectorAddress),
+                otlptracegrpc.WithInsecure(),
+        )
 
-	traceExporter, err := otlptrace.New(ctx, traceClient)
-	if err != nil {
-		log.Fatalf("Failed to create trace exporter: %v", err)
-	}
+        // 作成したクライアントを使用して
+        // トレースデータをエクスポートするエクスポーターを作成します
+        traceExporter, err := otlptrace.New(ctx, traceClient)
+        if err != nil {
+                log.Fatalf("Failed to create trace exporter: %v", err)
+        }
 
-	tp := trace.NewTracerProvider(
-		trace.WithBatcher(traceExporter),
-		trace.WithResource(newResource()),
-	)
+        // 新しいTracerProviderを作成します
+        // これはトレースデータを生成するTracerを作成するためのものです
+        tp := trace.NewTracerProvider(
+                trace.WithBatcher(traceExporter),
+                trace.WithResource(newResource()),
+        )
 
-	otel.SetTracerProvider(tp)
-	otel.SetTextMapPropagator(propagation.TraceContext{})
+        // 作成したTracerProviderをグローバルなTracerProviderとして設定します
+        otel.SetTracerProvider(tp)
+        // TraceContextを使用したPropagatorを設定します。
+        // これはトレースコンテキストを伝播させるためのものです。
+        otel.SetTextMapPropagator(propagation.TraceContext{})
 }
+
 
 func main() {
 	initTracer()
 
+    // http ハンドラ
 	http.Handle("/", otelhttp.NewHandler(http.HandlerFunc(home), "Home"))
 
 	log.Println("Server is running on port 8080...")
@@ -89,17 +98,21 @@ func main() {
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
+    // Span の設定
 	ctx := r.Context()
 	tr := otel.GetTracerProvider().Tracer("example")
 	_, span := tr.Start(ctx, "about")
 	defer span.End()
 
+    // Otel 形式の ID を X-Ray 形式に変換
 	traceID := IdOtel2Xray(span.SpanContext().TraceID().String())
 
 	log.Printf("TraceID: %s, About us page", traceID)
 	w.Write([]byte("Welcome to the Home Page!"))
 }
 
+// OpenTelemetry Exporter が初期化の際に毎回用いられる OpenTelemetry リソース作成
+// の際にリソース属性として Cloudwatch Log Group を指定
 func newResource() *resource.Resource {
 	LogGroupNames := []string{"otel-test"}
 	return resource.NewWithAttributes(
