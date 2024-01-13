@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.github.io/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<meta name="generator" content="Hugo 0.121.1">
+<meta name="generator" content="Hugo 0.121.2">
 <link rel="alternate" type="application/rss+xml" href="https://jedipunkz.github.io/post/index.xml">
 <noscript>
     <style>
@@ -146,6 +146,29 @@ if (!doNotTrack) {
 <header class="page-header">
   <h1>Posts</h1>
 </header>
+
+<article class="post-entry"> 
+  <header class="entry-header">
+    <h2>自前開発した Prometheus Exporter で自宅ルータのメトリクス監視運用している話
+    </h2>
+  </header>
+  <section class="entry-content">
+    <p>自宅のルータについても可観測性を向上して普段の運用に役立てています。例えば長期スパンでのネットワーク通信料の推移や CPU, Mem 使用率、あとハードウェアの温度の推移などを観測しています。
+今までは Prometheus の Node Exporter を使ってホストの情報を Prometheus Server に提供していたのですが、自分で Go で Prometheus Exporter を書いて運用するにようになったので、それについてまとめます。
+Grafana の可視化情報 下記が可視化された情報です。CPU, Mem やネットワーク送信量、またハードウェアの温度を可視化して運用しています。
+ソース置き場 結論になりますが下記にソースを置いています。
+https://github.com/jedipunkz/linux-tiny-exporter
+ネットワーク送信・受信メトリクスを説明 実際にはこのコードでは CPU 使用率, Memory 使用率, Disk IO, Network トラヒック, ハードウェア温度を取得・提供しているのですが、ここでは例としてネットワークトラヒックに関するメトリクスを Prometheus Server に提供するコードを説明しようと思います。
+パッケージのインポート Prometheus のクライアントライブラリから2つのパッケージをインポートしています。
+“github.com/prometheus/client_golang/prometheus”: これは Prometheus の基本的なクライアントライブラリで、メトリクスを定義、収集、エクスポートするための機能を提供します。
+“github.com/prometheus/client_golang/prometheus/promhttp”: これは Prometheus の HTTP サーバーとクライアントのためのライブラリで、HTTP 経由でメトリクスを公開するためのハンドラを提供します。
+&#34;github.com/prometheus/client_golang/prometheus&#34; &#34;github.com/prometheus/client_golang/prometheus/promhttp&#34; ネットワークトラヒックに関する構造体定義 ここからは Internal Packege のコード解説です。
+NetCollector という構造体が定義しています。この構造体は、ネットワークインターフェースごとの受信バイト数、送信バイト数、受信パケット数、送信パケット数の差分を保持します。~Diff はそれぞれの値の差分を保持します。前回のスクレイプ（データ収集）からの変化を表します。
+type NetCollector struct { receivedBytesDiff *prometheus.Desc transmitBytesDiff *prometheus....</p>
+  </section>
+  <footer class="entry-footer">&lt;span title=&#39;2024-01-13 22:28:22 &#43;0900 JST&#39;&gt;January 13, 2024&lt;/span&gt;&amp;nbsp;·&amp;nbsp;3 min&amp;nbsp;·&amp;nbsp;Theme PaperMod</footer>
+  <a class="entry-link" aria-label="post link to 自前開発した Prometheus Exporter で自宅ルータのメトリクス監視運用している話" href="https://jedipunkz.github.io/post/linux-tiny-exporter/"></a>
+</article>
 
 <article class="post-entry"> 
   <header class="entry-header">
@@ -277,24 +300,6 @@ CVE 名 深刻度レベル (INFORMATIONAL, LOW, MEDIUM, HIGH, CRITICAL, UNDEFINE
   <footer class="entry-footer">&lt;span title=&#39;2022-04-30 13:56:56 &#43;0900 JST&#39;&gt;April 30, 2022&lt;/span&gt;&amp;nbsp;·&amp;nbsp;2 min&amp;nbsp;·&amp;nbsp;Theme PaperMod</footer>
   <a class="entry-link" aria-label="post link to ECR 脆弱性スキャン結果表示 CLI の開発と Datadog プロット" href="https://jedipunkz.github.io/post/ecr-scan-datadog-go/"></a>
 </article>
-
-<article class="post-entry"> 
-  <header class="entry-header">
-    <h2>ECS コンテナにログインする CLI を Go 言語で作った話
-    </h2>
-  </header>
-  <section class="entry-content">
-    <p>こんにちは @jedipunkz 🚀 です。
-今回は Go 言語で ECS コンテナにログインする CLI を作った話を書きます。
-開発の経緯 自分はまだ Go 言語の初学者で学習のために開発するアイデアを探していた状態でした。そこで自分の勤めている会社で ECS Execute 機能を使ったコンテナログインの機能を開発者に提供していた事を思い出し色々調べていて「もう少し手間が省けないか？」と思い立った、という経緯で開発をはじめました。
-awscli を使った ECS Execute 機能によるコンテナログイン 手間が多いと書きましたが実際に awscli を使う場合どの程度の手間があるのか簡単に記します。まず下記のコマンドを実行して
-$ aws ecs list-tasks --cluster &lt;クラスタ名&gt; --service &lt;サービス名&gt; taskArn が得られるので Arn から task ID を拾って、その task ID を使って
-$ aws ecs execute --cluster &lt;クラスタ名&gt; \ --task &lt;task ID&gt; \ -- container &lt;コンテナ名&gt; \ --interfactive \ --command &#34;sh&#34; とコマンドを実行することでコンテナにログイン出来ます。が手間が少し多いのと task ID を拾い出す作業も辛いので改善したい…。
-操作画面 ということで miniecs という CLI を作ったのですが、 まずは操作している様子を貼り付けます。😷 Fuzzy Finder なインクリメンタルサーチが出来る CLI になっていて、ECS クラスタ名・ECS サービス名・コンテナ名を一部入力するとログインしたい環境が選択出来るツールになっています。...</p>
-  </section>
-  <footer class="entry-footer">&lt;span title=&#39;2022-02-05 00:00:27 &#43;0900 JST&#39;&gt;February 5, 2022&lt;/span&gt;&amp;nbsp;·&amp;nbsp;2 min&amp;nbsp;·&amp;nbsp;Theme PaperMod</footer>
-  <a class="entry-link" aria-label="post link to ECS コンテナにログインする CLI を Go 言語で作った話" href="https://jedipunkz.github.io/post/ecs-login-cli/"></a>
-</article>
 <footer class="page-footer">
   <nav class="pagination">
     <a class="next" href="https://jedipunkz.github.io/post/page/2/">Next Page »</a>
@@ -303,7 +308,7 @@ $ aws ecs execute --cluster &lt;クラスタ名&gt; \ --task &lt;task ID&gt; \ -
     </main>
     
 <footer class="footer">
-    <span>&copy; 2023 <a href="https://jedipunkz.github.io">jedipunkz 🚀 のブログ</a></span>
+    <span>&copy; 2024 <a href="https://jedipunkz.github.io">jedipunkz 🚀 のブログ</a></span>
     <span>
         Powered by
         <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
