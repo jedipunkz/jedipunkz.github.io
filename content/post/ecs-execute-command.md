@@ -101,7 +101,7 @@ $ aws ecs update-service \
 $ aws ecs run-task --cluster <ClusterArn> \
     --task-definition <TaskDefinition:Revision> \
     --network-configuration "awsvpcConfiguration={subnets=["Subnet_ID1", "Subnet_ID2"],securityGroups=["SecurityGroupId"],assignPublicIp=DISABLED}" \
-    --launch-type FARGATE --enable-execute-command 
+    --launch-type FARGATE --enable-execute-command
 ```
 
 準備が整ったので、コマンドを実行してみます。
@@ -177,7 +177,7 @@ func main() {
    "containerArn": "string",
    "containerName": "string",
    "interactive": boolean,
-   "session": { 
+   "session": {
       "sessionId": "string",
       "streamUrl": "string",
       "tokenValue": "string"
@@ -190,7 +190,6 @@ func main() {
 
 ※[2021/04/14] aws の Tori さんから指摘頂きました。API からのレスポンスを利用して session-manager-plugin コマンドを実行するとコンテナに接続できるそうです！
 
-{{< tweet 1382262453833109504 >}}
 
 ### (2) ECS Run Task によるコマンドのオーバーライド
 
@@ -208,7 +207,7 @@ func main() {
             ]
         }
     ]
-} 
+}
 ```
 
 awscli を用いてコマンドを Overrides しつつ Run Task 実行します。
