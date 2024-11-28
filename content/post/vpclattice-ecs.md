@@ -1,10 +1,9 @@
 ---
-title: "VPC Lattice + ECS を Terraform を通して検証"
+title: "VPC Lattice + ECS 構成を Terraform を通して理解"
 date: 2024-11-28T00:00:27+09:00
 Categories: ["infrastructure", "terraform"]
 draft: false
 ---
-
 jedipunkz です。VPC Lattice が ECS に対応したという情報が https://aws.amazon.com/jp/about-aws/whats-new/2024/11/amazon-vpc-lattice-elastic-container-service/ にあがりました。この対応を Terraform を使って構成して検証してみるのが今回の目的になります。
 
 ## 今回検証で用いたコード
