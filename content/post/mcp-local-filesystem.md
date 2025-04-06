@@ -5,7 +5,7 @@ slug = "2025/04/06/local-filesystem-mcp-server"
 Categories = ["infrastructure", "AI"]
 +++
 
-自分は Platform Enabler/SRE として働いています。自分たちの分野でも AI 関連の利用に関して様々な模索がある状況だと思われますが、Ahthoropic 社が提唱した MCP (Model Context Protocol) が自分たちのレイヤにも活用出来るのではと学習を始めています。
+自分は Platform Enabler/SRE として従事しています。また AI 関連のアップデートは2025年に入っても属に更新されています。2025年初頭においては自分たちの分野でも AI 関連の利用に関して様々な模索がある状況だと思われますが、Ahthoropic 社が提唱した MCP (Model Context Protocol) がもたらすインパクトはアプリケーションに限定されずインフラ領域のソフトウェアにも大きなメリットをもたらすと思って観測しています。
 
 この記事では、MCP の概要とどう実装するのかの学習、またどう我々のような Platform Enabler/SRE にとっての活用例があるかを考察していきたいと思っています。
 
@@ -19,12 +19,12 @@ MCP (Model Context Protocol) は、AI モデルと外部システム間のやり
 ここはあくまでの一例です。Assistant の実装でいかようにも出来ると思います。
 
 ```
-+-------------------+          +----------------+       +-------------------+       +-------------------+
-|   User Input      | <----->  |   Assistant    | --->  |    MCP Server     |       |      AI API       |
-+-------------------+ (1),(5)  +----------------+  (3)  +-------------------+       +-------------------+
-                                     |                                                      ^
-                                     |                        (2),(4)                       |
-                                     +------------------------------------------------------+
++-------------+          +-----------+      +------------+   +--------+
+| User Prompt | <----->  | Assistant | ---> | MCP Server |   | AI API |
++-------------+ (1),(5)  +-----------+  (3) +------------+   +--------+
+                               |                                  ^
+                               |             (2),(4)              |
+                               +----------------------------------+
 ```
 
 - (1) ユーザからの入力を Assistant が受け取る
@@ -33,10 +33,13 @@ MCP (Model Context Protocol) は、AI モデルと外部システム間のやり
 - (4) Assistant は MCP Server から得たレスポンスを再び LLM に送信し自然言語としてユーザに返す内容を生成してもらう
 - (5) Assistant はユーザに自然言語で結果を応答する
 
+## 前提
+
+MCP 学習を目的にしているので、ここでは話を簡潔にするため Linux Filesystem を操作する MCP Server を書き、理解していきます。
 
 ## MCP Server の実装
 
-言語は問いませんが自分は Go で書きました。まず学習目的でローカルファイルシステムを操作する MCP Server を実装しました。
+言語は問いませんが自分は Go で書きました。前述どおり、まず学習目的でローカルファイルシステムを操作する MCP Server を実装しました。
 
 ```go
 package main
@@ -260,12 +263,6 @@ func sendSuccess(w http.ResponseWriter, message string, data interface{}) {
 }
 ```
 
-MCP Server を起動します
-
-```bash
-go run ./main.go
-```
-
 ### コードの解説
 
 #### 構造体定義:
@@ -303,18 +300,33 @@ go run ./main.go
 
 動作確認を行います。JSON-RPC で下記の要素を含めて POST します。
 
-- action
-- path
-- content
+- action: ファイル操作のアクション
+- path: ファイル・ディレクトリの指定
+- content: ファイルを作成する場合のファイル内容
+
+またレスポンスには下記の要素が返されます。
+
+- status: ステータス
+- message: ファイル操作の結果
+
+#### MCP Server の起動
+
+先ほど書いた main.go を起動します。これにより localhost の 8080 番ポートでリスンします。
+
+```bash
+go run ./main.go
+```
 
 #### ファイルの書き込み
 
-`/tmp/file.txt` というフィアル名で内容 'Hello World' として保存しています。
+`/tmp/file.txt` というファイル名を指定しファイル内容 'Hello World' として保存してみます。
 
 ```bash
 curl -X POST http://localhost:8080/mcp -H "Content-Type: application/json" -d '{"action":"write","path":"/tmp/file.txt","content":"Hello World"}'
 {"status":"success","message":"File written successfully"}
 ```
+
+status: success が表示されました。
 
 #### ファイルの一覧表示
 
@@ -325,6 +337,8 @@ curl -X POST http://localhost:8080/mcp -H "Content-Type: application/json" -d '{
 {"status":"success","message":"Directory listed successfully","data":[{"name":"bar","size":0,"mode":"-rw-r--r--","modTime":"2025-04-06 11:13:42","isDir":false,"path":"/tmp/foo/bar"}]}
 ```
 
+`/tmp/foo` ディレクトリ配下に `bar` というファイルだけがあることを確認できました。
+
 #### ファイルの読み込み
 
 `/tmp/foo/bar` というファイルの内容を読み込んで出力しています。
@@ -333,6 +347,8 @@ curl -X POST http://localhost:8080/mcp -H "Content-Type: application/json" -d '{
  curl -X POST http://localhost:8080/mcp -H "Content-Type: application/json" -d '{"action":"read","path":"/tmp/foo/bar"}'
 {"status":"success","message":"File read successfully","data":"bar\n"}
 ```
+
+ファイル内容 `bar` を確認できました。
 
 ## Assistant の実装
 
@@ -576,7 +592,7 @@ if __name__ == "__main__":
 
 ### 動作確認
 
-動作確認を行っていきます。下記の通り、ユーザの入力はプロンプト越しに自然言語で行います。また最終的な LLM からの応答も自然言語です。
+では Assistant の動作確認を行っていきます。下記の通り、ユーザの入力はプロンプト越しに自然言語で行います。また最終的な LLM からの応答も自然言語です。
 
 下記は自然言語で /tmp/foo というディレクトリ配下のファイル一覧を得ています。
 
@@ -617,7 +633,7 @@ The MCP server was asked to read the file named "buzz" located in the "/tmp/foo"
 ```
 
 ## 考察
-
+### Platform エンジニアにおける応用
 今回は学習目的だったのでローカルファイルシステムでコードを書き仕組みを理解してきました。
 
 これは自分のような Platform 系のエンジニアにも十分応用できる技術だと思っていて、普段使っているプロダクトやサービスを扱う MCP サーバを実装すれば、LLM を介す事で自然言語でそれらの機能を操作することが出来る様になります。
@@ -635,3 +651,15 @@ The MCP server was asked to read the file named "buzz" located in the "/tmp/foo"
 - セキュリティ異常などの分析・検知
 
 などの応用が効くとも思っています。
+
+たとえば、
+
+- Slack Bot に今回の構成の Assitant の実装をする
+- Lambda で MCP Server を起動する
+
+という構成を取れば、自然言語で Slack Bot に「昨日一日間の ALB/WAF ログを確認して、セキュリティとアクセス傾向をレポートして」といった指示も出来るようになると思っています。これは Platform 系のエンジニアにとってもとてもインパクトのある機能だと思っています。
+
+### 今後の MCP サーバの開発
+
+当初は自前で MCP サーバを実装するエンジニアが増えると思います。ただこれは MCP サーバの操作先プロダクト・サービス毎に汎用的にも開発出来ると思うので、各プロダクトが公式に MCP Server の実装をして公開するという流れも想定されると思います。実際 2025/04 には AWS が公式で MCP Server を公開したという情報を得ました。
+https://awslabs.github.io/mcp/
