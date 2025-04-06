@@ -12,6 +12,8 @@ Categories = ["infrastructure", "AI"]
 ## MCP の概要
 MCP (Model Context Protocol) は、AI モデルと外部システム間のやり取りを効率化するプロトコルで JSON-RPC でやりとりします。ユーザーの自然言語入力を基に、AI アシスタントが MCP サーバーを通じてファイル操作やデータ処理を実行します。
 
+最近 OpenAI 社もこの Anthropic 社の MCP をサポートするというニュースが流れ、途端に注目を集める状況になってきました。
+
 ### 処理の流れ
 
 ここはあくまでの一例です。Assistant の実装でいかようにも出来ると思います。
