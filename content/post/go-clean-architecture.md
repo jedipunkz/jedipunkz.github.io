@@ -1,5 +1,5 @@
 ---
-title: "初学者が学ぶ Go クリーンアーキテクチャ"
+title: "Go 初学者が学ぶクリーンアーキテクチャ"
 date: 2025-08-01T00:00:00+09:00
 Categories: ["go"]
 draft: false
