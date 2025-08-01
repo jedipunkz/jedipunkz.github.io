@@ -25,7 +25,7 @@ draft: false
 AI に書かせたコードは下記のレポジトリにあります。
 https://github.com/jedipunkz/go-clean-architecture-playground
 
-![システム構成図](../../pix/go-clean-architecture-2.png)
+![システム構成図](../../pix/go-clean-architecture-1.png)
 
 システムは以下の4つの層で構成されています：
 
