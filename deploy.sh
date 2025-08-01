@@ -5,7 +5,7 @@ if [ $# != 1 ]; then
     exit
 fi
 
-hugo -t PaperMod
+hugo --environment=production -t PaperMod
 
 git add .
 git commit -m "$1"
