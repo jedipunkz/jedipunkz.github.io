@@ -348,11 +348,6 @@ func main() {
 ### 1. アプリケーションの起動
 
 ```bash
-# ビルドして実行
-go build -o bin/server cmd/main.go
-./bin/server
-
-# または直接実行
 go run cmd/main.go
 ```
 
