@@ -26,7 +26,7 @@ draft: false
 - Rust
 - Python
 
-### Infrastracture as a Code Tools
+### IaC
 
 - Terraform
 - Ansible
