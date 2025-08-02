@@ -4,30 +4,25 @@ date: 2020-12-27T17:21:16+09:00
 Categories: ["infrastructure"]
 draft: false
 ---
-こんな技術に興味を持っています。
-
-### クラウド・コンテナ基盤, CNCF 技術
+### クラウド・コンテナ基盤, CNCF
 
 - AWS
-    - ECS
-    - EKS
 - GCP
-    - GKE
-    - BigQuery
 - OpenStack
 - Kubernetes
-- Ceph
 - Prometheus
+- Grafana
 - ArgoCD (Rollouts)
 - Flux
 - PipeCD
 - OpenTelemetry
 - Envoy
 - X-Ray
+- Docker
 
 ### プログラミング言語
 
-- Golang
+- Go
 - Rust
 - Python
 
@@ -36,6 +31,10 @@ draft: false
 - Terraform
 - Ansible
 - AWS CDK
+
+### CI/CD
+
+- GitHub Actions
 
 ### テーマ
 
@@ -46,3 +45,4 @@ draft: false
 - ログ基盤
 - Datadog
 - Hashicorp の各技術・ソフトウェア
+- セキュリティ
