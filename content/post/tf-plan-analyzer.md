@@ -50,10 +50,53 @@ ignore-resources: '["null_resource", "aws_s3_bucket.temp", "local_file"]'
 - diff-count: 変更されるリソースの数
 - diff-resources: 変更されるリソースのアドレス一覧（カンマ区切り）
 - diff-raw: 生の差分データ
+- diff-json: s分データの JSON 形式
 
 これらの出力を使って、後続のステップで条件分岐や通知の制御が可能です。
 
-## 使い方の例
+### diff-json の構造
+
+diff-json は下記の JSON 構造を持っています。
+
+```json
+{
+  "hasDiffs": true,
+  "summary": {
+    "totalChanges": 3,
+    "toAdd": 3,
+    "toChange": 1,
+    "toDestroy": 0
+  },
+  "resources": [
+    {
+      "address": "aws_instance.web",
+      "resourceType": "aws_instance",
+      "action": "create",
+      "changes": {
+        "before": null,
+        "after": "Value will be known after apply",
+        "description": "Resource will be created"
+      }
+    },
+    {
+      "address": "aws_s3_bucket.assets",
+      "resourceType": "aws_s3_bucket",
+      "action": "update",
+      "changes": {
+        "before": "Value will be known after apply",
+        "after": "Value will be known after apply",
+        "description": "Resource will be updated in-place"
+      }
+    }
+  ],
+  "resourceCount": 2,
+  "timestamp": "2025-09-15T07:48:22.123Z"
+}
+```
+
+## 資料例の紹介
+
+ここからは使用例を幾つか紹介します。
 
 ### 基本的な使い方
 
@@ -73,6 +116,20 @@ ignore-resources: '["null_resource", "aws_s3_bucket.temp", "local_file"]'
   run: |
     echo "Changes detected: ${{ steps.parse.outputs.diff-bool }}"
     echo "Resource count: ${{ steps.parse.outputs.diff-count }}"
+```
+
+### jq を使った diff-json の活用例
+
+```yaml
+    - name: Extract total changes
+      run: |
+        DIFF_JSON='${{ steps.parse.outputs.diff-json }}'
+        if [ -n "$DIFF_JSON" ] && [ "$DIFF_JSON" != "null" ]; then
+          TOTAL_CHANGES=$(echo "$DIFF_JSON" | jq -r '.summary.totalChanges // 0')
+        else
+          TOTAL_CHANGES=0
+        fi
+        echo "Total changes: $TOTAL_CHANGES"
 ```
 
 ### Pull Request への自動コメント
@@ -165,6 +222,101 @@ ignore-resources: '["null_resource", "aws_s3_bucket.temp", "local_file"]'
     echo "Manual review recommended"
 ```
 
+### diff-json を使った高度な利用例
+
+```yaml
+- name: Terraform Plan
+  id: plan
+  run: terraform plan -out=tfplan -no-color
+
+- name: Parse Plan
+  id: parse
+  uses: jedipunkz/tf-plan-parser@v1
+  with:
+    terraform-plan: ${{ steps.plan.outputs.stdout }}
+    ignore-resources: '["null_resource", "local_file"]'
+
+    - name: Extract values with jq
+      id: extract-jq
+      run: |
+        DIFF_JSON='${{ steps.parse.outputs.diff-json }}'
+        TOTAL_CHANGES=$(echo "$DIFF_JSON" | jq -r '.summary.totalChanges')
+        TO_ADD=$(echo "$DIFF_JSON" | jq -r '.summary.toAdd')
+        TO_CHANGE=$(echo "$DIFF_JSON" | jq -r '.summary.toChange')
+        TO_DESTROY=$(echo "$DIFF_JSON" | jq -r '.summary.toDestroy')
+        RESOURCE_COUNT=$(echo "$DIFF_JSON" | jq -r '.resourceCount')
+
+        echo "total-changes=$TOTAL_CHANGES" >> $GITHUB_OUTPUT
+        echo "to-add=$TO_ADD" >> $GITHUB_OUTPUT
+        echo "to-change=$TO_CHANGE" >> $GITHUB_OUTPUT
+        echo "to-destroy=$TO_DESTROY" >> $GITHUB_OUTPUT
+        echo "resource-count=$RESOURCE_COUNT" >> $GITHUB_OUTPUT
+
+    - name: Comment on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      env:
+        DIFF_JSON: ${{ steps.parse.outputs.diff-json }}
+      with:
+        script: |
+          const diffBool = '${{ steps.parse.outputs.diff-bool }}';
+          const diffCount = '${{ steps.parse.outputs.diff-count }}';
+          const resources = JSON.parse('${{ steps.parse.outputs.diff-resources }}');
+          const totalChanges = '${{ steps.extract-jq.outputs.total-changes }}';
+          const toAdd = '${{ steps.extract-jq.outputs.to-add }}';
+          const toChange = '${{ steps.extract-jq.outputs.to-change }}';
+          const toDestroy = '${{ steps.extract-jq.outputs.to-destroy }}';
+
+          let diffJson;
+          try {
+            diffJson = JSON.parse(process.env.DIFF_JSON);
+          } catch (e) {
+            console.log('Failed to parse diff-json:', e);
+            diffJson = { resources: [] };
+          }
+
+          let body = `## Terraform Plan Analysis (${totalChanges} total changes via jq)\n\n`;
+
+          if (diffBool === 'true') {
+            body += `✅ **Changes detected** affecting ${diffCount} resources:\n\n`;
+
+            // Original Changed Resources section
+            body += '### Changed Resources\n```\n';
+            for (const resource of resources) {
+              body += `${resource}\n`;
+            }
+            body += '```\n\n';
+
+            // Plan Summary
+            body += `**Plan Summary**: ${toAdd} to add, ${toChange} to change, ${toDestroy} to destroy\n\n`;
+
+            // Detailed resource changes from diff-json
+            body += '### Detailed Resource Changes\n';
+            for (const resource of diffJson.resources) {
+              const actionEmoji = {
+                'create': '➕',
+                'update': '🔄',
+                'delete': '❌',
+                'replace': '🔄'
+              }[resource.action] || '🔄';
+
+              body += `${actionEmoji} **${resource.action.toUpperCase()}**: \`${resource.address}\` (${resource.resourceType})\n`;
+              body += `   - ${resource.changes.description}\n\n`;
+            }
+          } else {
+            body += '✅ **No changes detected**\n\n';
+          }
+
+          body += '---\n*Generated by Terraform Plan Parser*';
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });
+```
+
 ## まとめ・今後の機能追加について
 
 今回作成したツールにより、Terraform Plan の差分解析が効率化されるかもしれないと思っています。特に下記の点で効果を期待しています。
@@ -172,8 +324,9 @@ ignore-resources: '["null_resource", "aws_s3_bucket.temp", "local_file"]'
 - 意図しない差分と重要な差分の区別が指定出来るようになった
 - Plan 結果差分に反応して通知する仕組み等に応用が効く
 - チーム全体で差分の判断基準を統一指定出来る
+- json 構造を使って柔軟に差分情報を活用出来る
 
-今後の機能追加として、以下を検討しています：
+また、今後の機能追加として以下を検討しています：
 
 - 差分の変更の種類（create/update/delete）ごとの分類
 - 入力・出力の拡張
