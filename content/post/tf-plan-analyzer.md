@@ -19,10 +19,10 @@ https://github.com/jedipunkz/tf-plan-parser
 
 この GitHub Action では2つの入力オプションが利用可能です：
 
-### `terraform-plan` (必須)
+### terraform-plan (必須)
 パース対象となる Terraform Plan の出力結果を指定します。通常は前のステップで実行した `terraform plan` コマンドの標準出力を渡します。
 
-### `ignore-resources` (オプション)
+### ignore-resources (オプション)
 無視したいリソースタイプや特定のリソースを配列形式で指定します。デフォルトは空の配列 `[]` です。
 
 指定方法の例：
@@ -46,10 +46,10 @@ ignore-resources: '["null_resource", "aws_s3_bucket.temp", "local_file"]'
 
 この Action は以下の出力を提供します。また下記は ignore-resources オプションの指定に沿って結果を出力してくれます。
 
-- **`diff-bool`**: 変更があるかどうかの真偽値（`true` または `false`）
-- **`diff-count`**: 変更されるリソースの数
-- **`diff-resources`**: 変更されるリソースのアドレス一覧（カンマ区切り）
-- **`diff-raw`**: 生の差分データ
+- diff-bool: 変更があるかどうかの真偽値（`true` または `false`）
+- diff-count: 変更されるリソースの数
+- diff-resources: 変更されるリソースのアドレス一覧（カンマ区切り）
+- diff-raw: 生の差分データ
 
 これらの出力を使って、後続のステップで条件分岐や通知の制御が可能です。
 
@@ -98,7 +98,7 @@ ignore-resources: '["null_resource", "aws_s3_bucket.temp", "local_file"]'
       const resources = JSON.parse('${{ steps.parse.outputs.diff-resources }}');
       const diffRaw = `${{ steps.parse.outputs.diff-raw }}`;
 
-      let body = '## Terraform Plan Analysis\n\n';
+      let body = '## Terraform Plan Parser\n\n';
 
       // Summary
       if (diffBool === 'true') {
