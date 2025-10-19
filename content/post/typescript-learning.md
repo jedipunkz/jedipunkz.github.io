@@ -1,5 +1,5 @@
 ---
-title: "TypeScript 学習のための実践的サンプルコード集"
+title: "TypeScript 入門: 構文集"
 date: 2025-10-19T12:00:00+09:00
 Categories: ["tools"]
 draft: false
@@ -7,6 +7,8 @@ draft: false
 こんにちは [@jedipunkz](https://x.com/jedipunkz) です。
 
 TypeScript を学習するためのサンプルコード集を作成しました。実行可能なコードとして整理しています。本記事では TypeScript の主要な構文を網羅的に紹介していきます。
+
+※  継続的にメンテする記事にしようと思います。新しい構文等出てきたら追記していきます。
 
 
 ## 基本的な型システム
