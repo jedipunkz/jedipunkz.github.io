@@ -6,30 +6,23 @@ draft: false
 ---
 こんにちは [@jedipunkz](https://x.com/jedipunkz) です。
 
-TypeScript を学習するためのサンプルコード集を作成しました。実行可能なコードとして整理しています。本記事では TypeScript の主要な構文を網羅的に紹介していきます。
+TypeScript の学習を進める中で構文を体系的に網羅的に理解する必要性を感じてサンプルコード集を作成しました。この記事では TypeScript の主要な構文をまとめたいと思います。
 
-※  継続的にメンテする記事にしようと思います。新しい構文等出てきたら追記していきます。
-
+※  気が向いたときに新しい構文が出てきた際に更新し続ける記事にしようと思っています。
 
 ## 基本的な型システム
 
-TypeScript の型システムは JavaScript に静的型付けを追加し、コンパイル時に型エラーを検出できます。これにより実行前にバグを発見でき、開発効率と品質が向上します。
 
 ### プリミティブ型
 
 プリミティブ型は JavaScript の基本的なデータ型です。TypeScript ではこれらに型注釈を付けることで型安全性を確保できます。
 
-boolean 型 - 真偽値を表します。`true` または `false` のいずれかの値を持ちます。
-
-number 型 - 数値を表します。整数・小数・16 進数・2 進数・8 進数すべてこの型で扱います。JavaScript と同様に内部的にはすべて浮動小数点数として扱われます。
-
-string 型 - 文字列を表します。ダブルクォート、シングルクォート、バッククォート（テンプレートリテラル）で記述できます。
-
-null 型と undefined 型 - 値が存在しないことを表します。`null` は明示的に値がないことを示し、`undefined` は値が未定義であることを示します。
-
-bigint 型 - `Number.MAX_SAFE_INTEGER` を超える大きな整数を扱えます。末尾に `n` を付けて記述します。
-
-symbol 型 - 一意で不変の値を作成します。オブジェクトのプロパティキーとして使用されることが多いです。
+- boolean 型 - 真偽値を表します。`true` または `false` のいずれかの値を持ちます。
+- number 型 - 数値を表します。整数・小数・16 進数・2 進数・8 進数すべてこの型で扱います。JavaScript と同様に内部的にはすべて浮動小数点数として扱われます。
+- string 型 - 文字列を表します。ダブルクォート、シングルクォート、バッククォート（テンプレートリテラル）で記述できます。
+- null 型と undefined 型 - 値が存在しないことを表します。`null` は明示的に値がないことを示し、`undefined` は値が未定義であることを示します。
+- bigint 型 - `Number.MAX_SAFE_INTEGER` を超える大きな整数を扱えます。末尾に `n` を付けて記述します。
+- symbol 型 - 一意で不変の値を作成します。オブジェクトのプロパティキーとして使用されることが多いです。
 
 ```typescript
 // 基本的な型
@@ -37,47 +30,61 @@ const dogName: string = "Buddy";
 const dogAge: number = 3;
 const isDogHungry: boolean = true;
 
+console.log(dogName);      // 出力: Buddy
+console.log(dogAge);       // 出力: 3
+console.log(isDogHungry);  // 出力: true
+
 // null と undefined
 const location: null = null;
 let age: undefined = undefined;
 
+console.log(location);  // 出力: null
+console.log(age);       // 出力: undefined
+
 // bigint と symbol
 const weight: bigint = 9007199254740991n;
 const id: symbol = Symbol("unique");
+
+console.log(weight);  // 出力: 9007199254740991n
+console.log(id);      // 出力: Symbol(unique)
 ```
+
+プリミティブ型を理解することで、TypeScript の型システムの基礎を固められます。特に `null` と `undefined` の使い分けは重要で、意図的に値がないことを示す場合は `null`、未初期化や未定義を示す場合は `undefined` を使用するとコードの意図が明確になります。
 
 ### 型注釈と型推論
 
-型注釈 (Type Annotation) は変数や関数に明示的に型を指定する機能です。`: 型名` の形式で記述します。型注釈により、その変数や関数が扱える値の種類を明確にできます。
+型注釈 (Type Annotation) は変数や関数に明示的に型を指定する機能です。`: 型名` の形式で記述します。型注釈によりその変数や関数が扱える値の種類を明確にできます。
 
-型推論 (Type Inference) は TypeScript が自動的に型を判断する機能です。初期値から型を推測するため、多くの場合は型注釈を省略できます。ただし、関数のパラメータは型推論されないため型注釈が必要です。
-
-型注釈と型推論を適切に使い分けることで、冗長さを避けつつ型安全性を保てます。
+型推論 (Type Inference) は TypeScript が自動的に型を判断する機能です。初期値から型を推測するため多くの場合は型注釈を省略できます。ただし、関数のパラメータは型推論されないため型注釈が必要です。
 
 ```typescript
 // 型注釈
 let catName: string = "Whiskers";
+console.log(catName);  // 出力: Whiskers
 
 // 型推論（TypeScriptが自動的に型を推論）
 let lionName = "Simba"; // string型と推論される
+console.log(lionName);  // 出力: Simba
 
 // 関数の型注釈
 function greetDog(name: string): string {
   return `Hello, ${name}!`;
 }
+
+console.log(greetDog("Buddy"));  // 出力: Hello, Buddy!
+// greetDog(123);  // エラー: 型 'number' の引数を型 'string' のパラメーターに割り当てることはできません
 ```
+
+型推論を活用することでコード量を削減しつつ、型安全性を保てます。ただし、関数のパラメータや複雑な型の場合は明示的に型注釈を付けることで、コードの意図がより明確になり保守性が向上します。
 
 ### TypeScript 拡張型
 
 TypeScript は JavaScript にはない独自の型を提供しています。これらは型システムをより強力にし、さまざまな状況に対応できるようにします。
 
-any 型 - すべての型を受け入れます。型チェックを無効化するため、既存の JavaScript コードを移行する際などに使用しますが、型安全性が失われるため多用は避けるべきです。
-
-unknown 型 - any と同様にすべての型を受け入れますが、使用前に型チェックが必要です。型安全な any として推奨されます。
-
-void 型 - 関数が値を返さないことを示します。副作用のみを行う関数で使用します。
-
-never 型 - 決して値を返さない関数に使用します。例外を投げる関数や無限ループの関数などが該当します。また、起こりえないケースを表現する際にも使用されます。
+- any 型 - すべての型を受け入れます。型チェックを無効化するため、既存の JavaScript コードを移行する際などに使用しますが、型安全性が失われるため多用は避けるべきです。
+- unknown 型 - any と同様にすべての型を受け入れますが、使用前に型チェックが必要です。型安全な any として推奨されます。
+- void 型 - 関数が値を返さないことを示します。副作用のみを行う関数で使用します。
+- never 型 - 決して値を返さない関数に使用します。例外を投げる関数や無限ループの関数などが該当します。また、起こりえないケースを表現する際にも使用されます。
 
 ```typescript
 // any型 - すべての型を許容（型チェック無効）
@@ -103,11 +110,11 @@ function throwError(): never {
 
 ## 複合型
 
-複合型は複数の値や型を組み合わせて使用する型です。実際のアプリケーション開発では複合型を多用します。
+複合型は複数の値や型を組み合わせて使用する型です。
 
 ### 配列とタプル
 
-配列型は同じ型の要素を複数持つデータ構造です。`型名[]` または `Array<型名>` の 2 つの記法があります。配列の要素にアクセスする際、TypeScript は自動的に要素の型を推論します。
+配列型は同じ型の要素を複数持つデータ構造です。`型名[]` または `Array<型名>` の 2 つの記法があります。
 
 タプル型は固定長で各要素の型が決まっている配列です。配列と異なり、各位置の要素の型が固定されます。関数から複数の値を返す際などに便利です。
 
@@ -118,12 +125,22 @@ function throwError(): never {
 const animals: string[] = ["Dog", "Cat", "Bird"];
 const ages: Array<number> = [3, 5, 2];
 
+console.log(animals[0]);  // 出力: Dog
+console.log(ages.length); // 出力: 3
+
 // タプル（固定長で各要素の型が決まっている配列）
 const pet: [string, number, boolean] = ["Buddy", 3, true];
+console.log(pet[0]);  // 出力: Buddy (string型)
+console.log(pet[1]);  // 出力: 3 (number型)
+console.log(pet[2]);  // 出力: true (boolean型)
 
 // 読み取り専用配列
 const endangered: readonly string[] = ["Panda", "Tiger"];
+console.log(endangered[0]);  // 出力: Panda
+// endangered.push("Lion");  // エラー: 読み取り専用プロパティのため変更不可
 ```
+
+配列は同じ型の値を複数扱う際に使用し、タプルは異なる型の値を順序付きで扱う際に便利です。関数から複数の値を返す場合や、座標 `[x: number, y: number]` のような固定構造のデータに適しています。
 
 ### オブジェクト型
 
@@ -163,10 +180,17 @@ const lion: { readonly name: string; age: number } = {
 ```typescript
 // ユニオン型（複数の型のいずれか）
 let petId: string | number;
-petId = "DOG-001"; // OK
-petId = 123; // OK
+petId = "DOG-001";
+console.log(petId);  // 出力: DOG-001
 
+petId = 123;
+console.log(petId);  // 出力: 123
+
+// リテラル型との組み合わせ
 type AnimalType = "dog" | "cat" | "bird";
+let myPet: AnimalType = "dog";
+console.log(myPet);  // 出力: dog
+// myPet = "fish";  // エラー: 型 '"fish"' を型 'AnimalType' に割り当てることはできません
 
 // インターセクション型（複数の型を結合）
 type WildAnimal = { species: string; habitat: string };
@@ -178,7 +202,12 @@ const bear: WildDangerous = {
   habitat: "Forest",
   dangerLevel: 9,
 };
+
+console.log(bear.species);      // 出力: Grizzly
+console.log(bear.dangerLevel);  // 出力: 9
 ```
+
+ユニオン型により柔軟な型定義が可能になり、API レスポンスのように複数の形式を取りうるデータを型安全に扱えます。インターセクション型は既存の型を組み合わせて拡張する際に便利で、コードの再利用性が高まります。
 
 ## 関数
 
@@ -186,13 +215,7 @@ TypeScript では関数のパラメータと戻り値に型を指定できます
 
 ### 関数の型定義
 
-関数の型定義では、パラメータの型と戻り値の型を指定します。戻り値の型は省略可能ですが、明示的に記述することでコードの可読性が向上します。
-
-オプショナルパラメータは `?` を付けることで省略可能なパラメータを定義できます。オプショナルパラメータは必須パラメータの後に配置する必要があります。
-
-デフォルトパラメータは値が渡されなかった場合に使用されるデフォルト値を設定できます。
-
-レストパラメータは `...` を使用して可変長の引数を受け取れます。配列として扱われます。
+関数の型定義では、パラメータの型と戻り値の型を指定します。 オプショナルパラメータは `?` を付けることで省略可能なパラメータを定義できます。オプショナルパラメータは必須パラメータの後に配置する必要があります。デフォルトパラメータは値が渡されなかった場合に使用されるデフォルト値を設定できます。レストパラメータは `...` を使用して可変長の引数を受け取れます。配列として扱われます。
 
 ```typescript
 // 基本的な関数
@@ -200,21 +223,34 @@ function calculateSpeed(distance: number, time: number): number {
   return distance / time;
 }
 
+console.log(calculateSpeed(100, 10));  // 出力: 10
+
 // オプショナルパラメータ
 function describePet(name: string, age: number, breed?: string): string {
   return breed ? `${name} is ${age} years old ${breed}` : `${name} is ${age} years old`;
 }
+
+console.log(describePet("Buddy", 3, "Labrador"));  // 出力: Buddy is 3 years old Labrador
+console.log(describePet("Max", 2));                 // 出力: Max is 2 years old
 
 // デフォルトパラメータ
 function createProfile(name: string, species: string = "Unknown"): string {
   return `Name: ${name}, Species: ${species}`;
 }
 
+console.log(createProfile("Whiskers", "Cat"));  // 出力: Name: Whiskers, Species: Cat
+console.log(createProfile("Mystery"));          // 出力: Name: Mystery, Species: Unknown
+
 // レストパラメータ
 function listAnimals(zoo: string, ...animals: string[]): void {
   console.log(`Animals in ${zoo}:`, animals);
 }
+
+listAnimals("Tokyo Zoo", "Lion", "Elephant", "Giraffe");
+// 出力: Animals in Tokyo Zoo: [ 'Lion', 'Elephant', 'Giraffe' ]
 ```
+
+関数に型を付けることで、IDEの補完機能が強化され、誤った引数の渡し方をコンパイル時に検出できます。オプショナルパラメータとデフォルトパラメータを使い分けることで、柔軟な関数設計が可能になります。
 
 ### 関数のオーバーロード
 
@@ -236,11 +272,17 @@ function identifyAnimal(idOrName: number | string, species?: string): string {
     return `Name: ${idOrName}`;
   }
 }
+
+console.log(identifyAnimal(123));              // 出力: ID: 123
+console.log(identifyAnimal("Buddy"));          // 出力: Name: Buddy
+console.log(identifyAnimal(456, "Dog"));       // 出力: ID: 456, Species: Dog
 ```
+
+オーバーロードは API の型定義を正確に表現する際に有用です。引数の組み合わせによって戻り値の型が変わる場合、型安全性を保ちながら柔軟な関数設計ができます。
 
 ## インターフェース
 
-インターフェースはオブジェクトの形状（構造）を定義する TypeScript の機能です。再利用可能な型定義として、コードの可読性と保守性を向上させます。
+インターフェースはオブジェクトの形状（構造）を定義する機能です。
 
 ### 基本的なインターフェース
 
@@ -277,9 +319,7 @@ interface Animal {
 
 ### インターフェースの継承
 
-インターフェースは `extends` キーワードを使用して他のインターフェースを継承できます。継承により、既存のインターフェースを拡張して新しいインターフェースを作成できます。
-
-複数のインターフェースを同時に継承することも可能です。これにより、複数の特性を組み合わせた型を簡潔に定義できます。
+インターフェースは `extends` キーワードを使用して他のインターフェースを継承できます。継承により、既存のインターフェースを拡張して新しいインターフェースを作成できます。複数のインターフェースを同時に継承することも可能です。
 
 ```typescript
 interface Animal {
@@ -309,7 +349,7 @@ interface Duck extends Animal, Swimmer, Flyer {
 
 ## クラス
 
-クラスは TypeScript のオブジェクト指向プログラミングの中心的な機能です。プロパティとメソッドをカプセル化し、再利用可能なコードを作成できます。
+クラスはプロパティとメソッドをカプセル化し再利用可能なコードを作成できます。
 
 ### クラスの基本
 
@@ -328,19 +368,26 @@ class Dog {
   bark(): string {
     return `${this.name} says: Woof!`;
   }
+
+  getInfo(): string {
+    return `${this.name} is ${this.age} years old`;
+  }
 }
 
 const dog = new Dog("Buddy", 3);
-console.log(dog.bark()); // Buddy says: Woof!
+console.log(dog.bark());     // 出力: Buddy says: Woof!
+console.log(dog.getInfo());  // 出力: Buddy is 3 years old
 ```
+
+クラスを使用することで、関連するデータ（プロパティ）と振る舞い（メソッド）をひとまとめにでき、オブジェクト指向プログラミングの恩恵を受けられます。再利用可能なコードを書く際に非常に便利です。
 
 ### アクセス修飾子
 
 アクセス修飾子はプロパティやメソッドへのアクセス範囲を制御します。
 
-public - どこからでもアクセス可能（デフォルト）
-private - クラス内部からのみアクセス可能
-protected - クラス内部と継承先のクラスからアクセス可能
+- public - どこからでもアクセス可能（デフォルト）
+- private - クラス内部からのみアクセス可能
+- protected - クラス内部と継承先のクラスからアクセス可能
 
 パラメータプロパティはコンストラクタのパラメータにアクセス修飾子を付けることで、プロパティの宣言と初期化を同時に行える簡潔な記法です。
 
@@ -409,13 +456,11 @@ class Eagle extends Bird {
 
 ## ジェネリクス
 
-ジェネリクスは型を変数のように扱う機能です。型の安全性を保ちながら、汎用的で再利用可能なコードを書けます。
+ジェネリクスは型を変数のように扱う機能です。
 
 ### ジェネリクスの基本
 
-ジェネリクスは `<T>` のような型パラメータを使用して定義します。`T` は慣習的に使われますが、任意の名前を使用できます。
-
-関数やクラス、インターフェースでジェネリクスを使用することで、さまざまな型に対応したコードを一度だけ記述できます。型パラメータは実際に使用する際に具体的な型に置き換えられます。
+ジェネリクスは `<T>` のような型パラメータを使用して定義します。`T` は慣習的に使われますが任意の名前を使用できます。関数やクラス、インターフェースでジェネリクスを使用することで、さまざまな型に対応したコードを一度だけ記述できます。型パラメータは実際に使用する際に具体的な型に置き換えられます。
 
 ```typescript
 // ジェネリック関数
@@ -426,6 +471,13 @@ function identity<T>(value: T): T {
 const name = identity<string>("Buddy");
 const age = identity<number>(3);
 
+console.log(name);  // 出力: Buddy
+console.log(age);   // 出力: 3
+
+// 型推論も可能
+const animal = identity("Cat");  // stringと推論される
+console.log(animal);  // 出力: Cat
+
 // ジェネリッククラス
 class Box<T> {
   constructor(private content: T) {}
@@ -433,15 +485,24 @@ class Box<T> {
   getContent(): T {
     return this.content;
   }
+
+  setContent(content: T): void {
+    this.content = content;
+  }
 }
 
 const stringBox = new Box<string>("Dog");
+console.log(stringBox.getContent());  // 出力: Dog
+
 const numberBox = new Box<number>(42);
+console.log(numberBox.getContent());  // 出力: 42
+
+// stringBox.setContent(123);  // エラー: 型 'number' を型 'string' に割り当てることはできません
 ```
 
 ### 型制約とユーティリティ型
 
-型制約は `extends` キーワードを使用して、ジェネリクスで受け入れる型に条件を付けられます。これにより、特定のプロパティやメソッドを持つ型のみを受け入れるようにできます。
+型制約は `extends` キーワードを使用してジェネリクスで受け入れる型に条件を付けられます。
 
 ユーティリティ型は TypeScript が標準で提供する型変換の型です。既存の型から新しい型を生成できます。
 
@@ -484,9 +545,7 @@ const petShop: AnimalCount = {
 
 ## 型エイリアス
 
-型エイリアスは `type` キーワードを使用して既存の型に別名を付ける機能です。複雑な型を読みやすくし、再利用性を高めます。
-
-インターフェースと似ていますが、型エイリアスはユニオン型やタプル型、プリミティブ型にも使用できる点が異なります。一方、インターフェースは拡張や実装に優れています。用途に応じて使い分けるとよいでしょう。
+型エイリアスは `type` キーワードを使用して既存の型に別名を付ける機能です。インターフェースと似ていますが、型エイリアスはユニオン型やタプル型、プリミティブ型にも使用できる点が異なります。一方、インターフェースは拡張や実装に優れています。用途に応じて使い分けるとよいでしょう。
 
 ```typescript
 // 基本的な型エイリアス
@@ -556,17 +615,15 @@ zoo.addAnimal(dog);
 
 ## 高度な型機能
 
-TypeScript の高度な型機能により、より厳密で柔軟な型定義が可能になります。
+TypeScript の高度な型機能によりより厳密で柔軟な型定義が可能になります。
 
 ### 型ガード
 
 型ガードはユニオン型の値を特定の型に絞り込む機能です。型の安全性を保ちながら、それぞれの型固有の操作を行えます。
 
-typeof 型ガード - `typeof` 演算子を使用してプリミティブ型を判定します。
-
-instanceof 型ガード - `instanceof` 演算子を使用してクラスのインスタンスを判定します。
-
-カスタム型ガード - `is` キーワードを使用して独自の型判定関数を定義できます。
+- typeof 型ガード - `typeof` 演算子を使用してプリミティブ型を判定します。
+- instanceof 型ガード - `instanceof` 演算子を使用してクラスのインスタンスを判定します。
+- カスタム型ガード - `is` キーワードを使用して独自の型判定関数を定義できます。
 
 ```typescript
 // typeof 型ガード
@@ -578,13 +635,20 @@ function process(data: string | number): void {
   }
 }
 
+process("hello");  // 出力: HELLO
+process(21);       // 出力: 42
+
 // instanceof 型ガード
 class Dog {
-  bark() {}
+  bark() {
+    console.log("Woof!");
+  }
 }
 
 class Cat {
-  meow() {}
+  meow() {
+    console.log("Meow!");
+  }
 }
 
 function makeSound(animal: Dog | Cat): void {
@@ -594,6 +658,9 @@ function makeSound(animal: Dog | Cat): void {
     animal.meow();
   }
 }
+
+makeSound(new Dog());  // 出力: Woof!
+makeSound(new Cat());  // 出力: Meow!
 
 // カスタム型ガード
 interface Fish {
@@ -607,21 +674,24 @@ interface Bird {
 function isFish(animal: Fish | Bird): animal is Fish {
   return (animal as Fish).swim !== undefined;
 }
+
+const goldfish: Fish = { swim: () => console.log("Swimming") };
+const sparrow: Bird = { fly: () => console.log("Flying") };
+
+if (isFish(goldfish)) {
+  goldfish.swim();  // 出力: Swimming
+}
 ```
 
 ### 高度な型演算子
 
 TypeScript は型を操作するための強力な演算子を提供しています。
 
-keyof - オブジェクトの型からプロパティ名をユニオン型として取得します。
-
-typeof - 値から型を取得します。既存の値の型を再利用する際に便利です。
-
-インデックスアクセス型 - オブジェクトの特定のプロパティの型を取得します。
-
-条件付き型 - 三項演算子のように、条件に基づいて型を切り替えます。
-
-テンプレートリテラル型 - 文字列リテラル型を組み合わせて新しい型を生成します。
+- keyof - オブジェクトの型からプロパティ名をユニオン型として取得します。
+- typeof - 値から型を取得します。既存の値の型を再利用する際に便利です。
+- インデックスアクセス型 - オブジェクトの特定のプロパティの型を取得します。
+- 条件付き型 - 三項演算子のように、条件に基づいて型を切り替えます。
+- テンプレートリテラル型 - 文字列リテラル型を組み合わせて新しい型を生成します。
 
 ```typescript
 interface Dog {
@@ -633,19 +703,39 @@ interface Dog {
 // keyof - オブジェクトのキーをユニオン型として取得
 type DogKeys = keyof Dog; // "name" | "breed" | "age"
 
+function getDogProperty(dog: Dog, key: DogKeys) {
+  return dog[key];
+}
+
+const myDog: Dog = { name: "Buddy", breed: "Labrador", age: 3 };
+console.log(getDogProperty(myDog, "name"));  // 出力: Buddy
+console.log(getDogProperty(myDog, "age"));   // 出力: 3
+
 // typeof - 値から型を取得
 const cat = { name: "Whiskers", age: 2 };
 type Cat = typeof cat;
 
+const anotherCat: Cat = { name: "Luna", age: 1 };
+console.log(anotherCat);  // 出力: { name: 'Luna', age: 1 }
+
 // インデックスアクセス型
 type DogName = Dog["name"]; // string
+const dogName: DogName = "Max";
+console.log(dogName);  // 出力: Max
 
 // 条件付き型
 type IsString<T> = T extends string ? "yes" : "no";
-type Test = IsString<string>; // "yes"
+type Test1 = IsString<string>;  // "yes"
+type Test2 = IsString<number>;  // "no"
 
 // テンプレートリテラル型
 type AnimalType = "dog" | "cat";
 type AnimalEvent = `${AnimalType}Born`; // "dogBorn" | "catBorn"
+
+const event1: AnimalEvent = "dogBorn";
+const event2: AnimalEvent = "catBorn";
+console.log(event1, event2);  // 出力: dogBorn catBorn
 ```
+
+高度な型演算子を使いこなすことで、型レベルでのプログラミングが可能になり、より厳密で保守性の高いコードを書けます。特に大規模なアプリケーションやライブラリ開発において威力を発揮します。
 
