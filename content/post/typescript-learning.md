@@ -6,9 +6,59 @@ draft: false
 ---
 こんにちは [@jedipunkz](https://x.com/jedipunkz) です。
 
-TypeScript の学習を進める中で構文を体系的に網羅的に理解する必要性を感じてサンプルコード集を作成しました。この記事では TypeScript の主要な構文をまとめたいと思います。
+TypeScript の学習を進める中で構文を網羅的に理解する必要性を感じてサンプルコード作成を作成し動作確認した上で構文集を作成しました。この記事では TypeScript の主要な構文をまとめたいと思います。
 
 ※  気が向いたときに新しい構文が出てきた際に更新し続ける記事にしようと思っています。
+
+## 目次
+
+### 1. [基本的な型システム](#基本的な型システム)
+- [プリミティブ型](#プリミティブ型)
+- [型注釈と型推論](#型注釈と型推論)
+- [TypeScript 拡張型](#typescript-拡張型)
+- [リテラル型](#リテラル型)
+- [型アサーション](#型アサーション)
+
+### 2. [複合型](#複合型)
+- [配列とタプル](#配列とタプル)
+- [オブジェクト型](#オブジェクト型)
+- [ユニオン型とインターセクション型](#ユニオン型とインターセクション型)
+- [列挙型](#列挙型)
+- [Discriminated Unions](#discriminated-unions)
+
+### 3. [関数](#関数)
+- [関数の型定義](#関数の型定義)
+- [関数のオーバーロード](#関数のオーバーロード)
+
+### 4. [インターフェース](#インターフェース)
+- [基本的なインターフェース](#基本的なインターフェース)
+- [インターフェースの継承](#インターフェースの継承)
+
+### 5. [クラス](#クラス)
+- [クラスの基本](#クラスの基本)
+- [アクセス修飾子](#アクセス修飾子)
+- [継承と抽象クラス](#継承と抽象クラス)
+
+### 6. [ジェネリクス](#ジェネリクス)
+- [ジェネリクスの基本](#ジェネリクスの基本)
+- [型制約とユーティリティ型](#型制約とユーティリティ型)
+
+### 7. [型エイリアス](#型エイリアス)
+
+### 8. [モジュール](#モジュール)
+- [エクスポートとインポート](#エクスポートとインポート)
+
+### 9. [高度な型機能](#高度な型機能)
+- [型ガード](#型ガード)
+- [高度な型演算子](#高度な型演算子)
+- [インデックスシグネチャ](#インデックスシグネチャ)
+- [ユーティリティ型の拡張](#ユーティリティ型の拡張)
+- [Mapped Types](#mapped-types)
+- [条件付き型](#条件付き型)
+
+### 10. [高度な機能](#高度な機能)
+- [デコレーター](#デコレーター)
+- [名前空間](#名前空間)
 
 ## 基本的な型システム
 
@@ -107,6 +157,96 @@ function throwError(): never {
   throw new Error("Error occurred");
 }
 ```
+
+## リテラル型
+
+リテラル型は特定の値だけを許可する型です。文字列、数値、真偽値のリテラルを使用でき、値の範囲を厳密に制限できます。
+
+```typescript
+// 文字列リテラル型
+type Direction = "north" | "south" | "east" | "west";
+
+function move(direction: Direction): void {
+  console.log(`Moving ${direction}`);
+}
+
+move("north");  // 出力: Moving north
+move("east");   // 出力: Moving east
+// move("up");  // エラー: 型 '"up"' を型 'Direction' に割り当てることはできません
+
+// 数値リテラル型
+type DiceValue = 1 | 2 | 3 | 4 | 5 | 6;
+
+function rollDice(): DiceValue {
+  return 4;
+}
+
+console.log(rollDice());  // 出力: 4
+
+// 真偽値リテラル型
+type Yes = true;
+type No = false;
+
+let confirmed: Yes = true;
+console.log(confirmed);  // 出力: true
+
+// 複合リテラル型
+type Status = "success" | "error" | "loading";
+type StatusCode = 200 | 404 | 500;
+
+interface Response {
+  status: Status;
+  code: StatusCode;
+}
+
+const response: Response = {
+  status: "success",
+  code: 200,
+};
+
+console.log(response);  // 出力: { status: 'success', code: 200 }
+```
+
+リテラル型を使用することで、タイプミスや想定外の値の使用を防げます。API のステータスコードや方向を示す定数など、限定された値を扱う場合に特に有用です。
+
+## 型アサーション
+
+型アサーションは TypeScript コンパイラに対して「この値の型を私は知っている」と明示的に伝える機能です。`as` 構文または `<>` 構文を使用します。
+
+```typescript
+// as 構文
+let someValue: unknown = "Hello TypeScript";
+let strLength: number = (someValue as string).length;
+console.log(strLength);  // 出力: 16
+
+// HTMLElement の型アサーション例
+const input = document.getElementById("username") as HTMLInputElement;
+console.log(input.value);
+
+// as const アサーション（リテラル型として推論）
+const config = {
+  endpoint: "https://api.example.com",
+  timeout: 3000,
+} as const;
+
+// config.endpoint = "other"; // エラー: 読み取り専用プロパティ
+
+const colors = ["red", "green", "blue"] as const;
+type Color = typeof colors[number]; // "red" | "green" | "blue"
+
+console.log(config.endpoint);  // 出力: https://api.example.com
+console.log(colors[0]);        // 出力: red
+
+// Non-null アサーション演算子 (!)
+function processValue(value: string | null): void {
+  // value が null でないことが確実な場合
+  console.log(value!.toUpperCase());
+}
+
+processValue("hello");  // 出力: HELLO
+```
+
+`as const` アサーションは値を読み取り専用のリテラル型として扱います。これにより、設定オブジェクトや定数配列の不変性を保証できます。Non-null アサーション演算子 `!` は値が null や undefined でないことを保証する際に使用しますが、実行時エラーのリスクがあるため慎重に使用すべきです。
 
 ## 複合型
 
@@ -208,6 +348,131 @@ console.log(bear.dangerLevel);  // 出力: 9
 ```
 
 ユニオン型により柔軟な型定義が可能になり、API レスポンスのように複数の形式を取りうるデータを型安全に扱えます。インターセクション型は既存の型を組み合わせて拡張する際に便利で、コードの再利用性が高まります。
+
+## 列挙型
+
+列挙型（Enum）は関連する定数をグループ化する機能です。数値や文字列の定数を名前付きで管理でき、コードの可読性と保守性が向上します。
+
+### 数値列挙型と文字列列挙型
+
+数値列挙型は自動的に 0 から始まる連番が割り当てられます。文字列列挙型は各メンバーに文字列リテラルを明示的に割り当てます。
+
+```typescript
+// 数値列挙型
+enum Direction {
+  Up,
+  Down,
+  Left,
+  Right,
+}
+
+console.log(Direction.Up);    // 出力: 0
+console.log(Direction.Down);  // 出力: 1
+console.log(Direction[0]);    // 出力: Up (リバースマッピング)
+
+// 文字列列挙型
+enum Status {
+  Active = "ACTIVE",
+  Inactive = "INACTIVE",
+  Pending = "PENDING",
+}
+
+console.log(Status.Active);   // 出力: ACTIVE
+console.log(Status.Pending);  // 出力: PENDING
+
+// const列挙型（コンパイル時にインライン化される）
+const enum Color {
+  Red = "RED",
+  Green = "GREEN",
+  Blue = "BLUE",
+}
+
+console.log(Color.Red);  // 出力: RED
+
+// カスタム値を持つ数値列挙型
+enum HttpStatus {
+  OK = 200,
+  BadRequest = 400,
+  NotFound = 404,
+  InternalServerError = 500,
+}
+
+console.log(HttpStatus.OK);        // 出力: 200
+console.log(HttpStatus.NotFound);  // 出力: 404
+```
+
+数値列挙型はリバースマッピングが可能で、値から名前を取得できます。文字列列挙型は明示的で読みやすいため、実務ではより推奨されます。const 列挙型はコンパイル時にインライン化されるため、パフォーマンスが向上しますが、リバースマッピングは使用できません。
+
+## Discriminated Unions
+
+Discriminated Unions（識別可能なユニオン型）は、共通の識別プロパティを持つ複数の型を組み合わせたユニオン型です。パターンマッチング的な処理を型安全に実装できます。
+
+```typescript
+// タグ付きユニオン型
+interface Circle {
+  kind: "circle";
+  radius: number;
+}
+
+interface Square {
+  kind: "square";
+  sideLength: number;
+}
+
+interface Rectangle {
+  kind: "rectangle";
+  width: number;
+  height: number;
+}
+
+type Shape = Circle | Square | Rectangle;
+
+// kind プロパティで型を識別
+function getArea(shape: Shape): number {
+  switch (shape.kind) {
+    case "circle":
+      return Math.PI * shape.radius ** 2;
+    case "square":
+      return shape.sideLength ** 2;
+    case "rectangle":
+      return shape.width * shape.height;
+  }
+}
+
+const circle: Circle = { kind: "circle", radius: 10 };
+const square: Square = { kind: "square", sideLength: 5 };
+const rectangle: Rectangle = { kind: "rectangle", width: 10, height: 20 };
+
+console.log(getArea(circle));     // 出力: 314.1592653589793
+console.log(getArea(square));     // 出力: 25
+console.log(getArea(rectangle));  // 出力: 200
+
+// API レスポンスの例
+interface Success {
+  status: "success";
+  data: string;
+}
+
+interface Error {
+  status: "error";
+  message: string;
+}
+
+type ApiResponse = Success | Error;
+
+function handleResponse(response: ApiResponse): void {
+  if (response.status === "success") {
+    console.log("Data:", response.data);
+  } else {
+    console.log("Error:", response.message);
+  }
+}
+
+handleResponse({ status: "success", data: "Hello" });      // 出力: Data: Hello
+handleResponse({ status: "error", message: "Not found" }); // 出力: Error: Not found
+```
+
+Discriminated Unions は `kind` や `type`、`status` といった識別プロパティ（タグ）を使用して型を判別します。これにより、TypeScript は switch 文や if 文の中で正しい型を自動的に推論し、適切なプロパティへのアクセスを許可します。
 
 ## 関数
 
@@ -739,3 +1004,415 @@ console.log(event1, event2);  // 出力: dogBorn catBorn
 
 高度な型演算子を使いこなすことで、型レベルでのプログラミングが可能になり、より厳密で保守性の高いコードを書けます。特に大規模なアプリケーションやライブラリ開発において威力を発揮します。
 
+## インデックスシグネチャ
+
+インデックスシグネチャは、オブジェクトのプロパティ名が動的に決まる場合に使用します。辞書やマップのようなデータ構造を型安全に扱えます。
+
+```typescript
+// 基本的なインデックスシグネチャ
+interface StringDictionary {
+  [key: string]: string;
+}
+
+const dictionary: StringDictionary = {
+  hello: "こんにちは",
+  goodbye: "さようなら",
+  thanks: "ありがとう",
+};
+
+console.log(dictionary.hello);    // 出力: こんにちは
+console.log(dictionary["thanks"]); // 出力: ありがとう
+
+// 数値インデックスシグネチャ
+interface NumberArray {
+  [index: number]: string;
+}
+
+const animals: NumberArray = {
+  0: "Dog",
+  1: "Cat",
+  2: "Bird",
+};
+
+console.log(animals[0]);  // 出力: Dog
+console.log(animals[2]);  // 出力: Bird
+
+// 読み取り専用インデックスシグネチャ
+interface ReadonlyDictionary {
+  readonly [key: string]: number;
+}
+
+const scores: ReadonlyDictionary = {
+  math: 95,
+  english: 88,
+  science: 92,
+};
+
+console.log(scores.math);  // 出力: 95
+// scores.math = 100; // エラー: 読み取り専用プロパティ
+
+// 固定プロパティとインデックスシグネチャの組み合わせ
+interface Config {
+  apiUrl: string;
+  timeout: number;
+  [key: string]: string | number; // その他のプロパティ
+}
+
+const config: Config = {
+  apiUrl: "https://api.example.com",
+  timeout: 3000,
+  retries: 3,
+  debug: "enabled",
+};
+
+console.log(config.apiUrl);  // 出力: https://api.example.com
+console.log(config.retries);  // 出力: 3
+```
+
+インデックスシグネチャは動的なプロパティ名を扱う際に便利ですが、すべてのプロパティアクセスが許可されてしまうため、型安全性が低下する可能性があります。可能な限り `Record` 型や明示的なプロパティ定義を使用することを検討すべきです。
+
+## ユーティリティ型の拡張
+
+TypeScript が標準で提供するユーティリティ型は、既存の型を変換して新しい型を生成する強力な機能です。以下では基本的なもの以外の便利なユーティリティ型を紹介します。
+
+```typescript
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  age?: number;
+}
+
+// Required<T> - すべてのプロパティを必須に
+type RequiredUser = Required<User>;
+const user1: RequiredUser = {
+  id: 1,
+  name: "Alice",
+  email: "alice@example.com",
+  age: 25, // age も必須になる
+};
+
+// Readonly<T> - すべてのプロパティを読み取り専用に
+type ReadonlyUser = Readonly<User>;
+const user2: ReadonlyUser = {
+  id: 2,
+  name: "Bob",
+  email: "bob@example.com",
+};
+// user2.name = "Charlie"; // エラー: 読み取り専用プロパティ
+
+// Exclude<T, U> - ユニオン型から特定の型を除外
+type AllStatus = "active" | "inactive" | "pending" | "deleted";
+type ActiveStatus = Exclude<AllStatus, "deleted" | "inactive">;
+const status: ActiveStatus = "active"; // "active" | "pending" のみ
+
+// Extract<T, U> - ユニオン型から特定の型を抽出
+type ExtractedStatus = Extract<AllStatus, "active" | "pending">;
+const extractedStatus: ExtractedStatus = "pending";
+
+// NonNullable<T> - null と undefined を除外
+type MaybeString = string | null | undefined;
+type DefiniteString = NonNullable<MaybeString>;
+const str: DefiniteString = "Hello";
+
+// ReturnType<T> - 関数の戻り値の型を取得
+function getUser() {
+  return { id: 1, name: "Alice", email: "alice@example.com" };
+}
+type UserReturnType = ReturnType<typeof getUser>;
+const user3: UserReturnType = { id: 2, name: "Bob", email: "bob@example.com" };
+
+// Parameters<T> - 関数の引数の型をタプルとして取得
+function createUser(name: string, age: number, email: string) {
+  return { name, age, email };
+}
+type CreateUserParams = Parameters<typeof createUser>;
+const params: CreateUserParams = ["Charlie", 30, "charlie@example.com"];
+
+// ConstructorParameters<T> - コンストラクタの引数の型を取得
+class Person {
+  constructor(public name: string, public age: number) {}
+}
+type PersonConstructorParams = ConstructorParameters<typeof Person>;
+const personParams: PersonConstructorParams = ["David", 35];
+
+// InstanceType<T> - コンストラクタのインスタンス型を取得
+type PersonInstance = InstanceType<typeof Person>;
+const person: PersonInstance = new Person("Eve", 28);
+
+// 文字列リテラル型の変換
+type Greeting = "hello world";
+type UpperGreeting = Uppercase<Greeting>;      // "HELLO WORLD"
+type LowerGreeting = Lowercase<Greeting>;      // "hello world"
+type CapitalGreeting = Capitalize<Greeting>;   // "Hello world"
+type UncapitalGreeting = Uncapitalize<Greeting>; // "hello world"
+```
+
+これらのユーティリティ型を活用することで、既存の型から必要な型を柔軟に生成でき、コードの重複を減らせます。特に `ReturnType` や `Parameters` は関数の型情報を再利用する際に非常に便利です。
+
+## Mapped Types
+
+Mapped Types（マップ型）は既存の型のプロパティを反復処理して新しい型を生成する高度な機能です。TypeScript の組み込みユーティリティ型の多くは Mapped Types で実装されています。
+
+```typescript
+// 基本的なマップ型
+type Readonly<T> = {
+  readonly [P in keyof T]: T[P];
+};
+
+interface User {
+  name: string;
+  age: number;
+}
+
+type ReadonlyUser = Readonly<User>;
+const user: ReadonlyUser = { name: "Alice", age: 25 };
+// user.name = "Bob"; // エラー: 読み取り専用プロパティ
+
+// Optional を作成するマップ型
+type Optional<T> = {
+  [P in keyof T]?: T[P];
+};
+
+type OptionalUser = Optional<User>;
+const user2: OptionalUser = { name: "Bob" }; // age は省略可能
+
+// 修飾子の除去（-readonly, -?）
+type Mutable<T> = {
+  -readonly [P in keyof T]: T[P];
+};
+
+type Required<T> = {
+  [P in keyof T]-?: T[P];
+};
+
+// as を使った再マッピング
+type Getters<T> = {
+  [P in keyof T as `get${Capitalize<string & P>}`]: () => T[P];
+};
+
+interface Person {
+  name: string;
+  age: number;
+}
+
+type PersonGetters = Getters<Person>;
+// { getName: () => string; getAge: () => number; }
+
+const personGetters: PersonGetters = {
+  getName: () => "Alice",
+  getAge: () => 25,
+};
+
+console.log(personGetters.getName());  // 出力: Alice
+console.log(personGetters.getAge());   // 出力: 25
+```
+
+Mapped Types の `[P in keyof T]` 構文は、型 `T` のすべてのプロパティ名を反復処理します。修飾子として `readonly` や `?` を追加したり、`-` を付けて除去したりできます。`as` 句を使用することで、プロパティ名を変換することも可能です。
+
+## 条件付き型
+
+条件付き型（Conditional Types）は、型レベルでの条件分岐を可能にする機能です。`T extends U ? X : Y` の形式で、型 `T` が型 `U` に割り当て可能かどうかで型を切り替えます。
+
+```typescript
+// 基本的な条件付き型
+type IsString<T> = T extends string ? "yes" : "no";
+
+type Test1 = IsString<string>;  // "yes"
+type Test2 = IsString<number>;  // "no"
+
+// 分配的条件型（Distributive Conditional Types）
+type ToArray<T> = T extends any ? T[] : never;
+
+type StringOrNumberArray = ToArray<string | number>;
+// string[] | number[] (分配される)
+
+// infer キーワードで型を推論
+type ReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
+
+function getUser() {
+  return { name: "Alice", age: 25 };
+}
+
+type UserType = ReturnType<typeof getUser>;
+const user: UserType = { name: "Bob", age: 30 };
+
+// 配列の要素の型を抽出
+type ElementType<T> = T extends (infer E)[] ? E : never;
+
+type Numbers = ElementType<number[]>;  // number
+type Strings = ElementType<string[]>;  // string
+
+// Promise の中身の型を抽出
+type Unwrap<T> = T extends Promise<infer U> ? U : T;
+
+type UnwrappedString = Unwrap<Promise<string>>;  // string
+type UnwrappedNumber = Unwrap<number>;           // number
+
+// ネストした条件付き型
+type TypeName<T> = T extends string
+  ? "string"
+  : T extends number
+  ? "number"
+  : T extends boolean
+  ? "boolean"
+  : T extends undefined
+  ? "undefined"
+  : T extends Function
+  ? "function"
+  : "object";
+
+type T1 = TypeName<string>;    // "string"
+type T2 = TypeName<number>;    // "number"
+type T3 = TypeName<boolean>;   // "boolean"
+```
+
+条件付き型の `infer` キーワードは、型の一部を推論して変数に格納します。これにより、関数の戻り値の型や配列の要素の型など、複雑な型の一部を抽出できます。分配的条件型は、ユニオン型に対して自動的に各メンバーに条件を適用します。
+
+## 高度な機能
+
+TypeScript の高度な機能には、メタプログラミングやコードの組織化に関する機能が含まれます。
+
+## デコレーター
+
+デコレーター（Decorators）はクラス、メソッド、プロパティ、パラメータに対してメタデータを付加したり、動作を変更したりする機能です。主にフレームワーク開発で使用されます。
+
+```typescript
+// デコレーターを使用するには tsconfig.json で experimentalDecorators を有効にする必要があります
+
+// クラスデコレーター
+function sealed(constructor: Function) {
+  console.log(`Sealing the constructor: ${constructor.name}`);
+  Object.seal(constructor);
+  Object.seal(constructor.prototype);
+}
+
+@sealed
+class SealedClass {
+  constructor(public name: string) {}
+}
+
+// メソッドデコレーター
+function log(target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+  const originalMethod = descriptor.value;
+
+  descriptor.value = function (...args: any[]) {
+    console.log(`Calling ${propertyKey} with args:`, args);
+    const result = originalMethod.apply(this, args);
+    console.log(`Result:`, result);
+    return result;
+  };
+
+  return descriptor;
+}
+
+class Calculator {
+  @log
+  add(a: number, b: number): number {
+    return a + b;
+  }
+}
+
+// プロパティデコレーター
+function readonly(target: any, propertyKey: string) {
+  console.log(`Making ${propertyKey} readonly`);
+}
+
+class Person {
+  @readonly
+  name: string = "Alice";
+}
+
+// デコレーターファクトリ
+function enumerable(value: boolean) {
+  return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    descriptor.enumerable = value;
+  };
+}
+
+class Example {
+  @enumerable(false)
+  hiddenMethod() {
+    console.log("This method is not enumerable");
+  }
+
+  @enumerable(true)
+  visibleMethod() {
+    console.log("This method is enumerable");
+  }
+}
+```
+
+デコレーターは `@` 記号を使用して適用します。デコレーターファクトリは、引数を受け取ってデコレーターを返す関数です。Angular や NestJS などのフレームワークでは、依存性注入やルーティングの定義にデコレーターが広く使用されています。TypeScript 5.0 以降では Stage 3 デコレーターがサポートされています。
+
+## 名前空間
+
+名前空間（Namespaces）は関連するコードをグループ化する機能です。ただし、現代の TypeScript ではモジュールシステム（import/export）の使用が推奨されており、名前空間は主にレガシーコードとの互換性のために存在します。
+
+```typescript
+// 基本的な名前空間
+namespace Animals {
+  export interface Animal {
+    name: string;
+    makeSound(): void;
+  }
+
+  export class Dog implements Animal {
+    constructor(public name: string) {}
+
+    makeSound(): void {
+      console.log(`${this.name} says: Woof!`);
+    }
+  }
+
+  export class Cat implements Animal {
+    constructor(public name: string) {}
+
+    makeSound(): void {
+      console.log(`${this.name} says: Meow!`);
+    }
+  }
+}
+
+const dog = new Animals.Dog("Buddy");
+dog.makeSound();  // 出力: Buddy says: Woof!
+
+const cat = new Animals.Cat("Whiskers");
+cat.makeSound();  // 出力: Whiskers says: Meow!
+
+// ネストした名前空間
+namespace Company {
+  export namespace HR {
+    export class Employee {
+      constructor(public name: string, public salary: number) {}
+
+      getInfo(): string {
+        return `${this.name}: $${this.salary}`;
+      }
+    }
+  }
+
+  export namespace IT {
+    export class Developer {
+      constructor(public name: string, public language: string) {}
+
+      getInfo(): string {
+        return `${this.name} develops in ${this.language}`;
+      }
+    }
+  }
+}
+
+const employee = new Company.HR.Employee("Alice", 50000);
+console.log(employee.getInfo());  // 出力: Alice: $50000
+
+const developer = new Company.IT.Developer("Bob", "TypeScript");
+console.log(developer.getInfo());  // 出力: Bob develops in TypeScript
+
+// エイリアス
+import Dev = Company.IT.Developer;
+const dev = new Dev("Charlie", "JavaScript");
+console.log(dev.getInfo());  // 出力: Charlie develops in JavaScript
+```
+
+名前空間は `namespace` キーワードで定義し、`export` キーワードで外部に公開するメンバーを指定します。複数のファイルにまたがる名前空間も作成できます。しかし、現代のアプリケーション開発では ES6 モジュール（import/export）を使用することが推奨されています。
