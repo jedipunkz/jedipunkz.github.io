@@ -170,6 +170,26 @@
 
 <article class="post-entry"> 
   <header class="entry-header">
+    <h2>Ceph のプロセス配置ベストプラクティス
+    </h2>
+  </header>
+  <section class="entry-content">
+    <p>Ceph はブロック型の分散ストレージファイルシステムです。POSIX のファイルシステ ムとしてマウント出来ます。Linux の Kernel ドライバや FUSE ドライバを用いてマウ ントします。またブロックデバイスとしてマウントする方法もあります。
+だいぶ前ですが、Ceph に関する記事を以前下記の通り書きました。
+http://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/ http://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/ Ceph の構築方法について記したブログだったのですが、今まで mon, osd, mds の各プ ロセスをそれぞれ何台のノードに対して配置し、またそれぞれのプロセス幾つを何に対 して配置するのか？という疑問が付きまとわっていました。node, disk, process のそ れぞれの数の関係について知りたいなぁと思っていました。幾つかのドキュメントを読 んでいて、ぼんやり見えてきた事があるのでそれを今回はまとめたいと思います。
+また、皆さん気になるトコロだと思われる容量設計についても軽く触れたいと思います。
+参考資料 http://ceph.com/docs/master/rados/configuration/mon-config-ref/ http://www.sebastien-han.fr/blog/2013/12/02/ceph-performance-interesting-things-going-on/ 各要素の数の関係 ハードウェア要素である node, disk(hdd), ssd そしてソフトウェア要素である mon, osd, mds の数の関係はどのようにするべきか？基本となる関係は
+1 mds process / node 1 mon process / node 1 osd process / disk n jornal ssd device / disk / node だと考えられます。僕が今のところ理想かなぁと思っている構成をまとめたいと思いま す。
+下記の図がそれです。
+&#43;------------------------&#43; | client | &#43;------------------------&#43; | &#43;--------------------------&#43;--------------------------&#43;-------------------------------&#43;------------------------- | | | | public network &#43;------------------------&#43; &#43;------------------------&#43; &#43;------------------------&#43; &#43;------------------------&#43; | mon | | mon | | mon | | mds | &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------------------------&#43; | osd | | osd | | osd | | osd | | osd | | osd | | osd | | osd | | osd | | | &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; | | | disk | | disk | | disk | | disk | | disk | | disk | | disk | | disk | | disk |....&gt; | | &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43; &#43;------&#43;scale | node | | ssd | | ssd | | ssd | | | &#43;------------------------&#43; &#43;------------------------&#43; &#43;------------------------&#43; | | | node | | node | | node | | | &#43;------------------------&#43; &#43;------------------------&#43; &#43;------------------------&#43; &#43;------------------------&#43; | | | | &#43;--------------------------&#43;--------------------------&#43;-------------------------------&#43;------------------------- cluster network mds と node の関係 mds はリモートクライアントへのファイルシステムサービスの提供を行うことや特性が 全く異なることから別ノードに切り出しました。また mds は幾つかのノードで稼働さ せる事も可能。が、mds はそれぞれのサービスを HA 組む仕組みは持っていないので どれか一方の mds をクライアントは指し示す必要があり、その mds が停止すれば直 ちに障害に発展します。
+...</p>
+  </section>
+  
+  <a class="entry-link" aria-label="post link to Ceph のプロセス配置ベストプラクティス" href="https://jedipunkz.github.io/post/2014/01/29/ceph-process-best-practice/"></a>
+</article>
+
+<article class="post-entry"> 
+  <header class="entry-header">
     <h2>第17回 OpenStack 勉強会で話してきました
     </h2>
   </header>
@@ -320,21 +340,6 @@ debian wheezy のパッケージレポジトリを Vyatta に追記します。
   </section>
   
   <a class="entry-link" aria-label="post link to OpenStack Havana を Chef でデプロイ" href="https://jedipunkz.github.io/post/2013/11/17/openstack-havana-chef-deploy/"></a>
-</article>
-
-<article class="post-entry"> 
-  <header class="entry-header">
-    <h2>第2回 Elasticsearch 勉強会参加レポート
-    </h2>
-  </header>
-  <section class="entry-content">
-    <p>こんにちは。@jedipunkz です。
-第2回 Elasticsearch 勉強会に参加してきました。箇条書きですが参加レポートを記し ておきます。
-開催日 : 2013/11/12 場所 : 東京駅 グラントウキョウサウスタワー リクルートテクノロジーズさま URL : http://elasticsearch.doorkeeper.jp/events/6532 Routing 周りの話 株式会社シーマーク　大谷純さん (@johtani) Index 構成 cluster の中に index -&gt; type が作成される index は shard という部分的な index の集まり shard 数は生成時のみ指定可能 node ごとに replica, primary を別ける replica 数は後に変えられる doc -&gt; hash 値を shard 数で割って replica, primary に登録 doc の id の ハッシュ値を利用 type も含める場合はかの設定を true に クライアントはどのノードに対してクエリを投げても OK routing id の代わりに routing (URL パラメータ) で登録 url リクエストパラメータとして登録時にルーティングパラメータを登録 id の代わりにパラメータで指定された値のハッシュ値を計算して利用 検索時 routing 指定で関係のある shard のみを指定出来る スケールアウト sharding によるスケールアウト数 = インデックス作成時に指定 shard によるインデックスの分割以外にインデックス自体を複数持つことによるスケール 複数のドキュメントをエイリアス書けることが可能 所感 個人的には非常に興味のあるところでした。mongodb のような sharding をイメージし てよいのか？そうでないのか？すら理解出来ていなかったので。sharding を理解する 前提知識の話もあって非常に参考になりました。
-...</p>
-  </section>
-  
-  <a class="entry-link" aria-label="post link to 第2回 Elasticsearch 勉強会参加レポート" href="https://jedipunkz.github.io/post/2013/11/13/elasticsearch-second-study-report/"></a>
 </article>
 <footer class="page-footer">
   <nav class="pagination">
