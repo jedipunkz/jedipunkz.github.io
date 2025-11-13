@@ -1,0 +1,63 @@
+name: PR Preview - Deploy to Master
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - source
+
+# Allow one concurrent preview deployment
+concurrency:
+  group: "preview-${{ github.event.number }}"
+  cancel-in-progress: true
+
+# Default to bash
+defaults:
+  run:
+    shell: bash
+
+# Sets permissions of the GITHUB_TOKEN
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  preview-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: '0.148.2'
+          extended: true
+
+      - name: Update submodules
+        run: git submodule update --init --recursive
+
+      - name: Build with Hugo (Preview)
+        run: |
+          hugo --baseURL https://jedipunkz.github.io/preview/ -t PaperMod
+
+      - name: Deploy to master preview directory
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: master
+          destination_dir: preview
+
+      - name: Comment on PR - Preview Deployed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.number }} --body "🔍 **プレビューデプロイ完了！**
+          
+          プレビューURL: https://jedipunkz.github.io/preview/
+          
+          PR: #${{ github.event.number }}"
