@@ -2,7 +2,7 @@
 author = ""
 categories = ["infrastructure"]
 date = "2016-07-25T23:18:16+09:00"
-description = ""
+description = "Minikube と VirtualBox を使った Mac OSX での簡易 Kubernetes 環境構築手順"
 featured = ""
 featuredalt = ""
 featuredpath = ""

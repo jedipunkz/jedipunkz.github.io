@@ -3,6 +3,7 @@ title = "Chef-ZeroでOpenStack Kiloデプロイ(オールインワン編)"
 date = "2015-07-16"
 slug = "2015/07/16/chef-zero-openstack-allinone"
 Categories = ["infrastructure"]
+description = "Chef-Zero と openstack-chef-repo を使った OpenStack Kilo のオールインワン構成デプロイ手順"
 +++
 こんにちは。@jedipunkz です。
 

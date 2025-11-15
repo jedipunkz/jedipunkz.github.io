@@ -3,6 +3,7 @@ title: "Go 言語と awscli を使って ECS/Fargate 上でコマンド実行し
 date: 2021-04-13T18:35:36+09:00
 Categories: ["infrastructure"]
 draft: false
+description: "ECS Execute Command と Run Task 機能を Go 言語および awscli で実行する方法"
 ---
 こんにちは [@jedipunkz](https://twitter.com/jedipunkz) 🚀 です。
 

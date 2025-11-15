@@ -3,6 +3,7 @@ title: "ECS の構成と Terraform コード化する際の構造化について
 date: 2019-10-17T18:37:36+09:00
 Categories: ["infrastructure"]
 draft: false
+description: "AWS ECS の Terraform コード構造化とネットワークモード、ロギング構成の設計指針"
 ---
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

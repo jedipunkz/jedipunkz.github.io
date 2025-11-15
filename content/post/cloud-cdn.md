@@ -6,7 +6,7 @@ featured = ""
 date = "2016-12-29T09:32:49+09:00"
 title = "Google Cloud CDN を使ってみた"
 author = ""
-description = ""
+description = "GCP の Cloud CDN をロードバランサに組み込んで利用する方法と価格メリット"
 featuredpath = ""
 
 +++

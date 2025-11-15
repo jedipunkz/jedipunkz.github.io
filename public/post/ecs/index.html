@@ -7,48 +7,7 @@
 <meta name="robots" content="index, follow">
 <title>ECS の構成と Terraform コード化する際の構造化について | jedipunkz 🚀 のブログ</title>
 <meta name="keywords" content="">
-<meta name="description" content="こんにちは。@jedipunkz です。
-今回は AWS ECS についてです。直近の仕事で ECS の Terraform コード開発をしていたのですがコードの構造化について考えていました。一枚岩のコードを書いても運用に耐えられるとは考えられません。また ECS を構成するにあたって ECS のネットワークモードとコンテナのロギングについて考えているうちに、どの構成が一番適しているのか？について時間を掛けて考えました。ここではそれらについてまとめたいと思います。
-Terraform コードの構造化
-運用の精神的な負担を軽減するという観点で Terraform のコード開発をする上で一番重要なのはコードの構造化だと思います。前回のブログ記事に書いたのですがコードの構造化をする上で下記に留意して考えると良いと思います。
-
-影響範囲
-ステートレスかステートフルか
-安定度
-ライフサイクル
-
-結果、具体的に Terraform のコードはどのような構造になるでしょうか。自分は下記のようにコンポーネント化して Terraform の実行単位を別けました。ここは人それぞれだと思いますが、ECS 本体と ECS の周辺 AWS サービスの一般的な物を考慮しつつ、いかにシンプルに構造化するかを考えると自然と下記の区分けになる気がします。
-
-  
-      
-          コンポーネント
-          具体的なリソース
-      
-  
-  
-      
-          ネットワーク
-          vpc, route table, igw, endpoint, subnet
-      
-      
-          ECS 本体
-          ecs, alb, autoscaling, cloudwatch, iam
-      
-      
-          CI/CD
-          codebuild, codepipeline, ecr, iam
-      
-      
-          パラメータ
-          ssm, kms
-      
-      
-          データストア
-          s3, rds, elasticache &hellip;
-      
-  
-
-vpc や subnet に関して頻繁に更新を掛ける人は少ないのではないでしょうか。よってネットワークは &ldquo;影響範囲&rdquo; を考慮しつつコンポーネントを別けました。また、同じ理由でパラメータ・CI/CD も ECS 本体とは実行単位を別けた方が好ましいと思います。また &ldquo;ステートフルかステートレスか&rdquo; という観点でデータベースやストレージは頻繁に更新する ECS 本体とは別けるべきでしょう。">
+<meta name="description" content="AWS ECS の Terraform コード構造化とネットワークモード、ロギング構成の設計指針">
 <meta name="author" content="jedipunkz">
 <link rel="canonical" href="https://jedipunkz.github.io/post/ecs/">
 <link crossorigin="anonymous" href="/assets/css/stylesheet.97234df0e1271d016477114a055b3d32629722d95690ff83ab2a63dfe4ada46b.css" integrity="sha256-lyNN8OEnHQFkdxFKBVs9MmKXItlWkP&#43;Dqypj3&#43;StpGs=" rel="preload stylesheet" as="style">
@@ -117,7 +76,7 @@ vpc や subnet に関して頻繁に更新を掛ける人は少ないのでは�
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "\"ECS の構成と Terraform コード化する際の構造化について\"",
-  "description": "\"こんにちは。@jedipunkz です。\\n今回は AWS ECS についてです。直近の仕事で ECS の Terraform コード開発をしていたのですがコードの構造化について考えていました。一枚岩のコードを書いても運用に耐えられるとは考えられません。また ECS を構成するにあたって ECS のネットワークモードとコンテナのロギングについて考えているうちに、どの構成が一番適しているのか？について時間を掛けて考えました。ここではそれらについてまとめたいと思います。\\nTerraform コードの構造化 運用の精神的な負担を軽減するという観点で Terraform のコード開発をする上で一番重要なのはコードの構造化だと思います。前回のブログ記事に書いたのですがコードの構造化をする上で下記に留意して考えると良いと思います。\\n影響範囲 ステートレスかステートフルか 安定度 ライフサイクル 結果、具体的に Terraform のコードはどのような構造になるでしょうか。自分は下記のようにコンポーネント化して Terraform の実行単位を別けました。ここは人それぞれだと思いますが、ECS 本体と ECS の周辺 AWS サービスの一般的な物を考慮しつつ、いかにシンプルに構造化するかを考えると自然と下記の区分けになる気がします。\\nコンポーネント 具体的なリソース ネットワーク vpc, route table, igw, endpoint, subnet ECS 本体 ecs, alb, autoscaling, cloudwatch, iam CI/CD codebuild, codepipeline, ecr, iam パラメータ ssm, kms データストア s3, rds, elasticache \\u0026hellip; vpc や subnet に関して頻繁に更新を掛ける人は少ないのではないでしょうか。よってネットワークは \\u0026ldquo;影響範囲\\u0026rdquo; を考慮しつつコンポーネントを別けました。また、同じ理由でパラメータ・CI/CD も ECS 本体とは実行単位を別けた方が好ましいと思います。また \\u0026ldquo;ステートフルかステートレスか\\u0026rdquo; という観点でデータベースやストレージは頻繁に更新する ECS 本体とは別けるべきでしょう。\\n\"",
+  "description": "\"AWS ECS の Terraform コード構造化とネットワークモード、ロギング構成の設計指針\"",
   "datePublished": "2019-10-17T18:37:36\u002b09:00",
   "dateModified": "2019-10-17T18:37:36\u002b09:00",
   "author": {
@@ -154,11 +113,7 @@ vpc や subnet に関して頻繁に更新を掛ける人は少ないのでは�
       </script><meta property="og:url" content="https://jedipunkz.github.io/post/ecs/">
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="ECS の構成と Terraform コード化する際の構造化について">
-  <meta property="og:description" content="こんにちは。@jedipunkz です。
-今回は AWS ECS についてです。直近の仕事で ECS の Terraform コード開発をしていたのですがコードの構造化について考えていました。一枚岩のコードを書いても運用に耐えられるとは考えられません。また ECS を構成するにあたって ECS のネットワークモードとコンテナのロギングについて考えているうちに、どの構成が一番適しているのか？について時間を掛けて考えました。ここではそれらについてまとめたいと思います。
-Terraform コードの構造化 運用の精神的な負担を軽減するという観点で Terraform のコード開発をする上で一番重要なのはコードの構造化だと思います。前回のブログ記事に書いたのですがコードの構造化をする上で下記に留意して考えると良いと思います。
-影響範囲 ステートレスかステートフルか 安定度 ライフサイクル 結果、具体的に Terraform のコードはどのような構造になるでしょうか。自分は下記のようにコンポーネント化して Terraform の実行単位を別けました。ここは人それぞれだと思いますが、ECS 本体と ECS の周辺 AWS サービスの一般的な物を考慮しつつ、いかにシンプルに構造化するかを考えると自然と下記の区分けになる気がします。
-コンポーネント 具体的なリソース ネットワーク vpc, route table, igw, endpoint, subnet ECS 本体 ecs, alb, autoscaling, cloudwatch, iam CI/CD codebuild, codepipeline, ecr, iam パラメータ ssm, kms データストア s3, rds, elasticache … vpc や subnet に関して頻繁に更新を掛ける人は少ないのではないでしょうか。よってネットワークは “影響範囲” を考慮しつつコンポーネントを別けました。また、同じ理由でパラメータ・CI/CD も ECS 本体とは実行単位を別けた方が好ましいと思います。また “ステートフルかステートレスか” という観点でデータベースやストレージは頻繁に更新する ECS 本体とは別けるべきでしょう。">
+  <meta property="og:description" content="AWS ECS の Terraform コード構造化とネットワークモード、ロギング構成の設計指針">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
@@ -168,48 +123,7 @@ Terraform コードの構造化 運用の精神的な負担を軽減するとい
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://jedipunkz.github.io/jedipunkz.jpg">
 <meta name="twitter:title" content="ECS の構成と Terraform コード化する際の構造化について">
-<meta name="twitter:description" content="こんにちは。@jedipunkz です。
-今回は AWS ECS についてです。直近の仕事で ECS の Terraform コード開発をしていたのですがコードの構造化について考えていました。一枚岩のコードを書いても運用に耐えられるとは考えられません。また ECS を構成するにあたって ECS のネットワークモードとコンテナのロギングについて考えているうちに、どの構成が一番適しているのか？について時間を掛けて考えました。ここではそれらについてまとめたいと思います。
-Terraform コードの構造化
-運用の精神的な負担を軽減するという観点で Terraform のコード開発をする上で一番重要なのはコードの構造化だと思います。前回のブログ記事に書いたのですがコードの構造化をする上で下記に留意して考えると良いと思います。
-
-影響範囲
-ステートレスかステートフルか
-安定度
-ライフサイクル
-
-結果、具体的に Terraform のコードはどのような構造になるでしょうか。自分は下記のようにコンポーネント化して Terraform の実行単位を別けました。ここは人それぞれだと思いますが、ECS 本体と ECS の周辺 AWS サービスの一般的な物を考慮しつつ、いかにシンプルに構造化するかを考えると自然と下記の区分けになる気がします。
-
-  
-      
-          コンポーネント
-          具体的なリソース
-      
-  
-  
-      
-          ネットワーク
-          vpc, route table, igw, endpoint, subnet
-      
-      
-          ECS 本体
-          ecs, alb, autoscaling, cloudwatch, iam
-      
-      
-          CI/CD
-          codebuild, codepipeline, ecr, iam
-      
-      
-          パラメータ
-          ssm, kms
-      
-      
-          データストア
-          s3, rds, elasticache &hellip;
-      
-  
-
-vpc や subnet に関して頻繁に更新を掛ける人は少ないのではないでしょうか。よってネットワークは &ldquo;影響範囲&rdquo; を考慮しつつコンポーネントを別けました。また、同じ理由でパラメータ・CI/CD も ECS 本体とは実行単位を別けた方が好ましいと思います。また &ldquo;ステートフルかステートレスか&rdquo; という観点でデータベースやストレージは頻繁に更新する ECS 本体とは別けるべきでしょう。">
+<meta name="twitter:description" content="AWS ECS の Terraform コード構造化とネットワークモード、ロギング構成の設計指針">
 
 
 <script type="application/ld+json">
@@ -238,7 +152,7 @@ vpc や subnet に関して頻繁に更新を掛ける人は少ないのでは�
   "@type": "BlogPosting",
   "headline": "ECS の構成と Terraform コード化する際の構造化について",
   "name": "ECS の構成と Terraform コード化する際の構造化について",
-  "description": "こんにちは。@jedipunkz です。\n今回は AWS ECS についてです。直近の仕事で ECS の Terraform コード開発をしていたのですがコードの構造化について考えていました。一枚岩のコードを書いても運用に耐えられるとは考えられません。また ECS を構成するにあたって ECS のネットワークモードとコンテナのロギングについて考えているうちに、どの構成が一番適しているのか？について時間を掛けて考えました。ここではそれらについてまとめたいと思います。\nTerraform コードの構造化 運用の精神的な負担を軽減するという観点で Terraform のコード開発をする上で一番重要なのはコードの構造化だと思います。前回のブログ記事に書いたのですがコードの構造化をする上で下記に留意して考えると良いと思います。\n影響範囲 ステートレスかステートフルか 安定度 ライフサイクル 結果、具体的に Terraform のコードはどのような構造になるでしょうか。自分は下記のようにコンポーネント化して Terraform の実行単位を別けました。ここは人それぞれだと思いますが、ECS 本体と ECS の周辺 AWS サービスの一般的な物を考慮しつつ、いかにシンプルに構造化するかを考えると自然と下記の区分けになる気がします。\nコンポーネント 具体的なリソース ネットワーク vpc, route table, igw, endpoint, subnet ECS 本体 ecs, alb, autoscaling, cloudwatch, iam CI/CD codebuild, codepipeline, ecr, iam パラメータ ssm, kms データストア s3, rds, elasticache \u0026hellip; vpc や subnet に関して頻繁に更新を掛ける人は少ないのではないでしょうか。よってネットワークは \u0026ldquo;影響範囲\u0026rdquo; を考慮しつつコンポーネントを別けました。また、同じ理由でパラメータ・CI/CD も ECS 本体とは実行単位を別けた方が好ましいと思います。また \u0026ldquo;ステートフルかステートレスか\u0026rdquo; という観点でデータベースやストレージは頻繁に更新する ECS 本体とは別けるべきでしょう。\n",
+  "description": "AWS ECS の Terraform コード構造化とネットワークモード、ロギング構成の設計指針",
   "keywords": [
     
   ],
@@ -323,6 +237,9 @@ vpc や subnet に関して頻繁に更新を掛ける人は少ないのでは�
     <h1 class="post-title">
       ECS の構成と Terraform コード化する際の構造化について
     </h1>
+    <div class="post-description">
+      AWS ECS の Terraform コード構造化とネットワークモード、ロギング構成の設計指針
+    </div>
     
   </header> 
   <div class="post-content"><p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>

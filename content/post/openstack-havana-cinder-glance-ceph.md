@@ -3,6 +3,7 @@ title = "OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携"
 date = "2014-04-04"
 slug = "2014/04/04/openstack-havana-cinder-glance-ceph"
 Categories = ["infrastructure"]
+description = "OpenStack Havana の Glance と Cinder を Ceph 分散ストレージに連携させる詳細手順"
 +++
 こんにちは！<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

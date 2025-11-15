@@ -3,6 +3,7 @@ title = "DNS の猛威とその対策, 参加レポ #interop2012"
 date = "2012-06-16"
 slug = "2012/06/16/dns-report-interop2012"
 Categories = ["infrastructure"]
+description = "Interop 2012 での DNS ポイゾニング攻撃と DNSSEC による対策についての講演レポート"
 +++
 
 interop 2012 で 'DNS の猛威とその対策' を傍聴してきました。簡単にレポート書い

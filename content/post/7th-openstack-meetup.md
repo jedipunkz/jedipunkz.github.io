@@ -3,6 +3,7 @@ title = "第7回 OpenStack 勉強会参加レポート"
 date = "2012-08-29"
 slug = "2012/08/29/7th-openstack-meetup"
 Categories = ["infrastructure", "report"]
+description = "HP Cloud Services、JuJu、Crowbar など各社の OpenStack 関連技術発表のレポート"
 +++
 第7回 OpenStack 勉強会に参加してきました。
 

@@ -3,6 +3,7 @@ title = "NetBSD インストール直後の初期設定まとめ"
 date = "2012-05-12"
 slug = "2012/05/12/netbsd-first-setup"
 Categories = ["infrastructure"]
+description = "NetBSD インストール直後のコンソール設定、pkgsrc、ユーザ設定などの初期セットアップ手順"
 +++
 普段は Mac, Linux がメインなのですが、NetBSD もたまにデスクトップ機として利用
 するので、初期設定手順をまとめ。

@@ -3,6 +3,7 @@ title = "Aviator でモダンに OpenStack を操作する"
 date = "2014-12-13"
 slug = "2014/12/13/aviator-openstack"
 Categories = ["infrastructure", "tools"]
+description = "Ruby ライブラリ Aviator による OpenStack 操作とシンタックス確認機能の紹介"
 +++
 こんにちは。@jedipunkz です。
 

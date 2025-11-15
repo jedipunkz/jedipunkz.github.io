@@ -3,6 +3,7 @@ title = "クラウドライブラリ Fog で AWS を操作！..のサンプル"
 date = "2014-05-29"
 slug = "2014/05/29/fog-aws-ec2-elb"
 Categories = ["infrastructure"]
+description = "Ruby クラウドライブラリ Fog を使った AWS EC2 と ELB 操作のサンプルコード集"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

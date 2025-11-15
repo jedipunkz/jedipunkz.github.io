@@ -3,6 +3,7 @@ title = "CoreOS etcd のクラスタとその応用性"
 date = "2013-12-09"
 slug = "2013/12/09/coreos-etcd-cluster"
 Categories = ["infrastructure"]
+description = "CoreOS の etcd クラスタ構成とクラスタエイブルな KVS データベースとしての応用方法"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

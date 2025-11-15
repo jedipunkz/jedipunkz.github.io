@@ -3,6 +3,7 @@ title = "Debian Unstable で stumpwm"
 date = "2013-08-09"
 slug = "2013/08/09/debian-unstable-stumpwm"
 Categories = ["infrastructure"]
+description = "Debian Unstable でのタイル型ウィンドウマネージャ stumpwm のビルドとセットアップ手順"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

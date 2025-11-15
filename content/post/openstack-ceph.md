@@ -3,6 +3,7 @@ title = "OpenStack + Ceph 連携"
 date = "2013-05-19"
 slug = "2013/05/19/openstack-ceph"
 Categories = ["infrastructure"]
+description = "OpenStack の Cinder と Glance を Ceph 分散ストレージに連携させる構成と手順"
 +++
 こんにちは。最近 OpenStack の導入に向けて保守性や可用性について調査している
 <a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。

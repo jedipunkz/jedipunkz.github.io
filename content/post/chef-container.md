@@ -3,6 +3,7 @@ title = "Chef-Container Beta を使ってみる"
 date = "2014-07-16"
 slug = "2014/07/16/chef-container"
 Categories = ["infrastructure"]
+description = "Chef-Container を使った Docker コンテナへの Chef デプロイ方法と chef-init の仕組み"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

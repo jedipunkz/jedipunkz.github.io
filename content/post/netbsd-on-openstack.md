@@ -3,6 +3,7 @@ title = "NetBSD on OpenStack"
 date = "2013-03-28"
 slug = "2013/03/28/netbsd-on-openstack"
 Categories = ["infrastructure"]
+description = "OpenStack Folsom の KVM ハイパーバイザ上で NetBSD を動作させる方法と注意点"
 +++
 もう数日で OpenStack の次期バージョン版 Grizzly がリリースされるタイミングだが
 現行バージョン Folsom の OpenStack の上に NetBSD を載せてみた。完全にお遊び

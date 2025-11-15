@@ -1,6 +1,6 @@
 +++
 author = ""
-description = ""
+description = "Kubernetes 1.4 で alpha 実装された cron 的なバッチ処理を行う ScheduledJob の使用方法"
 featured = ""
 featuredpath = ""
 title = "kubernetes1.4 で実装された ScheduledJob を試してみた！"

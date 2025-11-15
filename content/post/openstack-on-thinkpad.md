@@ -3,6 +3,7 @@ title = "OpenStack Folsom on Thinkpad"
 date = "2013-01-12"
 slug = "2013/01/12/openstack-on-thinkpad"
 Categories = ["infrastructure"]
+description = "Thinkpad に OpenStack Folsom を bash スクリプトでインストールする手順と設定"
 +++
 以前紹介した OpenStack Folsom 構築 bash スクリプトなのだけど quantum の代わり
 に nova-network も使えるようにしておいた。

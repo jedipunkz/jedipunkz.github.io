@@ -1,5 +1,5 @@
 +++
-description = "coreos が最近アナウンスした etcd operator を触ってみた"
+description = "CoreOS の etcd-operator を使った Kubernetes 上での etcd クラスタ管理と運用方法"
 linktitle = ""
 featured = ""
 categories = ["infrastructure"]

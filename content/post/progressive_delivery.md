@@ -2,6 +2,7 @@
 title: "ECS 以後の構成と Progressive Delivery の調査"
 date: 2021-11-11T17:28:46+09:00
 Categories: ["infrastructure"]
+description: "AWS ECS 移行後の次世代アーキテクチャとして Progressive Delivery の技術調査と検証"
 draft: false
 ---
 こんにちは。[jedipunkz](https://twitter.com/jedipunkz) です。

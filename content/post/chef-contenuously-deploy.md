@@ -3,6 +3,7 @@ title = "chef-client の継続的デリバリ"
 date = "2013-03-15"
 slug = "2013/03/15/chef-contenuously-deploy"
 Categories = ["infrastructure"]
+description = "Chef10 から Chef11 への移行手順と knife bootstrap による chef-client の継続的アップデート方法"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

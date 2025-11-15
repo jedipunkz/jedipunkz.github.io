@@ -2,6 +2,7 @@
 title: "Go, OpenTelemetry で AWS にログ・トレースを計装してみる"
 date: 2024-01-14T00:23:37+09:00
 Categories: ["infrastructure"]
+description: "Go アプリケーションと OpenTelemetry を使って AWS X-Ray と CloudWatch Logs にログとトレースを計装する方法"
 ---
 OpenTelemetry を使って AWS (X-Ray, Cloudwatch Logs) にトレースとログを計装する事に興味があったので調べた内容を記そうと思います。
 

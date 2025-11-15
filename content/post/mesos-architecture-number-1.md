@@ -3,6 +3,7 @@ title = "Mesos アーキテクチャ #1"
 date = "2013-09-28"
 slug = "2013/09/28/mesos-architecture-number-1"
 Categories = ["infrastructure"]
+description = "Apache Mesos のクラスタマネージャとしてのアーキテクチャと全体構造の解説"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

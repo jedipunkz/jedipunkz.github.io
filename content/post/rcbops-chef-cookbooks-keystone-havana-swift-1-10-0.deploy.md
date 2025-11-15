@@ -3,6 +3,7 @@ title = "rcbops/chef-cookbooks で Keystone 2013.2.2(Havana) + Swift 1.10.0 を�
 date = "2014-03-16"
 slug = "2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0.deploy"
 Categories = ["infrastructure"]
+description = "rcbops/chef-cookbooks を使った OpenStack Keystone Havana と Swift 1.10.0 構成の構築手順"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

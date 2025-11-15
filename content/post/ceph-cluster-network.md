@@ -3,6 +3,7 @@ title = "Ceph クラスターネットワーク構成"
 date = "2013-05-25"
 slug = "2013/05/25/ceph-cluster-network"
 Categories = ["infrastructure"]
+description = "OSD レプリケーション専用のクラスターネットワークを使った Ceph のベストプラクティス構成"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

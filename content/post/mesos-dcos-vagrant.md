@@ -2,7 +2,7 @@
 author = ""
 categories = ["infrastructure"]
 date = "2016-06-21T17:05:25+09:00"
-description = ""
+description = "Vagrant を使った Mesosphere DC/OS のデータセンタ OS 環境構築と評価"
 featured = ""
 featuredalt = ""
 featuredpath = ""

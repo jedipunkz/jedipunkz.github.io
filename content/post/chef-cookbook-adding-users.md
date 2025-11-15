@@ -3,6 +3,7 @@ title = "Chef Cookbook でユーザ・グループ追加"
 date = "2013-05-18"
 slug = "2013/05/18/chef-cookbook-adding-users"
 Categories = ["infrastructure"]
+description = "users Cookbook と data_bags を使った Chef でのユーザ・グループ追加管理方法"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 今回は Opscode Chef でユーザ・グループを作成する方法をまとめます。

@@ -3,6 +3,7 @@ title = "chef-solo で学ぶ chef の基本動作"
 date = "2012-08-18"
 slug = "2012/08/18/chef-solo"
 Categories = ["infrastructure"]
+description = "chef-solo を使った Chef の基本動作と Cookbook、Recipe の作成方法の入門"
 +++
 仕事で Opesocd Chef の情報収集をしてたのですが、僕が感じるにこれはインフラエン
 ジニアの未来だと。逆に言うとインフラエンジニアの危機。AWS のようなクラウドサー

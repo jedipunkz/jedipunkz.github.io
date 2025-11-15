@@ -3,6 +3,7 @@ title = "OpenStack Havana を Chef でデプロイ"
 date = "2013-11-17"
 slug = "2013/11/17/openstack-havana-chef-deploy"
 Categories = ["infrastructure"]
+description = "rcbops/chef-cookbooks を使った OpenStack Havana の自動デプロイ手順と4ネットワーク構成"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

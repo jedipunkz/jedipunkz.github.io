@@ -3,6 +3,7 @@ title = "Chef 11 サーバのローカルネットワーク上構築"
 date = "2013-04-06"
 slug = "2013/04/06/chef-11-private-network"
 Categories = ["infrastructure"]
+description = "FQDN ではなく IP アドレスでアクセス可能な Chef 11 サーバのローカルネットワーク構築手順"
 +++
 chef-solo を使うの？Chef サーバを使うの？という議論は結構前からあるし、答えは
 「それぞれの環境次第」だと思うのだが、僕は個人的に Chef サーバを使ってます。ホ

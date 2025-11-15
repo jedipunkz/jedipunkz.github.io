@@ -3,6 +3,7 @@ title = "Ceph のプロセス配置ベストプラクティス"
 date = "2014-01-29"
 slug = "2014/01/29/ceph-process-best-practice"
 Categories = ["infrastructure"]
+description = "Ceph の mon、osd、mds プロセス配置と SSD journal の構成ベストプラクティス"
 +++
 
 Ceph はブロック型の分散ストレージファイルシステムです。POSIX のファイルシステ

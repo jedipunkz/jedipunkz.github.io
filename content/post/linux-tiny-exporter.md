@@ -2,6 +2,7 @@
 title: "自前開発した Prometheus Exporter で自宅ルータのメトリクス監視運用している話"
 date: 2024-01-13T22:28:22+09:00
 Categories: ["infrastructure"]
+description: "Go で自作した Prometheus Exporter による自宅ルータの CPU、メモリ、ネットワーク、温度監視"
 ---
 自宅のルータについても可観測性を向上して普段の運用に役立てています。例えば長期スパンでのネットワーク通信料の推移や CPU, Mem 使用率、あとハードウェアの温度の推移などを観測しています。
 

@@ -3,6 +3,7 @@ title: "ECR 脆弱性スキャン結果表示 CLI の開発と Datadog プロッ
 date: 2022-04-30T13:56:56+09:00
 Categories: ["infrastructure"]
 draft: false
+description: "Go 言語で ECR 脆弱性スキャン結果を取得する CLI とDatadog カスタムメトリクス送信の実装"
 ---
 こんにちは。[jedipunkz🚀](https://twitter.com/jedipunkz) です。
 

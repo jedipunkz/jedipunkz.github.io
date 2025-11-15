@@ -3,6 +3,7 @@ title = "Ceph-Deploy で Ceph 分散ストレージ構築"
 date = "2013-05-11"
 slug = "2013/05/11/ceph-deploy"
 Categories = ["infrastructure"]
+description = "ceph-deploy ツールを使った Ceph 分散ストレージの簡単構築手順とマウント方法"
 +++
 今回は ceph-deploy というツールを使って Ceph ストレージを簡単に構築することが
 出来るので紹介します。Ceph は分散ストレージでオブジェクトストレージとしてもブ

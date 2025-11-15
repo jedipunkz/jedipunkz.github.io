@@ -3,6 +3,7 @@ title = "Mesos + Marathon + Deimos + Docker を試してみた!"
 date = "2014-06-13"
 slug = "2014/06/13/mesos-marathon-deimos-docker"
 Categories = ["infrastructure"]
+description = "Mesos の Docker プラグイン Deimos と Marathon を使ったコンテナオーケストレーション"
 +++
 こんにちは。@jedipunkz です。
 

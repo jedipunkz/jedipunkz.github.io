@@ -3,6 +3,7 @@ title: "k8s コンテナをインクリメンタルサーチ&ログインする 
 date: 2023-06-16T23:28:09+09:00
 Categories: ["infrastructure"]
 draft: false
+description: "Go 言語で開発した Kubernetes ポッドとコンテナのインクリメンタルサーチログイン kubectl プラグイン"
 ---
 こんにちは。[jedipunkz](https://twitter.com/jedipunkz) です。
 

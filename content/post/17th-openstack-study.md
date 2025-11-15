@@ -3,6 +3,7 @@ title = "第17回 OpenStack 勉強会で話してきました"
 date = "2014-01-21"
 slug = "2014/01/21/17th-openstack-study"
 Categories = ["infrastructure", "report"]
+description = "rcbops/chef-cookbooks による OpenStack デプロイについての勉強会発表レポート"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

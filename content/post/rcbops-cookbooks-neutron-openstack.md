@@ -3,6 +3,7 @@ title = "rcbops Cookbooks で Neutron 構成 OpenStack"
 date = "2013-08-16"
 slug = "2013/08/16/rcbops-cookbooks-neutron-openstack"
 Categories = ["infrastructure"]
+description = "rcbops Cookbooks を使った Neutron VLAN モード構成の OpenStack デプロイ手順"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

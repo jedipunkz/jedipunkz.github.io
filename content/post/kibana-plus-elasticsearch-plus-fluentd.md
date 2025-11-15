@@ -3,6 +3,7 @@ title = "Kibana + ElasticSearch + fluentd を試してみた"
 date = "2013-09-07"
 slug = "2013/09/07/kibana-plus-elasticsearch-plus-fluentd"
 Categories = ["infrastructure"]
+description = "Kibana、ElasticSearch、fluentd を組み合わせたログ解析システムの構築手順"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

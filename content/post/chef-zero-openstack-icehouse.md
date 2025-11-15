@@ -3,6 +3,7 @@ title = "Chef-Zero でお手軽に OpenStack Icehouse を作る"
 date = "2014-11-15"
 slug = "2014/11/15/chef-zero-openstack-icehouse"
 Categories = ["infrastructure"]
+description = "Chef-Zero と openstack-chef-repo を使った OpenStack Icehouse Neutron 構成の構築手順"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

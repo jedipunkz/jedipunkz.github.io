@@ -2,6 +2,7 @@
 title: "マルチクラウド対応 SDK の Pulumi を使って Kubernetes を操作"
 date: 2019-11-26T01:27:22+09:00
 Categories: ["infrastructure"]
+description: "プログラミング言語でインフラを定義できるマルチクラウド対応 SDK Pulumi を使った Kubernetes 操作"
 ---
 こんにちは。@jedipunkz です。
 

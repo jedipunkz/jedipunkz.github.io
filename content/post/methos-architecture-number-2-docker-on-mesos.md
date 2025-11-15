@@ -3,6 +3,7 @@ title = "Methos アーキテクチャ #2 (Docker on Mesos)"
 date = "2013-10-01"
 slug = "2013/10/01/methos-architecture-number-2-docker-on-mesos"
 Categories = ["infrastructure"]
+description = "Mesos と Marathon、Docker を組み合わせたコンテナクラスタ構成のアーキテクチャ解説"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

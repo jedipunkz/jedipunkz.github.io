@@ -3,6 +3,7 @@ title = "cAdvisor/influxDB/GrafanaでDockerリソース監視"
 date = "2015-09-12"
 slug = "2015/09/12/cadvisor-influxdb-grafana-docker"
 Categories = ["infrastructure"]
+description = "cAdvisor、influxDB、Grafana を使った Docker コンテナのリソース監視環境構築"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

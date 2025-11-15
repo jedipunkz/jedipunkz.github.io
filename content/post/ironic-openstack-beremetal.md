@@ -3,6 +3,7 @@ title = "Ironic でベアメタル OpenStack ！..の一歩手前"
 date = "2013-12-05"
 slug = "2013/12/05/ironic-openstack-beremetal"
 Categories = ["infrastructure"]
+description = "OpenStack Ironic を使ったベアメタルサーバ管理の incubator プロジェクト調査レポート"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

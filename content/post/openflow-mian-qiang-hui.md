@@ -3,6 +3,7 @@ title = "OpenFlow 勉強会"
 date = "2012-03-07"
 slug = "2012/03/07/openflow-mian-qiang-hui"
 Categories = ["infrastructure"]
+description = "西新宿ニフティで開催された OpenFlow 勉強会の参加レポートと基本動作の解説"
 +++
 2012年2月6日、西新宿にある株式会社ニフティさんで行われた "OpenFlow 勉強会" に参加したので簡単なレポメモを書いておきます。
 

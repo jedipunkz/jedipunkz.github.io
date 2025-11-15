@@ -3,6 +3,7 @@ title = "openstack-chef-repo で OpenStack 複数台構成をデプロイ"
 date = "2013-08-06"
 slug = "2013/08/06/opscode-cookbooks-openstack-deploy"
 Categories = ["infrastructure"]
+description = "Opscode/Stackforge の openstack-chef-repo を使った OpenStack 複数台構成の自動デプロイ手順"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

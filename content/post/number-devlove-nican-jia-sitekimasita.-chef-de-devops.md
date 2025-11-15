@@ -3,6 +3,7 @@ title = "#DevLOVE に参加してきました。Chef De DevOps"
 date = "2012-07-22"
 slug = "2012/07/22/number-devlove-nican-jia-sitekimasita.-chef-de-devops"
 Categories = ["infrastructure"]
+description = "大崎で開催された DevLOVE イベント「Chef De DevOps」の参加レポート"
 +++
 2012年07月21日に大崎のフィーチャーアーキテクトさんで行われた #DevLOVE (Chef De
 DevOps) に参加してきました。

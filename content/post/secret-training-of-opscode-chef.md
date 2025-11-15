@@ -3,6 +3,7 @@ title = "Secret Training of Opscode Chef"
 date = "2012-10-06"
 slug = "2012/10/06/secret-training-of-opscode-chef"
 Categories = ["infrastructure", "report"]
+description = "Opscode Chef のシークレットトレーニングの参加レポートとハンズオン内容の紹介"
 +++
 昨日、開かれた "Opscode Chef のシークレットトレーニング" に参加してきました。
 

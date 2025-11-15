@@ -3,6 +3,7 @@ title = "Berkshelf で Chef Cookbook の管理"
 date = "2013-03-17"
 slug = "2013/03/17/berkshelf-chef-cookbook-manage"
 Categories = ["infrastructure"]
+description = "Berkshelf による Chef Cookbook の依存関係管理とバージョン指定方法"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

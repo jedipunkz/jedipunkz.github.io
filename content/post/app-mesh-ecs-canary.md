@@ -3,6 +3,7 @@ title: "App Mesh と ECS によるカナリーリリース構成を検証して�
 date: 2021-12-10T13:56:56+09:00
 Categories: ["infrastructure"]
 draft: false
+description: "AWS App Mesh と ECS を使ったカナリーリリース構成の検証と荷重ルーティング実装方法"
 ---
 こんにちは。[jedipunkz🚀](https://twitter.com/jedipunkz) です。
 

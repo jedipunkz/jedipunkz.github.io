@@ -3,6 +3,7 @@ title = "Chef で OpenStack デプロイ"
 date = "2013-07-08"
 slug = "2013/07/08/chef-openstack-deploy"
 Categories = ["infrastructure"]
+description = "RackSpace の Chef Cookbooks を使った OpenStack Grizzly のオールインワン構成デプロイ"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

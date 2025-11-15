@@ -2,7 +2,7 @@
 linktitle = "Helm を使って Kubernetes を管理する"
 featured = ""
 categories = ["infrastructure"]
-description = ""
+description = "Kubernetes パッケージマネージャ Helm を使った Pod と Service の管理方法"
 date = "2016-11-20T11:27:00+09:00"
 featuredpath = ""
 featuredalt = ""

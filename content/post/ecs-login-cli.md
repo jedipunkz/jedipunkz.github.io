@@ -3,6 +3,7 @@ title: "ECS コンテナにログインする CLI を Go 言語で作った話"
 date: 2022-02-05T00:00:27+09:00
 Categories: ["infrastructure", "go"]
 draft: false
+description: "Go 言語と aws-sdk-go を使った ECS Execute 機能によるコンテナログイン CLI の開発"
 ---
 こんにちは [@jedipunkz](https://twitter.com/jedipunkz) 🚀 です。
 

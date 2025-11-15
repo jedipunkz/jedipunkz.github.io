@@ -3,6 +3,7 @@ title = "OpenStack Grizzy で非 Virtio OS 稼働"
 date = "2013-04-21"
 slug = "2013/04/21/openstack-non-virtio"
 Categories = ["infrastructure"]
+description = "OpenStack Grizzly で Virtio 非対応の OS イメージを稼働させる Glance の設定方法"
 +++
 こんにちは jedipunkz です。
 

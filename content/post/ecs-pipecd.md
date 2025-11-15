@@ -3,6 +3,7 @@ title: "ECS + PipeCD + Datadog でプログレッシブデリバリーを実現"
 date: 2022-08-10T09:11:04+09:00
 Categories: ["infrastructure"]
 draft: false
+description: "PipeCD と Datadog を使った ECS 環境でのプログレッシブデリバリー実現方法と ANALYSIS 機能"
 ---
 こんにちは [@jedipunkz](https://twitter.com/jedipunkz) 🚀 です。
 

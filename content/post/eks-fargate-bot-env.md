@@ -3,6 +3,7 @@ title: "EKS/Fargate + ArgoCD でボット環境 GitOps 化"
 date: 2020-12-27T00:49:51+09:00
 Categories: ["infrastructure"]
 draft: false
+description: "EKS/Fargate と ArgoCD を使った Slack ボット環境の GitOps 化と構成管理"
 ---
 こんにちは。[jedipunkz](https://twitter.com/jedipunkz) です。
 

@@ -3,6 +3,7 @@ title = "DevOps Day Tokyo 2013 参加レポート"
 date = "2013-09-29"
 slug = "2013/09/29/devops-day-tokyo-2013-report"
 Categories = ["infrastructure", "report"]
+description = "DevOps Day Tokyo 2013 での Nick Galbreath 氏らによる DevOps 実践の講演レポート"
 +++
 こんにちは。@jedipunkz です。
 

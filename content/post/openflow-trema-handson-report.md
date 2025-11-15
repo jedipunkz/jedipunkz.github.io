@@ -3,6 +3,7 @@ title = "OpenFlow Trema ハンズオン参加レポート"
 date = "2012-11-21"
 slug = "2012/11/21/openflow-trema-handson-report"
 Categories = ["infrastructure"]
+description = "InternetWeek2012 の OpenFlow Trema ハンズオンの参加レポートと Ruby によるネットワークコード化"
 +++
 InternetWeek2012 で開かれた "OpenFlow Trema ハンズオン" に参加してきました。
 

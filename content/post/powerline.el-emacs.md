@@ -3,6 +3,7 @@ title = "powerline.el で emacs モードラインを派手に"
 date = "2012-05-04"
 slug = "2012/05/04/powerline.el-emacs"
 Categories = ["infrastructure"]
+description = "vim の powerline を模した emacs モードライン拡張 powerline.el のインストールと設定"
 +++
 [http://www.emacswiki.org/emacs-en/PowerLine](http://www.emacswiki.org/emacs-en/PowerLine)
 

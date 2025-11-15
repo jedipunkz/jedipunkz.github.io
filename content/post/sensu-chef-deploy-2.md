@@ -3,6 +3,7 @@ title = "sensu-chef で監視システム Sensu を管理 #2"
 date = "2013-11-27"
 slug = "2013/11/27/sensu-chef-deploy-2"
 Categories = ["infrastructure"]
+description = "更新された sensu-chef Cookbook を使った Sensu 監視システムの簡易管理方法"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

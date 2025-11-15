@@ -2,7 +2,7 @@
 author = ""
 categories = ["infrastructure"]
 date = "2016-07-23T02:40:11+09:00"
-description = ""
+description = "Go 言語と InfluxDB Client、gopsutil を使ったサーバメトリクス監視のコード化"
 featured = ""
 featuredalt = ""
 featuredpath = ""

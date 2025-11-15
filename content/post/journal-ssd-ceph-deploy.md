@@ -3,6 +3,7 @@ title = "Journal 用 SSD を用いた Ceph 構成の構築"
 date = "2014-02-27"
 slug = "2014/02/27/journal-ssd-ceph-deploy"
 Categories = ["infrastructure"]
+description = "HDD と SSD を組み合わせた Ceph の journal 専用 SSD 構成とベストプラクティス"
 +++
 こんにちは、@jedipunkz です。
 

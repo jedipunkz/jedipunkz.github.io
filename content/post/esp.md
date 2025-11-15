@@ -3,6 +3,7 @@ title: "自前ツールと Cloudwatch 高解像度メトリクスを使ったよ
 date: 2023-03-24T14:54:11+09:00
 Categories: ["infrastructure"]
 draft: false
+description: "Cloudwatch 高解像度メトリクスと自作ツールによる ECS の高速オートスケール実現方法"
 ---
 こんにちは [@jedipunkz](https://twitter.com/jedipunkz) 🚀 です。
 

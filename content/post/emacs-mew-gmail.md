@@ -3,6 +3,7 @@ title = "Emacs + Mew で Gmail を読み書きする"
 date = "2013-08-12"
 slug = "2013/08/12/emacs-mew-gmail"
 Categories = ["tools"]
+description = "Emacs と Mew、stunnel4 を使った Gmail の読み書き設定手順"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

@@ -3,6 +3,7 @@ title = "Chronograf, Telegraf, Influxdbでサーバとコンテナ情報を可�
 date = "2015-12-28"
 slug = "2015/12/28/chronograf-telegraf-influxdb"
 Categories = ["infrastructure"]
+description = "Chronograf、Telegraf、Influxdb を使ったサーバと Docker コンテナのメトリクス可視化"
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

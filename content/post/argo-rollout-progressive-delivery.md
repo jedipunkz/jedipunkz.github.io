@@ -3,6 +3,7 @@ title: "手軽にローカルで Argo Rollouts, Istio, Prometheus で Progressiv
 date: 2023-06-03T05:55:09+09:00
 Categories: ["infrastructure"]
 draft: false
+description: "Argo Rollouts、Istio、Prometheus を使った Progressive Delivery のローカル検証手順"
 ---
 こんにちは。[jedipunkz🚀](https://twitter.com/jedipunkz) です。
 
