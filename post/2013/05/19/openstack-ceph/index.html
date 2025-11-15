@@ -7,41 +7,7 @@
 <meta name="robots" content="index, follow">
 <title>OpenStack &#43; Ceph 連携 | jedipunkz 🚀 のブログ</title>
 <meta name="keywords" content="">
-<meta name="description" content="こんにちは。最近 OpenStack の導入に向けて保守性や可用性について調査している
-@jedipunkz です。
-OpenStack は MySQL のダンプや OS イメージ・スナップショットのバックアップをとっ
-ておけばコントローラの復旧も出来ますし、Grizzly 版の Quantum では冗長や分散が
-取れるので障害時に耐えられます。また Quantum の復旧は手動もで可能です。最後の
-悩みだった Cinder の接続先ストレージですが、OpenStack のスタンスとしては高価な
-ストレージの機能を使ってバックアップ取るか、Ceph, SheepDog のようなオープンソー
-スを使うか、でした。で、今回は Ceph を OpenStack に連携させようと思いました。
-この作業により Cinder の接続先ストレージが Ceph になるのと Glance の OS イメー
-ジ・スナップショットの保管先が Ceph になります。
-下記の参考資料が完成度高く、ほぼ内容はそのままです。若干付け足していますが。
-参考資料
-http://ceph.com/docs/master/rbd/rbd-openstack/
-前提の構成
-&#43;-------------&#43;-------------&#43;--------------------------------------------- Public/API Network
-|             |             |             
-&#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43;
-|           | |           | |vm|vm|..   | |           | |           | |           |
-| controller| |  network  | &#43;-----------&#43; |  ceph01   | |  ceph01   | |  ceph01   |
-|           | |           | |  compute  | |           | |           | |           |
-|           | |           | |           | |           | |           | |           |
-&#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43;
-|             |     |       |     |       |             |             |
-&#43;-------------&#43;-----)-------&#43;-----)-------&#43;-------------&#43;-------------&#43;-- Management/API Network
-                    |             |                       
-                    &#43;-------------&#43;-----------------------------------&#43;-- Data Network
-
-
-Ceph は OpenStack の Management Network 上に配置
-Ceph は3台構成 (何台でも可)
-OpenStack も3台構成 (何台でも可)
-連携処理するのは controller, compute ノード
-
-では早速手順ですが、OpenStack と Ceph の構築手順は割愛します。私の他の記事を参
-考にしていただければと思います。">
+<meta name="description" content="OpenStack の Cinder と Glance を Ceph 分散ストレージに連携させる構成と手順">
 <meta name="author" content="jedipunkz">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2013/05/19/openstack-ceph/">
 <link crossorigin="anonymous" href="/assets/css/stylesheet.97234df0e1271d016477114a055b3d32629722d95690ff83ab2a63dfe4ada46b.css" integrity="sha256-lyNN8OEnHQFkdxFKBVs9MmKXItlWkP&#43;Dqypj3&#43;StpGs=" rel="preload stylesheet" as="style">
@@ -110,7 +76,7 @@ OpenStack も3台構成 (何台でも可)
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "\"OpenStack + Ceph 連携\"",
-  "description": "\"こんにちは。最近 OpenStack の導入に向けて保守性や可用性について調査している @jedipunkz です。\\nOpenStack は MySQL のダンプや OS イメージ・スナップショットのバックアップをとっ ておけばコントローラの復旧も出来ますし、Grizzly 版の Quantum では冗長や分散が 取れるので障害時に耐えられます。また Quantum の復旧は手動もで可能です。最後の 悩みだった Cinder の接続先ストレージですが、OpenStack のスタンスとしては高価な ストレージの機能を使ってバックアップ取るか、Ceph, SheepDog のようなオープンソー スを使うか、でした。で、今回は Ceph を OpenStack に連携させようと思いました。\\nこの作業により Cinder の接続先ストレージが Ceph になるのと Glance の OS イメー ジ・スナップショットの保管先が Ceph になります。\\n下記の参考資料が完成度高く、ほぼ内容はそのままです。若干付け足していますが。\\n参考資料 http://ceph.com/docs/master/rbd/rbd-openstack/\\n前提の構成 +-------------+-------------+--------------------------------------------- Public/API Network | | | +-----------+ +-----------+ +-----------+ +-----------+ +-----------+ +-----------+ | | | | |vm|vm|.. | | | | | | | | controller| | network | +-----------+ | ceph01 | | ceph01 | | ceph01 | | | | | | compute | | | | | | | | | | | | | | | | | | | +-----------+ +-----------+ +-----------+ +-----------+ +-----------+ +-----------+ | | | | | | | | +-------------+-----)-------+-----)-------+-------------+-------------+-- Management/API Network | | +-------------+-----------------------------------+-- Data Network Ceph は OpenStack の Management Network 上に配置 Ceph は3台構成 (何台でも可) OpenStack も3台構成 (何台でも可) 連携処理するのは controller, compute ノード では早速手順ですが、OpenStack と Ceph の構築手順は割愛します。私の他の記事を参 考にしていただければと思います。\\n\"",
+  "description": "\"OpenStack の Cinder と Glance を Ceph 分散ストレージに連携させる構成と手順\"",
   "datePublished": "2013-05-19T00:00:00Z",
   "dateModified": "2013-05-19T00:00:00Z",
   "author": {
@@ -147,12 +113,7 @@ OpenStack も3台構成 (何台でも可)
       </script><meta property="og:url" content="https://jedipunkz.github.io/post/2013/05/19/openstack-ceph/">
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="OpenStack &#43; Ceph 連携">
-  <meta property="og:description" content="こんにちは。最近 OpenStack の導入に向けて保守性や可用性について調査している @jedipunkz です。
-OpenStack は MySQL のダンプや OS イメージ・スナップショットのバックアップをとっ ておけばコントローラの復旧も出来ますし、Grizzly 版の Quantum では冗長や分散が 取れるので障害時に耐えられます。また Quantum の復旧は手動もで可能です。最後の 悩みだった Cinder の接続先ストレージですが、OpenStack のスタンスとしては高価な ストレージの機能を使ってバックアップ取るか、Ceph, SheepDog のようなオープンソー スを使うか、でした。で、今回は Ceph を OpenStack に連携させようと思いました。
-この作業により Cinder の接続先ストレージが Ceph になるのと Glance の OS イメー ジ・スナップショットの保管先が Ceph になります。
-下記の参考資料が完成度高く、ほぼ内容はそのままです。若干付け足していますが。
-参考資料 http://ceph.com/docs/master/rbd/rbd-openstack/
-前提の構成 &#43;-------------&#43;-------------&#43;--------------------------------------------- Public/API Network | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | |vm|vm|.. | | | | | | | | controller| | network | &#43;-----------&#43; | ceph01 | | ceph01 | | ceph01 | | | | | | compute | | | | | | | | | | | | | | | | | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | | | &#43;-------------&#43;-----)-------&#43;-----)-------&#43;-------------&#43;-------------&#43;-- Management/API Network | | &#43;-------------&#43;-----------------------------------&#43;-- Data Network Ceph は OpenStack の Management Network 上に配置 Ceph は3台構成 (何台でも可) OpenStack も3台構成 (何台でも可) 連携処理するのは controller, compute ノード では早速手順ですが、OpenStack と Ceph の構築手順は割愛します。私の他の記事を参 考にしていただければと思います。">
+  <meta property="og:description" content="OpenStack の Cinder と Glance を Ceph 分散ストレージに連携させる構成と手順">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
@@ -162,41 +123,7 @@ OpenStack は MySQL のダンプや OS イメージ・スナップショット�
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://jedipunkz.github.io/jedipunkz.jpg">
 <meta name="twitter:title" content="OpenStack &#43; Ceph 連携">
-<meta name="twitter:description" content="こんにちは。最近 OpenStack の導入に向けて保守性や可用性について調査している
-@jedipunkz です。
-OpenStack は MySQL のダンプや OS イメージ・スナップショットのバックアップをとっ
-ておけばコントローラの復旧も出来ますし、Grizzly 版の Quantum では冗長や分散が
-取れるので障害時に耐えられます。また Quantum の復旧は手動もで可能です。最後の
-悩みだった Cinder の接続先ストレージですが、OpenStack のスタンスとしては高価な
-ストレージの機能を使ってバックアップ取るか、Ceph, SheepDog のようなオープンソー
-スを使うか、でした。で、今回は Ceph を OpenStack に連携させようと思いました。
-この作業により Cinder の接続先ストレージが Ceph になるのと Glance の OS イメー
-ジ・スナップショットの保管先が Ceph になります。
-下記の参考資料が完成度高く、ほぼ内容はそのままです。若干付け足していますが。
-参考資料
-http://ceph.com/docs/master/rbd/rbd-openstack/
-前提の構成
-&#43;-------------&#43;-------------&#43;--------------------------------------------- Public/API Network
-|             |             |             
-&#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43;
-|           | |           | |vm|vm|..   | |           | |           | |           |
-| controller| |  network  | &#43;-----------&#43; |  ceph01   | |  ceph01   | |  ceph01   |
-|           | |           | |  compute  | |           | |           | |           |
-|           | |           | |           | |           | |           | |           |
-&#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43;
-|             |     |       |     |       |             |             |
-&#43;-------------&#43;-----)-------&#43;-----)-------&#43;-------------&#43;-------------&#43;-- Management/API Network
-                    |             |                       
-                    &#43;-------------&#43;-----------------------------------&#43;-- Data Network
-
-
-Ceph は OpenStack の Management Network 上に配置
-Ceph は3台構成 (何台でも可)
-OpenStack も3台構成 (何台でも可)
-連携処理するのは controller, compute ノード
-
-では早速手順ですが、OpenStack と Ceph の構築手順は割愛します。私の他の記事を参
-考にしていただければと思います。">
+<meta name="twitter:description" content="OpenStack の Cinder と Glance を Ceph 分散ストレージに連携させる構成と手順">
 
 
 <script type="application/ld+json">
@@ -225,7 +152,7 @@ OpenStack も3台構成 (何台でも可)
   "@type": "BlogPosting",
   "headline": "OpenStack + Ceph 連携",
   "name": "OpenStack \u002b Ceph 連携",
-  "description": "こんにちは。最近 OpenStack の導入に向けて保守性や可用性について調査している @jedipunkz です。\nOpenStack は MySQL のダンプや OS イメージ・スナップショットのバックアップをとっ ておけばコントローラの復旧も出来ますし、Grizzly 版の Quantum では冗長や分散が 取れるので障害時に耐えられます。また Quantum の復旧は手動もで可能です。最後の 悩みだった Cinder の接続先ストレージですが、OpenStack のスタンスとしては高価な ストレージの機能を使ってバックアップ取るか、Ceph, SheepDog のようなオープンソー スを使うか、でした。で、今回は Ceph を OpenStack に連携させようと思いました。\nこの作業により Cinder の接続先ストレージが Ceph になるのと Glance の OS イメー ジ・スナップショットの保管先が Ceph になります。\n下記の参考資料が完成度高く、ほぼ内容はそのままです。若干付け足していますが。\n参考資料 http://ceph.com/docs/master/rbd/rbd-openstack/\n前提の構成 +-------------+-------------+--------------------------------------------- Public/API Network | | | +-----------+ +-----------+ +-----------+ +-----------+ +-----------+ +-----------+ | | | | |vm|vm|.. | | | | | | | | controller| | network | +-----------+ | ceph01 | | ceph01 | | ceph01 | | | | | | compute | | | | | | | | | | | | | | | | | | | +-----------+ +-----------+ +-----------+ +-----------+ +-----------+ +-----------+ | | | | | | | | +-------------+-----)-------+-----)-------+-------------+-------------+-- Management/API Network | | +-------------+-----------------------------------+-- Data Network Ceph は OpenStack の Management Network 上に配置 Ceph は3台構成 (何台でも可) OpenStack も3台構成 (何台でも可) 連携処理するのは controller, compute ノード では早速手順ですが、OpenStack と Ceph の構築手順は割愛します。私の他の記事を参 考にしていただければと思います。\n",
+  "description": "OpenStack の Cinder と Glance を Ceph 分散ストレージに連携させる構成と手順",
   "keywords": [
     
   ],
@@ -310,6 +237,9 @@ OpenStack も3台構成 (何台でも可)
     <h1 class="post-title">
       OpenStack &#43; Ceph 連携
     </h1>
+    <div class="post-description">
+      OpenStack の Cinder と Glance を Ceph 分散ストレージに連携させる構成と手順
+    </div>
     
   </header> 
   <div class="post-content"><p>こんにちは。最近 OpenStack の導入に向けて保守性や可用性について調査している
