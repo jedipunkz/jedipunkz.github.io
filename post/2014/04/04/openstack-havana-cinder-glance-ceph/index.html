@@ -7,40 +7,7 @@
 <meta name="robots" content="index, follow">
 <title>OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携 | jedipunkz 🚀 のブログ</title>
 <meta name="keywords" content="">
-<meta name="description" content="こんにちは！@jedipunkz です。
-今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ
-る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。
-https://ceph.com/docs/master/rbd/rbd-openstack/
-この手順から下記の変更を行って、ここでは記していきます。
-
-Nova &#43; Ceph 連携させない
-cinder-backup は今のところ動作確認出来ていないので省く
-諸々の手順がそのままでは実施出来ないので補足を入れていく。
-
-cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ
-上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ
-クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ
-の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の
-Ceph 連携は意味が大きくなってくると思います。
-構成
-下記の通りの物理ネットワーク6つの構成です。
-OpenStack, Ceph 共に最小構成を前提にします。
-                  &#43;--------------------------------------------------------------------- external
-                  |
-&#43;--------------&#43;--(-----------&#43;--------------&#43;------------------------------------------ public
-|              |  |           |              |
-&#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43;
-| controller | |  network   | |  compute   | |   ceph01   | |   ceph02   | |   ceph03   |
-&#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43;
-|  |           |  |           |  |  |        |  |  |        |  |  |        |  |  |
-&#43;--------------&#43;--(-----------&#43;--(-----------&#43;--(--(--------&#43;--(--(--------&#43;--(--(------- management
-   |              |              |  |           |  |           |  |           |  |
-   |              &#43;--------------&#43;--(-----------(--(-----------(--(-----------(--(------- guest
-   |                                |           |  |           |  |           |  |
-   &#43;--------------------------------&#43;-----------&#43;--(-----------&#43;--(-----------&#43;--(------- storage
-                                                   |              |              |
-                                                   &#43;--------------&#43;--------------&#43;------- cluster
-特徴">
+<meta name="description" content="OpenStack Havana の Glance と Cinder を Ceph 分散ストレージに連携させる詳細手順">
 <meta name="author" content="jedipunkz">
 <link rel="canonical" href="https://jedipunkz.github.io/post/2014/04/04/openstack-havana-cinder-glance-ceph/">
 <link crossorigin="anonymous" href="/assets/css/stylesheet.ff74e95652f7dc8be9c79a75145f63445c00bcf8fc21f87252d8f3ff54a5aa46.css" integrity="sha256-/3TpVlL33Ivpx5p1FF9jRFwAvPj8IfhyUtjz/1SlqkY=" rel="preload stylesheet" as="style">
@@ -109,7 +76,7 @@ OpenStack, Ceph 共に最小構成を前提にします。
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "\"OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携\"",
-  "description": "\"こんにちは！@jedipunkz です。\\n今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。\\nhttps://ceph.com/docs/master/rbd/rbd-openstack/\\nこの手順から下記の変更を行って、ここでは記していきます。\\nNova + Ceph 連携させない cinder-backup は今のところ動作確認出来ていないので省く 諸々の手順がそのままでは実施出来ないので補足を入れていく。 cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ 上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の Ceph 連携は意味が大きくなってくると思います。\\n構成 下記の通りの物理ネットワーク6つの構成です。 OpenStack, Ceph 共に最小構成を前提にします。\\n+--------------------------------------------------------------------- external | +--------------+--(-----------+--------------+------------------------------------------ public | | | | | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | controller | | network | | compute | | ceph01 | | ceph02 | | ceph03 | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | | | | | | | | | | | | | | | | +--------------+--(-----------+--(-----------+--(--(--------+--(--(--------+--(--(------- management | | | | | | | | | | | +--------------+--(-----------(--(-----------(--(-----------(--(------- guest | | | | | | | | +--------------------------------+-----------+--(-----------+--(-----------+--(------- storage | | | +--------------+--------------+------- cluster 特徴\\n\"",
+  "description": "\"OpenStack Havana の Glance と Cinder を Ceph 分散ストレージに連携させる詳細手順\"",
   "datePublished": "2014-04-04T00:00:00Z",
   "dateModified": "2014-04-04T00:00:00Z",
   "author": {
@@ -146,13 +113,7 @@ OpenStack, Ceph 共に最小構成を前提にします。
       </script><meta property="og:url" content="https://jedipunkz.github.io/post/2014/04/04/openstack-havana-cinder-glance-ceph/">
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携">
-  <meta property="og:description" content="こんにちは！@jedipunkz です。
-今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。
-https://ceph.com/docs/master/rbd/rbd-openstack/
-この手順から下記の変更を行って、ここでは記していきます。
-Nova &#43; Ceph 連携させない cinder-backup は今のところ動作確認出来ていないので省く 諸々の手順がそのままでは実施出来ないので補足を入れていく。 cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ 上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の Ceph 連携は意味が大きくなってくると思います。
-構成 下記の通りの物理ネットワーク6つの構成です。 OpenStack, Ceph 共に最小構成を前提にします。
-&#43;--------------------------------------------------------------------- external | &#43;--------------&#43;--(-----------&#43;--------------&#43;------------------------------------------ public | | | | | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | controller | | network | | compute | | ceph01 | | ceph02 | | ceph03 | &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; | | | | | | | | | | | | | | | | &#43;--------------&#43;--(-----------&#43;--(-----------&#43;--(--(--------&#43;--(--(--------&#43;--(--(------- management | | | | | | | | | | | &#43;--------------&#43;--(-----------(--(-----------(--(-----------(--(------- guest | | | | | | | | &#43;--------------------------------&#43;-----------&#43;--(-----------&#43;--(-----------&#43;--(------- storage | | | &#43;--------------&#43;--------------&#43;------- cluster 特徴">
+  <meta property="og:description" content="OpenStack Havana の Glance と Cinder を Ceph 分散ストレージに連携させる詳細手順">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
@@ -162,40 +123,7 @@ Nova &#43; Ceph 連携させない cinder-backup は今のところ動作確認�
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://jedipunkz.github.io/jedipunkz.jpg">
 <meta name="twitter:title" content="OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携">
-<meta name="twitter:description" content="こんにちは！@jedipunkz です。
-今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ
-る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。
-https://ceph.com/docs/master/rbd/rbd-openstack/
-この手順から下記の変更を行って、ここでは記していきます。
-
-Nova &#43; Ceph 連携させない
-cinder-backup は今のところ動作確認出来ていないので省く
-諸々の手順がそのままでは実施出来ないので補足を入れていく。
-
-cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ
-上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ
-クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ
-の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の
-Ceph 連携は意味が大きくなってくると思います。
-構成
-下記の通りの物理ネットワーク6つの構成です。
-OpenStack, Ceph 共に最小構成を前提にします。
-                  &#43;--------------------------------------------------------------------- external
-                  |
-&#43;--------------&#43;--(-----------&#43;--------------&#43;------------------------------------------ public
-|              |  |           |              |
-&#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43;
-| controller | |  network   | |  compute   | |   ceph01   | |   ceph02   | |   ceph03   |
-&#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43; &#43;------------&#43;
-|  |           |  |           |  |  |        |  |  |        |  |  |        |  |  |
-&#43;--------------&#43;--(-----------&#43;--(-----------&#43;--(--(--------&#43;--(--(--------&#43;--(--(------- management
-   |              |              |  |           |  |           |  |           |  |
-   |              &#43;--------------&#43;--(-----------(--(-----------(--(-----------(--(------- guest
-   |                                |           |  |           |  |           |  |
-   &#43;--------------------------------&#43;-----------&#43;--(-----------&#43;--(-----------&#43;--(------- storage
-                                                   |              |              |
-                                                   &#43;--------------&#43;--------------&#43;------- cluster
-特徴">
+<meta name="twitter:description" content="OpenStack Havana の Glance と Cinder を Ceph 分散ストレージに連携させる詳細手順">
 
 
 <script type="application/ld+json">
@@ -224,7 +152,7 @@ OpenStack, Ceph 共に最小構成を前提にします。
   "@type": "BlogPosting",
   "headline": "OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携",
   "name": "OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携",
-  "description": "こんにちは！@jedipunkz です。\n今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。\nhttps://ceph.com/docs/master/rbd/rbd-openstack/\nこの手順から下記の変更を行って、ここでは記していきます。\nNova + Ceph 連携させない cinder-backup は今のところ動作確認出来ていないので省く 諸々の手順がそのままでは実施出来ないので補足を入れていく。 cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ 上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の Ceph 連携は意味が大きくなってくると思います。\n構成 下記の通りの物理ネットワーク6つの構成です。 OpenStack, Ceph 共に最小構成を前提にします。\n+--------------------------------------------------------------------- external | +--------------+--(-----------+--------------+------------------------------------------ public | | | | | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | controller | | network | | compute | | ceph01 | | ceph02 | | ceph03 | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | | | | | | | | | | | | | | | | +--------------+--(-----------+--(-----------+--(--(--------+--(--(--------+--(--(------- management | | | | | | | | | | | +--------------+--(-----------(--(-----------(--(-----------(--(------- guest | | | | | | | | +--------------------------------+-----------+--(-----------+--(-----------+--(------- storage | | | +--------------+--------------+------- cluster 特徴\n",
+  "description": "OpenStack Havana の Glance と Cinder を Ceph 分散ストレージに連携させる詳細手順",
   "keywords": [
     
   ],
@@ -309,6 +237,9 @@ OpenStack, Ceph 共に最小構成を前提にします。
     <h1 class="post-title">
       OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携
     </h1>
+    <div class="post-description">
+      OpenStack Havana の Glance と Cinder を Ceph 分散ストレージに連携させる詳細手順
+    </div>
     
   </header> 
   <div class="post-content"><p>こんにちは！<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>

@@ -7,38 +7,7 @@
 <meta name="robots" content="index, follow">
 <title>自前開発した Prometheus Exporter で自宅ルータのメトリクス監視運用している話 | jedipunkz 🚀 のブログ</title>
 <meta name="keywords" content="">
-<meta name="description" content="自宅のルータについても可観測性を向上して普段の運用に役立てています。例えば長期スパンでのネットワーク通信料の推移や CPU, Mem 使用率、あとハードウェアの温度の推移などを観測しています。
-今までは Prometheus の Node Exporter を使ってホストの情報を Prometheus Server に提供していたのですが、自分で Go で Prometheus Exporter を書いて運用するにようになったので、それについてまとめます。
-Grafana の可視化情報
-下記が可視化された情報です。CPU, Mem やネットワーク送信量、またハードウェアの温度を可視化して運用しています。
-
-
-ソース置き場
-結論になりますが下記にソースを置いています。
-https://github.com/jedipunkz/linux-tiny-exporter
-ネットワーク送信・受信メトリクスを説明
-実際にはこのコードでは CPU 使用率, Memory 使用率, Disk IO, Network トラヒック, ハードウェア温度を取得・提供しているのですが、ここでは例としてネットワークトラヒックに関するメトリクスを Prometheus Server に提供するコードを説明しようと思います。
-パッケージのインポート
-Prometheus のクライアントライブラリから2つのパッケージをインポートしています。
-&ldquo;github.com/prometheus/client_golang/prometheus&rdquo;: これは Prometheus の基本的なクライアントライブラリで、メトリクスを定義、収集、エクスポートするための機能を提供します。
-&ldquo;github.com/prometheus/client_golang/prometheus/promhttp&rdquo;: これは Prometheus の HTTP サーバーとクライアントのためのライブラリで、HTTP 経由でメトリクスを公開するためのハンドラを提供します。
-	&#34;github.com/prometheus/client_golang/prometheus&#34;
-	&#34;github.com/prometheus/client_golang/prometheus/promhttp&#34;
-ネットワークトラヒックに関する構造体定義
-ここからは Internal Packege のコード解説です。
-NetCollector という構造体が定義しています。この構造体は、ネットワークインターフェースごとの受信バイト数、送信バイト数、受信パケット数、送信パケット数の差分を保持します。~Diff はそれぞれの値の差分を保持します。前回のスクレイプ（データ収集）からの変化を表します。
-type NetCollector struct {
-        receivedBytesDiff   *prometheus.Desc
-        transmitBytesDiff   *prometheus.Desc
-        receivedPacketsDiff *prometheus.Desc
-        transmitPacketsDiff *prometheus.Desc
-        lastReceivedBytes   map[string]float64
-        lastTransmitBytes   map[string]float64
-        lastReceivedPackets map[string]float64
-        lastTransmitPackets map[string]float64
-}
-コンストラクタ
-NewNetCollector 関数は、新しい NetCollector インスタンスを作成します。この関数では、各メトリクスの差分を表す prometheus.Desc オブジェクトを作成し、それらを NetCollector 構造体の対応するフィールドに設定します。また、前回のスクレイプ時の各メトリクスの値を保持するマップも作成します。">
+<meta name="description" content="Go で自作した Prometheus Exporter による自宅ルータの CPU、メモリ、ネットワーク、温度監視">
 <meta name="author" content="jedipunkz">
 <link rel="canonical" href="https://jedipunkz.github.io/post/linux-tiny-exporter/">
 <link crossorigin="anonymous" href="/assets/css/stylesheet.ff74e95652f7dc8be9c79a75145f63445c00bcf8fc21f87252d8f3ff54a5aa46.css" integrity="sha256-/3TpVlL33Ivpx5p1FF9jRFwAvPj8IfhyUtjz/1SlqkY=" rel="preload stylesheet" as="style">
@@ -107,7 +76,7 @@ NewNetCollector 関数は、新しい NetCollector インスタンスを作成�
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "\"自前開発した Prometheus Exporter で自宅ルータのメトリクス監視運用している話\"",
-  "description": "\"自宅のルータについても可観測性を向上して普段の運用に役立てています。例えば長期スパンでのネットワーク通信料の推移や CPU, Mem 使用率、あとハードウェアの温度の推移などを観測しています。\\n今までは Prometheus の Node Exporter を使ってホストの情報を Prometheus Server に提供していたのですが、自分で Go で Prometheus Exporter を書いて運用するにようになったので、それについてまとめます。\\nGrafana の可視化情報 下記が可視化された情報です。CPU, Mem やネットワーク送信量、またハードウェアの温度を可視化して運用しています。\\nソース置き場 結論になりますが下記にソースを置いています。\\nhttps://github.com/jedipunkz/linux-tiny-exporter\\nネットワーク送信・受信メトリクスを説明 実際にはこのコードでは CPU 使用率, Memory 使用率, Disk IO, Network トラヒック, ハードウェア温度を取得・提供しているのですが、ここでは例としてネットワークトラヒックに関するメトリクスを Prometheus Server に提供するコードを説明しようと思います。\\nパッケージのインポート Prometheus のクライアントライブラリから2つのパッケージをインポートしています。\\n\\u0026ldquo;github.com/prometheus/client_golang/prometheus\\u0026rdquo;: これは Prometheus の基本的なクライアントライブラリで、メトリクスを定義、収集、エクスポートするための機能を提供します。\\n\\u0026ldquo;github.com/prometheus/client_golang/prometheus/promhttp\\u0026rdquo;: これは Prometheus の HTTP サーバーとクライアントのためのライブラリで、HTTP 経由でメトリクスを公開するためのハンドラを提供します。\\n\\u0026#34;github.com/prometheus/client_golang/prometheus\\u0026#34; \\u0026#34;github.com/prometheus/client_golang/prometheus/promhttp\\u0026#34; ネットワークトラヒックに関する構造体定義 ここからは Internal Packege のコード解説です。\\nNetCollector という構造体が定義しています。この構造体は、ネットワークインターフェースごとの受信バイト数、送信バイト数、受信パケット数、送信パケット数の差分を保持します。~Diff はそれぞれの値の差分を保持します。前回のスクレイプ（データ収集）からの変化を表します。\\ntype NetCollector struct { receivedBytesDiff *prometheus.Desc transmitBytesDiff *prometheus.Desc receivedPacketsDiff *prometheus.Desc transmitPacketsDiff *prometheus.Desc lastReceivedBytes map[string]float64 lastTransmitBytes map[string]float64 lastReceivedPackets map[string]float64 lastTransmitPackets map[string]float64 } コンストラクタ NewNetCollector 関数は、新しい NetCollector インスタンスを作成します。この関数では、各メトリクスの差分を表す prometheus.Desc オブジェクトを作成し、それらを NetCollector 構造体の対応するフィールドに設定します。また、前回のスクレイプ時の各メトリクスの値を保持するマップも作成します。\\n\"",
+  "description": "\"Go で自作した Prometheus Exporter による自宅ルータの CPU、メモリ、ネットワーク、温度監視\"",
   "datePublished": "2024-01-13T22:28:22\u002b09:00",
   "dateModified": "2024-01-13T22:28:22\u002b09:00",
   "author": {
@@ -144,18 +113,7 @@ NewNetCollector 関数は、新しい NetCollector インスタンスを作成�
       </script><meta property="og:url" content="https://jedipunkz.github.io/post/linux-tiny-exporter/">
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="自前開発した Prometheus Exporter で自宅ルータのメトリクス監視運用している話">
-  <meta property="og:description" content="自宅のルータについても可観測性を向上して普段の運用に役立てています。例えば長期スパンでのネットワーク通信料の推移や CPU, Mem 使用率、あとハードウェアの温度の推移などを観測しています。
-今までは Prometheus の Node Exporter を使ってホストの情報を Prometheus Server に提供していたのですが、自分で Go で Prometheus Exporter を書いて運用するにようになったので、それについてまとめます。
-Grafana の可視化情報 下記が可視化された情報です。CPU, Mem やネットワーク送信量、またハードウェアの温度を可視化して運用しています。
-ソース置き場 結論になりますが下記にソースを置いています。
-https://github.com/jedipunkz/linux-tiny-exporter
-ネットワーク送信・受信メトリクスを説明 実際にはこのコードでは CPU 使用率, Memory 使用率, Disk IO, Network トラヒック, ハードウェア温度を取得・提供しているのですが、ここでは例としてネットワークトラヒックに関するメトリクスを Prometheus Server に提供するコードを説明しようと思います。
-パッケージのインポート Prometheus のクライアントライブラリから2つのパッケージをインポートしています。
-“github.com/prometheus/client_golang/prometheus”: これは Prometheus の基本的なクライアントライブラリで、メトリクスを定義、収集、エクスポートするための機能を提供します。
-“github.com/prometheus/client_golang/prometheus/promhttp”: これは Prometheus の HTTP サーバーとクライアントのためのライブラリで、HTTP 経由でメトリクスを公開するためのハンドラを提供します。
-&#34;github.com/prometheus/client_golang/prometheus&#34; &#34;github.com/prometheus/client_golang/prometheus/promhttp&#34; ネットワークトラヒックに関する構造体定義 ここからは Internal Packege のコード解説です。
-NetCollector という構造体が定義しています。この構造体は、ネットワークインターフェースごとの受信バイト数、送信バイト数、受信パケット数、送信パケット数の差分を保持します。~Diff はそれぞれの値の差分を保持します。前回のスクレイプ（データ収集）からの変化を表します。
-type NetCollector struct { receivedBytesDiff *prometheus.Desc transmitBytesDiff *prometheus.Desc receivedPacketsDiff *prometheus.Desc transmitPacketsDiff *prometheus.Desc lastReceivedBytes map[string]float64 lastTransmitBytes map[string]float64 lastReceivedPackets map[string]float64 lastTransmitPackets map[string]float64 } コンストラクタ NewNetCollector 関数は、新しい NetCollector インスタンスを作成します。この関数では、各メトリクスの差分を表す prometheus.Desc オブジェクトを作成し、それらを NetCollector 構造体の対応するフィールドに設定します。また、前回のスクレイプ時の各メトリクスの値を保持するマップも作成します。">
+  <meta property="og:description" content="Go で自作した Prometheus Exporter による自宅ルータの CPU、メモリ、ネットワーク、温度監視">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
@@ -165,38 +123,7 @@ type NetCollector struct { receivedBytesDiff *prometheus.Desc transmitBytesDiff 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://jedipunkz.github.io/jedipunkz.jpg">
 <meta name="twitter:title" content="自前開発した Prometheus Exporter で自宅ルータのメトリクス監視運用している話">
-<meta name="twitter:description" content="自宅のルータについても可観測性を向上して普段の運用に役立てています。例えば長期スパンでのネットワーク通信料の推移や CPU, Mem 使用率、あとハードウェアの温度の推移などを観測しています。
-今までは Prometheus の Node Exporter を使ってホストの情報を Prometheus Server に提供していたのですが、自分で Go で Prometheus Exporter を書いて運用するにようになったので、それについてまとめます。
-Grafana の可視化情報
-下記が可視化された情報です。CPU, Mem やネットワーク送信量、またハードウェアの温度を可視化して運用しています。
-
-
-ソース置き場
-結論になりますが下記にソースを置いています。
-https://github.com/jedipunkz/linux-tiny-exporter
-ネットワーク送信・受信メトリクスを説明
-実際にはこのコードでは CPU 使用率, Memory 使用率, Disk IO, Network トラヒック, ハードウェア温度を取得・提供しているのですが、ここでは例としてネットワークトラヒックに関するメトリクスを Prometheus Server に提供するコードを説明しようと思います。
-パッケージのインポート
-Prometheus のクライアントライブラリから2つのパッケージをインポートしています。
-&ldquo;github.com/prometheus/client_golang/prometheus&rdquo;: これは Prometheus の基本的なクライアントライブラリで、メトリクスを定義、収集、エクスポートするための機能を提供します。
-&ldquo;github.com/prometheus/client_golang/prometheus/promhttp&rdquo;: これは Prometheus の HTTP サーバーとクライアントのためのライブラリで、HTTP 経由でメトリクスを公開するためのハンドラを提供します。
-	&#34;github.com/prometheus/client_golang/prometheus&#34;
-	&#34;github.com/prometheus/client_golang/prometheus/promhttp&#34;
-ネットワークトラヒックに関する構造体定義
-ここからは Internal Packege のコード解説です。
-NetCollector という構造体が定義しています。この構造体は、ネットワークインターフェースごとの受信バイト数、送信バイト数、受信パケット数、送信パケット数の差分を保持します。~Diff はそれぞれの値の差分を保持します。前回のスクレイプ（データ収集）からの変化を表します。
-type NetCollector struct {
-        receivedBytesDiff   *prometheus.Desc
-        transmitBytesDiff   *prometheus.Desc
-        receivedPacketsDiff *prometheus.Desc
-        transmitPacketsDiff *prometheus.Desc
-        lastReceivedBytes   map[string]float64
-        lastTransmitBytes   map[string]float64
-        lastReceivedPackets map[string]float64
-        lastTransmitPackets map[string]float64
-}
-コンストラクタ
-NewNetCollector 関数は、新しい NetCollector インスタンスを作成します。この関数では、各メトリクスの差分を表す prometheus.Desc オブジェクトを作成し、それらを NetCollector 構造体の対応するフィールドに設定します。また、前回のスクレイプ時の各メトリクスの値を保持するマップも作成します。">
+<meta name="twitter:description" content="Go で自作した Prometheus Exporter による自宅ルータの CPU、メモリ、ネットワーク、温度監視">
 
 
 <script type="application/ld+json">
@@ -225,7 +152,7 @@ NewNetCollector 関数は、新しい NetCollector インスタンスを作成�
   "@type": "BlogPosting",
   "headline": "自前開発した Prometheus Exporter で自宅ルータのメトリクス監視運用している話",
   "name": "自前開発した Prometheus Exporter で自宅ルータのメトリクス監視運用している話",
-  "description": "自宅のルータについても可観測性を向上して普段の運用に役立てています。例えば長期スパンでのネットワーク通信料の推移や CPU, Mem 使用率、あとハードウェアの温度の推移などを観測しています。\n今までは Prometheus の Node Exporter を使ってホストの情報を Prometheus Server に提供していたのですが、自分で Go で Prometheus Exporter を書いて運用するにようになったので、それについてまとめます。\nGrafana の可視化情報 下記が可視化された情報です。CPU, Mem やネットワーク送信量、またハードウェアの温度を可視化して運用しています。\nソース置き場 結論になりますが下記にソースを置いています。\nhttps://github.com/jedipunkz/linux-tiny-exporter\nネットワーク送信・受信メトリクスを説明 実際にはこのコードでは CPU 使用率, Memory 使用率, Disk IO, Network トラヒック, ハードウェア温度を取得・提供しているのですが、ここでは例としてネットワークトラヒックに関するメトリクスを Prometheus Server に提供するコードを説明しようと思います。\nパッケージのインポート Prometheus のクライアントライブラリから2つのパッケージをインポートしています。\n\u0026ldquo;github.com/prometheus/client_golang/prometheus\u0026rdquo;: これは Prometheus の基本的なクライアントライブラリで、メトリクスを定義、収集、エクスポートするための機能を提供します。\n\u0026ldquo;github.com/prometheus/client_golang/prometheus/promhttp\u0026rdquo;: これは Prometheus の HTTP サーバーとクライアントのためのライブラリで、HTTP 経由でメトリクスを公開するためのハンドラを提供します。\n\u0026#34;github.com/prometheus/client_golang/prometheus\u0026#34; \u0026#34;github.com/prometheus/client_golang/prometheus/promhttp\u0026#34; ネットワークトラヒックに関する構造体定義 ここからは Internal Packege のコード解説です。\nNetCollector という構造体が定義しています。この構造体は、ネットワークインターフェースごとの受信バイト数、送信バイト数、受信パケット数、送信パケット数の差分を保持します。~Diff はそれぞれの値の差分を保持します。前回のスクレイプ（データ収集）からの変化を表します。\ntype NetCollector struct { receivedBytesDiff *prometheus.Desc transmitBytesDiff *prometheus.Desc receivedPacketsDiff *prometheus.Desc transmitPacketsDiff *prometheus.Desc lastReceivedBytes map[string]float64 lastTransmitBytes map[string]float64 lastReceivedPackets map[string]float64 lastTransmitPackets map[string]float64 } コンストラクタ NewNetCollector 関数は、新しい NetCollector インスタンスを作成します。この関数では、各メトリクスの差分を表す prometheus.Desc オブジェクトを作成し、それらを NetCollector 構造体の対応するフィールドに設定します。また、前回のスクレイプ時の各メトリクスの値を保持するマップも作成します。\n",
+  "description": "Go で自作した Prometheus Exporter による自宅ルータの CPU、メモリ、ネットワーク、温度監視",
   "keywords": [
     
   ],
@@ -310,6 +237,9 @@ NewNetCollector 関数は、新しい NetCollector インスタンスを作成�
     <h1 class="post-title">
       自前開発した Prometheus Exporter で自宅ルータのメトリクス監視運用している話
     </h1>
+    <div class="post-description">
+      Go で自作した Prometheus Exporter による自宅ルータの CPU、メモリ、ネットワーク、温度監視
+    </div>
     
   </header> 
   <div class="post-content"><p>自宅のルータについても可観測性を向上して普段の運用に役立てています。例えば長期スパンでのネットワーク通信料の推移や CPU, Mem 使用率、あとハードウェアの温度の推移などを観測しています。</p>

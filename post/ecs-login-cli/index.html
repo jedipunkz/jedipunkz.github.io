@@ -7,22 +7,7 @@
 <meta name="robots" content="index, follow">
 <title>ECS コンテナにログインする CLI を Go 言語で作った話 | jedipunkz 🚀 のブログ</title>
 <meta name="keywords" content="">
-<meta name="description" content="こんにちは @jedipunkz 🚀 です。
-今回は Go 言語で ECS コンテナにログインする CLI を作った話を書きます。
-開発の経緯
-自分はまだ Go 言語の初学者で学習のために開発するアイデアを探していた状態でした。そこで自分の勤めている会社で ECS Execute 機能を使ったコンテナログインの機能を開発者に提供していた事を思い出し色々調べていて「もう少し手間が省けないか？」と思い立った、という経緯で開発をはじめました。
-awscli を使った ECS Execute 機能によるコンテナログイン
-手間が多いと書きましたが実際に awscli を使う場合どの程度の手間があるのか簡単に記します。まず下記のコマンドを実行して
-$ aws ecs list-tasks --cluster &lt;クラスタ名&gt; --service &lt;サービス名&gt;
-taskArn が得られるので Arn から task ID を拾って、その task ID を使って
-$ aws ecs execute --cluster &lt;クラスタ名&gt; \
-  --task &lt;task ID&gt; \
-  -- container &lt;コンテナ名&gt; \
-  --interfactive \
-  --command &#34;sh&#34;
-とコマンドを実行することでコンテナにログイン出来ます。が手間が少し多いのと task ID を拾い出す作業も辛いので改善したい&hellip;。
-操作画面
-ということで miniecs という CLI を作ったのですが、 まずは操作している様子を貼り付けます。😷 Fuzzy Finder なインクリメンタルサーチが出来る CLI になっていて、ECS クラスタ名・ECS サービス名・コンテナ名を一部入力するとログインしたい環境が選択出来るツールになっています。">
+<meta name="description" content="Go 言語と aws-sdk-go を使った ECS Execute 機能によるコンテナログイン CLI の開発">
 <meta name="author" content="jedipunkz">
 <link rel="canonical" href="https://jedipunkz.github.io/post/ecs-login-cli/">
 <link crossorigin="anonymous" href="/assets/css/stylesheet.ff74e95652f7dc8be9c79a75145f63445c00bcf8fc21f87252d8f3ff54a5aa46.css" integrity="sha256-/3TpVlL33Ivpx5p1FF9jRFwAvPj8IfhyUtjz/1SlqkY=" rel="preload stylesheet" as="style">
@@ -91,7 +76,7 @@ $ aws ecs execute --cluster &lt;クラスタ名&gt; \
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "\"ECS コンテナにログインする CLI を Go 言語で作った話\"",
-  "description": "\"こんにちは @jedipunkz 🚀 です。\\n今回は Go 言語で ECS コンテナにログインする CLI を作った話を書きます。\\n開発の経緯 自分はまだ Go 言語の初学者で学習のために開発するアイデアを探していた状態でした。そこで自分の勤めている会社で ECS Execute 機能を使ったコンテナログインの機能を開発者に提供していた事を思い出し色々調べていて「もう少し手間が省けないか？」と思い立った、という経緯で開発をはじめました。\\nawscli を使った ECS Execute 機能によるコンテナログイン 手間が多いと書きましたが実際に awscli を使う場合どの程度の手間があるのか簡単に記します。まず下記のコマンドを実行して\\n$ aws ecs list-tasks --cluster \\u0026lt;クラスタ名\\u0026gt; --service \\u0026lt;サービス名\\u0026gt; taskArn が得られるので Arn から task ID を拾って、その task ID を使って\\n$ aws ecs execute --cluster \\u0026lt;クラスタ名\\u0026gt; \\\\ --task \\u0026lt;task ID\\u0026gt; \\\\ -- container \\u0026lt;コンテナ名\\u0026gt; \\\\ --interfactive \\\\ --command \\u0026#34;sh\\u0026#34; とコマンドを実行することでコンテナにログイン出来ます。が手間が少し多いのと task ID を拾い出す作業も辛いので改善したい\\u0026hellip;。\\n操作画面 ということで miniecs という CLI を作ったのですが、 まずは操作している様子を貼り付けます。😷 Fuzzy Finder なインクリメンタルサーチが出来る CLI になっていて、ECS クラスタ名・ECS サービス名・コンテナ名を一部入力するとログインしたい環境が選択出来るツールになっています。\\n\"",
+  "description": "\"Go 言語と aws-sdk-go を使った ECS Execute 機能によるコンテナログイン CLI の開発\"",
   "datePublished": "2022-02-05T00:00:27\u002b09:00",
   "dateModified": "2022-02-05T00:00:27\u002b09:00",
   "author": {
@@ -128,13 +113,7 @@ $ aws ecs execute --cluster &lt;クラスタ名&gt; \
       </script><meta property="og:url" content="https://jedipunkz.github.io/post/ecs-login-cli/">
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="ECS コンテナにログインする CLI を Go 言語で作った話">
-  <meta property="og:description" content="こんにちは @jedipunkz 🚀 です。
-今回は Go 言語で ECS コンテナにログインする CLI を作った話を書きます。
-開発の経緯 自分はまだ Go 言語の初学者で学習のために開発するアイデアを探していた状態でした。そこで自分の勤めている会社で ECS Execute 機能を使ったコンテナログインの機能を開発者に提供していた事を思い出し色々調べていて「もう少し手間が省けないか？」と思い立った、という経緯で開発をはじめました。
-awscli を使った ECS Execute 機能によるコンテナログイン 手間が多いと書きましたが実際に awscli を使う場合どの程度の手間があるのか簡単に記します。まず下記のコマンドを実行して
-$ aws ecs list-tasks --cluster &lt;クラスタ名&gt; --service &lt;サービス名&gt; taskArn が得られるので Arn から task ID を拾って、その task ID を使って
-$ aws ecs execute --cluster &lt;クラスタ名&gt; \ --task &lt;task ID&gt; \ -- container &lt;コンテナ名&gt; \ --interfactive \ --command &#34;sh&#34; とコマンドを実行することでコンテナにログイン出来ます。が手間が少し多いのと task ID を拾い出す作業も辛いので改善したい…。
-操作画面 ということで miniecs という CLI を作ったのですが、 まずは操作している様子を貼り付けます。😷 Fuzzy Finder なインクリメンタルサーチが出来る CLI になっていて、ECS クラスタ名・ECS サービス名・コンテナ名を一部入力するとログインしたい環境が選択出来るツールになっています。">
+  <meta property="og:description" content="Go 言語と aws-sdk-go を使った ECS Execute 機能によるコンテナログイン CLI の開発">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
@@ -144,22 +123,7 @@ $ aws ecs execute --cluster &lt;クラスタ名&gt; \ --task &lt;task ID&gt; \ -
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://jedipunkz.github.io/jedipunkz.jpg">
 <meta name="twitter:title" content="ECS コンテナにログインする CLI を Go 言語で作った話">
-<meta name="twitter:description" content="こんにちは @jedipunkz 🚀 です。
-今回は Go 言語で ECS コンテナにログインする CLI を作った話を書きます。
-開発の経緯
-自分はまだ Go 言語の初学者で学習のために開発するアイデアを探していた状態でした。そこで自分の勤めている会社で ECS Execute 機能を使ったコンテナログインの機能を開発者に提供していた事を思い出し色々調べていて「もう少し手間が省けないか？」と思い立った、という経緯で開発をはじめました。
-awscli を使った ECS Execute 機能によるコンテナログイン
-手間が多いと書きましたが実際に awscli を使う場合どの程度の手間があるのか簡単に記します。まず下記のコマンドを実行して
-$ aws ecs list-tasks --cluster &lt;クラスタ名&gt; --service &lt;サービス名&gt;
-taskArn が得られるので Arn から task ID を拾って、その task ID を使って
-$ aws ecs execute --cluster &lt;クラスタ名&gt; \
-  --task &lt;task ID&gt; \
-  -- container &lt;コンテナ名&gt; \
-  --interfactive \
-  --command &#34;sh&#34;
-とコマンドを実行することでコンテナにログイン出来ます。が手間が少し多いのと task ID を拾い出す作業も辛いので改善したい&hellip;。
-操作画面
-ということで miniecs という CLI を作ったのですが、 まずは操作している様子を貼り付けます。😷 Fuzzy Finder なインクリメンタルサーチが出来る CLI になっていて、ECS クラスタ名・ECS サービス名・コンテナ名を一部入力するとログインしたい環境が選択出来るツールになっています。">
+<meta name="twitter:description" content="Go 言語と aws-sdk-go を使った ECS Execute 機能によるコンテナログイン CLI の開発">
 
 
 <script type="application/ld+json">
@@ -188,7 +152,7 @@ $ aws ecs execute --cluster &lt;クラスタ名&gt; \
   "@type": "BlogPosting",
   "headline": "ECS コンテナにログインする CLI を Go 言語で作った話",
   "name": "ECS コンテナにログインする CLI を Go 言語で作った話",
-  "description": "こんにちは @jedipunkz 🚀 です。\n今回は Go 言語で ECS コンテナにログインする CLI を作った話を書きます。\n開発の経緯 自分はまだ Go 言語の初学者で学習のために開発するアイデアを探していた状態でした。そこで自分の勤めている会社で ECS Execute 機能を使ったコンテナログインの機能を開発者に提供していた事を思い出し色々調べていて「もう少し手間が省けないか？」と思い立った、という経緯で開発をはじめました。\nawscli を使った ECS Execute 機能によるコンテナログイン 手間が多いと書きましたが実際に awscli を使う場合どの程度の手間があるのか簡単に記します。まず下記のコマンドを実行して\n$ aws ecs list-tasks --cluster \u0026lt;クラスタ名\u0026gt; --service \u0026lt;サービス名\u0026gt; taskArn が得られるので Arn から task ID を拾って、その task ID を使って\n$ aws ecs execute --cluster \u0026lt;クラスタ名\u0026gt; \\ --task \u0026lt;task ID\u0026gt; \\ -- container \u0026lt;コンテナ名\u0026gt; \\ --interfactive \\ --command \u0026#34;sh\u0026#34; とコマンドを実行することでコンテナにログイン出来ます。が手間が少し多いのと task ID を拾い出す作業も辛いので改善したい\u0026hellip;。\n操作画面 ということで miniecs という CLI を作ったのですが、 まずは操作している様子を貼り付けます。😷 Fuzzy Finder なインクリメンタルサーチが出来る CLI になっていて、ECS クラスタ名・ECS サービス名・コンテナ名を一部入力するとログインしたい環境が選択出来るツールになっています。\n",
+  "description": "Go 言語と aws-sdk-go を使った ECS Execute 機能によるコンテナログイン CLI の開発",
   "keywords": [
     
   ],
@@ -273,6 +237,9 @@ $ aws ecs execute --cluster &lt;クラスタ名&gt; \
     <h1 class="post-title">
       ECS コンテナにログインする CLI を Go 言語で作った話
     </h1>
+    <div class="post-description">
+      Go 言語と aws-sdk-go を使った ECS Execute 機能によるコンテナログイン CLI の開発
+    </div>
     
   </header> 
   <div class="post-content"><p>こんにちは <a href="https://twitter.com/jedipunkz">@jedipunkz</a> 🚀 です。</p>
