@@ -1,5 +1,5 @@
 ---
-title: "Conftest に入門してみた"
+title: "Conftest OPA で Terraform コード開発に制約を設ける"
 description: "Conftest と Terraform を使い基本的な構文を理解しつつ実際に Rego ポリシを書いて動作させてみた記事です"
 date: 2025-12-07T10:42:32+09:00
 Categories: ["infrastructure", "IaC"]
