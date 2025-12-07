@@ -5,7 +5,7 @@ date: 2025-11-02T22:56:17+09:00
 Categories: ["infrastructure", "database", "data-analysis"]
 draft: false
 ---
-こんにちは。こんにちは。[jedipunkz🚀](https://x.com/jedipunkz) です。
+こんにちは。[jedipunkz🚀](https://x.com/jedipunkz) です。
 
 今回は DuckDB について理解したことをまとめようと思います。
 
