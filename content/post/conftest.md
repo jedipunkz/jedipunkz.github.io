@@ -985,9 +985,6 @@ FAIL - tfplan.json - Security group 'web' exposes SSH (port 22) to 0.0.0.0/0
 - [Beyond terraform plan: Policy as Code with OPA](https://www.vroble.com/2025/11/beyond-terraform-plan-how-policy-as.html)
 - [Securing Terraform Pipelines with Conftest and OPA](https://dev.to/prince_of_pasta/securing-your-terraform-pipelines-with-conftest-regula-and-opa-4hkh)
 
-### サンプルコード
-- この記事のサンプルコード全体は [GitHub](https://github.com/your-repo/conftest-tutorial) で公開しています
-
 ---
 
 ## おわりに
