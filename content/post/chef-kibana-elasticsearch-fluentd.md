@@ -1,9 +1,12 @@
 +++
 title = "Chef で kibana + elasticsearch + fluentd デプロイしてみた"
 date = "2013-09-13"
-slug = "2013/09/13/chef-kibana-elasticsearch-fluentd"
 Categories = ["infrastructure"]
 description = "Berkshelf を使った Kibana、Elasticsearch、Fluentd のオールインワン構成デプロイ"
+aliases = [
+  "/blog/2013/09/13/chef-kibana-elasticsearch-fluentd",
+  "/post/2013/09/13/chef-kibana-elasticsearch-fluentd"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

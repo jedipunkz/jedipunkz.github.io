@@ -1,7 +1,6 @@
 +++
 title = "Swift HA 構成を Chef でデプロイ"
 date = "2013-07-26"
-slug = "2013/07/26/swift-ha-chef-deploy"
 Categories = ["infrastructure"]
 +++
 

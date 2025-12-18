@@ -1,9 +1,12 @@
 +++
 title = "OpenStack Grizzly 構築スクリプト"
 date = "2013-04-20"
-slug = "2013/04/20/openstack-grizzly-installation-script"
 Categories = ["infrastructure"]
 description = "OpenStack Grizzly をオールインワン構成で構築する bash スクリプトの紹介と使い方"
+aliases = [
+  "/blog/2013/04/20/openstack-grizzly-installation-script",
+  "/post/2013/04/20/openstack-grizzly-installation-script"
+]
 +++
 OpenStack Grizzly がリリースされて2週間ほど経過しました。皆さん動かしてみまし
 たか？今回、毎度の構築 Bash スクリプトを開発したので公開します。

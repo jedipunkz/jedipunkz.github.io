@@ -1,7 +1,6 @@
 +++
 title = "Swift で簡単に分散オブジェクトストレージ"
 date = "2012-11-04"
-slug = "2012/11/04/swift-tempauth"
 Categories = ["infrastructure"]
 +++
 最近、OpenStack にどっぷり浸かってる <a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。

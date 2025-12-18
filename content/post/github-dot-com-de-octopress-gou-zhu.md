@@ -1,9 +1,12 @@
 +++
 title = "github.com で octopress 構築"
 date = "2012-03-20"
-slug = "2012/03/20/github-dot-com-de-octopress-gou-zhu"
 Categories = ["tools"]
 description = "GitHub Pages と Octopress を使った Jekyll ベースブログの構築手順"
+aliases = [
+  "/blog/2012/03/20/github-dot-com-de-octopress-gou-zhu",
+  "/post/2012/03/20/github-dot-com-de-octopress-gou-zhu"
+]
 +++
 pages.github.com は github.com の WEB ホスティングサービスです。これを利用して octopress のブログを
 構築する方法をメモしていきます。

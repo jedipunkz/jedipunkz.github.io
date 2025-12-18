@@ -1,9 +1,12 @@
 +++
 title = "OpenStack HA 構成を Chef でデプロイ"
 date = "2013-07-17"
-slug = "2013/07/17/openstach-ha-chef-deploy"
 Categories = ["infrastructure"]
 description = "RackSpace の Chef Cookbooks を使った OpenStack コントローラの HA 冗長構成の構築手順"
+aliases = [
+  "/blog/2013/07/17/openstach-ha-chef-deploy",
+  "/post/2013/07/17/openstach-ha-chef-deploy"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

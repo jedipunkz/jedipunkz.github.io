@@ -1,7 +1,6 @@
 +++
 title = "test-kitchen と OpenStack で Chef Cookbooks テスト (後篇)"
 date = "2013-10-20"
-slug = "2013/10/20/test-kitchen-openstack-chef-cookbooks-test-2"
 Categories = ["infrastructure"]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
@@ -9,7 +8,7 @@ Categories = ["infrastructure"]
 前回、OpenStack と test-kitchen を使った環境構築方法を書きました。下記の記事で
 す。
 
-<http://jedipunkz.github.io/blog/2013/10/13/test-kitchn-openstack-chef-cookbooks-test/>
+<http://jedipunkz.github.io/post/test-kitchn-openstack-chef-cookbooks-test/>
 
 今回は実際にテストを書く方法を記していたい思います。
 

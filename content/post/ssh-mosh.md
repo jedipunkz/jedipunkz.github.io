@@ -1,7 +1,6 @@
 +++
 title = "Mosh を使う"
 date = "2012-04-14"
-slug = "2012/04/14/ssh-mosh"
 Categories = ["infrastructure", "tools"]
 +++
 今週/先週？、Hacker News で取り上げられた [Mosh](http://mosh.mit.edu/) を自宅

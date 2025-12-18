@@ -1,9 +1,12 @@
 +++
 title = "Chef for OpenStack"
 date = "2013-04-21"
-slug = "2013/04/21/chef-for-openstack-grizzly-roadmap"
 Categories = ["infrastructure"]
 description = "ChefConf 2013 での Chef for OpenStack Grizzly ロードマップと今後の開発方針"
+aliases = [
+  "/blog/2013/04/21/chef-for-openstack-grizzly-roadmap",
+  "/post/2013/04/21/chef-for-openstack-grizzly-roadmap"
+]
 +++
 
 以前にも話題にしたことがある Chef For OpenStack ですが今週新しい情報が入って来

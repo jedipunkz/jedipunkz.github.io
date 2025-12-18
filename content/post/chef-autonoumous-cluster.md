@@ -1,9 +1,12 @@
 +++
 title = "Chef で自律的クラスタを考える"
 date = "2013-12-09"
-slug = "2013/12/09/chef-autonoumous-cluster"
 Categories = ["infrastructure"]
 description = "Chef の Search 機能を使った自律的な nginx ロードバランサクラスタの構築方法"
+aliases = [
+  "/blog/2013/12/09/chef-autonoumous-cluster",
+  "/post/2013/12/09/chef-autonoumous-cluster"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

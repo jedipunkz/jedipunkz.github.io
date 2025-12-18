@@ -1,9 +1,12 @@
 +++
 title = "Kibana + ElasticSearch + fluentd を試してみた"
 date = "2013-09-07"
-slug = "2013/09/07/kibana-plus-elasticsearch-plus-fluentd"
 Categories = ["infrastructure"]
 description = "Kibana、ElasticSearch、fluentd を組み合わせたログ解析システムの構築手順"
+aliases = [
+  "/blog/2013/09/07/kibana-plus-elasticsearch-plus-fluentd",
+  "/post/2013/09/07/kibana-plus-elasticsearch-plus-fluentd"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
@@ -163,4 +166,4 @@ kibana.rb を起動するもっと良い方法がないかも調べないと。
 @nora96o さんに「Kibana3 使うと幸せになれますよ！」と教えて頂いて早速 Kibana3
 も試してみました。
 
-<http://jedipunkz.github.io/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd/>
+<http://jedipunkz.github.io/post/kibana3-plus-elasticsearch-plus-fluentd/>

@@ -1,7 +1,6 @@
 +++
 title = "vyatta で UPnP 接続"
 date = "2012-04-29"
-slug = "2012/04/29/vyatta-upnp"
 Categories = ["infrastructure"]
 +++
 Vyatta を自宅ルータで使い始めて感じたのは、PS3 などのゲーム機や IP 電話など

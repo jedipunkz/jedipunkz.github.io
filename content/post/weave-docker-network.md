@@ -1,7 +1,6 @@
 +++
 title = "Weave を使った Docker ネットワーク"
 date = "2015-12-22"
-slug = "2015/12/22/weave-docker-network"
 Categories = ["infrastructure"]
 +++
 

@@ -1,9 +1,12 @@
 +++
 title = "MCP の理解: Platform Enabler/SRE での活用"
 date = "2025-04-06"
-slug = "2025/04/06/local-filesystem-mcp-server"
 Categories = ["infrastructure", "AI"]
 description = "Model Context Protocol (MCP) の概要と Platform Enabler/SRE における活用方法の考察"
+aliases = [
+  "/blog/2025/04/06/local-filesystem-mcp-server",
+  "/post/2025/04/06/local-filesystem-mcp-server"
+]
 +++
 
 自分は Platform Enabler/SRE として従事しています。また AI 関連のアップデートは2025年に入っても属に更新されています。2025年初頭においては自分たちの分野でも AI 関連の利用に関して様々な模索がある状況だと思われますが、Ahthoropic 社が提唱した MCP (Model Context Protocol) がもたらすインパクトはアプリケーションに限定されずインフラ領域のソフトウェアにも大きなメリットをもたらすと思って観測しています。

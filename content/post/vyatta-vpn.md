@@ -1,7 +1,6 @@
 +++
 title = "Vyatta で構築する簡単 VPN サーバ"
 date = "2012-06-13"
-slug = "2012/06/13/vyatta-vpn"
 Categories = ["infrastructure"]
 +++
 Vyatta で VPN しようと思ったら信じられないくらい簡単に構築できたので共有します。

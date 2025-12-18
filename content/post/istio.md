@@ -1,9 +1,12 @@
 +++
 title = "Istio, Helm を使って Getting Started 的なアプリをデプロイ"
 date = "2018-12-31"
-slug = "2018/12/31/istio"
 Categories = ["infrastructure"]
 description = "Minikube と Helm Template を使った Istio 環境構築とサンプルアプリケーションデプロイ"
+aliases = [
+  "/blog/2018/12/31/istio",
+  "/post/2018/12/31/istio"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

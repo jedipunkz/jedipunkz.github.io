@@ -1,7 +1,6 @@
 +++
 title = "vyatta で自宅ルータ構築"
 date = "2012-04-28"
-slug = "2012/04/28/vyattarouter"
 Categories = ["infrastructure"]
 +++
 自宅ルータを Vyatta で構築してみたくなり、秋葉原の ark でマシンを調達しました。

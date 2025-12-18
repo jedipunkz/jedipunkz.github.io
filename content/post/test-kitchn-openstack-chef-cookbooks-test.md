@@ -1,7 +1,6 @@
 +++
 title = "test-kitchen と OpenStack で Chef Cookbooks テスト(前篇)"
 date = "2013-10-13"
-slug = "2013/10/13/test-kitchn-openstack-chef-cookbooks-test"
 Categories = ["infrastructure"]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。

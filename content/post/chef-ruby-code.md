@@ -1,9 +1,12 @@
 +++
 title = "Chef を Ruby コード内で利用する"
 date = "2013-06-12"
-slug = "2013/06/12/chef-ruby-code"
 Categories = ["infrastructure"]
 description = "Ruby コード内で Chef のライブラリを利用して data bags や nodes を操作するサンプルコード集"
+aliases = [
+  "/blog/2013/06/12/chef-ruby-code",
+  "/post/2013/06/12/chef-ruby-code"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

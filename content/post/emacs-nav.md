@@ -1,9 +1,12 @@
 +++
 title = "Emacs でファイルブラウザ emacs-nav を利用"
 date = "2012-05-04"
-slug = "2012/05/04/emacs-nav"
 Categories = ["tools"]
 description = "Emacs でマウス操作可能なファイルブラウザ emacs-nav のインストールと使用方法"
+aliases = [
+  "/blog/2012/05/04/emacs-nav",
+  "/post/2012/05/04/emacs-nav"
+]
 +++
 Hacker News で取り上げられていた emacs-nav を使ってみた。
 

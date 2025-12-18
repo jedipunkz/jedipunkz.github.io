@@ -1,7 +1,6 @@
 +++
 title = "WordPress を nginx + fastcgi で高速化"
 date = "2012-03-07"
-slug = "2012/03/07/wordpress-wo-nginx-plus-fastcgi-degao-su-hua"
 Categories = ["tools"]
 +++
 ブログを始めるにあたり、wordpress 環境を構築する必要が出てきました。いつもの apache2 + mysql5 + PHP じゃつまらないので、nginx と fastcgi を使って少しだけ高速化してみました。メモですけど、ここに手順を記していきます。

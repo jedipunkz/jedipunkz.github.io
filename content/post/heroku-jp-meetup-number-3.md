@@ -1,9 +1,12 @@
 +++
 title = "Heroku JP Meetup #3"
 date = "2012-03-07"
-slug = "2012/03/07/heroku-jp-meetup-number-3"
 Categories = ["report"]
 description = "Heroku の基本的な使い方と foreman、Lokka デプロイについての Meetup レポート"
+aliases = [
+  "/blog/2012/03/07/heroku-jp-meetup-number-3",
+  "/post/2012/03/07/heroku-jp-meetup-number-3"
+]
 +++
 白金台のクックパッドさんで行われた "heroku jp meet up #3" に参加してきました。
 

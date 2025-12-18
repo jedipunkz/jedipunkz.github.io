@@ -1,9 +1,12 @@
 +++
 title = "rcbops Cookbooks で Neutron 構成 OpenStack"
 date = "2013-08-16"
-slug = "2013/08/16/rcbops-cookbooks-neutron-openstack"
 Categories = ["infrastructure"]
 description = "rcbops Cookbooks を使った Neutron VLAN モード構成の OpenStack デプロイ手順"
+aliases = [
+  "/blog/2013/08/16/rcbops-cookbooks-neutron-openstack",
+  "/post/2013/08/16/rcbops-cookbooks-neutron-openstack"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
@@ -289,7 +292,7 @@ network ノードを2台構成にしましたが何が嬉しいかと言うと�
 l3-agent は仮想ルータ毎に、dhcp-agent は仮想ネットワーク毎に切り替えが可能です。
 詳しくは私の以前の記事を参考にしてください。
 
-<http://jedipunkz.github.io/blog/2013/04/26/quantum-network-distributing/>
+<http://jedipunkz.github.io/post/quantum-network-distributing/>
 
 また、compute ノードを更に増やせば仮想マシンの数を増やすことが出来ます。
 

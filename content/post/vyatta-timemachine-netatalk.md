@@ -1,7 +1,6 @@
 +++
 title = "Vyatta で Mac 用 TimeMachine サーバ兼ファイルサーバを構築！"
 date = "2013-11-26"
-slug = "2013/11/26/vyatta-timemachine-netatalk"
 Categories = ["infrastructure"]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。

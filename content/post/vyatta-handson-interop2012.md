@@ -1,7 +1,6 @@
 +++
 title = "Vyatta ハンズオン参加レポ #interop2012"
 date = "2012-06-14"
-slug = "2012/06/14/vyatta-handson-interop2012"
 Categories = ["infrastructure"]
 +++
 interop 2012 で開催された "仮想ルータ Vyatta を使ったネットワーク構築法" に参

@@ -1,9 +1,12 @@
 +++
 title = "Mirantis OpenStack (Neutron GRE)を組んでみた！"
 date = "2014-04-23"
-slug = "2014/04/23/mirantis-openstack"
 Categories = ["infrastructure"]
 description = "Mirantis OpenStack ディストリビューションを使った Neutron GRE 構成の構築手順"
+aliases = [
+  "/blog/2014/04/23/mirantis-openstack",
+  "/post/2014/04/23/mirantis-openstack"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

@@ -1,9 +1,12 @@
 +++
 title = "JTF2014 で Ceph について話してきた！"
 date = "2014-06-22"
-slug = "2014/06/22/jtf2014-ceph"
 Categories = ["infrastructure", "report"]
 description = "July Tech Festa 2014 での Ceph-Deploy を使った Ceph 構築についての発表レポート"
+aliases = [
+  "/blog/2014/06/22/jtf2014-ceph",
+  "/post/2014/06/22/jtf2014-ceph"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

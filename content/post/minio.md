@@ -1,9 +1,12 @@
 +++
 title = "オブジェクトストレージ minio を使ってみる"
 date = "2015-06-25"
-slug = "2015/06/25/minio"
 Categories = ["infrastructure"]
 description = "Golang 製の最小限のオブジェクトストレージ minio の導入と基本的な使い方"
+aliases = [
+  "/blog/2015/06/25/minio",
+  "/post/2015/06/25/minio"
+]
 +++
 こんにちは、@jedipunkz です。
 

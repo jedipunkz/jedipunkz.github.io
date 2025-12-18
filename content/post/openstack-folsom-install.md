@@ -1,9 +1,12 @@
 +++
 title = "OpenStack Folsom 構築スクリプト"
 date = "2012-11-10"
-slug = "2012/11/10/openstack-folsom-install"
 Categories = ["infrastructure"]
 description = "OpenStack Folsom と Quantum を bash スクリプトで自動構築する手順と公開スクリプトの紹介"
+aliases = [
+  "/blog/2012/11/10/openstack-folsom-install",
+  "/post/2012/11/10/openstack-folsom-install"
+]
 +++
 ※2012/12/04 に内容を修正しました。Network Node を切り出すよう修正。
 ※213/01/09 に内容を修正しました。パラメータ修正です。

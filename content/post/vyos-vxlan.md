@@ -1,7 +1,6 @@
 +++
 title = "VyOS で VXLAN を使ってみる"
 date = "2014-12-16"
-slug = "2014/12/16/vyos-vxlan"
 Categories = ["infrastructure"]
 +++
 こんにちは。@jedipunkz です。

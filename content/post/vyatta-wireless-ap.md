@@ -1,7 +1,6 @@
 +++
 title = "Vyatta で無線アクセスポイント"
 date = "2012-05-04"
-slug = "2012/05/04/vyatta-wireless-ap"
 Categories = ["infrastructure"]
 +++
 自宅ルータを Vyatta で運用開始したのだけど、無線ルータ化ができたのでメモしておき

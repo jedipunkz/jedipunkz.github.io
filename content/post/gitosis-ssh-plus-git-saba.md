@@ -1,9 +1,12 @@
 +++
 title = "gitosis ssh+git サーバ"
 date = "2012-03-07"
-slug = "2012/03/07/gitosis-ssh-plus-git-saba"
 Categories = ["tools"]
 description = "gitosis を使った SSH 経由のプライベート Git サーバ構築手順"
+aliases = [
+  "/blog/2012/03/07/gitosis-ssh-plus-git-saba",
+  "/post/2012/03/07/gitosis-ssh-plus-git-saba"
+]
 +++
 github.com は便利なのだけどプライベートなレポジトリを作るのにお金払うのはもったいないので自宅サーバに SSH 経由の Git サーバを構築した。その時の手順をメモしておきます。
 

@@ -1,7 +1,6 @@
 +++
 title = "Spiceweasel で knife バッチ処理"
 date = "2013-02-01"
-slug = "2013/02/01/spiceweasel-knife-bootstrap"
 Categories = ["infrastructure", "tools"]
 +++
 Spiceweasel <https://github.com/mattray/spiceweasel#cookbooks> を使ってみた。

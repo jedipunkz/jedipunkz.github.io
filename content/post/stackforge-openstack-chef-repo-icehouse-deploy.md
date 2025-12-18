@@ -1,7 +1,6 @@
 +++
 title = "stackforge/openstack-chef-repo で OpenStack Icehouse デプロイ"
 date = "2014-04-25"
-slug = "2014/04/25/stackforge-openstack-chef-repo-icehouse-deploy"
 Categories = ["infrastructure"]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。

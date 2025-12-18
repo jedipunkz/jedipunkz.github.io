@@ -1,9 +1,12 @@
 +++
 title = "Opscode Bootstrap を使った Chef-Server 構築"
 date = "2012-08-18"
-slug = "2012/08/18/opscode-bootstrap-chef-server"
 Categories = ["infrastructure"]
 description = "Opscode Bootstrap を使った Chef-Server の自動構築手順と rbenv 環境での設定方法"
+aliases = [
+  "/blog/2012/08/18/opscode-bootstrap-chef-server",
+  "/post/2012/08/18/opscode-bootstrap-chef-server"
+]
 +++
 chef-server の構築は少し面倒だと前回の記事
 <http://jedipunkz.github.com/blog/2012/08/18/chef-solo/> に書いたのですが、

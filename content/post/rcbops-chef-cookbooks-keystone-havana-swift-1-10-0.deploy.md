@@ -1,9 +1,12 @@
 +++
 title = "rcbops/chef-cookbooks で Keystone 2013.2.2(Havana) + Swift 1.10.0 を構築"
 date = "2014-03-16"
-slug = "2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0.deploy"
 Categories = ["infrastructure"]
 description = "rcbops/chef-cookbooks を使った OpenStack Keystone Havana と Swift 1.10.0 構成の構築手順"
+aliases = [
+  "/blog/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0.deploy",
+  "/post/2014/03/16/rcbops-chef-cookbooks-keystone-havana-swift-1-10-0.deploy"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
@@ -30,7 +33,7 @@ github 上に残っていました。
 構成
 ----
 
-構成は...以前の記事 <http://jedipunkz.github.io/blog/2013/10/27/swift-chef/> と同じです。
+構成は...以前の記事 <http://jedipunkz.github.io/post/swift-chef/> と同じです。
 
 ```
 +-----------------+

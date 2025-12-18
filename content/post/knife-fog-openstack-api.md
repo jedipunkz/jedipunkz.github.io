@@ -1,9 +1,12 @@
 +++
 title = "OpenStack API を理解しインフラエンジニアの仕事の変化を感じる"
 date = "2012-12-08"
-slug = "2012/12/08/knife-fog-openstack-api"
 Categories = ["infrastructure"]
 description = "Fog ライブラリを使った OpenStack API 操作とインフラエンジニアの仕事の変化"
+aliases = [
+  "/blog/2012/12/08/knife-fog-openstack-api",
+  "/post/2012/12/08/knife-fog-openstack-api"
+]
 +++
 今日は "OpenStack Advent Calendar 2012 JP" というイベントのために記事を書きた
 いと思います。Advent Calendar とはキリスト生誕を祝うため 12/25 まで毎日誰かがブログ

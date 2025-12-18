@@ -1,9 +1,12 @@
 +++
 title = "Cobbler で OS 自動インストール"
 date = "2013-07-28"
-slug = "2013/07/28/cobbler-os-automation-install"
 Categories = ["infrastructure"]
 description = "Cobbler を使った複数 OS ディストリビューションの PXE 自動インストール環境構築"
+aliases = [
+  "/blog/2013/07/28/cobbler-os-automation-install",
+  "/post/2013/07/28/cobbler-os-automation-install"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

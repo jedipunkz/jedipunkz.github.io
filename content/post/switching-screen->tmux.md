@@ -1,7 +1,6 @@
 +++
 title = "switching screen->tmux"
 date = "2012-04-01"
-slug = "2012/04/01/switching-screen->tmux"
 Categories = ["tools"]
 +++
 長年 Gnu screen 愛用者だったのだけど完全に tmux に移行しました。

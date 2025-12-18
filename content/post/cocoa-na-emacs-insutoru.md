@@ -1,9 +1,12 @@
 +++
 title = "cocoa な emacs インストール"
 date = "2012-03-07"
-slug = "2012/03/07/cocoa-na-emacs-insutoru"
 Categories = ["infrastructure"]
 description = "Homebrew を使った Cocoa 版 Emacs の簡単インストール手順"
+aliases = [
+  "/blog/2012/03/07/cocoa-na-emacs-insutoru",
+  "/post/2012/03/07/cocoa-na-emacs-insutoru"
+]
 +++
 Carbon な API は排除していくべきと Apple も言っているようですし、自宅も会社も Cocoa な emacs を使うようになりました。
                                                                                                                           
