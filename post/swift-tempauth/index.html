@@ -7,38 +7,7 @@
 <meta name="robots" content="index, follow">
 <title>Swift で簡単に分散オブジェクトストレージ | jedipunkz 🚀 のブログ</title>
 <meta name="keywords" content="">
-<meta name="description" content="最近、OpenStack にどっぷり浸かってる @jedipunkz です。
-Folsom がリリースされて Quantum を理解するのにめちゃ苦労して楽しい真っ最中なのだけど、
-今日は OpenStack の中でも最も枯れているコンポーネント Swift を使ったオブジェクトストレー
-ジ構築について少し書こうかなぁと思ってます。
-最近は OpenStack を構築・デプロイするのに皆、Swift 入れてないのね。仲間はずれ
-感たっぷりだけど、一番安定して動くと思ってる。
-これを読んで、自宅にオブジェクトストレージを置いちゃおぅ。
-構成は ?&hellip;
-                        &#43;--------&#43;
-                        | client |
-                        &#43;--------&#43;
-                             |
-                      &#43;-------------&#43;
-                      | swift-proxy |
-                      &#43;-------------&#43; 172.16.0.10
-                             |
-         &#43;-------------------&#43;-------------------&#43; 172.16.0.0/24
-         |                   |                   |
-&#43;-----------------&#43; &#43;-----------------&#43; &#43;-----------------&#43;
-| swift-storage01 | | swift-storage02 | | swift-storage03 |
-&#43;-----------------&#43; &#43;-----------------&#43; &#43;-----------------&#43;
-172.16.0.11         172.16.0.12         172.16.0.13
-
-となる。IP アドレスは&hellip;
-
-client : 172.16.0.0/24 のどこか
-swift-proxy : 172.16.0.10
-swift-storage01 : 172.16.0.11
-swift-storage02 : 172.16.0.12
-swift-storage03 : 172.16.0.13
-
-これはサンプル。自宅の環境に合わせて読み替えてください。">
+<meta name="description" content="OpenStack Swift を使った分散オブジェクトストレージの構築手順。Proxy と Storage ノードの基本構成から設定方法まで解説">
 <meta name="author" content="jedipunkz">
 <link rel="canonical" href="https://jedipunkz.github.io/post/swift-tempauth/">
 <link crossorigin="anonymous" href="/assets/css/stylesheet.f7a41899047cffd0c787f7dd7098bd27c6bdc5ef7d41c83cf555a9ac25bfe465.css" integrity="sha256-96QYmQR8/9DHh/fdcJi9J8a9xe99Qcg89VWprCW/5GU=" rel="preload stylesheet" as="style">
@@ -107,7 +76,7 @@ swift-storage03 : 172.16.0.13
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "\"Swift で簡単に分散オブジェクトストレージ\"",
-  "description": "\"最近、OpenStack にどっぷり浸かってる @jedipunkz です。\\nFolsom がリリースされて Quantum を理解するのにめちゃ苦労して楽しい真っ最中なのだけど、 今日は OpenStack の中でも最も枯れているコンポーネント Swift を使ったオブジェクトストレー ジ構築について少し書こうかなぁと思ってます。\\n最近は OpenStack を構築・デプロイするのに皆、Swift 入れてないのね。仲間はずれ 感たっぷりだけど、一番安定して動くと思ってる。\\nこれを読んで、自宅にオブジェクトストレージを置いちゃおぅ。\\n構成は ?\\u0026hellip; +--------+ | client | +--------+ | +-------------+ | swift-proxy | +-------------+ 172.16.0.10 | +-------------------+-------------------+ 172.16.0.0/24 | | | +-----------------+ +-----------------+ +-----------------+ | swift-storage01 | | swift-storage02 | | swift-storage03 | +-----------------+ +-----------------+ +-----------------+ 172.16.0.11 172.16.0.12 172.16.0.13 となる。IP アドレスは\\u0026hellip;\\nclient : 172.16.0.0/24 のどこか swift-proxy : 172.16.0.10 swift-storage01 : 172.16.0.11 swift-storage02 : 172.16.0.12 swift-storage03 : 172.16.0.13 これはサンプル。自宅の環境に合わせて読み替えてください。\\n\"",
+  "description": "\"OpenStack Swift を使った分散オブジェクトストレージの構築手順。Proxy と Storage ノードの基本構成から設定方法まで解説\"",
   "datePublished": "2012-11-04T00:00:00Z",
   "dateModified": "2012-11-04T00:00:00Z",
   "author": {
@@ -144,12 +113,7 @@ swift-storage03 : 172.16.0.13
       </script><meta property="og:url" content="https://jedipunkz.github.io/post/swift-tempauth/">
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="Swift で簡単に分散オブジェクトストレージ">
-  <meta property="og:description" content="最近、OpenStack にどっぷり浸かってる @jedipunkz です。
-Folsom がリリースされて Quantum を理解するのにめちゃ苦労して楽しい真っ最中なのだけど、 今日は OpenStack の中でも最も枯れているコンポーネント Swift を使ったオブジェクトストレー ジ構築について少し書こうかなぁと思ってます。
-最近は OpenStack を構築・デプロイするのに皆、Swift 入れてないのね。仲間はずれ 感たっぷりだけど、一番安定して動くと思ってる。
-これを読んで、自宅にオブジェクトストレージを置いちゃおぅ。
-構成は ?… &#43;--------&#43; | client | &#43;--------&#43; | &#43;-------------&#43; | swift-proxy | &#43;-------------&#43; 172.16.0.10 | &#43;-------------------&#43;-------------------&#43; 172.16.0.0/24 | | | &#43;-----------------&#43; &#43;-----------------&#43; &#43;-----------------&#43; | swift-storage01 | | swift-storage02 | | swift-storage03 | &#43;-----------------&#43; &#43;-----------------&#43; &#43;-----------------&#43; 172.16.0.11 172.16.0.12 172.16.0.13 となる。IP アドレスは…
-client : 172.16.0.0/24 のどこか swift-proxy : 172.16.0.10 swift-storage01 : 172.16.0.11 swift-storage02 : 172.16.0.12 swift-storage03 : 172.16.0.13 これはサンプル。自宅の環境に合わせて読み替えてください。">
+  <meta property="og:description" content="OpenStack Swift を使った分散オブジェクトストレージの構築手順。Proxy と Storage ノードの基本構成から設定方法まで解説">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
@@ -159,38 +123,7 @@ client : 172.16.0.0/24 のどこか swift-proxy : 172.16.0.10 swift-storage01 : 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://jedipunkz.github.io/jedipunkz.jpg">
 <meta name="twitter:title" content="Swift で簡単に分散オブジェクトストレージ">
-<meta name="twitter:description" content="最近、OpenStack にどっぷり浸かってる @jedipunkz です。
-Folsom がリリースされて Quantum を理解するのにめちゃ苦労して楽しい真っ最中なのだけど、
-今日は OpenStack の中でも最も枯れているコンポーネント Swift を使ったオブジェクトストレー
-ジ構築について少し書こうかなぁと思ってます。
-最近は OpenStack を構築・デプロイするのに皆、Swift 入れてないのね。仲間はずれ
-感たっぷりだけど、一番安定して動くと思ってる。
-これを読んで、自宅にオブジェクトストレージを置いちゃおぅ。
-構成は ?&hellip;
-                        &#43;--------&#43;
-                        | client |
-                        &#43;--------&#43;
-                             |
-                      &#43;-------------&#43;
-                      | swift-proxy |
-                      &#43;-------------&#43; 172.16.0.10
-                             |
-         &#43;-------------------&#43;-------------------&#43; 172.16.0.0/24
-         |                   |                   |
-&#43;-----------------&#43; &#43;-----------------&#43; &#43;-----------------&#43;
-| swift-storage01 | | swift-storage02 | | swift-storage03 |
-&#43;-----------------&#43; &#43;-----------------&#43; &#43;-----------------&#43;
-172.16.0.11         172.16.0.12         172.16.0.13
-
-となる。IP アドレスは&hellip;
-
-client : 172.16.0.0/24 のどこか
-swift-proxy : 172.16.0.10
-swift-storage01 : 172.16.0.11
-swift-storage02 : 172.16.0.12
-swift-storage03 : 172.16.0.13
-
-これはサンプル。自宅の環境に合わせて読み替えてください。">
+<meta name="twitter:description" content="OpenStack Swift を使った分散オブジェクトストレージの構築手順。Proxy と Storage ノードの基本構成から設定方法まで解説">
 
 
 <script type="application/ld+json">
@@ -219,7 +152,7 @@ swift-storage03 : 172.16.0.13
   "@type": "BlogPosting",
   "headline": "Swift で簡単に分散オブジェクトストレージ",
   "name": "Swift で簡単に分散オブジェクトストレージ",
-  "description": "最近、OpenStack にどっぷり浸かってる @jedipunkz です。\nFolsom がリリースされて Quantum を理解するのにめちゃ苦労して楽しい真っ最中なのだけど、 今日は OpenStack の中でも最も枯れているコンポーネント Swift を使ったオブジェクトストレー ジ構築について少し書こうかなぁと思ってます。\n最近は OpenStack を構築・デプロイするのに皆、Swift 入れてないのね。仲間はずれ 感たっぷりだけど、一番安定して動くと思ってる。\nこれを読んで、自宅にオブジェクトストレージを置いちゃおぅ。\n構成は ?\u0026hellip; +--------+ | client | +--------+ | +-------------+ | swift-proxy | +-------------+ 172.16.0.10 | +-------------------+-------------------+ 172.16.0.0/24 | | | +-----------------+ +-----------------+ +-----------------+ | swift-storage01 | | swift-storage02 | | swift-storage03 | +-----------------+ +-----------------+ +-----------------+ 172.16.0.11 172.16.0.12 172.16.0.13 となる。IP アドレスは\u0026hellip;\nclient : 172.16.0.0/24 のどこか swift-proxy : 172.16.0.10 swift-storage01 : 172.16.0.11 swift-storage02 : 172.16.0.12 swift-storage03 : 172.16.0.13 これはサンプル。自宅の環境に合わせて読み替えてください。\n",
+  "description": "OpenStack Swift を使った分散オブジェクトストレージの構築手順。Proxy と Storage ノードの基本構成から設定方法まで解説",
   "keywords": [
     
   ],
@@ -304,6 +237,9 @@ swift-storage03 : 172.16.0.13
     <h1 class="post-title">
       Swift で簡単に分散オブジェクトストレージ
     </h1>
+    <div class="post-description">
+      OpenStack Swift を使った分散オブジェクトストレージの構築手順。Proxy と Storage ノードの基本構成から設定方法まで解説
+    </div>
     
   </header> 
   <div class="post-content"><p>最近、OpenStack にどっぷり浸かってる <a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>

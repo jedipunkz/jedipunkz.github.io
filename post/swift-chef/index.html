@@ -7,38 +7,7 @@
 <meta name="robots" content="index, follow">
 <title>実用的な Swift 構成を Chef でデプロイ | jedipunkz 🚀 のブログ</title>
 <meta name="keywords" content="">
-<meta name="description" content="こんにちは。@jedipunkz です。
-以前、&ldquo;Swift HA 構成を Chef でデプロイ&rdquo; というタイトルで記事を書きました。
-http://jedipunkz.github.io/post/swift-ha-chef-deploy/
-こちらですが、Swift-Proxy, MySQL, Keystone をそれぞれ haproxy, keepalived で
-HA 組みました。ですが、これは実用的なのかどうか自分でずっと考えていました。
-MySQL と KeepAlived はできればシングル構成にしたいのと、Swift-Proxy は HA で組
-みたい。MySQL は Master/Master レプリケーション構成になり、どちらかのノードが
-障害を起こし万が一復旧が難しくなった時、構築し直しがしんどくなります。かと言っ
-て Swift-Proxy をシングル構成にすると今度はノード追加・削除の作業時にサービス
-断が発生します。Swift-Proxy を再起動書ける必要があるからです。なので
-Swift-Proxy は引き続き HA 構成にしたい。
-もう一点、見直したいと思っていました。
-日経コンピュータから出版されている &ldquo;仮想化大全 2014&rdquo; の記事を読んでいて
-気がついたのですが。Swift には下記の通りそれぞれのサーバがあります。
-
-swift-proxy-server
-swift-account-server
-swift-container-server
-swift-object-server
-
-Swift には下記のような特徴がある事がわかりました。
-
-swift-object
-
-swift-object は swift-accout, swift-container とは物理リソースの扱いに全く異な
-る特性を持っています。swift-account, swift-container はクライアントからのリクエ
-ストに対して &ldquo;アカウントの存在を確認&rdquo;, &ldquo;ACL 情報の確認&rdquo; 等を行うサーバであるの
-に対して swift-object はストレージ上のオブジェクトをクライアントに提供、または
-逆に格納するサーバです。よって、Disk I/O の利用特性として swift-account,
-container は SSD 等、高スループットの Disk を利用するケースが推奨されるのに対
-して swift-object はオブジェクトの実体を格納する必要があるため Disk 容量の大き
-なストレージを要する。">
+<meta name="description" content="OpenStack Swift の実用的な構成を Chef でデプロイ。Swift-Proxy の HA 化と、各サーバの特性に応じた効率的なリソース配置を実現">
 <meta name="author" content="jedipunkz">
 <link rel="canonical" href="https://jedipunkz.github.io/post/swift-chef/">
 <link crossorigin="anonymous" href="/assets/css/stylesheet.f7a41899047cffd0c787f7dd7098bd27c6bdc5ef7d41c83cf555a9ac25bfe465.css" integrity="sha256-96QYmQR8/9DHh/fdcJi9J8a9xe99Qcg89VWprCW/5GU=" rel="preload stylesheet" as="style">
@@ -107,7 +76,7 @@ container は SSD 等、高スループットの Disk を利用するケース�
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "\"実用的な Swift 構成を Chef でデプロイ\"",
-  "description": "\"こんにちは。@jedipunkz です。\\n以前、\\u0026ldquo;Swift HA 構成を Chef でデプロイ\\u0026rdquo; というタイトルで記事を書きました。\\nhttp://jedipunkz.github.io/post/swift-ha-chef-deploy/\\nこちらですが、Swift-Proxy, MySQL, Keystone をそれぞれ haproxy, keepalived で HA 組みました。ですが、これは実用的なのかどうか自分でずっと考えていました。\\nMySQL と KeepAlived はできればシングル構成にしたいのと、Swift-Proxy は HA で組 みたい。MySQL は Master/Master レプリケーション構成になり、どちらかのノードが 障害を起こし万が一復旧が難しくなった時、構築し直しがしんどくなります。かと言っ て Swift-Proxy をシングル構成にすると今度はノード追加・削除の作業時にサービス 断が発生します。Swift-Proxy を再起動書ける必要があるからです。なので Swift-Proxy は引き続き HA 構成にしたい。\\nもう一点、見直したいと思っていました。\\n日経コンピュータから出版されている \\u0026ldquo;仮想化大全 2014\\u0026rdquo; の記事を読んでいて 気がついたのですが。Swift には下記の通りそれぞれのサーバがあります。\\nswift-proxy-server swift-account-server swift-container-server swift-object-server Swift には下記のような特徴がある事がわかりました。\\nswift-object swift-object は swift-accout, swift-container とは物理リソースの扱いに全く異な る特性を持っています。swift-account, swift-container はクライアントからのリクエ ストに対して \\u0026ldquo;アカウントの存在を確認\\u0026rdquo;, \\u0026ldquo;ACL 情報の確認\\u0026rdquo; 等を行うサーバであるの に対して swift-object はストレージ上のオブジェクトをクライアントに提供、または 逆に格納するサーバです。よって、Disk I/O の利用特性として swift-account, container は SSD 等、高スループットの Disk を利用するケースが推奨されるのに対 して swift-object はオブジェクトの実体を格納する必要があるため Disk 容量の大き なストレージを要する。\\n\"",
+  "description": "\"OpenStack Swift の実用的な構成を Chef でデプロイ。Swift-Proxy の HA 化と、各サーバの特性に応じた効率的なリソース配置を実現\"",
   "datePublished": "2013-10-27T00:00:00Z",
   "dateModified": "2013-10-27T00:00:00Z",
   "author": {
@@ -144,15 +113,7 @@ container は SSD 等、高スループットの Disk を利用するケース�
       </script><meta property="og:url" content="https://jedipunkz.github.io/post/swift-chef/">
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="実用的な Swift 構成を Chef でデプロイ">
-  <meta property="og:description" content="こんにちは。@jedipunkz です。
-以前、“Swift HA 構成を Chef でデプロイ” というタイトルで記事を書きました。
-http://jedipunkz.github.io/post/swift-ha-chef-deploy/
-こちらですが、Swift-Proxy, MySQL, Keystone をそれぞれ haproxy, keepalived で HA 組みました。ですが、これは実用的なのかどうか自分でずっと考えていました。
-MySQL と KeepAlived はできればシングル構成にしたいのと、Swift-Proxy は HA で組 みたい。MySQL は Master/Master レプリケーション構成になり、どちらかのノードが 障害を起こし万が一復旧が難しくなった時、構築し直しがしんどくなります。かと言っ て Swift-Proxy をシングル構成にすると今度はノード追加・削除の作業時にサービス 断が発生します。Swift-Proxy を再起動書ける必要があるからです。なので Swift-Proxy は引き続き HA 構成にしたい。
-もう一点、見直したいと思っていました。
-日経コンピュータから出版されている “仮想化大全 2014” の記事を読んでいて 気がついたのですが。Swift には下記の通りそれぞれのサーバがあります。
-swift-proxy-server swift-account-server swift-container-server swift-object-server Swift には下記のような特徴がある事がわかりました。
-swift-object swift-object は swift-accout, swift-container とは物理リソースの扱いに全く異な る特性を持っています。swift-account, swift-container はクライアントからのリクエ ストに対して “アカウントの存在を確認”, “ACL 情報の確認” 等を行うサーバであるの に対して swift-object はストレージ上のオブジェクトをクライアントに提供、または 逆に格納するサーバです。よって、Disk I/O の利用特性として swift-account, container は SSD 等、高スループットの Disk を利用するケースが推奨されるのに対 して swift-object はオブジェクトの実体を格納する必要があるため Disk 容量の大き なストレージを要する。">
+  <meta property="og:description" content="OpenStack Swift の実用的な構成を Chef でデプロイ。Swift-Proxy の HA 化と、各サーバの特性に応じた効率的なリソース配置を実現">
   <meta property="og:locale" content="en">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
@@ -162,38 +123,7 @@ swift-object swift-object は swift-accout, swift-container とは物理リソ�
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://jedipunkz.github.io/jedipunkz.jpg">
 <meta name="twitter:title" content="実用的な Swift 構成を Chef でデプロイ">
-<meta name="twitter:description" content="こんにちは。@jedipunkz です。
-以前、&ldquo;Swift HA 構成を Chef でデプロイ&rdquo; というタイトルで記事を書きました。
-http://jedipunkz.github.io/post/swift-ha-chef-deploy/
-こちらですが、Swift-Proxy, MySQL, Keystone をそれぞれ haproxy, keepalived で
-HA 組みました。ですが、これは実用的なのかどうか自分でずっと考えていました。
-MySQL と KeepAlived はできればシングル構成にしたいのと、Swift-Proxy は HA で組
-みたい。MySQL は Master/Master レプリケーション構成になり、どちらかのノードが
-障害を起こし万が一復旧が難しくなった時、構築し直しがしんどくなります。かと言っ
-て Swift-Proxy をシングル構成にすると今度はノード追加・削除の作業時にサービス
-断が発生します。Swift-Proxy を再起動書ける必要があるからです。なので
-Swift-Proxy は引き続き HA 構成にしたい。
-もう一点、見直したいと思っていました。
-日経コンピュータから出版されている &ldquo;仮想化大全 2014&rdquo; の記事を読んでいて
-気がついたのですが。Swift には下記の通りそれぞれのサーバがあります。
-
-swift-proxy-server
-swift-account-server
-swift-container-server
-swift-object-server
-
-Swift には下記のような特徴がある事がわかりました。
-
-swift-object
-
-swift-object は swift-accout, swift-container とは物理リソースの扱いに全く異な
-る特性を持っています。swift-account, swift-container はクライアントからのリクエ
-ストに対して &ldquo;アカウントの存在を確認&rdquo;, &ldquo;ACL 情報の確認&rdquo; 等を行うサーバであるの
-に対して swift-object はストレージ上のオブジェクトをクライアントに提供、または
-逆に格納するサーバです。よって、Disk I/O の利用特性として swift-account,
-container は SSD 等、高スループットの Disk を利用するケースが推奨されるのに対
-して swift-object はオブジェクトの実体を格納する必要があるため Disk 容量の大き
-なストレージを要する。">
+<meta name="twitter:description" content="OpenStack Swift の実用的な構成を Chef でデプロイ。Swift-Proxy の HA 化と、各サーバの特性に応じた効率的なリソース配置を実現">
 
 
 <script type="application/ld+json">
@@ -222,7 +152,7 @@ container は SSD 等、高スループットの Disk を利用するケース�
   "@type": "BlogPosting",
   "headline": "実用的な Swift 構成を Chef でデプロイ",
   "name": "実用的な Swift 構成を Chef でデプロイ",
-  "description": "こんにちは。@jedipunkz です。\n以前、\u0026ldquo;Swift HA 構成を Chef でデプロイ\u0026rdquo; というタイトルで記事を書きました。\nhttp://jedipunkz.github.io/post/swift-ha-chef-deploy/\nこちらですが、Swift-Proxy, MySQL, Keystone をそれぞれ haproxy, keepalived で HA 組みました。ですが、これは実用的なのかどうか自分でずっと考えていました。\nMySQL と KeepAlived はできればシングル構成にしたいのと、Swift-Proxy は HA で組 みたい。MySQL は Master/Master レプリケーション構成になり、どちらかのノードが 障害を起こし万が一復旧が難しくなった時、構築し直しがしんどくなります。かと言っ て Swift-Proxy をシングル構成にすると今度はノード追加・削除の作業時にサービス 断が発生します。Swift-Proxy を再起動書ける必要があるからです。なので Swift-Proxy は引き続き HA 構成にしたい。\nもう一点、見直したいと思っていました。\n日経コンピュータから出版されている \u0026ldquo;仮想化大全 2014\u0026rdquo; の記事を読んでいて 気がついたのですが。Swift には下記の通りそれぞれのサーバがあります。\nswift-proxy-server swift-account-server swift-container-server swift-object-server Swift には下記のような特徴がある事がわかりました。\nswift-object swift-object は swift-accout, swift-container とは物理リソースの扱いに全く異な る特性を持っています。swift-account, swift-container はクライアントからのリクエ ストに対して \u0026ldquo;アカウントの存在を確認\u0026rdquo;, \u0026ldquo;ACL 情報の確認\u0026rdquo; 等を行うサーバであるの に対して swift-object はストレージ上のオブジェクトをクライアントに提供、または 逆に格納するサーバです。よって、Disk I/O の利用特性として swift-account, container は SSD 等、高スループットの Disk を利用するケースが推奨されるのに対 して swift-object はオブジェクトの実体を格納する必要があるため Disk 容量の大き なストレージを要する。\n",
+  "description": "OpenStack Swift の実用的な構成を Chef でデプロイ。Swift-Proxy の HA 化と、各サーバの特性に応じた効率的なリソース配置を実現",
   "keywords": [
     
   ],
@@ -307,6 +237,9 @@ container は SSD 等、高スループットの Disk を利用するケース�
     <h1 class="post-title">
       実用的な Swift 構成を Chef でデプロイ
     </h1>
+    <div class="post-description">
+      OpenStack Swift の実用的な構成を Chef でデプロイ。Swift-Proxy の HA 化と、各サーバの特性に応じた効率的なリソース配置を実現
+    </div>
     
   </header> 
   <div class="post-content"><p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
