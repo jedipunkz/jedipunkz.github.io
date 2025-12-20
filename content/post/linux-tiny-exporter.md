@@ -4,6 +4,8 @@ date: 2024-01-13T22:28:22+09:00
 Categories: ["infrastructure"]
 description: "Go で自作した Prometheus Exporter による自宅ルータの CPU、メモリ、ネットワーク、温度監視"
 ---
+こんにちは @jedipunkz です。
+
 自宅のルータについても可観測性を向上して普段の運用に役立てています。例えば長期スパンでのネットワーク通信料の推移や CPU, Mem 使用率、あとハードウェアの温度の推移などを観測しています。
 
 今までは Prometheus の Node Exporter を使ってホストの情報を Prometheus Server に提供していたのですが、自分で Go で Prometheus Exporter を書いて運用するにようになったので、それについてまとめます。
