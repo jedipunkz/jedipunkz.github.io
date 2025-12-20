@@ -1,5 +1,6 @@
 +++
 title = "test-kitchen と OpenStack で Chef Cookbooks テスト(前篇)"
+description = "test-kitchen と OpenStack インスタンスを使った Chef Cookbooks のテスト環境構築方法（前篇）。Vagrant の代替として OpenStack を活用"
 date = "2013-10-13"
 Categories = ["infrastructure"]
 +++

@@ -1,5 +1,6 @@
 +++
 title = "WordPress を nginx + fastcgi で高速化"
+description = "WordPress を nginx と fastcgi を使って高速化する方法。Apache の代わりに nginx を使った構築手順と gzip 圧縮設定を解説"
 date = "2012-03-07"
 Categories = ["tools"]
 +++

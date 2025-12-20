@@ -1,5 +1,6 @@
 +++
 title = "vyatta で UPnP 接続"
+description = "Vyatta で UPnP 接続を実現する方法。PS3 などのゲーム機や IP 電話向けに、有志が作成したパッケージを使った設定手順を紹介"
 date = "2012-04-29"
 Categories = ["infrastructure"]
 +++

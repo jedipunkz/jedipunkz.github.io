@@ -1,5 +1,6 @@
 +++
 title = "vyatta で自宅ルータ構築"
+description = "Vyatta で自宅ルータを構築する方法。PPPoE、NAT、DHCP の基本設定から Broadcom NIC の動作確認まで解説"
 date = "2012-04-28"
 Categories = ["infrastructure"]
 +++

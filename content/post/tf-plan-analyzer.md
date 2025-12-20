@@ -1,5 +1,6 @@
 ---
 title: "Terraform Plan 差分をパースする GitHub Actions を作った"
+description: "Terraform Plan の差分を自動的にパースして処理する GitHub Actions の作成。特定のリソースを無視する機能など、Plan 結果を柔軟に扱う方法を紹介"
 date: 2025-09-15T10:00:00+09:00
 Categories: ["infrastructure", "terraform", "github-actions"]
 draft: false

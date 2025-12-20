@@ -1,5 +1,6 @@
 +++
 title = "VyOS で VXLAN を使ってみる"
+description = "VyOS で VXLAN を使ったネットワーク構成の構築方法。Linux Kernel の VXLAN 実装を使った VyOS と Ubuntu 間の疎通確認"
 date = "2014-12-16"
 Categories = ["infrastructure"]
 +++

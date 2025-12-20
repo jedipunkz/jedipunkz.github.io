@@ -1,5 +1,6 @@
 +++
 title = "Spiceweasel で knife バッチ処理"
+description = "Chef の cookbook ダウンロード、role/cookbook のアップロード、ブートストラップをバッチ処理できる Spiceweasel ツールの使い方を紹介"
 date = "2013-02-01"
 Categories = ["infrastructure", "tools"]
 +++

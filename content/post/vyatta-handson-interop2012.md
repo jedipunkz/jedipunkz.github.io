@@ -1,5 +1,6 @@
 +++
 title = "Vyatta ハンズオン参加レポ #interop2012"
+description = "Interop 2012 で開催された Vyatta ハンズオンの参加レポート。有償版と無償版の違い、vPlane 実装など、エンタープライズ向けの可能性を解説"
 date = "2012-06-14"
 Categories = ["infrastructure"]
 +++

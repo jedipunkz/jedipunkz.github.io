@@ -1,5 +1,6 @@
 +++
 title = "Vyatta で L2TP over IPsec による VPN 構築"
+description = "Vyatta で L2TP over IPsec による安全な VPN 環境を構築する方法。PPTP の脆弱性を回避した推奨構成を解説"
 date = "2013-08-24"
 Categories = ["infrastructure"]
 +++

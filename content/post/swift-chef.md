@@ -1,5 +1,6 @@
 +++
 title = "実用的な Swift 構成を Chef でデプロイ"
+description = "OpenStack Swift の実用的な構成を Chef でデプロイ。Swift-Proxy の HA 化と、各サーバの特性に応じた効率的なリソース配置を実現"
 date = "2013-10-27"
 Categories = ["infrastructure"]
 +++

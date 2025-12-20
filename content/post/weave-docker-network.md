@@ -1,5 +1,6 @@
 +++
 title = "Weave を使った Docker ネットワーク"
+description = "Docker のネットワークプラグイン Weave の使い方。コンテナ間ネットワークの構築方法と Fast Data Path、Service Binding などの機能を解説"
 date = "2015-12-22"
 Categories = ["infrastructure"]
 +++

@@ -1,5 +1,6 @@
 +++
 title = "USB Stick で Debian Gnu/Linux インストール"
+description = "USB スティックを使った Debian のインストール方法。netinst ISO を使った簡単で確実な手順を紹介"
 date = "2012-03-07"
 Categories = ["infrastructure"]
 +++

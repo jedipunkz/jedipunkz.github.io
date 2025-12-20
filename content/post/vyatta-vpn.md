@@ -1,5 +1,6 @@
 +++
 title = "Vyatta で構築する簡単 VPN サーバ"
+description = "Vyatta で PPTP を使った VPN サーバを簡単に構築する方法。iPhone などのモバイル端末から自宅ネットワークへの接続を実現"
 date = "2012-06-13"
 Categories = ["infrastructure"]
 +++
