@@ -3,6 +3,10 @@ title = "Spiceweasel で knife バッチ処理"
 description = "Chef の cookbook ダウンロード、role/cookbook のアップロード、ブートストラップをバッチ処理できる Spiceweasel ツールの使い方を紹介"
 date = "2013-02-01"
 Categories = ["infrastructure", "tools"]
+aliases = [
+  "/blog/2013/02/01/spiceweasel-knife-bootstrap",
+  "/post/2013/02/01/spiceweasel-knife-bootstrap"
+]
 +++
 Spiceweasel <https://github.com/mattray/spiceweasel#cookbooks> を使ってみた。
 

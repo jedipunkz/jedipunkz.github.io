@@ -3,6 +3,10 @@ title = "Swift HA 構成を Chef でデプロイ"
 description = "OpenStack Swift の HA 構成を Chef でデプロイ。Keepalived と Haproxy で Swift-Proxy と MySQL を HA 化する方法を解説"
 date = "2013-07-26"
 Categories = ["infrastructure"]
+aliases = [
+  "/blog/2013/07/26/swift-ha-chef-deploy",
+  "/post/2013/07/26/swift-ha-chef-deploy"
+]
 +++
 
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。

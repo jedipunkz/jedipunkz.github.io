@@ -3,6 +3,10 @@ title = "test-kitchen と OpenStack で Chef Cookbooks テスト (後篇)"
 description = "OpenStack と test-kitchen を使った Chef Cookbooks のテスト方法（後篇）。rspec/serverspec と busser-bats を使ったテストの書き方を解説"
 date = "2013-10-20"
 Categories = ["infrastructure"]
+aliases = [
+  "/blog/2013/10/20/test-kitchen-openstack-chef-cookbooks-test-2",
+  "/post/2013/10/20/test-kitchen-openstack-chef-cookbooks-test-2"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

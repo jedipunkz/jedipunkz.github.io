@@ -3,6 +3,10 @@ title = "Vyatta で無線アクセスポイント"
 description = "Vyatta を無線アクセスポイントとして構成する方法。Atheros AR9k 無線カードを使ったブリッジ接続の設定手順を解説"
 date = "2012-05-04"
 Categories = ["infrastructure"]
+aliases = [
+  "/blog/2012/05/04/vyatta-wireless-ap",
+  "/post/2012/05/04/vyatta-wireless-ap"
+]
 +++
 自宅ルータを Vyatta で運用開始したのだけど、無線ルータ化ができたのでメモしておき
 ます。
