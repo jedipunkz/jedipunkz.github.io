@@ -1,9 +1,12 @@
 +++
 title = "Ceph のプロセス配置ベストプラクティス"
 date = "2014-01-29"
-slug = "2014/01/29/ceph-process-best-practice"
 Categories = ["infrastructure"]
 description = "Ceph の mon、osd、mds プロセス配置と SSD journal の構成ベストプラクティス"
+aliases = [
+  "/blog/2014/01/29/ceph-process-best-practice",
+  "/post/2014/01/29/ceph-process-best-practice"
+]
 +++
 
 Ceph はブロック型の分散ストレージファイルシステムです。POSIX のファイルシステ
@@ -12,8 +15,8 @@ Ceph はブロック型の分散ストレージファイルシステムです。
 
 だいぶ前ですが、Ceph に関する記事を以前下記の通り書きました。
 
-* <http://jedipunkz.github.io/blog/2013/05/25/ceph-cluster-network/>
-* <http://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/>
+* <http://jedipunkz.github.io/post/ceph-cluster-network/>
+* <http://jedipunkz.github.io/post/ceph-deploy/>
 
 Ceph の構築方法について記したブログだったのですが、今まで mon, osd, mds の各プ
 ロセスをそれぞれ何台のノードに対して配置し、またそれぞれのプロセス幾つを何に対

@@ -1,9 +1,12 @@
 +++
 title = "FreeBSD on OpenStack"
 date = "2013-01-01"
-slug = "2013/01/01/freebsd-on-openstack"
 Categories = ["infrastructure"]
 description = "OpenStack Folsom 上で FreeBSD 9.1 を virtio ドライバで動作させる手順"
+aliases = [
+  "/blog/2013/01/01/freebsd-on-openstack",
+  "/post/2013/01/01/freebsd-on-openstack"
+]
 +++
 FreeBSD を OpenStack で管理したいなぁと思って自宅に OpenStack 環境作ってました。
 

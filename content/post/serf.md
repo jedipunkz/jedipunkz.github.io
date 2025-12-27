@@ -1,9 +1,12 @@
 +++
 title = "Serf を使ってみた"
 date = "2013-11-10"
-slug = "2013/11/10/serf"
 Categories = ["infrastructure"]
 description = "HashiCorp Serf オーケストレーションツールの紹介と基本的な動作の理解"
+aliases = [
+  "/blog/2013/11/10/serf",
+  "/post/2013/11/10/serf"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

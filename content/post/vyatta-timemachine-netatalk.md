@@ -1,8 +1,12 @@
 +++
 title = "Vyatta で Mac 用 TimeMachine サーバ兼ファイルサーバを構築！"
+description = "Vyatta に Netatalk をインストールして Mac 用 TimeMachine サーバとファイルサーバを構築。Debian ベースの特性を活かした簡単設定"
 date = "2013-11-26"
-slug = "2013/11/26/vyatta-timemachine-netatalk"
 Categories = ["infrastructure"]
+aliases = [
+  "/blog/2013/11/26/vyatta-timemachine-netatalk",
+  "/post/2013/11/26/vyatta-timemachine-netatalk"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

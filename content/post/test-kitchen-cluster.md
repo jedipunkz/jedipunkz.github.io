@@ -1,5 +1,6 @@
 ---
 title: "Docker,Test-Kitchen,Ansible でクラスタを構成する"
+description: "Docker と Test-Kitchen、Ansible を使ってローカル環境で複数ノードのクラスタを構成する方法。Redis HA 構成なども容易に検証可能"
 date: "2017-07-02"
 Categories: ["infrastructure"]
 ---
@@ -7,7 +8,7 @@ Categories: ["infrastructure"]
 
 以前、"Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！" ってタイトルで Ansible Role の開発を test-kitchen を使って行う方法について記事にしたのですが、やっぱりローカルで Docker コンテナ立ち上げてデプロしてテストして.. ってすごく楽というか速くて今の現場でも便利につかっています。前の記事の URL は下記です。
 
-https://jedipunkz.github.io/blog/2016/07/14/test-kitchen-with-ansible/
+https://jedipunkz.github.io/post/test-kitchen-with-ansible/
 
 最近？は ansible container って技術もあるけど、僕らが Docker 使う目的はコンテナでデプロイするのではなくて単に Ansible を実行するローカル環境が欲しいってこととか、Serverspec をローカル・実機に実行する環境が欲しいってことなので、今でも test-kitchen 使っています。
 

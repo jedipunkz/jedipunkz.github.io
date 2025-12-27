@@ -1,16 +1,19 @@
 +++
 title = "Mesos + Marathon + Deimos + Docker を試してみた!"
 date = "2014-06-13"
-slug = "2014/06/13/mesos-marathon-deimos-docker"
 Categories = ["infrastructure"]
 description = "Mesos の Docker プラグイン Deimos と Marathon を使ったコンテナオーケストレーション"
+aliases = [
+  "/blog/2014/06/13/mesos-marathon-deimos-docker",
+  "/post/2014/06/13/mesos-marathon-deimos-docker"
+]
 +++
 こんにちは。@jedipunkz です。
 
 以前 Mesos, Docker について記事にしました。
 
-<http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/>
-<http://jedipunkz.github.io/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos/>
+<http://jedipunkz.github.io/post/mesos-architecture-number-1/>
+<http://jedipunkz.github.io/post/methos-architecture-number-2-docker-on-mesos/>
 
 Twitter で Docker 関連のオーケストレーションツールについて呟いていたら @everpeace さんから
 こんな情報をもらいました。

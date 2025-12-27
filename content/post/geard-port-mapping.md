@@ -1,9 +1,12 @@
 +++
 title = "Geard のポートマッピングについて調べてみた"
 date = "2014-04-22"
-slug = "2014/04/22/geard-port-mapping"
 Categories = ["infrastructure"]
 description = "Redhat Enterprise Linux Atomic Host の Geard による複数コンテナ関連付けとポートマッピング"
+aliases = [
+  "/blog/2014/04/22/geard-port-mapping",
+  "/post/2014/04/22/geard-port-mapping"
+]
 +++
 こんにちは。@jedipunkz です。
 

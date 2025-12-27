@@ -1,9 +1,12 @@
 +++
 title = "内部で Chef を使っている OpenCenter で OpenStack 構築"
 date = "2013-07-02"
-slug = "2013/07/02/chef-opencenter-openstack"
 Categories = ["infrastructure"]
 description = "GUI でドラッグ&ドロップ操作により OpenStack をデプロイできる OpenCenter の使用方法"
+aliases = [
+  "/blog/2013/07/02/chef-opencenter-openstack",
+  "/post/2013/07/02/chef-opencenter-openstack"
+]
 +++
 
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。

@@ -1,9 +1,12 @@
 +++
 title = "Sensu 監視システムを Chef で制御"
 date = "2013-06-20"
-slug = "2013/06/20/sensu-chef-controll"
 Categories = ["infrastructure"]
 description = "Sensu 監視システムを Chef Cookbook で構築・制御する方法と自動化の実現"
+aliases = [
+  "/blog/2013/06/20/sensu-chef-controll",
+  "/post/2013/06/20/sensu-chef-controll"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

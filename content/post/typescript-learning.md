@@ -1,5 +1,6 @@
 ---
 title: "TypeScript 入門: 構文集"
+description: "TypeScript の主要な構文を網羅的にまとめた入門記事。型システム、複合型、関数、クラス、ジェネリクスなど、サンプルコードとともに解説"
 date: 2025-10-19T12:00:00+09:00
 Categories: ["tools"]
 draft: false

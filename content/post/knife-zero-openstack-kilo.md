@@ -1,9 +1,12 @@
 +++
 title = "Knife-ZeroでOpenStack Kiloデプロイ(複数台編)"
 date = "2015-07-20"
-slug = "2015/07/20/knife-zero-openstack-kilo"
 Categories = ["infrastructure"]
 description = "knife-zero と openstack-chef-repo を使った OpenStack Kilo の複数台構成デプロイ手順"
+aliases = [
+  "/blog/2015/07/20/knife-zero-openstack-kilo",
+  "/post/2015/07/20/knife-zero-openstack-kilo"
+]
 +++
 こんにちは。@jedipunkz です。
 

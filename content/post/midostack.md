@@ -1,9 +1,12 @@
 +++
 title = "MidoStack を動かしてみる"
 date = "2014-11-04"
-slug = "2014/11/04/midostack"
 Categories = ["infrastructure"]
 description = "OSS 化された Midonet と devstack を使った OpenStack Neutron プラグインの動作確認"
+aliases = [
+  "/blog/2014/11/04/midostack",
+  "/post/2014/11/04/midostack"
+]
 +++
 こんにちは。@jedipunkz です。
 

@@ -1,9 +1,12 @@
 +++
 title = "Pragmatic Terraform on AWS の内容が素晴らしかったので感想を述べる"
 date = "2019-07-27"
-slug = "2019/07/27/pragmatic-terraform"
 Categories = ["infrastructure"]
 description = "電子書籍 'Pragmatic Terraform on AWS' の書評と Terraform 運用の問題点解決"
+aliases = [
+  "/blog/2019/07/27/pragmatic-terraform",
+  "/post/2019/07/27/pragmatic-terraform"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

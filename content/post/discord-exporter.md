@@ -1,8 +1,11 @@
 +++
 title = "Prometheus Exporter 開発で Discord サーバ運営の健全化を図る"
 description = "Discord サーバのメンバー数やチャネルごとのメッセージ数を Prometheus Exporter を Go を使って開発した話を記します"
+aliases = [
+  "/blog/2025/11/08/discord-exporter",
+  "/post/2025/11/08/discord-exporter"
+]
 date = "2025-11-08"
-slug = "2025/11/08/discord-exporter"
 Categories = ["prometheus", "grafana", "bot"]
 +++
 

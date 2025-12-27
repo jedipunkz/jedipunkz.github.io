@@ -1,9 +1,12 @@
 +++
 title = "OpenStack nova-network IPv6 対応"
 date = "2013-08-18"
-slug = "2013/08/18/openstack-nova-network-ipv6"
 Categories = ["infrastructure"]
 description = "OpenStack の nova-network を IPv6 対応にする設定手順と構成方法"
+aliases = [
+  "/blog/2013/08/18/openstack-nova-network-ipv6",
+  "/post/2013/08/18/openstack-nova-network-ipv6"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です
 

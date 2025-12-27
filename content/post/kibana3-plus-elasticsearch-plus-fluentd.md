@@ -1,9 +1,12 @@
 +++
 title = "Kibana3 + elasticsearch + fluentd を試した"
 date = "2013-09-08"
-slug = "2013/09/08/kibana3-plus-elasticsearch-plus-fluentd"
 Categories = ["infrastructure"]
 description = "Kibana3 の新機能を使った elasticsearch と fluentd によるログ解析環境構築"
+aliases = [
+  "/blog/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd",
+  "/post/2013/09/08/kibana3-plus-elasticsearch-plus-fluentd"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
@@ -15,7 +18,7 @@ description = "Kibana3 の新機能を使った elasticsearch と fluentd によ
 
 前回の記事。
 
-<http://jedipunkz.github.io/blog/2013/09/07/kibana-plus-elasticsearch-plus-fluentd/>
+<http://jedipunkz.github.io/post/kibana-plus-elasticsearch-plus-fluentd/>
 
 前半の手順は前回と同様ですが、念のため書いておきます。
 

@@ -1,9 +1,12 @@
 +++
 title = "conky statusbar"
 date = "2012-03-07"
-slug = "2012/03/07/conky-statusbar"
 Categories = ["tools"]
 description = "X Window でステータスバーとして使える conky の設定とカスタマイズ方法"
+aliases = [
+  "/blog/2012/03/07/conky-statusbar",
+  "/post/2012/03/07/conky-statusbar"
+]
 +++
 <a href="http://files.chobiwan.me/pix/conky_capture.png"><img src="http://files.chobiwan.me/pix/conky_capture.png" alt="" title="conky_capture" width="721" height="274" class="alignnone size-full wp-image-60" /></a>
 

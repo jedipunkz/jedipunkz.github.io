@@ -1,15 +1,18 @@
 +++
 title = "Methos アーキテクチャ #2 (Docker on Mesos)"
 date = "2013-10-01"
-slug = "2013/10/01/methos-architecture-number-2-docker-on-mesos"
 Categories = ["infrastructure"]
 description = "Mesos と Marathon、Docker を組み合わせたコンテナクラスタ構成のアーキテクチャ解説"
+aliases = [
+  "/blog/2013/10/01/methos-architecture-number-2-docker-on-mesos",
+  "/post/2013/10/01/methos-architecture-number-2-docker-on-mesos"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
 Mesos アーキテクチャについて2つめの記事です。
 
-<http://jedipunkz.github.io/blog/2013/09/28/mesos-architecture-number-1/>
+<http://jedipunkz.github.io/post/mesos-architecture-number-1/>
 
 上記の前回の記事で Mesos 自体のアーキテクチャについて触れましたが、今回は
 Mesos + Marathon + Docker の構成について理解したことを書いていこうと思います。

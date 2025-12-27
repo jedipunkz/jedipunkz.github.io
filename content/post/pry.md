@@ -1,9 +1,12 @@
 +++
 title = "pry のススメ"
 date = "2013-03-06"
-slug = "2013/03/06/pry"
 Categories = ["tools"]
 description = "Ruby のインタラクティブシェル pry の便利さと Fog 開発での活用方法"
+aliases = [
+  "/blog/2013/03/06/pry",
+  "/post/2013/03/06/pry"
+]
 +++
 OpenStack をコードで管理するためのフレームワークは幾つか存在するのだけど Ruby
 で記述出来る Fog が良い！と隣に座ってるアプリエンジニアが言うので僕も最近少し

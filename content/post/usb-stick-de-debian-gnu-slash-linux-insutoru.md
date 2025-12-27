@@ -1,8 +1,12 @@
 +++
 title = "USB Stick で Debian Gnu/Linux インストール"
+description = "USB スティックを使った Debian のインストール方法。netinst ISO を使った簡単で確実な手順を紹介"
 date = "2012-03-07"
-slug = "2012/03/07/usb-stick-de-debian-gnu-slash-linux-insutoru"
 Categories = ["infrastructure"]
+aliases = [
+  "/blog/2012/03/07/usb-stick-de-debian-gnu-slash-linux-insutoru",
+  "/post/2012/03/07/usb-stick-de-debian-gnu-slash-linux-insutoru"
+]
 +++
 MS Windows なツールを使う方法だったり、vmlinuz, initrd をファイラーでコピーしたり、何故かいつもインターネットで調べると USB スティックを利用した debian のインストール方法が'面倒', '不確か' なので、忘れないようにメモ。
 

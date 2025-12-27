@@ -1,9 +1,12 @@
 +++
 title = "OpenStack + Ceph 連携"
 date = "2013-05-19"
-slug = "2013/05/19/openstack-ceph"
 Categories = ["infrastructure"]
 description = "OpenStack の Cinder と Glance を Ceph 分散ストレージに連携させる構成と手順"
+aliases = [
+  "/blog/2013/05/19/openstack-ceph",
+  "/post/2013/05/19/openstack-ceph"
+]
 +++
 こんにちは。最近 OpenStack の導入に向けて保守性や可用性について調査している
 <a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
@@ -50,8 +53,8 @@ OpenStack は MySQL のダンプや OS イメージ・スナップショット�
 では早速手順ですが、OpenStack と Ceph の構築手順は割愛します。私の他の記事を参
 考にしていただければと思います。
 
-* <a href="http://jedipunkz.github.io/blog/2013/04/20/openstack-grizzly-installation-script/">構築スクリプト</a>
-* <a href="http://jedipunkz.github.io/blog/2013/05/11/ceph-deploy/">ceph-deploy で Ceph 構築</a>
+* <a href="http://jedipunkz.github.io/post/openstack-grizzly-installation-script/">構築スクリプト</a>
+* <a href="http://jedipunkz.github.io/post/ceph-deploy/">ceph-deploy で Ceph 構築</a>
 
 Ceph + OpenStack 連携手順
 ----

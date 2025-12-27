@@ -1,9 +1,12 @@
 +++
 title = "OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携"
 date = "2014-04-04"
-slug = "2014/04/04/openstack-havana-cinder-glance-ceph"
 Categories = ["infrastructure"]
 description = "OpenStack Havana の Glance と Cinder を Ceph 分散ストレージに連携させる詳細手順"
+aliases = [
+  "/blog/2014/04/04/openstack-havana-cinder-glance-ceph",
+  "/post/2014/04/04/openstack-havana-cinder-glance-ceph"
+]
 +++
 こんにちは！<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
@@ -68,11 +71,11 @@ OpenStack, Ceph 共に最小構成を前提にします。
 
 OpenStack 構築方法
 
-<http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/>
+<http://jedipunkz.github.io/post/openstack-havana-chef-deploy/>
 
 Ceph 構築方法
 
-<http://jedipunkz.github.io/blog/2014/02/27/journal-ssd-ceph-deploy/>
+<http://jedipunkz.github.io/post/journal-ssd-ceph-deploy/>
 
 OpenStack + Ceph 連携手順
 ----

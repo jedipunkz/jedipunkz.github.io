@@ -1,14 +1,18 @@
 +++
 title = "Vyatta で L2TP over IPsec による VPN 構築"
+description = "Vyatta で L2TP over IPsec による安全な VPN 環境を構築する方法。PPTP の脆弱性を回避した推奨構成を解説"
 date = "2013-08-24"
-slug = "2013/08/24/vyatta-l2tp-ipsec-vpn"
 Categories = ["infrastructure"]
+aliases = [
+  "/blog/2013/08/24/vyatta-l2tp-ipsec-vpn",
+  "/post/2013/08/24/vyatta-l2tp-ipsec-vpn"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
 以前、こんな記事をブログに記しました。2012/06 の記事です。
 
-<http://jedipunkz.github.io/blog/2012/06/13/vyatta-vpn/>
+<http://jedipunkz.github.io/post/vyatta-vpn/>
 
 その後、PPTP で保護されたネットワークの VPN パスワードを奪取出来るツールが公開
 されました。2012/07 のことです。よって今では VPN に PPTP を用いることが推奨さ

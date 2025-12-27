@@ -1,9 +1,12 @@
 +++
 title = "第2回 Elasticsearch 勉強会参加レポート"
 date = "2013-11-13"
-slug = "2013/11/13/elasticsearch-second-study-report"
 Categories = ["infrastructure"]
 description = "Elasticsearch の Routing、Index 構成、shard 配置についての勉強会レポート"
+aliases = [
+  "/blog/2013/11/13/elasticsearch-second-study-report",
+  "/post/2013/11/13/elasticsearch-second-study-report"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

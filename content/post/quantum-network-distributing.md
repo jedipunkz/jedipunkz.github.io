@@ -1,9 +1,12 @@
 +++
 title = "Quantum Network ノードの分散・冗長"
 date = "2013-04-26"
-slug = "2013/04/26/quantum-network-distributing"
 Categories = ["infrastructure"]
 description = "OpenStack Grizzly の Quantum L3-agent と DHCP-agent の分散・冗長機能による単一障害点の解決"
+aliases = [
+  "/blog/2013/04/26/quantum-network-distributing",
+  "/post/2013/04/26/quantum-network-distributing"
+]
 +++
 こんにちは。Grizzly がリリースされてから暫く経ちました。今回は Folsom リリース
 まであった Quantum ノードのボトルネックと単一障害点を解決する新しい機能につい

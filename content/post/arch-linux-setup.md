@@ -1,9 +1,12 @@
 +++
 title = "Arch Linux セットアップまとめ"
 date = "2013-01-14"
-slug = "2013/01/14/arch-linux-setup"
 Categories = ["infrastructure"]
 description = "Arch Linux のミニマル思考なインストールと X Window System、日本語環境のセットアップ手順"
+aliases = [
+  "/blog/2013/01/14/arch-linux-setup",
+  "/post/2013/01/14/arch-linux-setup"
+]
 +++
 (2013/08/31 修正しました)
 

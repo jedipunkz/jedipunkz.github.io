@@ -1,5 +1,6 @@
 ---
 title: "Sysdig+ECS Fargate でコンテナランタイムセキュリティ実践"
+description: "ECS Fargate 上のコンテナランタイムセキュリティを Sysdig で実現。システムコールを利用した CWPP による脅威検知と通知の方法を解説"
 date: 2022-09-24T22:00:00+09:00
 Categories: ["infrastructure"]
 draft: false

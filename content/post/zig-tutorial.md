@@ -1,5 +1,6 @@
 ---
 title: "Zig 入門: 構文集"
+description: "Zig 言語の主要な構文を網羅的にまとめた入門記事。基本構文、制御構文、エラーハンドリング、メモリアロケータなど、サンプルコードとともに解説"
 date: 2025-10-24T21:29:24+09:00
 Categories: ["infrastructure"]
 draft: false

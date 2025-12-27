@@ -1,14 +1,18 @@
 +++
 title = "実用的な Swift 構成を Chef でデプロイ"
+description = "OpenStack Swift の実用的な構成を Chef でデプロイ。Swift-Proxy の HA 化と、各サーバの特性に応じた効率的なリソース配置を実現"
 date = "2013-10-27"
-slug = "2013/10/27/swift-chef"
 Categories = ["infrastructure"]
+aliases = [
+  "/blog/2013/10/27/swift-chef",
+  "/post/2013/10/27/swift-chef"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
 以前、"Swift HA 構成を Chef でデプロイ" というタイトルで記事を書きました。
 
-<http://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/>
+<http://jedipunkz.github.io/post/swift-ha-chef-deploy/>
 
 こちらですが、Swift-Proxy, MySQL, Keystone をそれぞれ haproxy, keepalived で
 HA 組みました。ですが、これは実用的なのかどうか自分でずっと考えていました。

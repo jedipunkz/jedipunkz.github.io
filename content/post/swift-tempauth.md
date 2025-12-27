@@ -1,8 +1,12 @@
 +++
 title = "Swift で簡単に分散オブジェクトストレージ"
+description = "OpenStack Swift を使った分散オブジェクトストレージの構築手順。Proxy と Storage ノードの基本構成から設定方法まで解説"
 date = "2012-11-04"
-slug = "2012/11/04/swift-tempauth"
 Categories = ["infrastructure"]
+aliases = [
+  "/blog/2012/11/04/swift-tempauth",
+  "/post/2012/11/04/swift-tempauth"
+]
 +++
 最近、OpenStack にどっぷり浸かってる <a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

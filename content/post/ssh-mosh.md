@@ -1,8 +1,12 @@
 +++
 title = "Mosh を使う"
+description = "SSP over UDP で動作する SSH 代替ツール Mosh の紹介。IP アドレス変更やスリープ解除後も接続性を維持する MIT 開発のツール"
 date = "2012-04-14"
-slug = "2012/04/14/ssh-mosh"
 Categories = ["infrastructure", "tools"]
+aliases = [
+  "/blog/2012/04/14/ssh-mosh",
+  "/post/2012/04/14/ssh-mosh"
+]
 +++
 今週/先週？、Hacker News で取り上げられた [Mosh](http://mosh.mit.edu/) を自宅
 と会社で使い始めた。SSH 代替なソフトウェアで、SSP (State Synchronization

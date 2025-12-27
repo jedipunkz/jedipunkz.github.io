@@ -1,9 +1,12 @@
 +++
 title = "Hurricane Electric + Vyatta で宅内 IPv6 化"
 date = "2013-09-01"
-slug = "2013/09/01/hurricane-electric-vyatta-ipv6"
 Categories = ["infrastructure"]
 description = "Hurricane Electric の IPv6 トンネルサービスと Vyatta を使った自宅の IPv6 化手順"
+aliases = [
+  "/blog/2013/09/01/hurricane-electric-vyatta-ipv6",
+  "/post/2013/09/01/hurricane-electric-vyatta-ipv6"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

@@ -1,9 +1,12 @@
 +++
 title = "第17回 OpenStack 勉強会で話してきました"
 date = "2014-01-21"
-slug = "2014/01/21/17th-openstack-study"
 Categories = ["infrastructure", "report"]
 description = "rcbops/chef-cookbooks による OpenStack デプロイについての勉強会発表レポート"
+aliases = [
+  "/blog/2014/01/21/17th-openstack-study",
+  "/post/2014/01/21/17th-openstack-study"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
@@ -35,14 +38,14 @@ rcbops/chef-cookbooks はずっと追っていますが、ものすごいスピ�
 
 * OpenStack Havana を Chef でデプロイ
 
-<http://jedipunkz.github.io/blog/2013/11/17/openstack-havana-chef-deploy/>
+<http://jedipunkz.github.io/post/openstack-havana-chef-deploy/>
 
 * Swift HA 構成を Chef でデプロイ
 
-<http://jedipunkz.github.io/blog/2013/07/26/swift-ha-chef-deploy/>
+<http://jedipunkz.github.io/post/swift-ha-chef-deploy/>
 
 * 実用的な Swift 構成を Chef でデプロイ
 
-<http://jedipunkz.github.io/blog/2013/10/27/swift-chef/>
+<http://jedipunkz.github.io/post/swift-chef/>
 
 

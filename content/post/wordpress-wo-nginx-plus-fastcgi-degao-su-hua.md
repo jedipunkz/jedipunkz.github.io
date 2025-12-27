@@ -1,8 +1,12 @@
 +++
 title = "WordPress を nginx + fastcgi で高速化"
+description = "WordPress を nginx と fastcgi を使って高速化する方法。Apache の代わりに nginx を使った構築手順と gzip 圧縮設定を解説"
 date = "2012-03-07"
-slug = "2012/03/07/wordpress-wo-nginx-plus-fastcgi-degao-su-hua"
 Categories = ["tools"]
+aliases = [
+  "/blog/2012/03/07/wordpress-wo-nginx-plus-fastcgi-degao-su-hua",
+  "/post/2012/03/07/wordpress-wo-nginx-plus-fastcgi-degao-su-hua"
+]
 +++
 ブログを始めるにあたり、wordpress 環境を構築する必要が出てきました。いつもの apache2 + mysql5 + PHP じゃつまらないので、nginx と fastcgi を使って少しだけ高速化してみました。メモですけど、ここに手順を記していきます。
 

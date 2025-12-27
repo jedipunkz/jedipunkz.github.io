@@ -1,9 +1,12 @@
 +++
 title = "第14回 OpenStack 勉強会参加ログ"
 date = "2013-09-09"
-slug = "2013/09/09/14th-openstack-study-hackathon"
 Categories = ["infrastructure", "report"]
 description = "OpenStack ハッカソンでの Docker 構築作業ログと devstack デプロイの問題解決手順"
+aliases = [
+  "/blog/2013/09/09/14th-openstack-study-hackathon",
+  "/post/2013/09/09/14th-openstack-study-hackathon"
+]
 +++
 こんにちは。@jedipunkz です。
 

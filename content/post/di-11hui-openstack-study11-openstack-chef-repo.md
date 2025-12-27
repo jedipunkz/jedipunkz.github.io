@@ -1,9 +1,12 @@
 +++
 title = "第11回OpenStack勉強会で話してきた"
 date = "2013-02-10"
-slug = "2013/02/10/di-11hui-openstack-study11-openstack-chef-repo"
 Categories = ["infrastructure", "report"]
 description = "openstack-chef-repo を使った Chef による OpenStack Essex 構築の勉強会発表レポート"
+aliases = [
+  "/blog/2013/02/10/di-11hui-openstack-study11-openstack-chef-repo",
+  "/post/2013/02/10/di-11hui-openstack-study11-openstack-chef-repo"
+]
 +++
 2013年2月9日に行われた OpenStack 勉強会第11回で話してきました。
 

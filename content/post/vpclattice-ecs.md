@@ -1,5 +1,6 @@
 ---
 title: "VPC Lattice + ECS 構成を Terraform を通して理解"
+description: "VPC Lattice を使って複数 VPC 間で ECS サービスを共有する構成を Terraform で実装。VPC Peering や ALB が不要になる新しいアーキテクチャを解説"
 date: 2024-11-28T00:00:27+09:00
 Categories: ["infrastructure", "terraform"]
 draft: false

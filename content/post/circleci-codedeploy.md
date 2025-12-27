@@ -1,9 +1,12 @@
 +++
 title = "CodeDeploy, S3 を併用して CircleCI により VPC にデプロイ"
 date = "2015-11-15"
-slug = "2015/11/15/circleci-codedeploy"
 Categories = ["infrastructure"]
 description = "CircleCI、AWS CodeDeploy、S3 を組み合わせた VPC プライベートインスタンスへのデプロイ方法"
+aliases = [
+  "/blog/2015/11/15/circleci-codedeploy",
+  "/post/2015/11/15/circleci-codedeploy"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

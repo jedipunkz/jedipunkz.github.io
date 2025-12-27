@@ -1,9 +1,12 @@
 +++
 title = "Sensu,Chef,OpenStack,Fog を使ったオレオレオートスケーラを作ってみた！"
 date = "2014-03-05"
-slug = "2014/03/05/sensu-chef-openstack-fog-autoscaler"
 Categories = ["infrastructure"]
 description = "Sensu, Chef, OpenStack, Fog を組み合わせたオートスケーラ 'sclman' の設計と実装"
+aliases = [
+  "/blog/2014/03/05/sensu-chef-openstack-fog-autoscaler",
+  "/post/2014/03/05/sensu-chef-openstack-fog-autoscaler"
+]
 +++
 こんにちは。@jedipunkz です。
 

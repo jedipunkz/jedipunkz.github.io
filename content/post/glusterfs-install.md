@@ -1,9 +1,12 @@
 +++
 title = "GlusterFS の各クラスタタイプ構築"
 date = "2013-10-12"
-slug = "2013/10/12/glusterfs-install"
 Categories = ["infrastructure"]
 description = "OpenStack Havana 対応の GlusterFS 各クラスタタイプ構築とボリューム作成手順"
+aliases = [
+  "/blog/2013/10/12/glusterfs-install",
+  "/post/2013/10/12/glusterfs-install"
+]
 +++
 こんにちは。@jedipunkz です。
 

@@ -1,15 +1,18 @@
 +++
 title = "Journal 用 SSD を用いた Ceph 構成の構築"
 date = "2014-02-27"
-slug = "2014/02/27/journal-ssd-ceph-deploy"
 Categories = ["infrastructure"]
 description = "HDD と SSD を組み合わせた Ceph の journal 専用 SSD 構成とベストプラクティス"
+aliases = [
+  "/blog/2014/02/27/journal-ssd-ceph-deploy",
+  "/post/2014/02/27/journal-ssd-ceph-deploy"
+]
 +++
 こんにちは、@jedipunkz です。
 
 前回、'Ceph のプロセス配置ベストプラクティス' というタイトルで記事を書きました。
 
-<http://jedipunkz.github.io/blog/2014/01/29/ceph-process-best-practice/>
+<http://jedipunkz.github.io/post/ceph-process-best-practice/>
 
 今回はこの記事にあるポリシに従って下記のような特徴を持った構成を作る手順を具体
 的に書いていきたいと思います。

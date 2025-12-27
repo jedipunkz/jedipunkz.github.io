@@ -1,5 +1,6 @@
 ---
 title: "VyOS で IPoE/PPPoE を併用して安定した接続&サーバー公開"
+description: "VyOS で IPoE と PPPoE を併用する設定方法。IPoE で安定した通信を確保しつつ PPPoE でサーバーを外部公開する構成を実現"
 date: 2023-12-10T01:14:57+09:00
 Categories: ["infrastructure"]
 draft: false

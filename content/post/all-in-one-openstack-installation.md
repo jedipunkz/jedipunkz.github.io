@@ -1,9 +1,12 @@
 +++
 title = "OpenStack ESSEX オールインワン インストール"
 date = "2012-08-26"
-slug = "2012/08/26/all-in-one-openstack-installation"
 Categories = ["infrastructure"]
 description = "シェルスクリプトを使った1台構成の OpenStack ESSEX インストール手順"
+aliases = [
+  "/blog/2012/08/26/all-in-one-openstack-installation",
+  "/post/2012/08/26/all-in-one-openstack-installation"
+]
 +++
 OpenStack のインストールってしんどいなぁ、って感じて devstack
 <http://devstack.org/> とかで構築して中を覗いていたのですが、そもそも devstack

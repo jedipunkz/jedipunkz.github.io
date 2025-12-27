@@ -1,15 +1,18 @@
 +++
 title = "sensu-chef で監視システム Sensu を管理 #2"
 date = "2013-11-27"
-slug = "2013/11/27/sensu-chef-deploy-2"
 Categories = ["infrastructure"]
 description = "更新された sensu-chef Cookbook を使った Sensu 監視システムの簡易管理方法"
+aliases = [
+  "/blog/2013/11/27/sensu-chef-deploy-2",
+  "/post/2013/11/27/sensu-chef-deploy-2"
+]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
 以前、Sensu を Chef で管理する方法について書きました。
 
-<http://jedipunkz.github.io/blog/2013/06/20/sensu-chef-controll/>
+<http://jedipunkz.github.io/post/sensu-chef-controll/>
 
 これは今年(2013)の6月頃の記事ですが、この時はまだ sensu-chef を include して使う別の Chef
 Cookbook が必要でした。また Redis 周りの Cookbooks が完成度あまく、またこれも

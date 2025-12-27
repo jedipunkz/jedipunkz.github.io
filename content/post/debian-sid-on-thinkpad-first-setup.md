@@ -1,9 +1,12 @@
 +++
 title = "debian sid on thinkpad"
 date = "2012-04-07"
-slug = "2012/04/07/debian-sid-on-thinkpad-first-setup"
 Categories = ["infrastructure"]
 description = "Thinkpad への Debian Gnu/Linux sid インストールと X Window System 設定手順"
+aliases = [
+  "/blog/2012/04/07/debian-sid-on-thinkpad-first-setup",
+  "/post/2012/04/07/debian-sid-on-thinkpad-first-setup"
+]
 +++
 ノート PC を購入するといつも Debian Gnu/Linux sid をインストールするのだけれど
 も、X Window System や InputMethod をインストールして利用し始められるところま
