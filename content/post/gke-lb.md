@@ -7,6 +7,7 @@ featured = ""
 featuredalt = ""
 featuredpath = ""
 linktitle = ""
+aliases = ["/blog/2017/04/13/gke-lb/"]
 title = "GCP ロードバランサと GKE クラスタを Terraform を使って構築する"
 
 +++

@@ -7,6 +7,7 @@ featured = ""
 featuredalt = ""
 featuredpath = ""
 linktitle = ""
+aliases = ["/blog/2016/06/21/mesos-dcos-vagrant/"]
 title = "Vagrant で Mesosphere DC/OS を構築"
 
 +++

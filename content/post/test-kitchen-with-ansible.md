@@ -7,6 +7,7 @@ featured = ""
 featuredalt = ""
 featuredpath = ""
 linktitle = ""
+aliases = ["/blog/2016/07/14/test-kitchen-with-ansible/"]
 title = "Test-Kitchen, Docker で Ansible Role 開発サイクル高速化！"
 
 +++

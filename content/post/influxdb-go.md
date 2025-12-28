@@ -7,6 +7,7 @@ featured = ""
 featuredalt = ""
 featuredpath = ""
 linktitle = ""
+aliases = ["/blog/2016/07/23/influxdb-go/"]
 title = "Go言語とInfluxDBで監視のコード化"
 
 +++

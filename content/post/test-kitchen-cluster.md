@@ -3,6 +3,7 @@ title: "Docker,Test-Kitchen,Ansible でクラスタを構成する"
 description: "Docker と Test-Kitchen、Ansible を使ってローカル環境で複数ノードのクラスタを構成する方法。Redis HA 構成なども容易に検証可能"
 date: "2017-07-02"
 Categories: ["infrastructure"]
+aliases: ["/blog/2017/07/02/test-kitchen-cluster/"]
 ---
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

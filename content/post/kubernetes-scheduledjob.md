@@ -9,6 +9,7 @@ categories = [
 ]
 linktitle = ""
 date = "2016-11-03T09:08:48+09:00"
+aliases = ["/blog/2016/11/03/kubernetes-scheduledjob/"]
 
 +++
 

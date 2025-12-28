@@ -8,6 +8,7 @@ description = "Kubernetes Replication Controller の次世代版 Deployments を
 featuredalt = ""
 featured = ""
 linktitle = ""
+aliases = ["/blog/2017/01/13/kubernetes-deployments/", "/blog/2017/01/13/kubernetes-deployments"]
 
 +++
 こんにちは。 @jedipunkz です。

@@ -5,6 +5,7 @@ Categories = ["infrastructure"]
 description = "電子書籍 'Pragmatic Terraform on AWS' の書評と Terraform 運用の問題点解決"
 aliases = [
   "/blog/2019/07/27/pragmatic-terraform",
+  "/blog/2019/07/27/pragmatic_terraform/",
   "/post/2019/07/27/pragmatic-terraform"
 ]
 +++
