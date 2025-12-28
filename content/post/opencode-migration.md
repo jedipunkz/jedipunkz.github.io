@@ -8,6 +8,9 @@ Categories: ["ai", "coding", "tools"]
 
 最近、AI コーディングアシスタントとして使っていた Claude Code から [OpenCode](https://opencode.ai/) に移行しました。この記事では OpenCode の優れた機能と、なぜ移行を決めたのかの決めてを紹介します。
 
+> **注記 (2025-12-28)**
+> OpenCode プロジェクトは、2024年7月に開発元の Charm 社による買収と運営方針を巡って、コントリビューター間で論争が発生しました。その後、Charm 版は [Crush](https://github.com/charmbracelet/crush) としてリブランドされ、現在の OpenCode は SST 組織によって [https://github.com/sst/opencode](https://github.com/sst/opencode) で開発が継続されています。両プロジェクトは現在も別々のツールとして存在しており、この記事では SST 版の OpenCode について紹介しています。
+
 ## OpenCode とは
 
 OpenCode は、ターミナルベースのオープンソース AI コーディングエージェントです。75以上の LLM プロバイダーをサポートし、高度にカスタマイズ可能なインターフェースを提供します。
