@@ -154,6 +154,41 @@
 
 <article class="post-entry"> 
   <header class="entry-header">
+    <h2>Ceph クラスターネットワーク構成
+    </h2>
+  </header>
+  <section class="entry-content">
+    <p>こんにちは。@jedipunkz です。
+Ceph を運用する上で考慮しなければいけないのがトラフィックの負荷です。特に OSD 同士のレプリケーション・ハートビートには相当トラフィックの負荷が掛かることが想 像出来ます。
+このため MDS, MON の通信に影響を与えないよう、OSD レプリケーション・ハートビー トのためのネットワークを別に設けるのがベストプラクティスな構成の様です。このネッ トワークのことをクラスターネットワークと Ceph 的に言うそうです。
+こんな接続になります。
+&#43;------&#43; |Client| &#43;------&#43; | &#43;-------&#43;-------&#43;-------&#43;-------&#43;------ public network | | | | | &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; | MON | | MDS | | OSD | | OSD | | OSD | &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; &#43;-----&#43; | | | ----------------&#43;-------&#43;-------&#43;------ cluster network 上図の様に MON, MDS は public ネットワークを介し OSD のレプリケーション・ハー トビートのみ cluster ネットワークを介します。Client と MDS との通信に影響を与 えない構成になります。
+...</p>
+  </section>
+  
+  <a class="entry-link" aria-label="post link to Ceph クラスターネットワーク構成" href="https://jedipunkz.github.io/post/ceph-cluster-network/"></a>
+</article>
+
+<article class="post-entry"> 
+  <header class="entry-header">
+    <h2>OpenStack &#43; Ceph 連携
+    </h2>
+  </header>
+  <section class="entry-content">
+    <p>こんにちは。最近 OpenStack の導入に向けて保守性や可用性について調査している @jedipunkz です。
+OpenStack は MySQL のダンプや OS イメージ・スナップショットのバックアップをとっ ておけばコントローラの復旧も出来ますし、Grizzly 版の Quantum では冗長や分散が 取れるので障害時に耐えられます。また Quantum の復旧は手動もで可能です。最後の 悩みだった Cinder の接続先ストレージですが、OpenStack のスタンスとしては高価な ストレージの機能を使ってバックアップ取るか、Ceph, SheepDog のようなオープンソー スを使うか、でした。で、今回は Ceph を OpenStack に連携させようと思いました。
+この作業により Cinder の接続先ストレージが Ceph になるのと Glance の OS イメー ジ・スナップショットの保管先が Ceph になります。
+下記の参考資料が完成度高く、ほぼ内容はそのままです。若干付け足していますが。
+参考資料 http://ceph.com/docs/master/rbd/rbd-openstack/
+前提の構成 &#43;-------------&#43;-------------&#43;--------------------------------------------- Public/API Network | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | |vm|vm|.. | | | | | | | | controller| | network | &#43;-----------&#43; | ceph01 | | ceph01 | | ceph01 | | | | | | compute | | | | | | | | | | | | | | | | | | | &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; &#43;-----------&#43; | | | | | | | | &#43;-------------&#43;-----)-------&#43;-----)-------&#43;-------------&#43;-------------&#43;-- Management/API Network | | &#43;-------------&#43;-----------------------------------&#43;-- Data Network Ceph は OpenStack の Management Network 上に配置 Ceph は3台構成 (何台でも可) OpenStack も3台構成 (何台でも可) 連携処理するのは controller, compute ノード では早速手順ですが、OpenStack と Ceph の構築手順は割愛します。私の他の記事を参 考にしていただければと思います。
+...</p>
+  </section>
+  
+  <a class="entry-link" aria-label="post link to OpenStack &#43; Ceph 連携" href="https://jedipunkz.github.io/post/openstack-ceph/"></a>
+</article>
+
+<article class="post-entry"> 
+  <header class="entry-header">
     <h2>Chef Cookbook でユーザ・グループ追加
     </h2>
   </header>
@@ -252,44 +287,6 @@ https://github.com/jedipunkz/openstack_grizzly_install
   </section>
   
   <a class="entry-link" aria-label="post link to OpenStack Grizzly 構築スクリプト" href="https://jedipunkz.github.io/post/openstack-grizzly-installation-script/"></a>
-</article>
-
-<article class="post-entry"> 
-  <header class="entry-header">
-    <h2>Chef 11 サーバのローカルネットワーク上構築
-    </h2>
-  </header>
-  <section class="entry-content">
-    <p>chef-solo を使うの？Chef サーバを使うの？という議論は結構前からあるし、答えは 「それぞれの環境次第」だと思うのだが、僕は個人的に Chef サーバを使ってます。ホ ステッド Chef を使いたいけどお金ないし。会社で導入する時はホステッド Chef を契 約してもらうことを企んでます。(・∀・) 何故なら cookbooks を開発することがエン ジニアの仕事の本質であって Chef サーバを運用管理することは本質ではないから。そ れこそクラウド使えという話だと思う。
-でも！Chef に慣れるには無料で使いたいし、継続的に Cookbooks をターゲットノード で実行したい。ということで Chef サーバを構築して使っています。
-Chef 10 の時代は Chef サーバの構築方法は下記の通り3つありました。
-手作業！ Bootstrap 構築 Opscode レポジトリの Debian, Ubuntu, CentOS パッケージ構築 それが Chef 11 では
-Ubuntu, RHEL のパッケージ (パッケージインストールですべて環境が揃う) http://www.opscode.com/chef/install/
-この方法1つだけ。でも簡単になりました。
-‘Chef Server’ タブを選択するとダウンロード出来る。じっくりは deb ファイルの中 身を見たことがないけど、チラ見した時に chef を deb の中で実行しているように見 えた。徹底してるｗ
-Chef 10 時代のパッケージと違って行う操作は下記の2つのコマンドだけ。
-% sudo dpkg -i chef-server_11.0.6-1.ubuntu.12.04_amd64.deb # ダウンロードしたもの % sudo chef-server-ctl reconfigure 簡単。でも… この状態だと https://&lt;サーバの FQDN&gt; でサーバが Listen している。 IP アドレスでアクセスしてもリダイレクトされる。つまり、ローカルネットワーク上 に構築することが出来ない。安易に hosts で解決も出来ない。何故ならターゲットノー ドは通常まっさらな状態なので bootstrap するたびに hosts を書くなんてアホらしい しやってはいけない。
-...</p>
-  </section>
-  
-  <a class="entry-link" aria-label="post link to Chef 11 サーバのローカルネットワーク上構築" href="https://jedipunkz.github.io/post/chef-11-private-network/"></a>
-</article>
-
-<article class="post-entry"> 
-  <header class="entry-header">
-    <h2>クラウドマネジメント勉強会レポ
-    </h2>
-  </header>
-  <section class="entry-content">
-    <p>クラウドマネジメント勉強会に参加してきた。今が旬なのか定員140名が埋まっていま した。クラウドフェデレーションサービス各種の話が聞ける貴重な勉強会の場でした。
-場所 : スクエアエニックスさん 日程 : 2013年4月5日 19:00 - 少し長くなるので、早速。
-クラウド運用管理研究会 クラウド利用推進機構が運営するクラウド運用管理研究会は下記の3つに分別されるそ うです。今回は一項目の ‘クラウドマネジメントツール研究会’ にあたるそう。別の研 究会も既に勉強会を実施しているそうです。
-クラウドマネジメントツール研究会 デザインパターン研究会 運用管理・監視研究会 AWS OpsWorks アマゾンデータサービスジャパン AWS 片山さん, 船崎さん OpsWorks は最近話題になった AWS 利用者に無料で提供されるクラウドフェデレーショ ンサービス。Web UI で操作し簡単デプロイを実現するサービスです。
-OpsWorks が自動化するモノ サーバ設定 ミドルウェア構築 特徴 Chef フレームワークを利用 (chef-solo を内部的に利用) 任意の cookbooks を利用可能 LB, AP, DB などをレイヤ化, 任意のレイヤも作成可能 OpsWorks の流れ Stack 作成 レイヤ作成 (LB, AP, DB, 任意) レシピの作成 レイヤにインスタンス作成 下記をレイヤ化で区別する Package インストール OS 設定 アプリデプロイ 所感 AWS OpsWorks の登場で他のクラウドフェデレーションサービスがどうなるの？とさえ 思った。AWS はインターネット・ホスティング業界のあらゆるサービスを押さえようと している感がある。もう隙間がない！ｗ OpsWorks に関してまだ問題は残っているそう だ。VPC, micro 現在未対応など。が解決に向けて作業しているそう。
-...</p>
-  </section>
-  
-  <a class="entry-link" aria-label="post link to クラウドマネジメント勉強会レポ" href="https://jedipunkz.github.io/post/cloudmanagement/"></a>
 </article>
 <footer class="page-footer">
   <nav class="pagination">

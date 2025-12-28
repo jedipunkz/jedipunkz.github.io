@@ -154,6 +154,47 @@
 
 <article class="post-entry"> 
   <header class="entry-header">
+    <h2>手軽にローカルで Argo Rollouts, Istio, Prometheus で Progressive Delivery を試す
+    </h2>
+  </header>
+  <section class="entry-content">
+    <p>こんにちは。jedipunkz🚀 です。
+以前こちらの PipeCD 検証の記事 で Progressive Deliver について調査したのですが、Kubernetes でこの Progressive Delivery を実現する方法を調べておきたいなと思って手元の Macbook 上で検証してみたのでその際の手順を記そうかと思います。
+Progressive Delivery の概要 ここで概要だけ記しておきます。Canary リリースは新しいデプロイメントをある程度の割合だけリリースし、徐々にリリースを進行させるデプロイ方式ということはご存知だと思いますが、Progressive Delivery はその過程で
+新しいデプロイメントの統計情報を得る 予め定義したデプロイ成功定義に対して条件満たしているかを過程毎にチェックする チェック OK であれば次の過程にデプロイを進める 予め定義した幾つかのデプロイ過程を全て終えるとデプロイ完了となる というステップを経ます。
+用いるソフトウェア Kubernetes で Progressive Delivery を実現するには下記のソフトウェアを用いる事が可能です。 また今回の手順は MacOS を前提に記します。
+Argo Rollouts Prometheus Istio Kubernetes (今回は Minikube を使いました) 事前の準備 Istio Istio をダウンロードします。
+curl -L https://istio.io/downloadIstio | ISTIO_VERSION=17.2 sh - Istio を Minikube にデプロイします。
+cd istio-17.2 istioctl install --set profile=demo -y Kubernetes Namespace default で起動した Pod が自動的に Envoy サイドカーを取得するように設定します。
+...</p>
+  </section>
+  
+  <a class="entry-link" aria-label="post link to 手軽にローカルで Argo Rollouts, Istio, Prometheus で Progressive Delivery を試す" href="https://jedipunkz.github.io/post/argo-rollout-progressive-delivery/"></a>
+</article>
+
+<article class="post-entry"> 
+  <header class="entry-header">
+    <h2>自前ツールと Cloudwatch 高解像度メトリクスを使ったより高速な ECS オートスケールの実現
+    </h2>
+  </header>
+  <section class="entry-content">
+    <p>こんにちは @jedipunkz 🚀 です。
+普段仕事で AWS ECS を使っていて Autoscallng Group によってアプリケーションを据えケールさせて運用していますが、運用している中でより高速にオートスケール出来ないものだろうか？と思うシチュエーションが何回か発生し、対応方法について模索していました。
+実際に発生したシチュエーション 下記はコンテナ毎の CPU 使用率です。1分未満の間に急激にアクセスが増えコンテナの CPU 使用率が 100% に達し (実際には vCPU に基づいて 200% となっている)、ECS Service のヘルスチェックに Fail して、コンテナが落ち、新しいコンテナは起動するものの、アクセス不可に耐えられず、コンテナ停止と起動を繰り返すといった状況でした。
+Autoscaling Policy, Cloudwatch Metrics Alarm の調整 まず最初に考えたのが下記の値の調整です。
+aws_app_autoscaling_policy の cooldown 値 aws_cloudwatch_metric_alarm の period 値 具体的には 60sec となっていた値を 10sec などに変更しました。これによって 60sec のインターバルでしきい値計算してスケールさせていたところを 10sec にインターバルを縮めつつスケールさせる。つまりより迅速にスケールさせることで上記のシチュエーションに耐えられるのではと考えました。
+ですが、結果は NG でした。
+下記は Cloudwatch Metrics の様子です。データはプロットされているものの、データ不足 という状態に陥っている事がわかります。
+実際に ECS はこの設定をした Metrics Alarm ではスケールしてくれませんでした。
+高解像度メトリクスの利用について であれば高解像度メトリクス を利用すれば良いのではと考えました。
+...</p>
+  </section>
+  
+  <a class="entry-link" aria-label="post link to 自前ツールと Cloudwatch 高解像度メトリクスを使ったより高速な ECS オートスケールの実現" href="https://jedipunkz.github.io/post/esp/"></a>
+</article>
+
+<article class="post-entry"> 
+  <header class="entry-header">
     <h2>Sysdig&#43;ECS Fargate でコンテナランタイムセキュリティ実践
     </h2>
   </header>
@@ -271,41 +312,6 @@ AWS App Mesh と ECS, X-Ray を使って下記のような構成を作りまし�
   </section>
   
   <a class="entry-link" aria-label="post link to ECS 以後の構成と Progressive Delivery の調査" href="https://jedipunkz.github.io/post/progressive_delivery/"></a>
-</article>
-
-<article class="post-entry"> 
-  <header class="entry-header">
-    <h2>Go 言語と awscli を使って ECS/Fargate 上でコマンド実行してみた
-    </h2>
-  </header>
-  <section class="entry-content">
-    <p>こんにちは @jedipunkz 🚀 です。
-最近、職場では ECS/Fargate でサービスを運用しています。そこで ECS Task 上でコマンドを実行する必要に迫られて幾つか調べたのですが、複数の方法があり検証をしてみました。これには 2021/03 にリリースされたばかりの ECS 上のコンテナでコマンドを実行する機能も含まれています。
-自分たちは自動化する必要があったので Go 言語 (aws-sdk-go) を中心に検証実施しましたが同時に awscli でも動作検証しましたので、その方法をこの記事に記そうかと思います。
-下記の2つの ECS の機能についてそれぞれ Go 言語, awscli で動作検証実施しました。
-(1) ECS Execute Command (2021/03 リリース) (2) ECS Run Task 用いるツール類 下記のツールを前提に記事を記します。
-aws-sdk-go Terraform awscli 共通で必要な taskRoleArn まず Task Definition に対して executeRoleArn とは別に TaskRoleArn の付与が必要になります。
-resource &#34;aws_ecs_task_definition&#34; &#34;sample&#34; { family = &#34;sample&#34; cpu = &#34;256&#34; memory = &#34;512&#34; network_mode = &#34;awsvpc&#34; requires_compatibilities = [&#34;FARGATE&#34;] execution_role_arn = module.ecs_task_execution_role.iam_role_arn task_role_arn = module.ecs_task__role.iam_role_arn container_definitions = data.template_file.container_definition_sample.rendered } taksRoleArn の内容については https://docs.aws.amazon.com/ja_jp/AmazonECS/latest/developerguide/task-iam-roles.html に情報があり、下記が必要になります。
-...</p>
-  </section>
-  
-  <a class="entry-link" aria-label="post link to Go 言語と awscli を使って ECS/Fargate 上でコマンド実行してみた" href="https://jedipunkz.github.io/post/ecs-execute-command/"></a>
-</article>
-
-<article class="post-entry"> 
-  <header class="entry-header">
-    <h2>EKS/Fargate &#43; ArgoCD でボット環境 GitOps 化
-    </h2>
-  </header>
-  <section class="entry-content">
-    <p>こんにちは。jedipunkz です。
-仕事ではこれから会社のサービス環境として AWS ECS の導入を始めていくところなのですが、最近の SRE/インフラ界隈のトレンドを自分たちが追うために自分たち SRE が管理しているボット環境を EKS を使って GitOps 化しようということになり色々と準備を進めています。導入までもう一歩のところまで来たので、構成や技術要素についてここに記したいと思います。
-どんなボットが動いているの？ まずボット開発に用いてる言語は Go 言語です。主に aws-sdk-go を使ってボットを開発しています。私達はコミュニケーションツールとして Slack を使っているので Slack ボット化するためには slack-go を使っています。 ただまだボットの数が少なく主に利用されてるのは Ansible を実行するモノです。開発環境へアプリをデプロイするのに Ansible を使っています。もうすぐ ECS 化するので役割はそろそろ終えるのですが… 利点は開発者だけでなく非エンジニアの方が GitHub のブランチ上のアプリの動作をしたい際に Slack を使って簡単にアプリの動作ができるところです。今後は自動化目的でもっと沢山のボットを開発していきたいです。
-EKS/Fargate vs EKS/EC2 EKS の利用を検討する際に Fargate タイプと EC2 タイプがあります。2020年の今年頭に評価した際には ALB Ingress Controller と HPA のための Metrics Server が正常に動作しない状態だったので、まだ EC2 タイプを選択すべきなのかな…と考えたのですが AWS 的にも Fargate を推してる気もするし再度評価実施しました。結果ドキュメントもソフトウェアもだいぶ更新されていて ALB Ingress Controller も Metrics Server もあっけなく動作し、今回のボット環境も EKS/Fargte を選択しました。
-...</p>
-  </section>
-  
-  <a class="entry-link" aria-label="post link to EKS/Fargate &#43; ArgoCD でボット環境 GitOps 化" href="https://jedipunkz.github.io/post/eks-fargate-bot-env/"></a>
 </article>
 <footer class="page-footer">
   <nav class="pagination">
