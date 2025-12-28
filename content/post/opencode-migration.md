@@ -1,5 +1,5 @@
 ---
-title: "Claude Code から OpenCode へ移行した理由と使いこなし術"
+title: "Claude Code から OpenCode へ移行した話"
 description: "AI コーディングアシスタントを Claude Code から OpenCode に移行した経緯と、OpenCode の優れた機能（柔軟なキーバインド、多様なモデルサポート、MCP 対応など）について紹介します"
 date: 2025-12-28T10:42:32+09:00
 Categories: ["ai", "coding", "tools"]
