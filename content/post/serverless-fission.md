@@ -8,6 +8,7 @@ linktitle = ""
 description = "Kubernetes 上で Serverless を実現する Fission を使ってみた"
 author = "jedipunkz"
 date = "2017-02-12T14:55:01+09:00"
+aliases = ["/blog/2017/02/12/serverless-fission/"]
 
 +++
 

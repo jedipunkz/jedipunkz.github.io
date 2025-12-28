@@ -7,6 +7,7 @@ date = "2016-11-20T11:27:00+09:00"
 featuredpath = ""
 featuredalt = ""
 author = "jedipunkz"
+aliases = ["/blog/2016/11/20/helm/"]
 title = "Helm を使って Kubernetes を管理する"
 
 +++

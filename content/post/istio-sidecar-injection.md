@@ -3,6 +3,7 @@ title: "Istio Sidecar Injection を理解する"
 date: 2019-04-24T22:55:45+09:00
 Categories: ["infrastructure"]
 description: "Kubernetes 上での Istio Sidecar Injection の仕組みと envoy コンテナの自動挿入"
+aliases: ["/blog/2019/04/24/istio-sidecar-injection/"]
 ---
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

@@ -9,6 +9,7 @@ featuredalt = ""
 author = ""
 description = "fluentd-sidecar-gcp と Kubernetes Volumes で Cloud Logging へログ転送"
 date = "2016-12-29T09:43:18+09:00"
+aliases = ["/blog/2016/12/29/fluentd-sidecar-gcp/"]
 
 +++
 

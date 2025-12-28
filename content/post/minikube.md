@@ -7,6 +7,7 @@ featured = ""
 featuredalt = ""
 featuredpath = ""
 linktitle = ""
+aliases = ["/blog/2016/07/25/minikube/"]
 title = "Minikube で簡易 kubernetes 環境構築"
 
 +++

@@ -7,6 +7,7 @@ featuredpath = ""
 featuredalt = ""
 author = "jedipunkz"
 date = "2016-11-27T21:00:45+09:00"
+aliases = ["/blog/2016/11/27/etcd-operator/"]
 title = "coreos の etcd operator を触ってみた"
 
 +++

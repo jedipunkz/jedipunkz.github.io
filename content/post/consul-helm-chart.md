@@ -3,6 +3,7 @@ title: "Consul Helm Chart で Kubernetes 上に Consul をデプロイ"
 date: 2019-04-26T17:08:02+09:00
 Categories: ["infrastructure"]
 description: "Hashicorp Consul Helm Chart を使った Kubernetes 上での Consul クラスタのデプロイ方法"
+aliases: ["/blog/2019/04/26/consul-helm-chart/"]
 ---
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 

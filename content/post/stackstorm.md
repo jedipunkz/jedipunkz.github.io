@@ -7,6 +7,7 @@ featured = ""
 featuredalt = ""
 featuredpath = ""
 linktitle = ""
+aliases = ["/blog/2016/07/02/stackstorm/"]
 title = "イベントドリブンな StackStorm で運用自動化"
 
 +++

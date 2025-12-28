@@ -3,6 +3,7 @@ title = "期待のツール Terrafomer の基本動作方法と問題点"
 description = "クラウドリソースから Terraform コードと tfstate を生成する Terraformer の基本的な使い方と、実際に使う中で見つかった問題点を解説"
 date = "2019-07-26"
 Categories = ["infrastructure"]
+aliases = ["/blog/2019/07/26/terraformer/"]
 +++
 こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。
 
