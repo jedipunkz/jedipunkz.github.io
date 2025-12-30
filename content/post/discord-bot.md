@@ -1,5 +1,5 @@
 ---
-title: "Go で作る Discord Bot - DuckDB, Prometheus を活用した高度な監視システム"
+title: "Discord サーバ運営を補助する Go 実装の Discord ボット"
 description: "Go で Discord ボットを開発。Prometheus と DuckDB を用いて分析や可視化を行い、運営に必要な機能追加を行うことで運営の補助をしてもらっている話を記します"
 date: 2025-12-30T12:00:00+09:00
 tags: ["Discord", "Go", "DuckDB", "Prometheus", "Grafana", "Docker"]
@@ -7,6 +7,8 @@ categories: ["Application"]
 draft: false
 ---
 自分は Discord サーバの運営を行っているのですがその運営の補助をしてもらうためにボット開発を行っています。Go で Discord ボットを開発しメンバー数の推移やログ分析を行うシステムを構築している話とまたその他幾つか機能をもっていて日々の作業の効率化を図っています。この記事ではそのボットの紹介をさせて頂きます。
+
+※ 以前の記事 https://jedipunkz.github.io/post/discord-exporter/ の内容を含んでいます
 
 ## システム構成
 
