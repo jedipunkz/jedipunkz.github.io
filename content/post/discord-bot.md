@@ -1,5 +1,5 @@
 ---
-title: "Discord サーバ運営を補助する Go 実装の Discord ボット"
+title: "Discord サーバ運営を補助する Go 実装のボット開発"
 description: "Go で Discord ボットを開発。Prometheus と DuckDB を用いて分析や可視化を行い、運営に必要な機能追加を行うことで運営の補助をしてもらっている話を記します"
 date: 2025-12-30T12:00:00+09:00
 tags: ["Discord", "Go", "DuckDB", "Prometheus", "Grafana", "Docker"]
