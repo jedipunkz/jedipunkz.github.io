@@ -9,16 +9,16 @@
 <meta name="keywords" content="">
 <meta name="description" content="PipeCD と Datadog を使った ECS 環境でのプログレッシブデリバリー実現方法と ANALYSIS 機能">
 <meta name="author" content="jedipunkz">
-<link rel="canonical" href="https://jedipunkz.github.io/preview/post/ecs-pipecd/">
+<link rel="canonical" href="https://jedipunkz.rocks/preview/post/ecs-pipecd/">
 <link crossorigin="anonymous" href="/preview/assets/css/stylesheet.eca3ac94ad376a8ec0046583cdd8089aed44c59e803a22faa31fb0e2cf0cc260.css" integrity="sha256-7KOslK03ao7ABGWDzdgImu1ExZ6AOiL6ox&#43;w4s8MwmA=" rel="preload stylesheet" as="style">
-<link rel="icon" href="https://jedipunkz.github.io/favicon.ico">
-<link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.github.io/favicon-16x16.png">
-<link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.github.io/favicon-32x32.png">
-<link rel="apple-touch-icon" href="https://jedipunkz.github.io/apple-touch-icon.png">
-<link rel="mask-icon" href="https://jedipunkz.github.io/preview/safari-pinned-tab.svg">
+<link rel="icon" href="https://jedipunkz.rocks/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.rocks/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.rocks/favicon-32x32.png">
+<link rel="apple-touch-icon" href="https://jedipunkz.rocks/apple-touch-icon.png">
+<link rel="mask-icon" href="https://jedipunkz.rocks/preview/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="https://jedipunkz.github.io/preview/post/ecs-pipecd/">
+<link rel="alternate" hreflang="en" href="https://jedipunkz.rocks/preview/post/ecs-pipecd/">
 <noscript>
     <style>
         #theme-toggle,
@@ -69,7 +69,7 @@
           gtag('js', new Date());
           gtag('config', 'G-2H91XCYVZ8');
         }
-      </script><meta property="og:url" content="https://jedipunkz.github.io/preview/post/ecs-pipecd/">
+      </script><meta property="og:url" content="https://jedipunkz.rocks/preview/post/ecs-pipecd/">
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="ECS &#43; PipeCD &#43; Datadog でプログレッシブデリバリーを実現">
   <meta property="og:description" content="PipeCD と Datadog を使った ECS 環境でのプログレッシブデリバリー実現方法と ANALYSIS 機能">
@@ -78,9 +78,9 @@
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2022-08-10T09:11:04+09:00">
     <meta property="article:modified_time" content="2022-08-10T09:11:04+09:00">
-      <meta property="og:image" content="https://jedipunkz.github.io/preview/jedipunkz.jpg">
+      <meta property="og:image" content="https://jedipunkz.rocks/preview/jedipunkz.jpg">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://jedipunkz.github.io/preview/jedipunkz.jpg">
+<meta name="twitter:image" content="https://jedipunkz.rocks/preview/jedipunkz.jpg">
 <meta name="twitter:title" content="ECS &#43; PipeCD &#43; Datadog でプログレッシブデリバリーを実現">
 <meta name="twitter:description" content="PipeCD と Datadog を使った ECS 環境でのプログレッシブデリバリー実現方法と ANALYSIS 機能">
 
@@ -94,13 +94,13 @@
       "@type": "ListItem",
       "position":  1 ,
       "name": "Posts",
-      "item": "https://jedipunkz.github.io/preview/post/"
+      "item": "https://jedipunkz.rocks/preview/post/"
     }, 
     {
       "@type": "ListItem",
       "position":  2 ,
       "name": "ECS + PipeCD + Datadog でプログレッシブデリバリーを実現",
-      "item": "https://jedipunkz.github.io/preview/post/ecs-pipecd/"
+      "item": "https://jedipunkz.rocks/preview/post/ecs-pipecd/"
     }
   ]
 }
@@ -118,7 +118,7 @@
   "articleBody": "こんにちは @jedipunkz 🚀 です。\n今回は CNCF にジョインした PipeCD と Datadog を用いて ECS 環境にてプログレッシブデリバリーを実現する方法について調査したので、その内容を記したいと思います。\nそもそもプログレッシブデリバリーとは アプリケーションのデリバリー方法はカナリーリリースやブルーグリーンデプロイメント等がよく知られていると思います。プログレッシブデリバリーはその一歩先を行くデリバリー方式で、Prometheus や Datadog 等のメトリクスを用いて SLO (SRE の SLO と言うよりはデプロイのための指標という意味での) を元にカナリーリリースしたアプリケーションが期待した動作をしているかを確認し (プログレッシブデリバリー的にはこのフェーズを ANALYSIS という様です)、その上でカナリーリリースを完了するというフローになります。\n構成 Pipecd, Piped 共に Kubernetes (EKS) クラスタ上に起動する構成 この検証ではこちらの構成を選択しました。この構成の特徴は\npiped は pipecd の API エンドポイントを指し示す pipecd は UI を提供 pipecd は Filestore (S3, GCS, Minio など), Datastore (MySQL, Firestore など) を利用可 (今回は Minio, MySQL を選択) piped は Target Group, ECS タスク定義等の操作を行うため ECS API へのアクセス権限が必要 piped の pipeline 上のステージで ANALYSIS という Datadog 等のメトリクスを解析する機能を有している アプリケーションレポジトリには app.pipecd.yaml を配置しターゲットグループ・タスク定義・ECS サービスを指し示す piped は GitHub レポジトリを参照 となっています。\nまたこちらの公式ドキュメント には piped のプロセスを ECS/Fargate に起動する構成も紹介されていましたが、その際に\npiped -\u003e pipecd のアクセスが同一 namespace 内で完結しないので Ingress が必要 という制約が出てきます。また piped はシングルバイナリでどこで稼働していても同じなので、今回は下記の構成を選択しました。\n検証環境の構築手順 前提の環境 前提として下記を事前に構築・準備する必要があります。今回は情報量が多くなってしまうのでここの手順は割愛します。\nローカルマシンに helm をインストール EKS クラスタを構築 pipecd という名前の namespace をアサインしている Fargate Profile を用意 blue, green という ALB ターゲットグループ・リスナーを用意 アプリケーションレポジトリの用意 下記のディレクトリ構成でレポジトリを作成していきます。実際には IAM, Subnet, Security Group 等、構築した環境に合わせる必要があります。\n. ├── app.pipecd.yaml ├── servicedef.yaml └── taskdef.yaml タスク定義ファイル taskdef.yaml として保存します。\nfamily: pipecd-nginx-sample executionRoleArn: arn:aws:iam::********:role/ecs-taskexecution-iamrole containerDefinitions: - command: null cpu: 100 image: public.ecr.aws/nginx/nginx:1.23-alpine memory: 100 mountPoints: [] name: web portMappings: - containerPort: 80 compatibilities: - FARGATE requiresCompatibilities: - FARGATE networkMode: awsvpc memory: 512 cpu: 256 pidMode: \"\" volumes: [] ECS サービスファイル servicedef.yaml として保存します。\ncluster: arn:aws:ecs:ap-northeast-1:********:cluster/ecs-cluster serviceName: pipecd-nginx-sample desiredCount: 2 deploymentConfiguration: maximumPercent: 200 minimumHealthyPercent: 0 schedulingStrategy: REPLICA deploymentController: type: EXTERNAL enableECSManagedTags: true propagateTags: SERVICE launchType: FARGATE networkConfiguration: awsvpcConfiguration: assignPublicIp: ENABLED securityGroups: - sg-******** subnets: - subnet-******** - subnet-******** Piped が参照するコンフィギュレーションファイル このファイルについて説明すると\nkind: ECSApp として pipecd.dev/vbeta1 API にアクセス ECS サービスファイル・タスク定義ファイルの指定を行う primary, cannary として先程作成した blue, green のターゲットグループを指定する pipeline 設定で各パイプラインのステージを指定する ECS_CANARY_ROLLOUT で green ターゲットグループの ECS タスクをローリングデプロイ ECS_TRAFFIC_ROUTING で green ターゲットグループに対して 20% のトラヒックを寄せる ANALYSIS で Datadog Metrics にクエリを投げ、閾値超過の際は FAIL するように設定 下記の例では全体のリクエスト数に対しての 5xx 系エラーの率が 10% を超えない事を期待しています ECS_PRIMARY_ROLLOUT で blue ターゲットグループの ECS タスクのローリングデプロイを実施 ECS_TRAFFIC_ROUTING で blue ターゲットグループに対して 100% のトラヒックを寄せる ECS_CANARY_CLEAN で green ターゲットグループの ECS タスクをクリーンアップ ※ ここでは THRESHOLD (閾値超過) の strategy を選択していますが、その他のものについては考察で述べます。\napp.pipecd.yaml として保存します。\napiVersion: pipecd.dev/v1beta1 kind: ECSApp spec: name: canary labels: env: example team: xyz input: serviceDefinitionFile: servicedef.yaml taskDefinitionFile: taskdef.yaml targetGroups: primary: targetGroupArn: arn:aws:elasticloadbalancing:ap-northeast-1:********:targetgroup/blue/******** containerName: web containerPort: 80 canary: targetGroupArn: arn:aws:elasticloadbalancing:ap-northeast-1:********:targetgroup/green/******** containerName: web containerPort: 80 pipeline: stages: - name: ECS_CANARY_ROLLOUT with: scale: 30 - name: ECS_TRAFFIC_ROUTING with: canary: 20 - name: ANALYSIS with: duration: 10m metrics: - strategy: THRESHOLD provider: datadog-provider interval: 1m expected: max: 10 query: | sum:aws.applicationelb.httpcode_elb_5xx{env:prd,hostname:sample-lb-********.ap-northeast-1.elb.amazonaws.com}.as_count() / sum:aws.applicationelb.request_count{env:prd,hostname:sample-lb-********.ap-northeast-1.elb.amazonaws.com}.as_count() - name: ECS_PRIMARY_ROLLOUT - name: ECS_TRAFFIC_ROUTING with: primary: 100 - name: ECS_CANARY_CLEAN Pipecd 構築 Pipecd のコンフィギュレーション作成 Pipecd (Control Plane) のコンフィギュレーション control-plane-values.yaml を下記の通り用意します。 運用を想定すると quickstart.enabled: false として S3 や RDS 等を用いる構成が望ましいと思いますが、今回の目的ではないのでここでは quickstart.enabled: true として Pipecd を構築します。\nquickstart: enabled: true config: data: | apiVersion: \"pipecd.dev/v1beta1\" kind: ControlPlane spec: datastore: type: MYSQL config: url: root:test@tcp(pipecd-mysql:3306) database: quickstart filestore: type: MINIO config: endpoint: http://pipecd-minio:9000 bucket: quickstart accessKeyFile: /etc/pipecd-secret/minio-access-key secretKeyFile: /etc/pipecd-secret/minio-secret-key autoCreateBucket: true projects: - id: quickstart staticAdmin: username: hello-pipecd passwordHash: \"$2a$10$ye96mUqUqTnjUqgwQJbJzel/LJibRhUnmzyypACkvrTSnQpVFZ7qK\" # bcrypt value of \"hello-pipecd\" secret: encryptionKey: data: encryption-key-just-used-for-quickstart minioAccessKey: data: quickstart-access-key minioSecretKey: data: quickstart-secret-key mysql: rootPassword: \"test\" database: \"quickstart\" Pipecd のデプロイ 下記のように helm を使って EKS 上に Pipecd をデプロイします。\nhelm install pipecd oci://ghcr.io/pipe-cd/chart/pipecd --version v0.34.0 \\ --namespace pipecd --create-namespace \\ --values ./control-plane-values.yaml Piped 構築 Pipecd UI にログインし piped の id, key を取得 kubernetes service に作業端末から port forwarding します。\nkubectl -n pipecd port-forward svc/pipecd 8080 ブラウザで http://localhost:8080 にログインします。\nproject name: quickstart username: hello-pipecd password: hello-pipecd トップページ -\u003e プロフィールアイコン -\u003e Settings に遷移して Piped タブを選択し +ADD ボタンを押下。適当な名前・説明を入力し Piped ID, Key を生成したらメモする\nPiped のコンフィギュレーション piped-key-file に上記で得た Piped Key を記します。\necho '' \u003e piped-key-file コンフィギュレーションには下記のような情報を記します。\n上記で得た情報等を記します。\nPipeCD UI で得た Piped ID PipeCD UI で得た Piped Key ファイルの指定 上記の手順で作成した Git レポジトリ指定 プライベート Git レポジトリにアクセスするための SSH 鍵 AWS リージョン情報 AWS 機密情報のファイル指定 (後にローカルのファイルパスを指定) AWS 機密情報ファイル内のプロファイル名 Datadog API, APP Key 指定 apiVersion: pipecd.dev/v1beta1 kind: Piped spec: projectID: quickstart pipedID: \u003c上記で得た PipedID を記す\u003e pipedKeyFile: /etc/piped-secret/piped-key apiAddress: pipecd:8080 git: sshKeyFile: /etc/piped-secret/ssh-key repositories: - repoId: remote: git@github.com:jedipunkz/\u003cレポジトリ名\u003e.git branch: main syncInterval: 1m cloudProviders: - name: sample-ecs type: ECS config: region: ap-northeast-1 credentialsFile: /etc/piped-secret/credentials-key profile: analysisProviders: - name: rf-sandbox-datadog type: DATADOG config: apiKeyFile: /etc/piped-secret/datadog-api-key applicationKeyFile: /etc/piped-secret/datadog-application-key Piped の起動 事前に Datadog API, APP Key の内容をファイルに保存します。\necho '' \u003e datadog-api-key echo '' \u003e datadog-application-key 下記の情報を加えて Piped を起動する。\n上記で作成したコンフィギュレーションファイル名 piped-config-k8s-canary.yaml 上で作成した Piped Key の内容をしるした piped-key-file プライベート Git レポジトリにアクセスするための SSH 秘密鍵 AWS 機密情報を記したファイル ~/.aws/credentials Datadog API, APP Key の内容を記したファイル指定 helm upgrade -i piped oci://ghcr.io/pipe-cd/chart/piped --version=v0.34.0 --namespace=pipecd \\ --set-file config.data=./piped-config-k8s-canary.yaml \\ --set-file secret.data.piped-key=./piped-key-file \\ --set-file secret.data.ssh-key=/Users/foo/.ssh/pipecd \\ --set-file secret.data.credentials-key=/Users/foo/.aws/credentials \\ --set args.insecure=true \\ --set-file secret.data.datadog-api-key=./pipecd/datadog-api-key \\ --set-file secret.data.datadog-application-key=./datadog-application-key 事前のタスク定義のレジスト 事前に利用するタスク定義をレジストする必要がある。 下記の内容で taskdef-nginx.json というファイルに保存します。\n{ \"family\": \"pipecd-nginx-sample\", \"executionRoleArn\": \"arn:aws:iam::********:role/ecs-taskexecution-iamrole\", \"containerDefinitions\": [ { \"name\": \"web\", \"essential\": true, \"image\": \"public.ecr.aws/nginx/nginx:1.23-alpine\", \"mountPoints\": [], \"portMappings\": [ { \"containerPort\": 80, \"hostPort\": 80, \"protocol\": \"tcp\" } ] } ], \"requiresCompatibilities\": [ \"FARGATE\" ], \"networkMode\": \"awsvpc\", \"memory\": \"512\", \"cpu\": \"256\" } 下記のように awscli を用いてレジストします。\naws ecs register-task-definition --cli-input-json file://taskdef-nginx.json aws ecs list-task-definitions | grep nginx #\u003c-- 確認 動作確認 PipeCD UI の Application の画面において下記の内容で PipeCD UI 上の Application を +ADD します。\nName に任意の名前を入力 kind で ECS を選択 Piped で上記の手順で登録した Piped を選択 Cloud Provider で sample-ecs を選択 Repository で Git レポジトリ名を選択 Config Filename で app.pipecd.yaml を選択 Sync ボタンを押してデプロイ開始。結果 Deployment 画面を確認すると下記の状態になっている。\nデプロイが進み、Primary (上記の green) への ROLLOUT (デプロイ) が完了する\nTarget Group green のターゲットにタスクが一つ起動し始める\nまた同じタイミングで ALB リスナーを確認すると 20% のトラヒックが green に寄せられていることを確認できる\nその後 Deployment が SUCCESS で完了する\nその結果 green のターゲットが draining になる\nALB Listener も blue: 100% と Canary リリースの Primary の Target Group へトラヒックが 100% 寄せられている事を確認出来る。これでデプロイ完了となります。\nFail するパターンの動作 常時 0.3 以上のパーセンテージを示しているクエリ(当方の環境)に対して下記のように expected.max: 0.01 と指定してみる。\n- name: ANALYSIS with: duration: 30m metrics: - strategy: THRESHOLD provider: sample-datadog interval: 10m expected: max: 0.01 query: | query: | sum:aws.applicationelb.httpcode_elb_5xx{env:prd,hostname:sample-lb-********.ap-northeast-1.elb.amazonaws.com}.as_count() / sum:aws.applicationelb.request_count{env:prd,hostname:sample-lb-********.ap-northeast-1.elb.amazonaws.com}.as_count() 結果としてはパイプラインの ANALYSIS ステージで想定した通り Fail し、結果 ROLLBACK された。\n考察 検証環境では Canary リリース・Datadog Analysis・THRESHOLDS 戦略を用いて動作確認し、\n(1) デプロイ開始 (2) Canary 環境へデプロイ (3) 部分的にトラヒックを Canary に寄せる (3) Datadog Metrics を解析しつつ問題なければ Primary 環境へデプロイ (4) Primary に100%のトラヒックを寄せる (5) Canary 環境をクリーンアップ という流れで、カナリーリリースとプログレッシブデリバリーが実践出来ました。\nDatadog Analysis Provider 利用時の注意点 通常であればアプリケーションをデプロイし、ALB のエラー率等を計測しそれを Analysis Provider で指定することになります。その場合 AWS Intergration の機能で Cloudwatch Metrics -\u003e Datadog Metrics とメトリクス情報を送信する必要がありますが、\n遅延が数分ある ALB メトリクスのプロットのインターバルが1分である という問題が浮上します。\nこのことは秒単位で exporter からのデータを Scrape する Prometheus では問題になりません。実際 PipeCD は Prometheus を一番のターゲットにして開発されています。(コンフィギュレーションの scrape_interval (default: 1s) に相当する) よって、Datadog を Analysis Provider に利用する際には下記の幾つかの方法を検討する必要があります。\nその他の Analysis のパイプライン戦略 検証では THRESHOLDS という閾値設定型の戦略を取りましたが、他にも幾つかの戦略が PipeCD には存在します。下記がそれらです。\n(1) PREVIOUS : メトリックを最後に成功したデプロイメントと比較する方法 下記は例で前回 (最後) のデプロイメントのメトリクスクエリ計測結果と比較して、前回よりも偏差が高い場合、Fail する、というものになっています。\napiVersion: pipecd.dev/v1beta1 kind: KubernetesApp spec: pipeline: stages: - name: ANALYSIS with: duration: 30m metrics: - strategy: PREVIOUS provider: my-prometheus deviation: HIGH interval: 5m query: | sum (rate(http_requests_total{status=~\"5.*\"}[5m])) / sum (rate(http_requests_total[5m])) (2) CANARY_BASELINE : Canary バリアントと Baseline バリアントの間でメトリックを比較する方法 下記は例で Canary, Baseline とでメトリクスを比較しつつ、最終的に deviantion: HIGH という条件で Fail します。\napiVersion: pipecd.dev/v1beta1 kind: KubernetesApp spec: pipeline: stages: - name: ANALYSIS with: duration: 30m metrics: - strategy: CANARY_BASELINE provider: my-prometheus deviation: HIGH interval: 5m query: | sum (rate(http_requests_total{job=\"foo-{{ .Variant.Name }}\", status=~\"5.*\"}[5m])) / sum (rate(http_requests_total{job=\"foo-{{ .Variant.Name }}\"}[5m])) (3) CANARY_PRIMARY (非推奨) : Canary バリアントとPrimary バリアントの間でメトリックを比較する方法 非推奨の戦略。何らかの理由でベースラインバリアントを提供できない場合は、Canary と Primary を比較することができる。\n所感 一応 PipeCD と ECS, Datadog を用いることでプログレッシブデリバリーを実践出来ました。運用を想定すると RDS, S3 等を用いる構成を組んだほうが良いと思います。またユーザからのリクエストを受けている ECS とは切り離して EKS 上の PipeCD, Piped を運用出来るので、万が一何かあった際、またバージョンアップ等の移行を想定したとしても比較的運用しやすいように思います。あとは考察のところに記した Datadog を用いる際に出てくる難しさをどうクリアするかはいくつかの検討を重ねる必要がありそうです。そのあたりの詳細については自分が努めている企業のテックブログの方に記したいと思います！\n",
   "wordCount" : "1071",
   "inLanguage": "en",
-  "image": "https://jedipunkz.github.io/preview/jedipunkz.jpg","datePublished": "2022-08-10T09:11:04+09:00",
+  "image": "https://jedipunkz.rocks/preview/jedipunkz.jpg","datePublished": "2022-08-10T09:11:04+09:00",
   "dateModified": "2022-08-10T09:11:04+09:00",
   "author":{
     "@type": "Person",
@@ -126,14 +126,14 @@
   },
   "mainEntityOfPage": {
     "@type": "WebPage",
-    "@id": "https://jedipunkz.github.io/preview/post/ecs-pipecd/"
+    "@id": "https://jedipunkz.rocks/preview/post/ecs-pipecd/"
   },
   "publisher": {
     "@type": "Organization",
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
-      "url": "https://jedipunkz.github.io/favicon.ico"
+      "url": "https://jedipunkz.rocks/favicon.ico"
     }
   }
 }
@@ -155,7 +155,7 @@
 <header class="header">
     <nav class="nav">
         <div class="logo">
-            <a href="https://jedipunkz.github.io/preview/" accesskey="h" title="jedipunkz 🚀 のブログ (Alt + H)">jedipunkz 🚀 のブログ</a>
+            <a href="https://jedipunkz.rocks/preview/" accesskey="h" title="jedipunkz 🚀 のブログ (Alt + H)">jedipunkz 🚀 のブログ</a>
             <div class="logo-switches">
                 <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
                     <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
@@ -181,7 +181,7 @@
         </div>
         <ul id="menu">
             <li>
-                <a href="https://jedipunkz.github.io/preview/about" title="About Me">
+                <a href="https://jedipunkz.rocks/preview/about" title="About Me">
                     <span>About Me</span>
                 </a>
             </li>
@@ -192,7 +192,7 @@
 
 <article class="post-single">
   <header class="post-header">
-    <div class="breadcrumbs"><a href="https://jedipunkz.github.io/preview/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.github.io/preview/post/">Posts</a></div>
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
     <h1 class="post-title">
       ECS &#43; PipeCD &#43; Datadog でプログレッシブデリバリーを実現
     </h1>
@@ -612,12 +612,12 @@
 
   <footer class="post-footer">
 <nav class="paginav">
-  <a class="prev" href="https://jedipunkz.github.io/preview/post/sysdig-ecs-fargate/">
+  <a class="prev" href="https://jedipunkz.rocks/preview/post/sysdig-ecs-fargate/">
     <span class="title">« Prev</span>
     <br>
     <span>Sysdig&#43;ECS Fargate でコンテナランタイムセキュリティ実践</span>
   </a>
-  <a class="next" href="https://jedipunkz.github.io/preview/post/ecr-scan-datadog-go/">
+  <a class="next" href="https://jedipunkz.rocks/preview/post/ecr-scan-datadog-go/">
     <span class="title">Next »</span>
     <br>
     <span>ECR 脆弱性スキャン結果表示 CLI の開発と Datadog プロット</span>
@@ -628,7 +628,7 @@
 <ul class="share-buttons">
     <li>
         <a target="_blank" rel="noopener noreferrer" aria-label="share ECS &#43; PipeCD &#43; Datadog でプログレッシブデリバリーを実現 on x"
-            href="https://x.com/intent/tweet/?text=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be&amp;url=https%3a%2f%2fjedipunkz.github.io%2fpreview%2fpost%2fecs-pipecd%2f&amp;hashtags=">
+            href="https://x.com/intent/tweet/?text=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpreview%2fpost%2fecs-pipecd%2f&amp;hashtags=">
             <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
                 <path
                     d="M512 62.554 L 512 449.446 C 512 483.97 483.97 512 449.446 512 L 62.554 512 C 28.03 512 0 483.97 0 449.446 L 0 62.554 C 0 28.03 28.029 0 62.554 0 L 449.446 0 C 483.971 0 512 28.03 512 62.554 Z M 269.951 190.75 L 182.567 75.216 L 56 75.216 L 207.216 272.95 L 63.9 436.783 L 125.266 436.783 L 235.9 310.383 L 332.567 436.783 L 456 436.783 L 298.367 228.367 L 432.367 75.216 L 371.033 75.216 Z M 127.633 110 L 164.101 110 L 383.481 400.065 L 349.5 400.065 Z" />
@@ -637,7 +637,7 @@
     </li>
     <li>
         <a target="_blank" rel="noopener noreferrer" aria-label="share ECS &#43; PipeCD &#43; Datadog でプログレッシブデリバリーを実現 on linkedin"
-            href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https%3a%2f%2fjedipunkz.github.io%2fpreview%2fpost%2fecs-pipecd%2f&amp;title=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be&amp;summary=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be&amp;source=https%3a%2f%2fjedipunkz.github.io%2fpreview%2fpost%2fecs-pipecd%2f">
+            href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpreview%2fpost%2fecs-pipecd%2f&amp;title=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be&amp;summary=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be&amp;source=https%3a%2f%2fjedipunkz.rocks%2fpreview%2fpost%2fecs-pipecd%2f">
             <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
                 <path
                     d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-288.985,423.278l0,-225.717l-75.04,0l0,225.717l75.04,0Zm270.539,0l0,-129.439c0,-69.333 -37.018,-101.586 -86.381,-101.586c-39.804,0 -57.634,21.891 -67.617,37.266l0,-31.958l-75.021,0c0.995,21.181 0,225.717 0,225.717l75.02,0l0,-126.056c0,-6.748 0.486,-13.492 2.474,-18.315c5.414,-13.475 17.767,-27.434 38.494,-27.434c27.135,0 38.007,20.707 38.007,51.037l0,120.768l75.024,0Zm-307.552,-334.556c-25.674,0 -42.448,16.879 -42.448,39.002c0,21.658 16.264,39.002 41.455,39.002l0.484,0c26.165,0 42.452,-17.344 42.452,-39.002c-0.485,-22.092 -16.241,-38.954 -41.943,-39.002Z" />
@@ -646,7 +646,7 @@
     </li>
     <li>
         <a target="_blank" rel="noopener noreferrer" aria-label="share ECS &#43; PipeCD &#43; Datadog でプログレッシブデリバリーを実現 on reddit"
-            href="https://reddit.com/submit?url=https%3a%2f%2fjedipunkz.github.io%2fpreview%2fpost%2fecs-pipecd%2f&title=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be">
+            href="https://reddit.com/submit?url=https%3a%2f%2fjedipunkz.rocks%2fpreview%2fpost%2fecs-pipecd%2f&title=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be">
             <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
                 <path
                     d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-3.446,265.638c0,-22.964 -18.616,-41.58 -41.58,-41.58c-11.211,0 -21.361,4.457 -28.841,11.666c-28.424,-20.508 -67.586,-33.757 -111.204,-35.278l18.941,-89.121l61.884,13.157c0.756,15.734 13.642,28.29 29.56,28.29c16.407,0 29.706,-13.299 29.706,-29.701c0,-16.403 -13.299,-29.702 -29.706,-29.702c-11.666,0 -21.657,6.792 -26.515,16.578l-69.105,-14.69c-1.922,-0.418 -3.939,-0.042 -5.585,1.036c-1.658,1.073 -2.811,2.761 -3.224,4.686l-21.152,99.438c-44.258,1.228 -84.046,14.494 -112.837,35.232c-7.468,-7.164 -17.589,-11.591 -28.757,-11.591c-22.965,0 -41.585,18.616 -41.585,41.58c0,16.896 10.095,31.41 24.568,37.918c-0.639,4.135 -0.99,8.328 -0.99,12.576c0,63.977 74.469,115.836 166.33,115.836c91.861,0 166.334,-51.859 166.334,-115.836c0,-4.218 -0.347,-8.387 -0.977,-12.493c14.564,-6.47 24.735,-21.034 24.735,-38.001Zm-119.474,108.193c-20.27,20.241 -59.115,21.816 -70.534,21.816c-11.428,0 -50.277,-1.575 -70.522,-21.82c-3.007,-3.008 -3.007,-7.882 0,-10.889c3.003,-2.999 7.882,-3.003 10.885,0c12.777,12.781 40.11,17.317 59.637,17.317c19.522,0 46.86,-4.536 59.657,-17.321c3.016,-2.999 7.886,-2.995 10.885,0.008c3.008,3.011 3.003,7.882 -0.008,10.889Zm-5.23,-48.781c-16.373,0 -29.701,-13.324 -29.701,-29.698c0,-16.381 13.328,-29.714 29.701,-29.714c16.378,0 29.706,13.333 29.706,29.714c0,16.374 -13.328,29.698 -29.706,29.698Zm-160.386,-29.702c0,-16.381 13.328,-29.71 29.714,-29.71c16.369,0 29.689,13.329 29.689,29.71c0,16.373 -13.32,29.693 -29.689,29.693c-16.386,0 -29.714,-13.32 -29.714,-29.693Z" />
@@ -655,7 +655,7 @@
     </li>
     <li>
         <a target="_blank" rel="noopener noreferrer" aria-label="share ECS &#43; PipeCD &#43; Datadog でプログレッシブデリバリーを実現 on facebook"
-            href="https://facebook.com/sharer/sharer.php?u=https%3a%2f%2fjedipunkz.github.io%2fpreview%2fpost%2fecs-pipecd%2f">
+            href="https://facebook.com/sharer/sharer.php?u=https%3a%2f%2fjedipunkz.rocks%2fpreview%2fpost%2fecs-pipecd%2f">
             <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
                 <path
                     d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-106.468,0l0,-192.915l66.6,0l12.672,-82.621l-79.272,0l0,-53.617c0,-22.603 11.073,-44.636 46.58,-44.636l36.042,0l0,-70.34c0,0 -32.71,-5.582 -63.982,-5.582c-65.288,0 -107.96,39.569 -107.96,111.204l0,62.971l-72.573,0l0,82.621l72.573,0l0,192.915l-191.104,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Z" />
@@ -664,7 +664,7 @@
     </li>
     <li>
         <a target="_blank" rel="noopener noreferrer" aria-label="share ECS &#43; PipeCD &#43; Datadog でプログレッシブデリバリーを実現 on whatsapp"
-            href="https://api.whatsapp.com/send?text=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be%20-%20https%3a%2f%2fjedipunkz.github.io%2fpreview%2fpost%2fecs-pipecd%2f">
+            href="https://api.whatsapp.com/send?text=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be%20-%20https%3a%2f%2fjedipunkz.rocks%2fpreview%2fpost%2fecs-pipecd%2f">
             <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
                 <path
                     d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-58.673,127.703c-33.842,-33.881 -78.847,-52.548 -126.798,-52.568c-98.799,0 -179.21,80.405 -179.249,179.234c-0.013,31.593 8.241,62.428 23.927,89.612l-25.429,92.884l95.021,-24.925c26.181,14.28 55.659,21.807 85.658,21.816l0.074,0c98.789,0 179.206,-80.413 179.247,-179.243c0.018,-47.895 -18.61,-92.93 -52.451,-126.81Zm-126.797,275.782l-0.06,0c-26.734,-0.01 -52.954,-7.193 -75.828,-20.767l-5.441,-3.229l-56.386,14.792l15.05,-54.977l-3.542,-5.637c-14.913,-23.72 -22.791,-51.136 -22.779,-79.287c0.033,-82.142 66.867,-148.971 149.046,-148.971c39.793,0.014 77.199,15.531 105.329,43.692c28.128,28.16 43.609,65.592 43.594,105.4c-0.034,82.149 -66.866,148.983 -148.983,148.984Zm81.721,-111.581c-4.479,-2.242 -26.499,-13.075 -30.604,-14.571c-4.105,-1.495 -7.091,-2.241 -10.077,2.241c-2.986,4.483 -11.569,14.572 -14.182,17.562c-2.612,2.988 -5.225,3.364 -9.703,1.12c-4.479,-2.241 -18.91,-6.97 -36.017,-22.23c-13.314,-11.876 -22.304,-26.542 -24.916,-31.026c-2.612,-4.484 -0.279,-6.908 1.963,-9.14c2.016,-2.007 4.48,-5.232 6.719,-7.847c2.24,-2.615 2.986,-4.484 4.479,-7.472c1.493,-2.99 0.747,-5.604 -0.374,-7.846c-1.119,-2.241 -10.077,-24.288 -13.809,-33.256c-3.635,-8.733 -7.327,-7.55 -10.077,-7.688c-2.609,-0.13 -5.598,-0.158 -8.583,-0.158c-2.986,0 -7.839,1.121 -11.944,5.604c-4.105,4.484 -15.675,15.32 -15.675,37.364c0,22.046 16.048,43.342 18.287,46.332c2.24,2.99 31.582,48.227 76.511,67.627c10.685,4.615 19.028,7.371 25.533,9.434c10.728,3.41 20.492,2.929 28.209,1.775c8.605,-1.285 26.499,-10.833 30.231,-21.295c3.732,-10.464 3.732,-19.431 2.612,-21.298c-1.119,-1.869 -4.105,-2.99 -8.583,-5.232Z" />
@@ -673,7 +673,7 @@
     </li>
     <li>
         <a target="_blank" rel="noopener noreferrer" aria-label="share ECS &#43; PipeCD &#43; Datadog でプログレッシブデリバリーを実現 on telegram"
-            href="https://telegram.me/share/url?text=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be&amp;url=https%3a%2f%2fjedipunkz.github.io%2fpreview%2fpost%2fecs-pipecd%2f">
+            href="https://telegram.me/share/url?text=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpreview%2fpost%2fecs-pipecd%2f">
             <svg version="1.1" xml:space="preserve" viewBox="2 2 28 28" height="30px" width="30px" fill="currentColor">
                 <path
                     d="M26.49,29.86H5.5a3.37,3.37,0,0,1-2.47-1,3.35,3.35,0,0,1-1-2.47V5.48A3.36,3.36,0,0,1,3,3,3.37,3.37,0,0,1,5.5,2h21A3.38,3.38,0,0,1,29,3a3.36,3.36,0,0,1,1,2.46V26.37a3.35,3.35,0,0,1-1,2.47A3.38,3.38,0,0,1,26.49,29.86Zm-5.38-6.71a.79.79,0,0,0,.85-.66L24.73,9.24a.55.55,0,0,0-.18-.46.62.62,0,0,0-.41-.17q-.08,0-16.53,6.11a.59.59,0,0,0-.41.59.57.57,0,0,0,.43.52l4,1.24,1.61,4.83a.62.62,0,0,0,.63.43.56.56,0,0,0,.4-.17L16.54,20l4.09,3A.9.9,0,0,0,21.11,23.15ZM13.8,20.71l-1.21-4q8.72-5.55,8.78-5.55c.15,0,.23,0,.23.16a.18.18,0,0,1,0,.06s-2.51,2.3-7.52,6.8Z" />
@@ -682,7 +682,7 @@
     </li>
     <li>
         <a target="_blank" rel="noopener noreferrer" aria-label="share ECS &#43; PipeCD &#43; Datadog でプログレッシブデリバリーを実現 on ycombinator"
-            href="https://news.ycombinator.com/submitlink?t=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be&u=https%3a%2f%2fjedipunkz.github.io%2fpreview%2fpost%2fecs-pipecd%2f">
+            href="https://news.ycombinator.com/submitlink?t=ECS%20%2b%20PipeCD%20%2b%20Datadog%20%e3%81%a7%e3%83%97%e3%83%ad%e3%82%b0%e3%83%ac%e3%83%83%e3%82%b7%e3%83%96%e3%83%87%e3%83%aa%e3%83%90%e3%83%aa%e3%83%bc%e3%82%92%e5%ae%9f%e7%8f%be&u=https%3a%2f%2fjedipunkz.rocks%2fpreview%2fpost%2fecs-pipecd%2f">
             <svg version="1.1" xml:space="preserve" width="30px" height="30px" viewBox="0 0 512 512" fill="currentColor"
                 xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
                 <path
@@ -697,7 +697,7 @@
     </main>
     
 <footer class="footer">
-        <span>&copy; 2026 <a href="https://jedipunkz.github.io/preview/">jedipunkz 🚀 のブログ</a></span> · 
+        <span>&copy; 2026 <a href="https://jedipunkz.rocks/preview/">jedipunkz 🚀 のブログ</a></span> · 
 
     <span>
         Powered by
