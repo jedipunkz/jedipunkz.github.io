@@ -10,4 +10,4 @@ hugo --environment=production -t PaperMod
 git add .
 git commit -m "$1"
 git push origin source
-git subtree push --prefix=public origin main
+git subtree push --prefix=public origin master
