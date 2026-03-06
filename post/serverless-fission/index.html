@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="auto">
+<html lang="ja" dir="auto">
 
 <head><meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="https://jedipunkz.rocks/post/serverless-fission/">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/serverless-fission/">
 <noscript>
     <style>
         #theme-toggle,
@@ -73,7 +73,7 @@
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="Serverless on Kubernetes : Fission を使ってみた">
   <meta property="og:description" content="Kubernetes 上で Serverless を実現する Fission を使ってみた">
-  <meta property="og:locale" content="en">
+  <meta property="og:locale" content="ja">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2017-02-12T14:55:01+09:00">
@@ -117,7 +117,7 @@
   ],
   "articleBody": "こんにちは。 @jedipunkz です。\n今日は Kubernetes を使って Serverless を実現するソフトウェア Fission を紹介します。\nAWS の Lambda とよく似た動きをします。Lambda も内部では各言語に特化したコンテナが起動してユーザが開発した Lambda Function を実行してくれるのですが、Fission も各言語がインストールされた Docker コンテナを起動しユーザが開発したコードを実行し応答を返してくれます。\nそれでは早速なのですが、Fission を動かしてみましょう。\n動作させるための環境 macOS か Linux を前提として下記の環境を用意する必要があります。また Kubernetes 環境は minikube が手っ取り早いので用いますが、もちろん minikube 以外の kubernetes 環境でも動作します。\nmacOS or Linux minikube or kubernetes kubectl fission ソフトウェアのインストール方法 簡単にですが、ソフトウェアのインストール方法を書きます。\nOS 私は Linux で動作させましたが筆者の方は macOS を使っている方が多数だと思いますので、この手順では macOS を使った利用方法を書いていきます。\nminikube ここでは簡単な手順で kubernetes 環境を構築できる minikube をインストールします。\ncurl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.16.0/minikube-darwin-amd64 \u0026\u0026 chmod +x minikube \u0026\u0026 sudo mv minikube /usr/local/bin/fission kubectl 直接必要ではありませんが、kubectl があると minikube で構築した kubernetes 環境を操作できますのでインストールしておきます。\ncurl -Lo kubectl https://storage.googleapis.com/kubernetes-release/release/v1.5.2/bin/linux/amd64/kubectl \u0026\u0026 chmod +x kubectl \u0026\u0026 sudo mv kubectl /usr/local/bin/ Fission Fission のインストールです。\ncurl http://fission.io/linux/fission \u003e fission \u0026\u0026 chmod +x fission \u0026\u0026 sudo mv fission /usr/local/bin/fission kubernetes の起動 ソフトウェアのインストールが完了したら minikube を使って kubernetes を起動します。\n$ minikube start $ minikube status minikubeVM: Running localkube: Running $ kubectl get nodes NAME STATUS AGE minikube Ready 1h Fission の起動と環境変数の設定 Fission を起動します。\n$ kubectl create -f http://fission.io/fission.yaml $ kubectl create -f http://fission.io/fission-nodeport.yaml 次に環境変数を設定します。\n$ export FISSION_URL=http://$(minikube ip):31313 $ export FISSION_ROUTER=$(minikube ip):31314 Fission を使って Python のコードを実行する 例として Python の Hello World を用意します。hello.py として保存します。\ndef main(): return \"Hello, world!\\n\" ではいよいよ、kubernetes と Fission を使って上記の Hello World を実行させます。\nまず Fission が用意してくれている Docker コンテナを扱うように ’env’ を作ります。\n$ fission env create --name python-env --image fission/python-env 次に Fission で Function を作ります。その際に上記の env と python コードを指定します。つまり、hello.py を fission/python-env という Docker コンテナで稼働する、という意味です。\n$ fission function create --name python-hello -env python-env --code ./hello.py 次に Router を作ります。クエリの Path に対して Fuction を関連付けることができます。\n$ fission route add --function python-hello --url /python-hello Function を実行する環境ができました。実際に curl を使ってアクセスしてみましょう。\n$ curl http://$FISSION_ROUTER/python-hello Hello, world! hello.py の実行結果が得られました。\nまとめと考察 結果から Fission は “各言語の実行環境として Docker コンテナを用いていて、ユーザが開発したコードをそのコンテナ上で起動し実行結果を得られる。また各コード毎に URL パスが指定することができ、それをルータとして関係性を持たせられる” ということが分かりました。AWS の Lambda とほぼ同じことが実現出来ていることが分かると思います。\nAWS には Lambda の実行結果を応答するための API Gateway があり、このマネージド HTTP サーバと併用することで API 環境を用意出来るのですが Fission の場合には HTTP サーバも込みで提供されていることも分かります。\nあとは、この Fission を提供している元が “Platform9” という企業なのですが、この企業は OpenStack や kubernetes を使ったホスティングサービスを提供しているようです。開発元が一企業ということと、完全な OSS 開発体制になっていない可能性があって、万が一この企業に何かあった場合にこの Fission を使い続けられるのか問題がしばらくはありそうです。Fission 同等のソフトウェアを kubernetes が取り込むという話題は…あるのかなぁ？\nkubernetes の Job Scheduler が同等の機能を提供してくれるかもしれませんが、まだ Job Scheduler は利用するには枯れていない印象があります。Fission と Job Scheduler 、どちらがいち早く完成度を上げられるのでしょうか。\n",
   "wordCount" : "303",
-  "inLanguage": "en",
+  "inLanguage": "ja",
   "image": "https://jedipunkz.rocks/jedipunkz.jpg","datePublished": "2017-02-12T14:55:01+09:00",
   "dateModified": "2017-02-12T14:55:01+09:00",
   "author":{
@@ -129,7 +129,7 @@
     "@id": "https://jedipunkz.rocks/post/serverless-fission/"
   },
   "publisher": {
-    "@type": "Organization",
+    "@type": "Person",
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
@@ -192,14 +192,16 @@
 
 <article class="post-single">
   <header class="post-header">
-    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
-    <h1 class="post-title">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
       Serverless on Kubernetes : Fission を使ってみた
     </h1>
     <div class="post-description">
       Kubernetes 上で Serverless を実現する Fission を使ってみた
     </div>
-    
+    <div class="post-meta"><span title='2017-02-12 14:55:01 +0900 +0900'>2017-02-12</span>&nbsp;·&nbsp;2 分&nbsp;·&nbsp;jedipunkz
+
+</div>
   </header> 
   <div class="post-content"><p>こんにちは。 @jedipunkz です。</p>
 <p>今日は Kubernetes を使って Serverless を実現するソフトウェア Fission を紹介します。</p>
@@ -267,14 +269,16 @@ Hello, world!
   </div>
 
   <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
 <nav class="paginav">
   <a class="prev" href="https://jedipunkz.rocks/post/gke-lb/">
-    <span class="title">« Prev</span>
+    <span class="title">« 前へ</span>
     <br>
     <span>GCP ロードバランサと GKE クラスタを Terraform を使って構築する</span>
   </a>
   <a class="next" href="https://jedipunkz.rocks/post/kubernetes-deployments/">
-    <span class="title">Next »</span>
+    <span class="title">次へ »</span>
     <br>
     <span>Kubernetes Deployments を使ってみた！</span>
   </a>
@@ -427,12 +431,12 @@ Hello, world!
 
         const copybutton = document.createElement('button');
         copybutton.classList.add('copy-code');
-        copybutton.innerHTML = 'copy';
+        copybutton.innerHTML = 'コピー';
 
         function copyingDone() {
-            copybutton.innerHTML = 'copied!';
+            copybutton.innerHTML = 'コピーされました!';
             setTimeout(() => {
-                copybutton.innerHTML = 'copy';
+                copybutton.innerHTML = 'コピー';
             }, 2000);
         }
 

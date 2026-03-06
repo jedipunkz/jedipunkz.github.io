@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="auto">
+<html lang="ja" dir="auto">
 
 <head><meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="https://jedipunkz.rocks/post/istio/">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/istio/">
 <noscript>
     <style>
         #theme-toggle,
@@ -73,7 +73,7 @@
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="Istio, Helm を使って Getting Started 的なアプリをデプロイ">
   <meta property="og:description" content="Minikube と Helm Template を使った Istio 環境構築とサンプルアプリケーションデプロイ">
-  <meta property="og:locale" content="en">
+  <meta property="og:locale" content="ja">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2018-12-31T00:00:00+00:00">
@@ -117,7 +117,7 @@
   ],
   "articleBody": "こんにちは。@jedipunkz です。\n最近は kubernetes を触ってなかったのですが Istio や Envoy 等 CNCF 関連のソフトウェアの記事をよく見かけるようになって、少し理解しておいたほうがいいかなと思い Istio と Minikube を使って Getting Started 的な事をやってみました。Istio をダウンロードすると中にサンプルアプリケーションが入っているのでそれを利用してアプリのデプロイまでを行ってみます。\nIstio をダウンロードするとお手軽に Istio 環境を作るための yaml ファイルがあり、それを kubectl apply することで Istio 環境を整えられるのですが、ドキュメントにプロダクション環境を想定した場合は Helm Template を用いた方がいいだろう、と記載あったので今回は Helm Template を用いて Istio 環境を作ります。\n前提の環境 下記の環境でテストを行いました。\nmacos Mojave minikube v0.32.0 kubectl v1.10.3 helm v2.12.1 virtualbox 準備 kubectl と helm のインストール kubctl と helm をインストールします。両者共に homebrew でインストールします。\nbrew install kubernetes-cli brew install kubernetes-helm minikube のインストールと起動 minikube をインストールして起動します。\ncurl -Lo minikube https://storage.googleapis.com/minikube/releases/v0.32.0/minikube-darwin-amd64 \u0026\u0026 chmod +x minikube \u0026\u0026 sudo cp minikube /usr/local/bin/ \u0026\u0026 rm minikube minikube start --memory 2048 Istio のダウンロードとインストール Istio のダウンロードとインストールを行います。後術しますがこのディレクトリの中に Istio 環境を構築するためのファイルやサンプルアプリケーションが入っています。\ncurl -L https://git.io/getLatestIstio | sh - cd istio-1.0.5 sudo cp bin/istioctl /usr/local/bin/istioctl 構築作業 Istio の Custom Resource Definitions をインストール Istio の Custom Resource Definitions (以下 CRDs) をインストールします。Kubernetes の CRDs は独自のカスタムリソースを定義し追加するものです。Kubernets API Server を介して作成することで作成したリソースの CRUD の API が Kubernetes API に追加されます。\n先程ダウンロードした Istio のディレクトリに crds.yaml があるのでそれを適用します。\nkubectl apply -f install/kubernetes/helm/istio/templates/crds.yaml Helm Template を使って Istio の Core Components をインストール Helm Template の仕組みをつかって Istio の Core Components をインストールします。まず Helm Template を出力し istio-system というネームスペースを作成、その後生成した Template を用いて kubectl コマンドで適用します。\nhelm template install/kubernetes/helm/istio --name istio --namespace istio-system \u003e ./istio.yaml kubectl create namespace istio-system kubectl apply -f ./istio.yaml 状態の確認 この状態で service と pods の状態を確認してみます。\nkubectl get svc -n istio-system NAME TYPE CLUSTER-IP EXTERNAL-IP PORT(S) AGE istio-citadel ClusterIP 10.100.143.194 8060/TCP,9093/TCP 55s istio-egressgateway ClusterIP 10.108.243.97 80/TCP,443/TCP 55s istio-galley ClusterIP 10.98.99.11 443/TCP,9093/TCP 55s istio-ingressgateway LoadBalancer 10.97.17.220 80:31380/TCP,443:31390/TCP,31400:31400/TCP,15011:30080/TCP,8060:31309/TCP,853:31151/TCP,15030:30455/TCP,15031:30836/TCP 55s istio-pilot ClusterIP 10.102.75.110 15010/TCP,15011/TCP,8080/TCP,9093/TCP 55s istio-policy ClusterIP 10.101.145.62 9091/TCP,15004/TCP,9093/TCP 55s istio-sidecar-injector ClusterIP 10.107.131.48 443/TCP 55s istio-telemetry ClusterIP 10.96.248.64 9091/TCP,15004/TCP,9093/TCP,42422/TCP 55s prometheus ClusterIP 10.98.228.190 9090/TCP 55s kubectl get pods -n istio-system NAME READY STATUS RESTARTS AGE istio-citadel-55cdfdd57c-64tnn 0/1 ContainerCreating 0 1m istio-cleanup-secrets-x6dmj 0/1 Completed 0 1m istio-egressgateway-7798845f5d-qfx2k 1/1 Running 0 1m istio-galley-76bbb946c8-5l626 0/1 ContainerCreating 0 1m istio-ingressgateway-78c6d8b8d7-68r2z 1/1 Running 0 1m istio-pilot-5fcb895bff-pmg8z 0/2 Pending 0 1m istio-policy-7b6cc95d7b-w7ndg 2/2 Running 0 1m istio-security-post-install-jcwg5 0/1 Completed 0 1m istio-sidecar-injector-9c6698858-8lt92 0/1 ContainerCreating 0 1m istio-telemetry-bfc9ff784-2mzzj 2/2 Running 0 1m prometheus-65d6f6b6c-nttwz 0/1 ContainerCreating 0 1m サンプルアプリケーションのデプロイ 先程ダウンロードした Istio のディレクトリにサンプルアプリケーション ‘bookinfo’ がありますのでそれをデプロイしてみます。 デプロイ方法は2パターンあります。\n方法1. istioctl を使ってアプリの yaml に対して sidecar を記すよう変換しそれを kubctl apply します。\nkubectl apply -f \u003c(istioctl kube-inject -f samples/bookinfo/platform/kube/bookinfo.yaml) 方法2. Sidecar Injection をデフォルトの動きとして設定し kubectl apply します\nkubectl label namespace default istio-injection=enabled kubectl apply -f samples/bookinfo/platform/kube/bookinfo.yam 最後にアプリケーションの状態を確認します\nkubectl get svc NAME TYPE CLUSTER-IP EXTERNAL-IP PORT(S) AGE details ClusterIP 10.111.252.7 9080/TCP 17s kubernetes ClusterIP 10.96.0.1 443/TCP 6m productpage ClusterIP 10.108.205.216 9080/TCP 10s ratings ClusterIP 10.102.161.24 9080/TCP 14s reviews ClusterIP 10.106.18.105 9080/TCP 12s kubectl get pods NAME READY STATUS RESTARTS AGE details-v1-5458f64c65-svrr7 0/2 PodInitializing 0 48s productpage-v1-577c9594b7-4f49s 0/2 Init:0/1 0 43s ratings-v1-79467df9b5-vrx4w 0/2 PodInitializing 0 47s reviews-v1-5d46b744bd-686s9 0/2 Init:0/1 0 46s reviews-v2-7f7d7f99f7-xsvm8 0/2 Init:0/1 0 46s reviews-v3-7bc67f66-cmt4x 0/2 Init:0/1 0 45s まとめ プロダクション環境を想定した Istio 構築と言っても Helm Template を用いて簡単に操作できることが分かりました。\nまたここで重要なのはサンプルアプリケーション ‘bookinfo’ の Kubenetes Pods に Envoy プロキシを Sidecar 的に配置するための変換コマンドとして\nkubectl apply -f \u003c(istioctl kube-inject -f samples/bookinfo/platform/kube/bookinfo.yaml) が用いられていることです。下記の操作を実行してみるとよくわかるでしょう。\nistioctl kube-inject -f samples/bookinfo/platform/kube/bookinfo.yaml \u003e ./bookinfo.sidecar.yaml diff -u bookinfo.yaml bookinfo.sidecar.yaml 差分が長くなるためここでは省略しますが元の bookinfo.yaml には記されていなかった sidecar の文字が読み取れると思います。アプリに隣接した pods に Envoy が起動している pods が Sidecar 的に配置され下記のような構成になりました。\ningress \"python\" \"java\" \"nodejs\" +-----------+ +-------------+ +-------------+ +-------------+ | +-------+ | | +-------+ | | +-------+ | | +-------+ | request -\u003e | | envoy | | -\u003e | | envoy | | -\u003e | | envoy | | -\u003e | | envoy | | | +-------+ | | +-------+ | | +-------+ | | +-------+ | +-----------+ | productpage | | review-v1 | | ratings | +-------------+ +-------------+ +-------------+ +-------------+ | +-------+ | | | envoy | | | +-------+ | | review-v2 | +-------------+ +-------------+ | +-------+ | | | envoy | | | +-------+ | | review-v3 | +-------------+ +-------------+ | +-------+ | | | envoy | | | +-------+ | | details | +-------------+ ruby 参考 URL https://istio.io/docs/setup/kubernetes/quick-start/ https://istio.io/docs/examples/bookinfo/ https://istio.io/docs/setup/kubernetes/helm-install/ ",
   "wordCount" : "613",
-  "inLanguage": "en",
+  "inLanguage": "ja",
   "image": "https://jedipunkz.rocks/jedipunkz.jpg","datePublished": "2018-12-31T00:00:00Z",
   "dateModified": "2018-12-31T00:00:00Z",
   "author":{
@@ -129,7 +129,7 @@
     "@id": "https://jedipunkz.rocks/post/istio/"
   },
   "publisher": {
-    "@type": "Organization",
+    "@type": "Person",
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
@@ -192,14 +192,16 @@
 
 <article class="post-single">
   <header class="post-header">
-    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
-    <h1 class="post-title">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
       Istio, Helm を使って Getting Started 的なアプリをデプロイ
     </h1>
     <div class="post-description">
       Minikube と Helm Template を使った Istio 環境構築とサンプルアプリケーションデプロイ
     </div>
-    
+    <div class="post-meta"><span title='2018-12-31 00:00:00 +0000 UTC'>2018-12-31</span>&nbsp;·&nbsp;3 分&nbsp;·&nbsp;jedipunkz
+
+</div>
   </header> 
   <div class="post-content"><p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 <p>最近は kubernetes を触ってなかったのですが Istio や Envoy 等 CNCF 関連のソフトウェアの記事をよく見かけるようになって、少し理解しておいたほうがいいかなと思い Istio と Minikube を使って Getting Started 的な事をやってみました。Istio をダウンロードすると中にサンプルアプリケーションが入っているのでそれを利用してアプリのデプロイまでを行ってみます。</p>
@@ -335,14 +337,16 @@ request -&gt; | | envoy | | -&gt; |  | envoy |  | -&gt; |  | envoy |  | -&gt; | 
   </div>
 
   <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
 <nav class="paginav">
   <a class="prev" href="https://jedipunkz.rocks/post/istio-sidecar-injection/">
-    <span class="title">« Prev</span>
+    <span class="title">« 前へ</span>
     <br>
     <span>Istio Sidecar Injection を理解する</span>
   </a>
   <a class="next" href="https://jedipunkz.rocks/post/test-kitchen-cluster/">
-    <span class="title">Next »</span>
+    <span class="title">次へ »</span>
     <br>
     <span>Docker,Test-Kitchen,Ansible でクラスタを構成する</span>
   </a>
@@ -495,12 +499,12 @@ request -&gt; | | envoy | | -&gt; |  | envoy |  | -&gt; |  | envoy |  | -&gt; | 
 
         const copybutton = document.createElement('button');
         copybutton.classList.add('copy-code');
-        copybutton.innerHTML = 'copy';
+        copybutton.innerHTML = 'コピー';
 
         function copyingDone() {
-            copybutton.innerHTML = 'copied!';
+            copybutton.innerHTML = 'コピーされました!';
             setTimeout(() => {
-                copybutton.innerHTML = 'copy';
+                copybutton.innerHTML = 'コピー';
             }, 2000);
         }
 

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="auto">
+<html lang="ja" dir="auto">
 
 <head><meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="https://jedipunkz.rocks/post/ceph-process-best-practice/">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/ceph-process-best-practice/">
 <noscript>
     <style>
         #theme-toggle,
@@ -73,7 +73,7 @@
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="Ceph のプロセス配置ベストプラクティス">
   <meta property="og:description" content="Ceph の mon、osd、mds プロセス配置と SSD journal の構成ベストプラクティス">
-  <meta property="og:locale" content="en">
+  <meta property="og:locale" content="ja">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2014-01-29T00:00:00+00:00">
@@ -117,7 +117,7 @@
   ],
   "articleBody": "Ceph はブロック型の分散ストレージファイルシステムです。POSIX のファイルシステ ムとしてマウント出来ます。Linux の Kernel ドライバや FUSE ドライバを用いてマウ ントします。またブロックデバイスとしてマウントする方法もあります。\nだいぶ前ですが、Ceph に関する記事を以前下記の通り書きました。\nhttp://jedipunkz.github.io/post/ceph-cluster-network/ http://jedipunkz.github.io/post/ceph-deploy/ Ceph の構築方法について記したブログだったのですが、今まで mon, osd, mds の各プ ロセスをそれぞれ何台のノードに対して配置し、またそれぞれのプロセス幾つを何に対 して配置するのか？という疑問が付きまとわっていました。node, disk, process のそ れぞれの数の関係について知りたいなぁと思っていました。幾つかのドキュメントを読 んでいて、ぼんやり見えてきた事があるのでそれを今回はまとめたいと思います。\nまた、皆さん気になるトコロだと思われる容量設計についても軽く触れたいと思います。\n参考資料 http://ceph.com/docs/master/rados/configuration/mon-config-ref/ http://www.sebastien-han.fr/blog/2013/12/02/ceph-performance-interesting-things-going-on/ 各要素の数の関係 ハードウェア要素である node, disk(hdd), ssd そしてソフトウェア要素である mon, osd, mds の数の関係はどのようにするべきか？基本となる関係は\n1 mds process / node 1 mon process / node 1 osd process / disk n jornal ssd device / disk / node だと考えられます。僕が今のところ理想かなぁと思っている構成をまとめたいと思いま す。\n下記の図がそれです。\n+------------------------+ | client | +------------------------+ | +--------------------------+--------------------------+-------------------------------+------------------------- | | | | public network +------------------------+ +------------------------+ +------------------------+ +------------------------+ | mon | | mon | | mon | | mds | +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------------------------+ | osd | | osd | | osd | | osd | | osd | | osd | | osd | | osd | | osd | | | +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ | | | disk | | disk | | disk | | disk | | disk | | disk | | disk | | disk | | disk |....\u003e | | +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+scale | node | | ssd | | ssd | | ssd | | | +------------------------+ +------------------------+ +------------------------+ | | | node | | node | | node | | | +------------------------+ +------------------------+ +------------------------+ +------------------------+ | | | | +--------------------------+--------------------------+-------------------------------+------------------------- cluster network mds と node の関係 mds はリモートクライアントへのファイルシステムサービスの提供を行うことや特性が 全く異なることから別ノードに切り出しました。また mds は幾つかのノードで稼働さ せる事も可能。が、mds はそれぞれのサービスを HA 組む仕組みは持っていないので どれか一方の mds をクライアントは指し示す必要があり、その mds が停止すれば直 ちに障害に発展します。\nmon と node の関係 mon は比較的少量のリソースで稼働します。今回 osd と同じノードの搭載しましたが 別ノードに切り出すことも勿論可能です。mon は CRUSH Maps アルゴリズムの元に連携 が取れますので複数のプロセスを稼働することが推奨されていることからも、比較的少 ないノード数のクラスタの場合は osd と同ノードに搭載するのが容易かなと考えまし た。\nosd と node の関係 1 osd プロセスに対して 1 disk が基本となります。osd は実データのレプリケーショ ンを行うことからコンフィギュレーションに対して上図の様にクラスタ用のネットワー クを紐付け、高トラヒックに対応する必要があります。また osd 用の disk device で すが RAID を組まないことが推奨されています。CEPH 自体に HA の仕組みがあること、 また RAID 構成にもよりますがディスクアクセスが遅くなることは Ceph にとってボト ルネックを早く招くことになりますし、小さいディスク容量しか扱えなくなることは Ceph にとって不利になると思います。\njournal 用の ssd device と disk, node の関係 現在の Stable Release 版の Ceph は journal を用いてメタデータを管理します。各 osd の disk 単位に journal 用の disk device を指定出来るようになっています。メ タデータですので実データ用の disk よりだいぶ小さな容量で構わないこと、また比較 的高速なアクセスを要求されることからも SSD を選択することが推奨されつつあるよ うです。実際にストアされるデータの特性にもよりますが 1 node に対して 1 ssd device を配置すれば十分かと思います。また osd のプロセスの数 (disk の数) に対 して一つのパーティションを切ることで対応出来るかと思います。\n設定方法の例を記します。ここに ceph01-03 の3台のノードがありそれぞれ 2 disk, 1 ssd が搭載されているとします。/dev/ssd は gdisk 等を用いて2つ以上のパーティショ ンに切り分けます。\n下記のように /dev/sdb (hdd) に対して /dev/ssd1 (ssd), /dev/sdc (hdd) に対して /dev/ssd2 (ssd) を割り当てることが出来ます。\n% ceph-deploy --cluster cluster01 osd create ceph01:sdb:/dev/ssd1 ceph02:sdb:/dev/ssd1 ceph03:sdb:/dev/ssd1 % ceph-deploy --cluster cluster01 osd create ceph01:sdc:/dev/ssd2 ceph02:sdc:/dev/ssd2 ceph03:sdc:/dev/ssd2 Ceph ストレージ全体の容量設計と mon の ratio の関係 3TB のディスクを持ったノードが 33 台並んでいるとします。各ノードには osd プロ セスが1つ稼働します。合計容量は 99 TB となりますが mon が持っているコンフィギュ レーションである full ratio というパラメータがありデフォルト値が 0.95 となって います。よってこのクラスタで扱える全体のディスク容量は 95TB となります。\nまた、ラックに数台のノードを積むのが通常ですが、電源故障等で一気にラック単位で 障害が発生したとします。この場合 Ceph はすべてのデータに関してレプリカを取り復 旧作業を行います。しかしながら停止するノード数によってはストレージ全体の扱える 容量をオーバーすることも懸念されます。これに対応するために先ほど登場した ratio パラメータを調整することが出来ます。\n[global] mon osd full ratio = .80 mon osd nearfull ratio = .70 上記の例では full ステートの ratio が 0.80, nearfull ステートの ratio が 0.70 となります。想定の障害ノード数を考慮し ratio パラメータにてその台数分を減算す れば良いわけです。\nまとめ 前述した通り上図は比較的少ないノード数のクラスタを組む場合を想定しています。ノー ド数が増える場合は mon は mds, osd とも必要とするリソースの特性が異なりますの で別ノードに切り出すことも考えたほうが良さそうです。2014年の2月には Firefly と いう新しいリリース版が出ます。ここでのブループリント(設計書)を確認すると…\nhttp://wiki.ceph.com/Planning/Blueprints/Firefly/osd%3A_new_key%2F%2Fvalue_backend\njournal に変わる新たなメタデータ管理方法として KVS データベースを扱うことも視 野に入っているようです。上記の URL 見る限りでは Facebook がオープンソースにし た rocksdb や fusionio の nvmkv, seagate の kinetic 等が挙がっています。2月に 期待しましょう！\n",
   "wordCount" : "477",
-  "inLanguage": "en",
+  "inLanguage": "ja",
   "image": "https://jedipunkz.rocks/jedipunkz.jpg","datePublished": "2014-01-29T00:00:00Z",
   "dateModified": "2014-01-29T00:00:00Z",
   "author":{
@@ -129,7 +129,7 @@
     "@id": "https://jedipunkz.rocks/post/ceph-process-best-practice/"
   },
   "publisher": {
-    "@type": "Organization",
+    "@type": "Person",
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
@@ -192,14 +192,16 @@
 
 <article class="post-single">
   <header class="post-header">
-    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
-    <h1 class="post-title">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
       Ceph のプロセス配置ベストプラクティス
     </h1>
     <div class="post-description">
       Ceph の mon、osd、mds プロセス配置と SSD journal の構成ベストプラクティス
     </div>
-    
+    <div class="post-meta"><span title='2014-01-29 00:00:00 +0000 UTC'>2014-01-29</span>&nbsp;·&nbsp;3 分&nbsp;·&nbsp;jedipunkz
+
+</div>
   </header> 
   <div class="post-content"><p>Ceph はブロック型の分散ストレージファイルシステムです。POSIX のファイルシステ
 ムとしてマウント出来ます。Linux の Kernel ドライバや FUSE ドライバを用いてマウ
@@ -319,14 +321,16 @@ mon osd nearfull ratio = .70
   </div>
 
   <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
 <nav class="paginav">
   <a class="prev" href="https://jedipunkz.rocks/post/journal-ssd-ceph-deploy/">
-    <span class="title">« Prev</span>
+    <span class="title">« 前へ</span>
     <br>
     <span>Journal 用 SSD を用いた Ceph 構成の構築</span>
   </a>
   <a class="next" href="https://jedipunkz.rocks/post/17th-openstack-study/">
-    <span class="title">Next »</span>
+    <span class="title">次へ »</span>
     <br>
     <span>第17回 OpenStack 勉強会で話してきました</span>
   </a>
@@ -479,12 +483,12 @@ mon osd nearfull ratio = .70
 
         const copybutton = document.createElement('button');
         copybutton.classList.add('copy-code');
-        copybutton.innerHTML = 'copy';
+        copybutton.innerHTML = 'コピー';
 
         function copyingDone() {
-            copybutton.innerHTML = 'copied!';
+            copybutton.innerHTML = 'コピーされました!';
             setTimeout(() => {
-                copybutton.innerHTML = 'copy';
+                copybutton.innerHTML = 'コピー';
             }, 2000);
         }
 

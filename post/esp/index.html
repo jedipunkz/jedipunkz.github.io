@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="auto">
+<html lang="ja" dir="auto">
 
 <head><meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="https://jedipunkz.rocks/post/esp/">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/esp/">
 <noscript>
     <style>
         #theme-toggle,
@@ -73,7 +73,7 @@
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="自前ツールと Cloudwatch 高解像度メトリクスを使ったより高速な ECS オートスケールの実現">
   <meta property="og:description" content="Cloudwatch 高解像度メトリクスと自作ツールによる ECS の高速オートスケール実現方法">
-  <meta property="og:locale" content="en">
+  <meta property="og:locale" content="ja">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2023-03-24T14:54:11+09:00">
@@ -117,7 +117,7 @@
   ],
   "articleBody": "こんにちは @jedipunkz 🚀 です。\n普段仕事で AWS ECS を使っていて Autoscallng Group によってアプリケーションを据えケールさせて運用していますが、運用している中でより高速にオートスケール出来ないものだろうか？と思うシチュエーションが何回か発生し、対応方法について模索していました。\n実際に発生したシチュエーション 下記はコンテナ毎の CPU 使用率です。1分未満の間に急激にアクセスが増えコンテナの CPU 使用率が 100% に達し (実際には vCPU に基づいて 200% となっている)、ECS Service のヘルスチェックに Fail して、コンテナが落ち、新しいコンテナは起動するものの、アクセス不可に耐えられず、コンテナ停止と起動を繰り返すといった状況でした。\nAutoscaling Policy, Cloudwatch Metrics Alarm の調整 まず最初に考えたのが下記の値の調整です。\naws_app_autoscaling_policy の cooldown 値 aws_cloudwatch_metric_alarm の period 値 具体的には 60sec となっていた値を 10sec などに変更しました。これによって 60sec のインターバルでしきい値計算してスケールさせていたところを 10sec にインターバルを縮めつつスケールさせる。つまりより迅速にスケールさせることで上記のシチュエーションに耐えられるのではと考えました。\nですが、結果は NG でした。\n下記は Cloudwatch Metrics の様子です。データはプロットされているものの、データ不足 という状態に陥っている事がわかります。\n実際に ECS はこの設定をした Metrics Alarm ではスケールしてくれませんでした。\n高解像度メトリクスの利用について であれば高解像度メトリクス を利用すれば良いのではと考えました。\n歴史的に\n2009年当初、5分間隔だった Cloudwatch Metrics 2010年に1分間隔に変更 という背景があるようなのですが、それに対して高解像度メトリクスは1秒の間隔でメトリクスを発行することが可能になるとのこと。\nただ ECS が Cloudwatch Alarm にメトリクス発行するのですが、AWS サポートに聞いたところ、ECS は高解像度メトリクスに対応していない、と回答いただきました。\nサイドカーコンテナで動かす自前ツール ESP の利用で解決 ということで、自前のツールを Go で開発しました。これによって問題が解決すると考えています。(ただ、現時点ではまだ運用に乗せていません)\nhttps://github.com/jedipunkz/esp\n前提としては下記を考慮する必要があります\n自前ツール ESP は対象となるアプリコンテナのサイドカーとして起動 ツール内で行っていることは下記です。\n(1) ESP は ECS メタデータエンドポイントにアクセスしてアプリコンテナの CPU 使用率を計算する上で必要な値を取得 (2) ESP はアプリコンテナの CPU 使用率を計算 (3) ESP は CPU 使用率を Cloudwatch Metrics へ高解像度メトリクスとして Put 結果、Terraform 等で下記のように設定すれば秒単位でスケールする ECS が構築できます。\nresource \"aws_cloudwatch_metric_alarm\" \"example_high\" { alarm_name = \"example-CPU-Utilization-High-30\" comparison_operator = \"GreaterThanOrEqualToThreshold\" evaluation_periods = \"1\" metric_name = \"CPUUtilization\" namespace = \"\" period = \"10\" # ここは秒単位で設定出来る statistic = \"Average\" threshold = \"15\" dimensions = { ClusterName = aws_ecs_cluster.example.name ServiceName = aws_ecs_service.example.name } alarm_actions = [aws_appautoscaling_policy.scale_out.arn] } CPU 使用率の計算について ECS メタデータエンドポイントにアクセスすると下記の様なデータが取得できます。\n\"cpu_stats\": { \"cpu_usage\": { \"total_usage\": 1137691504, \"percpu_usage\": [ 696479228, 441212276, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ], \"usage_in_kernelmode\": 80000000, \"usage_in_usermode\": 810000000 }, \"system_cpu_usage\": 9393210000000, \"online_cpus\": 2, \"throttling_data\": { \"periods\": 0, \"throttled_periods\": 0, \"throttled_time\": 0 } }, Classi さんのブログ記事 (https://tech.classi.jp/entry/2022/05/24/120000) を参考にさせていただきました。この記事では Datadog の AWS Integration のコードを参考にされたそうです。Datadog では下記のようなコードになっています。\nhttps://github.com/DataDog/integrations-core/blob/4cf0f7dc759683b454cf46b9ff5e2de561a58339/ecs_fargate/datadog_checks/ecs_fargate/ecs_fargate.py#L220\n結果的に ESP では、下記のように計算しました。\nhttps://github.com/jedipunkz/esp/blob/main/esp.go#L40-L42\ncpuUsage := ((float64(s.CPUStats.CPUUsage.TotalUsage) - float64(s.PreCPUStats.CPUUsage.TotalUsage)) / (float64(s.CPUStats.SystemCPUUsage) - float64(s.PreCPUStats.SystemCPUUsage))) * float64(s.CPUStats.OnlineCPUs) * 100 まとめ ESP を使って ECS が秒単位でもスケールさせることが出来ると思われます。ただ運用に乗せるまでは至っていないので、それまでに負荷試験等を実施して効果を測る必要がありそうです。\nまた、高速にすると記しましたが、より具体的に表現するとスケールのサイクルを速く回す、となります。よって Fargate の弱点であるコンテナ起動までの時間が比較的掛かる問題やコンテナイメージの大きさから発生するコンテナ起動時間の長時間化に対しては、また別のアプローチがあると思うので、それらも合わせて対応取ると良いかもしれません。\n",
   "wordCount" : "248",
-  "inLanguage": "en",
+  "inLanguage": "ja",
   "image": "https://jedipunkz.rocks/jedipunkz.jpg","datePublished": "2023-03-24T14:54:11+09:00",
   "dateModified": "2023-03-24T14:54:11+09:00",
   "author":{
@@ -129,7 +129,7 @@
     "@id": "https://jedipunkz.rocks/post/esp/"
   },
   "publisher": {
-    "@type": "Organization",
+    "@type": "Person",
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
@@ -192,14 +192,16 @@
 
 <article class="post-single">
   <header class="post-header">
-    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
-    <h1 class="post-title">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
       自前ツールと Cloudwatch 高解像度メトリクスを使ったより高速な ECS オートスケールの実現
     </h1>
     <div class="post-description">
       Cloudwatch 高解像度メトリクスと自作ツールによる ECS の高速オートスケール実現方法
     </div>
-    
+    <div class="post-meta"><span title='2023-03-24 14:54:11 +0900 +0900'>2023-03-24</span>&nbsp;·&nbsp;2 分&nbsp;·&nbsp;jedipunkz
+
+</div>
   </header> 
   <div class="post-content"><p>こんにちは <a href="https://twitter.com/jedipunkz">@jedipunkz</a> 🚀 です。</p>
 <p>普段仕事で AWS ECS を使っていて Autoscallng Group によってアプリケーションを据えケールさせて運用していますが、運用している中でより高速にオートスケール出来ないものだろうか？と思うシチュエーションが何回か発生し、対応方法について模索していました。</p>
@@ -303,14 +305,16 @@
   </div>
 
   <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
 <nav class="paginav">
   <a class="prev" href="https://jedipunkz.rocks/post/argo-rollout-progressive-delivery/">
-    <span class="title">« Prev</span>
+    <span class="title">« 前へ</span>
     <br>
     <span>手軽にローカルで Argo Rollouts, Istio, Prometheus で Progressive Delivery を試す</span>
   </a>
   <a class="next" href="https://jedipunkz.rocks/post/sysdig-ecs-fargate/">
-    <span class="title">Next »</span>
+    <span class="title">次へ »</span>
     <br>
     <span>Sysdig&#43;ECS Fargate でコンテナランタイムセキュリティ実践</span>
   </a>
@@ -463,12 +467,12 @@
 
         const copybutton = document.createElement('button');
         copybutton.classList.add('copy-code');
-        copybutton.innerHTML = 'copy';
+        copybutton.innerHTML = 'コピー';
 
         function copyingDone() {
-            copybutton.innerHTML = 'copied!';
+            copybutton.innerHTML = 'コピーされました!';
             setTimeout(() => {
-                copybutton.innerHTML = 'copy';
+                copybutton.innerHTML = 'コピー';
             }, 2000);
         }
 

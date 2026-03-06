@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="auto">
+<html lang="ja" dir="auto">
 
 <head><meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="https://jedipunkz.rocks/post/vpclattice-ecs/">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/vpclattice-ecs/">
 <noscript>
     <style>
         #theme-toggle,
@@ -73,7 +73,7 @@
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="VPC Lattice &#43; ECS 構成を Terraform を通して理解">
   <meta property="og:description" content="VPC Lattice を使って複数 VPC 間で ECS サービスを共有する構成を Terraform で実装。VPC Peering や ALB が不要になる新しいアーキテクチャを解説">
-  <meta property="og:locale" content="en">
+  <meta property="og:locale" content="ja">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2024-11-28T00:00:27+09:00">
@@ -117,7 +117,7 @@
   ],
   "articleBody": "jedipunkz です。VPC Lattice が ECS に対応したという情報が https://aws.amazon.com/jp/about-aws/whats-new/2024/11/amazon-vpc-lattice-elastic-container-service/ にあがりました。この対応を Terraform を使って構成して検証してみるのが今回の目的になります。\n今回検証で用いたコード 検証コードは下記に置いておきました。 https://github.com/jedipunkz/vpclattice-ecs-playground\n概要 構成の概要としては下記です。(Mermaid 記表でうまく描けていませんが)\nVPC1, VPC2 に跨る形で VPC Lattice Service Network が配置 VPC2 上の何者か (例で EC2) が VPC1 上の ECS に接続可能 その際は VPC Service Network を介して VPC Lattice Service がエンドポイントとして受ける (うまく描けてない) という事は今まで複数の VPC 間で ECS のエンドポイントを共有しようとすると\nVPC1, VPC2 とで VPC Peering を張る VPC1 上の Private Subnets 上で ALB を構築して ECS Service に接続する という構成が必要でしたが、VPC Lattice を使えばそれらが不要になる、という事です。\n今回検証した構成 今回使った Terraform コードで構築した構成は下記です。各 AWS リソースの関係図になっています。 特徴としては\nECS 構成は Cluster, Service ,Task の通常の構成 ECS Service に ALB ではなく VPC Lattice Target Group が紐づいている VPC Lattice Listner が VPC Lattice Service と VPC Lattice Target Group を紐づけている VPC Lattice Listner はリクエストを VPC Lattice Target Group に転送 なおかつ VPC Lattice Listener にはヘルスチェック機能がある Terraform コードを見て把握する 構成を理解するために各リソースの紐づけの指定を観点にコードを見ていきます。\nECS と VPC Lattice Target Group の紐づけ ECS Service のパラメータです。通常は ALB を接続するパラメータを書くと思うのですが、VPC Lattice の場合は vpc_lattice_configrations となります。\nvpc_lattice_configurations { role_arn = aws_iam_role.ecs_infrastructure.arn target_group_arn = aws_vpclattice_target_group.main.arn port_name = \"web-80-tcp\" } VPC Lattice Listener の VPC Lattice Service, VPC Lattice Target Group の紐づけ VPC Lattice Listener が VPC Lattice Service と VPC Lattice Target Group を紐づけている記述が下記になります。 つまりエンドポイントである VPC Lattice Service が Listener, VPC Lattice Target Group を介して ECS Service に接続している、という事です。\nresource \"aws_vpclattice_listener\" \"main\" { name = \"http-80\" port = 80 protocol = \"HTTP\" service_arn = aws_vpclattice_service.main.arn service_identifier = aws_vpclattice_service.main.id default_action { forward { target_groups { target_group_identifier = aws_vpclattice_target_group.main.id weight = 1 } } } } VPC Lattice Service Network と VPC Lattice Service の紐づけ 下記のような記述で VPC Lattice Service Network と VPC Latice Serivce が紐づいています。\nresource \"aws_vpclattice_service_network_service_association\" \"service_association\" { service_network_identifier = aws_vpclattice_service_network.main.id service_identifier = aws_vpclattice_service.main.id } VPC と VPC Lattice Service Network の紐づけ VPC と VPC Lattice Service Network が紐づいています。またセキュリティグループが設定されていて、VPC Lattice Service Network への通信が制御できるようになっています。\nresource \"aws_vpclattice_service_network_vpc_association\" \"vpc_association\" { security_group_ids = [aws_security_group.lattice_service_network.id] service_network_identifier = aws_vpclattice_service_network.main.id vpc_identifier = module.vpc.vpc_id } 考察 導入メリットの観点 複数の VPC 間で ECS Serivce のエンドポイントを接続出来るのはメリットだと思います。またロードバランサが不要になったことも大きいです。ただご存知のように ALB は内部ノードが拡張することでスケールアウトするのですが VPC Lattice Service も拡張性を備えているのかは気になります。\nパブリックにエンドポイントを出せるのかの観点 また今回は Private Subnet 上で構成しました。確かに VPC 上に EC2 等を起動して VPC Lattice Service のエンドポイントに curl を使ってアクセス出来ましたが、この構成が Public Subnet 上に展開出来るのかはまだ自分は分かっていません。軽く Public Subnet を指定して構築してみましたが外部から curl で VPC Lattice Service に接続出来ませんでした。DNS 的な問題が現れました。また ECS Service は Subnet の指定をしていますが Lattice 関連のリソースはサブネットの指定箇所が無いことに気が付きます。(もしかすると Terraform Document 等呼んでいくと指定箇所があるのかもしれないですが)。ですが VPC に跨る形で配置される Lattice の特徴を考えると出来ない気もします。このあたりは引き続き調査します。\n備考 aws コンソールの問題 ちょうど先週発表された機能なので仕方ないのですが現時点では aws コンソールの機能に不十分な点が見受けられました (2024/11時点)\nECS Service の VPC Lattice の設定画面で VPC を選択する事ができるがセキュリティグループを選択できないので default セキュリティグループになってしまう ECS Service の VPC Lattice の設定画面で一度設定した Lattice Target Group を削除して保存。その後、同じ画面で既存の Lattice Target Group を選択出来ないので新たに作らなくてはいけない Terraform 検証にあたり注意点 手順を間違うと eni が削除出来ない問題に遭遇すると思います。terraform destroy すると下記のリソースが主に残ります。おそらく Terraform AWS Provider の不具合な気はしていますが確認したところ Issue には問題がありませんでした。新しい不具合な可能性もあります。この時点で aws コンソールで順にリソースを削除しようと考えると思うのですが ECS Cluster を削除しても ECS Service の Attacment? リソースが残り、結果 eni が消せません。eni が消せないので IGW, Subnet, VPC も消せない、という状況になります。\nVPC Subnet IGW ECS Cluster ECS Service ",
   "wordCount" : "408",
-  "inLanguage": "en",
+  "inLanguage": "ja",
   "image": "https://jedipunkz.rocks/jedipunkz.jpg","datePublished": "2024-11-28T00:00:27+09:00",
   "dateModified": "2024-11-28T00:00:27+09:00",
   "author":{
@@ -129,7 +129,7 @@
     "@id": "https://jedipunkz.rocks/post/vpclattice-ecs/"
   },
   "publisher": {
-    "@type": "Organization",
+    "@type": "Person",
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
@@ -192,14 +192,16 @@
 
 <article class="post-single">
   <header class="post-header">
-    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
-    <h1 class="post-title">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
       VPC Lattice &#43; ECS 構成を Terraform を通して理解
     </h1>
     <div class="post-description">
       VPC Lattice を使って複数 VPC 間で ECS サービスを共有する構成を Terraform で実装。VPC Peering や ALB が不要になる新しいアーキテクチャを解説
     </div>
-    
+    <div class="post-meta"><span title='2024-11-28 00:00:27 +0900 +0900'>2024-11-28</span>&nbsp;·&nbsp;2 分&nbsp;·&nbsp;jedipunkz
+
+</div>
   </header> 
   <div class="post-content"><p>jedipunkz です。VPC Lattice が ECS に対応したという情報が <a href="https://aws.amazon.com/jp/about-aws/whats-new/2024/11/amazon-vpc-lattice-elastic-container-service/">https://aws.amazon.com/jp/about-aws/whats-new/2024/11/amazon-vpc-lattice-elastic-container-service/</a> にあがりました。この対応を Terraform を使って構成して検証してみるのが今回の目的になります。</p>
 <h2 id="今回検証で用いたコード">今回検証で用いたコード<a hidden class="anchor" aria-hidden="true" href="#今回検証で用いたコード">#</a></h2>
@@ -296,14 +298,16 @@
   </div>
 
   <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
 <nav class="paginav">
   <a class="prev" href="https://jedipunkz.rocks/post/mcp-local-filesystem/">
-    <span class="title">« Prev</span>
+    <span class="title">« 前へ</span>
     <br>
     <span>MCP の理解: Platform Enabler/SRE での活用</span>
   </a>
   <a class="next" href="https://jedipunkz.rocks/post/opentelemetry-aws/">
-    <span class="title">Next »</span>
+    <span class="title">次へ »</span>
     <br>
     <span>Go, OpenTelemetry で AWS にログ・トレースを計装してみる</span>
   </a>
@@ -456,12 +460,12 @@
 
         const copybutton = document.createElement('button');
         copybutton.classList.add('copy-code');
-        copybutton.innerHTML = 'copy';
+        copybutton.innerHTML = 'コピー';
 
         function copyingDone() {
-            copybutton.innerHTML = 'copied!';
+            copybutton.innerHTML = 'コピーされました!';
             setTimeout(() => {
-                copybutton.innerHTML = 'copy';
+                copybutton.innerHTML = 'コピー';
             }, 2000);
         }
 
