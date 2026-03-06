@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="auto">
+<html lang="ja" dir="auto">
 
 <head><meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.rocks/preview/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="https://jedipunkz.rocks/preview/post/serf/">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/preview/post/serf/">
 <noscript>
     <style>
         #theme-toggle,
@@ -73,7 +73,7 @@
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="Serf を使ってみた">
   <meta property="og:description" content="HashiCorp Serf オーケストレーションツールの紹介と基本的な動作の理解">
-  <meta property="og:locale" content="en">
+  <meta property="og:locale" content="ja">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2013-11-10T00:00:00+00:00">
@@ -117,7 +117,7 @@
   ],
   "articleBody": "こんにちは。@jedipunkz です。\n僕は Chef 使いなのですが、Chef はオーケストレーションまで踏み込んだツールでは ないように思います。せいぜいインテグレーションが出来る程度なのかなぁと。 しかもインテグレーションするにも Cookbooks の工夫が必要です。以前聞いたことの ある話ですが Opscode 社のエンジニア曰く「オーケストレーション等へのアプローチ はそれぞれ好きにやってね」だそうです。\n個人的にオーケストレーションをテーマに色々調べようかと考えているのですが、 Serf という面白いツールが出てきました。‘Serf’ はオーケストレーションを手助けし てくれるシンプルなツールになっています。\nもう既にいろんな方が Serf について調べていますが、どのような動きをするのかを自 分なりに理解した点を記しておこうと思います。\n参考にしたサイト 公式サイト http://www.serfdom.io/ クラスメソッド開発者ブログ http://dev.classmethod.jp/cloud/aws/serf_on_ec2/ Glidenote さん http://blog.glidenote.com/blog/2013/10/30/serf-haproxy/ Serf とは Serf は gossip protocol をクラスタにブロードキャストする。gossip protocol は SWIM : Scalable Weakly-consistent Infecton-style process Group Membership Protocol” をベースとして形成されている。\nSWIM Protocol 概略 serf は新しいクラスタとして稼働するか、既存のクラスタに ‘join’ する形で稼働 するかのどちらかで起動する。\n新しいメンバは TCP で状態を ‘full state sync’ され既存のクラスタ内にて ‘gossipin (噂)される。この ’gosiping’ は UDP で通信されこれはネットワーク使 用量はノード数に比例することになる。\nランダムなノードとの ‘full state sync’ は TCP で行われるけどこれは ‘gossiping’ に比べて少い\nある一定期間、あるノードが fails 状態の場合、迂回経路を使ってそのノードに対し てチェックを行う。両方の経路にて fails な場合ノードが ‘suspiciou’ (容疑者) 状態になる。もし迂回経路のチェックが fails しなかった場合ネットワーク障害として 判断される。\nSerf の SWIM Protocol からの改修点 Serf は SWIM Protocol をベースにしていると記しましたが、どのような点を改修した のかまとめました。\n‘full state sync’ の TCP 化 serf は ‘full state sync’ を TCP にて行う。これにより serf はネットワーセグ メントが分離されている状態でも通信出来る。\ngossip レイヤの分離 serf は failure detection protocol から完全に gossip レイヤを分離。これでより 高速にデータ増殖が行える。\ndead node の扱い serf は デッドノードに対して回数を記憶している。これにより full state sync が 実施された場合、逆に死んだノードの情報を受取る。SWIM では full state sync を行 わないので死んだノードにを削除してしまう。これはクラスタに対する情報一点集中化 に役立つ。\n使ってみる 早速使ってみます。下記の URL にある demo 用スクリプトを少し改修して使ってみま した。\nhttps://github.com/hashicorp/serf/tree/master/demo/web-load-balancer\n2つノードを立ち上げる AWS でも OpenStack でもベアメタルでも何でも良いのでノードを2台用意する。\n下記のスクリプトを置いて両ノードで実行する。 #!/bin/sh set -e export SERF_ROLE=role01 sudo apt-get install -y unzip # Download and install Serf cd /tmp until wget -O serf.zip https://dl.bintray.com/mitchellh/serf/0.2.1_linux_amd64.zip; do sleep 1 done unzip serf.zip sudo mv serf /usr/local/bin/serf # The member join script is invoked when a member joins the Serf cluster. # Our join script simply adds the node to the load balancer. cat \u003c/tmp/join.sh #!/bin/sh echo 'member joined' \u003e\u003e /tmp/serf_join.log EOF sudo mv /tmp/join.sh /usr/local/bin/serf_member_join.sh chmod +x /usr/local/bin/serf_member_join.sh # Configure the agent cat \u003c/tmp/agent.conf description \"Serf agent\" start on runlevel [2345] stop on runlevel [!2345] exec /usr/local/bin/serf agent \\\\ -event-handler \"member-join=/usr/local/bin/serf_member_join.sh\" \\\\ -role=${SERF_ROLE} \u003e\u003e/var/log/serf.log 2\u003e\u00261 EOF sudo mv /tmp/agent.conf /etc/init/serf.conf # Start the agent! sudo start serf 実行すると ‘role01’ という Role 名で serf agent が稼働しているはず。またスクリ プトを見てわかると思うが –event-handler “member-join=\u003cスクリプト\u003e” としている。 これでクラスタに新しいメンバが join すると /tmp/serf_join.log に ‘member joined’ というメッセージが出力されるはずだ。実際に実行してみる。\n% sudo serf join \u003cもう片系ノードの IP\u003e % sudo serf members vm01 10.0.2.1 alive role01 vm02 10.0.2.3 alive role01 % tail /tmp/serf_join.log ‘member joined ‘member joined イベントハンドラにはユーザ指定のものも扱える。\nuser:deploy=foo.sh この場合のハンドラは下記のコマンドで発生出来る。\n% serf event deploy コンフィギュレーションファイル 今回は init 起動スクリプト内でイベントハンドラ発生時のスクリプト指定等を行った が、json 形式のコンフィギュレーションファイルにて記述することも可能。\n{ \"role\": \"load-balancer\", \"event_handlers\": [ \"member_join.sh\", \"user:deploy=foo.sh\" ] } 上記ファイルを serf.conf とした場合、このコンフィグの指定は –config-file=serf.conf で行える。\nロードマップ 最後に Serf の今後のロードマップについて記してあったので、まとめてみた。\nコンフィギュレーションファイル よりカスタマイズ可能なコンフィギュレーションファイルを扱えるようにする。\nSIGHUP SIGHUP 信号でリロード出来ないので、これに対応する。\nイベントハンドラライブラリ イベントハンドラを自作・シェアを容易に行えるようプラグイン化を進める。\nまとめと考察 冒頭にオーケストレーションについて触れましたが、このツールを使うだけでは自分の 考えているオーケストレーションにはならないと思いました。当たり前ですね。。複数 ノードを束ねて構成を形成する、またそれをトリガするのが人間であればそれはインテ グレーションの範囲かなぁと。その先にオーケストレーションがあるとすればトリガ自 身もソフトウェアにさせる必要があるのでそのアルゴリズムを人間が書く必要があるの かなぁと。もちろんそのためにこのSerf は貴重なパーツとなってくれそう。\nあと、ロードマップにも記しましたが開発が盛んにされているようなので今後が楽しみ です。\n",
   "wordCount" : "372",
-  "inLanguage": "en",
+  "inLanguage": "ja",
   "image": "https://jedipunkz.rocks/preview/jedipunkz.jpg","datePublished": "2013-11-10T00:00:00Z",
   "dateModified": "2013-11-10T00:00:00Z",
   "author":{
@@ -129,7 +129,7 @@
     "@id": "https://jedipunkz.rocks/preview/post/serf/"
   },
   "publisher": {
-    "@type": "Organization",
+    "@type": "Person",
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
@@ -192,14 +192,16 @@
 
 <article class="post-single">
   <header class="post-header">
-    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
-    <h1 class="post-title">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
       Serf を使ってみた
     </h1>
     <div class="post-description">
       HashiCorp Serf オーケストレーションツールの紹介と基本的な動作の理解
     </div>
-    
+    <div class="post-meta"><span title='2013-11-10 00:00:00 +0000 UTC'>2013-11-10</span>&nbsp;·&nbsp;2 分&nbsp;·&nbsp;jedipunkz
+
+</div>
   </header> 
   <div class="post-content"><p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 <p>僕は Chef 使いなのですが、Chef はオーケストレーションまで踏み込んだツールでは
@@ -360,14 +362,16 @@ joined&rsquo; というメッセージが出力されるはずだ。実際に実
   </div>
 
   <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
 <nav class="paginav">
   <a class="prev" href="https://jedipunkz.rocks/preview/post/elasticsearch-second-study-report/">
-    <span class="title">« Prev</span>
+    <span class="title">« 前へ</span>
     <br>
     <span>第2回 Elasticsearch 勉強会参加レポート</span>
   </a>
   <a class="next" href="https://jedipunkz.rocks/preview/post/swift-chef/">
-    <span class="title">Next »</span>
+    <span class="title">次へ »</span>
     <br>
     <span>実用的な Swift 構成を Chef でデプロイ</span>
   </a>
@@ -520,12 +524,12 @@ joined&rsquo; というメッセージが出力されるはずだ。実際に実
 
         const copybutton = document.createElement('button');
         copybutton.classList.add('copy-code');
-        copybutton.innerHTML = 'copy';
+        copybutton.innerHTML = 'コピー';
 
         function copyingDone() {
-            copybutton.innerHTML = 'copied!';
+            copybutton.innerHTML = 'コピーされました!';
             setTimeout(() => {
-                copybutton.innerHTML = 'copy';
+                copybutton.innerHTML = 'コピー';
             }, 2000);
         }
 

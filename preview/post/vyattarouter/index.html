@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="auto">
+<html lang="ja" dir="auto">
 
 <head><meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.rocks/preview/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="https://jedipunkz.rocks/preview/post/vyattarouter/">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/preview/post/vyattarouter/">
 <noscript>
     <style>
         #theme-toggle,
@@ -73,7 +73,7 @@
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="vyatta で自宅ルータ構築">
   <meta property="og:description" content="Vyatta で自宅ルータを構築する方法。PPPoE、NAT、DHCP の基本設定から Broadcom NIC の動作確認まで解説">
-  <meta property="og:locale" content="en">
+  <meta property="og:locale" content="ja">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2012-04-28T00:00:00+00:00">
@@ -117,7 +117,7 @@
   ],
   "articleBody": "自宅ルータを Vyatta で構築してみたくなり、秋葉原の ark でマシンを調達しました。 Broadcom の BCM57780 チップが搭載された NIC がマザーボード J\u0026W MINIX™ H61M-USB3 だったのですが、Vyatta.org によると Broadcom の NIC が Certificated Hardware に載っていなくて心配でした。まぁ定評のある NIC メーカだから動くだろう と楽観視していたのですけど、案の定動きました。vyatta.org の Certificated Hardware にコミットしたら “user tested” として掲載してもらえました。\nhttp://www.vyatta.org/hardware/interfaces\nこんな感じに見えています。\n# dmesg | grep Broadcom [ 3.284646] tg3 0000:03:00.0: eth0: attached PHY driver [Broadcom BCM57780](mii_bus:phy_addr=300:01) [ 3.524122] tg3 0000:05:00.0: eth1: attached PHY driver [Broadcom BCM57780](mii_bus:phy_addr=500:01) 今回は、基本的な設定 (PPPoE, NAT, DHCP) 周りを記していきます。\n環境は…\n+--------+ | Modem | +--------+ | | pppoe0 +--eth0--+ | vyatta | +--eth1--+ | 192.168.1.0/24 +----------+ | |192.168.1.10 +--------+ +--------+ | CPE | | DNS | +--------+ +--------+ として記します。\nまずインストール。http://www.vyatta.org/downloads から 64bit VC6.3 Live CD iso をダウンロードしてきます。(2012/04/28現在最新). インストール対象のマシンに挿入 して CDROM ブートすると Vyatta が立ち上がるので、ユーザ vyatta, パスワード vyatta でログインし\n# install-system します。インタラクティブに問い合わせられるので答えていってください。インストールが 終わったらマシンを再起動します。\neth1 にプライベート IP アドレスを振ります。IP アドレスは適当に読み替えてくださ い。また基本的な設定も行います。\n# set service ssh port 10022 # firewall 設定するまではこうしたほうが安心です # set system host-name ${HOSTNAME} # set system time-zone Asia/Tokyo # set system name-server 8.8.8.8 # set interface ethernet eth1 address 192.168.1.254 eth0 を PPPoE デバイスとして利用して PPPoE 接続を実際にします。\n# set interface ethernet eth0 pppoe 0 # set interface ethernet eth0 pppoe 0 user-id ${PPPoE_username} # set interface ethernet eth0 pppoe 0 password ${PPPoE_password} # set interface ethernet eth0 pppoe 0 name-server auto # set interface ethernet eth0 pppoe 0 defaultroute auto # set interface ethernet eth0 pppoe 0 local-address XXX.XXX.XXX.XXX # 固定IPがある場合 # commit ここまでで vyatta ノードからインターネットに接続出来るようになります。\n次に、ローカルネットワーク上の CPE だったりサーバノードからのインターネット接 続のために NAT 設定をします。\n# set service nat rule 1 # set service nat rule 1 type masquerade # set service nat rule 1 source address 192.168.1.0/24 # set service nat rule 1 outbound-interface pppoe0 # commit CPE からのインターネットへの接続が出来るようになりました。\nあとは自宅ルータなので DHCP サービスがあったほうが便利だよね、とうことで。\n# set service dhcp-server shared-network-name HOME subnet 198.168.1.0/24 start 192.168.1.100 stop 192.168.1.150 # set service dhcp-server shared-network-name HOME subnet 192.168.1.0/24 default-router 192.168.1.254 # set service dhcp-server shared-network-name HOME subnet 198.168.1.0/24 dns-server 8.8.8.8 # set service dhcp-server shared-network-name HOME subnet 198.168.1.0/24 dns-server 8.8.4.4 # commit ローカルネットワーク上の CPE から DHCP リクエストを出してみてください。IP が取得できると思います。\nここまでで基本的な有線自宅ルータとしての構築はほぼ完了ですが、最後にローカルネットワーク上のサーバ を DNS サーバとして稼働させるための NAT 設定方法を記しておきます。\n# set service nat rule 2 # set service nat rule 2 destination # set service nat rule 2 type destination # set service nat rule 2 type destination # set service nat rule 2 inbound-interface pppoe0 # set service nat rule 2 protocol udp # set service nat rule 2 destination port 53 # set service nat rule 2 inside-address address 192.168.1.10 # commit DNS は稀に TCP にフォールバックするので同様に TCP ようの NAT ルールも追記します。\n# set service nat rule 3 # set service nat rule 3 destination # set service nat rule 3 type destination # set service nat rule 3 type destination # set service nat rule 3 inbound-interface pppoe0 # set service nat rule 3 protocol tcp # set service nat rule 3 destination port 53 # set service nat rule 3 inside-address address 192.168.1.10 set service nat rule 3 destinationset service nat rule 3 destination # commit\n最後に設定を保存するために…\n# save して終わりです。次回は UPnP な設定方法を書いて行きたいと思います。\nちなみに、私の自宅ルータはこんなモノを使いました。\n",
   "wordCount" : "475",
-  "inLanguage": "en",
+  "inLanguage": "ja",
   "image": "https://jedipunkz.rocks/preview/jedipunkz.jpg","datePublished": "2012-04-28T00:00:00Z",
   "dateModified": "2012-04-28T00:00:00Z",
   "author":{
@@ -129,7 +129,7 @@
     "@id": "https://jedipunkz.rocks/preview/post/vyattarouter/"
   },
   "publisher": {
-    "@type": "Organization",
+    "@type": "Person",
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
@@ -192,14 +192,16 @@
 
 <article class="post-single">
   <header class="post-header">
-    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
-    <h1 class="post-title">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
       vyatta で自宅ルータ構築
     </h1>
     <div class="post-description">
       Vyatta で自宅ルータを構築する方法。PPPoE、NAT、DHCP の基本設定から Broadcom NIC の動作確認まで解説
     </div>
-    
+    <div class="post-meta"><span title='2012-04-28 00:00:00 +0000 UTC'>2012-04-28</span>&nbsp;·&nbsp;3 分&nbsp;·&nbsp;jedipunkz
+
+</div>
   </header> 
   <div class="post-content"><p>自宅ルータを Vyatta で構築してみたくなり、秋葉原の ark でマシンを調達しました。
 Broadcom の BCM57780 チップが搭載された NIC がマザーボード J&amp;W MINIX™
@@ -308,14 +310,16 @@ vyatta でログインし</p>
   </div>
 
   <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
 <nav class="paginav">
   <a class="prev" href="https://jedipunkz.rocks/preview/post/vyatta-upnp/">
-    <span class="title">« Prev</span>
+    <span class="title">« 前へ</span>
     <br>
     <span>vyatta で UPnP 接続</span>
   </a>
   <a class="next" href="https://jedipunkz.rocks/preview/post/ssh-mosh/">
-    <span class="title">Next »</span>
+    <span class="title">次へ »</span>
     <br>
     <span>Mosh を使う</span>
   </a>
@@ -468,12 +472,12 @@ vyatta でログインし</p>
 
         const copybutton = document.createElement('button');
         copybutton.classList.add('copy-code');
-        copybutton.innerHTML = 'copy';
+        copybutton.innerHTML = 'コピー';
 
         function copyingDone() {
-            copybutton.innerHTML = 'copied!';
+            copybutton.innerHTML = 'コピーされました!';
             setTimeout(() => {
-                copybutton.innerHTML = 'copy';
+                copybutton.innerHTML = 'コピー';
             }, 2000);
         }
 

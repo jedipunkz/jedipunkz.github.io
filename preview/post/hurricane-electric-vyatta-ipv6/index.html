@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="auto">
+<html lang="ja" dir="auto">
 
 <head><meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.rocks/preview/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="https://jedipunkz.rocks/preview/post/hurricane-electric-vyatta-ipv6/">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/preview/post/hurricane-electric-vyatta-ipv6/">
 <noscript>
     <style>
         #theme-toggle,
@@ -73,7 +73,7 @@
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="Hurricane Electric &#43; Vyatta で宅内 IPv6 化">
   <meta property="og:description" content="Hurricane Electric の IPv6 トンネルサービスと Vyatta を使った自宅の IPv6 化手順">
-  <meta property="og:locale" content="en">
+  <meta property="og:locale" content="ja">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2013-09-01T00:00:00+00:00">
@@ -117,7 +117,7 @@
   ],
   "articleBody": "こんにちは。@jedipunkz です。\n自宅の IPv6 化、したいなぁとぼんやり考えていたのですが、Hurricane Electric Internet Services を見つけました。IPv4 の固定グローバル IP を持っていれば誰で も IPv6 のトンネルサービスを無料で受けられるサービスです。\n1つのユーザで5アカウントまで取得でき (5 エンドポイント)、1アカウントで /64 の アドレスがもらえます。また申請さえすれば (クリックするだけ) /48 も1アカウント 毎にもらえます。つまり /48 x 5 + /64 x 5 … でか！\n私の宅内は Vyatta で PPPOE してるのですが、各種 OS (Debian, NetBSD…) や機器 (Cisco, JunOS..)のコンフィギュレーションを自動生成してくれるので、接続するだけ であればそれをターミナルに貼り付けるだけ！です。\nサービス URL Hurricane Electric は下記の URL です。アカウントもここで作成出来ます。\nhttp://tunnelbroker.net\nIPv6 接続性を確保する方法 Vyatta が IPv6 のアドレスを持ち接続性を確保するだけであれば、上に記したように コピペで出来ます。上記の URL でアカウントを作成しログインします。左メニューの “Create Regular Tunnel” を押して、自分の情報 (IPv4 のエンドポイントアドレス等) を入力します。その後、取得した IPv6 のレンジのリンクをクリックし上記メニュー “Example Configuration” を選択します。プルダウンメニューが現れるので、自宅の OS や機器に合った名前を選択します。\nすると下記のようなコマンドがテキストエリアに出力されるのでこれをコピペする…だ けです。\nconfigure edit interfaces tunnel tun0 set encapsulation sit set local-ip xxx.xxx.xxx.xxx set remote-ip xxx.xxx.xxx.xxx set address 2001:470:xx:xxx:2/64 set description \"HE.NET IPv6 Tunnel\" exit set protocols static interface-route6 ::/0 next-hop-interface tun0 commit コピペしたら接続できたか確認しましょう。\n% ping6 ipv6.google.com -c 3 PING ipv6.google.com(2404:6800:4004:803::1010) 56 data bytes 64 bytes from 2404:6800:4004:803::1010: icmp_seq=1 ttl=59 time=32.6 ms 64 bytes from 2404:6800:4004:803::1010: icmp_seq=2 ttl=59 time=27.4 ms 64 bytes from 2404:6800:4004:803::1010: icmp_seq=3 ttl=59 time=20.5 ms --- ipv6.google.com ping statistics --- 3 packets transmitted, 3 received, 0% packet loss, time 2002ms rtt min/avg/max/mdev = 20.542/26.901/32.677/4.971 ms Vyatta 配下の宅内 LAN の端末を IPv6 化する ここまでの操作だと Vyatta は IPv6 トンネル接続出来ましたが、その配下の機器はま だ接続できていません。そこで IPv6 RA (Router Advertise) します。\nconfigure edit interfaces ethernet eth0 set ipv6 router-advert send-advert true set ipv6 router-advert cur-hop-limit 64 set ipv6 router-advert max-interval 10 set ipv6 router-advert other-config-flag true set ipv6 router-advert default-preference high set ipv6 router-advert managed-flag true set ipv6 router-advert prefix 2001:470:xx:xxx::/64 set ipv6 router-advert prefix 2001:470:xx:xxx::/64 autonomous-flag true commit ここで RA のみの起動をしていますが、LAN 内に Windows 端末がある場合、IPv6 ネー ムサーバの情報が取得できないため DHCPv6 サーバを別途起動する必要があります。が、 私の LAN 内には Mac, Linux, *BSD しかありませんでしたので起動しませんでした。 必要に応じて起動してください。\nIPv6 ファイアーウォール設定 これで端末も IPv6 トンネル接続できるようになった！のですが、外部から端末に直接 接続が出来てしまいます。ファイアーウォールを設定しましょう。\nconfigure set firewall ipv6-name tun-in description \"IPv6 Traffice to Internal\" set firewall ipv6-name tun-in default-action drop set firewall ipv6-name tun-in rule 10 action accept set firewall ipv6-name tun-in rule 10 description \"Accept Established-Related\" set firewall ipv6-name tun-in rule 10 state established enable set firewall ipv6-name tun-in rule 10 state related enable set firewall ipv6-name tun-local default-action drop set firewall ipv6-name tun-local description \"IPv6 Traffic to Router\" set firewall ipv6-name tun-local rule 10 action accept set firewall ipv6-name tun-local rule 10 description \"Accept Established-Related\" set firewall ipv6-name tun-local rule 10 state established enable set firewall ipv6-name tun-local rule 10 state related enable set interface tunnel tun0 firewall in ipv6-name tun-in set interface tunnel tun0 firewall local ipv6-name tun-local commit save まとめ ルータ配下のサービスを IPv6 で外部に公開したい場合は tun-in のファイアーウォールに ルールを追加すれば OK です。\nまた自動生成出来るサンプルコンフィギュレーションに対応したOS, 機器の種類が豊富です。 pfSense や Solaris, Windows, ScreenOS, Fortigate 等など、多岐にわたっているの で、大抵の方は問題ないのではないでしょうか。\n",
   "wordCount" : "392",
-  "inLanguage": "en",
+  "inLanguage": "ja",
   "image": "https://jedipunkz.rocks/preview/jedipunkz.jpg","datePublished": "2013-09-01T00:00:00Z",
   "dateModified": "2013-09-01T00:00:00Z",
   "author":{
@@ -129,7 +129,7 @@
     "@id": "https://jedipunkz.rocks/preview/post/hurricane-electric-vyatta-ipv6/"
   },
   "publisher": {
-    "@type": "Organization",
+    "@type": "Person",
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
@@ -192,14 +192,16 @@
 
 <article class="post-single">
   <header class="post-header">
-    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
-    <h1 class="post-title">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
       Hurricane Electric &#43; Vyatta で宅内 IPv6 化
     </h1>
     <div class="post-description">
       Hurricane Electric の IPv6 トンネルサービスと Vyatta を使った自宅の IPv6 化手順
     </div>
-    
+    <div class="post-meta"><span title='2013-09-01 00:00:00 +0000 UTC'>2013-09-01</span>&nbsp;·&nbsp;2 分&nbsp;·&nbsp;jedipunkz
+
+</div>
   </header> 
   <div class="post-content"><p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 <p>自宅の IPv6 化、したいなぁとぼんやり考えていたのですが、Hurricane Electric
@@ -293,14 +295,16 @@ pfSense や Solaris, Windows, ScreenOS, Fortigate 等など、多岐にわたっ
   </div>
 
   <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
 <nav class="paginav">
   <a class="prev" href="https://jedipunkz.rocks/preview/post/kibana-plus-elasticsearch-plus-fluentd/">
-    <span class="title">« Prev</span>
+    <span class="title">« 前へ</span>
     <br>
     <span>Kibana &#43; ElasticSearch &#43; fluentd を試してみた</span>
   </a>
   <a class="next" href="https://jedipunkz.rocks/preview/post/vyatta-l2tp-ipsec-vpn/">
-    <span class="title">Next »</span>
+    <span class="title">次へ »</span>
     <br>
     <span>Vyatta で L2TP over IPsec による VPN 構築</span>
   </a>
@@ -453,12 +457,12 @@ pfSense や Solaris, Windows, ScreenOS, Fortigate 等など、多岐にわたっ
 
         const copybutton = document.createElement('button');
         copybutton.classList.add('copy-code');
-        copybutton.innerHTML = 'copy';
+        copybutton.innerHTML = 'コピー';
 
         function copyingDone() {
-            copybutton.innerHTML = 'copied!';
+            copybutton.innerHTML = 'コピーされました!';
             setTimeout(() => {
-                copybutton.innerHTML = 'copy';
+                copybutton.innerHTML = 'コピー';
             }, 2000);
         }
 

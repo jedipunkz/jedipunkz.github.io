@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="auto">
+<html lang="ja" dir="auto">
 
 <head><meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.rocks/preview/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="https://jedipunkz.rocks/preview/post/openstack-havana-chef-deploy/">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/preview/post/openstack-havana-chef-deploy/">
 <noscript>
     <style>
         #theme-toggle,
@@ -73,7 +73,7 @@
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="OpenStack Havana を Chef でデプロイ">
   <meta property="og:description" content="rcbops/chef-cookbooks を使った OpenStack Havana の自動デプロイ手順と4ネットワーク構成">
-  <meta property="og:locale" content="en">
+  <meta property="og:locale" content="ja">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2013-11-17T00:00:00+00:00">
@@ -117,7 +117,7 @@
   ],
   "articleBody": "こんにちは。@jedipunkz です。\n毎度お馴染みになった OpenStack の Chef によるデプロイですが、今回は OpenStack Havana 構成を Chef でデプロイする方法についてです。使用するのは今回も rcbops/chef-cookbooks です。ブランチは ‘havana’ を用います。\n早速ですが構成について。4.1.2 辺りからだと思うのですが構成の前提が物理ネットワー ク4つを前提にし始めました。public, external (VM) を別ける必要が出てきました。 通信の特性も異なるので (public は public API を。external は VM 用) 、別けるの が得策かもしれません。\n構成 +--------------+------------------------------------------------------- external | | +--------------+--(-----------+--(-----------+--------------+---------------------------- public | | | | | | | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | controller | | network | | network | | compute | | compute | | workstation| +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | | | | | | | | | | +--------------+--(-----------+--(-----------+--(-----------+--(-----------+------------- management | | | | +--------------+--------------+--------------+------------------------- guest 上記の構成の特徴 4つの物理ネットワークを前提 public ネットワーク : 外部 API 用ネットワーク external ネットワーク : インスタンス外部接続用ネットワーク guest ネットワーク : インスタンス内部用ネットワーク management ネットワーク : 各コンポーネント接続用ネットワーク public, external のみグローバルネットワーク controller : 2 nics, network : 4 nics, compute : 3nics の構成 controller はシングル構成 network ノードは台数拡張可能, agent 単位でノード間移動可能 compute ノードも台数拡張可能 workstation は chef-repo の所在地, management ネットワークに所属 各ノードの準備 OS インストール後、各ノードのネットワークインターフェースの設定を下記の通り行っ てください。また LVM を使うのであれば cinder ボリュームの設定も必要になってきます。\ncontroller ノード 2 nics を下記の通り設定します。\neth0 を public ネットワークに。gateway をこのインターフェースに設定 eth1 を guest ネットワークに。gateway はなし /etc/network/interfaces の例\nauto eth0 iface eth0 inet static address netmask gateway dns-nameservers dns-search auto eth1 iface eth1 inet static address netmask /dev/sdb を cinder 用ディスクデバイスとします。\n% sudo pvcreate /dev/sdb % sudo vgcreate cinder-volumes /dev/sdb network ノード 4 nics を下記の通り設定します。up route で仮想ネットワークへのルーティングを書 いてあげると、network ノードから直接仮想ネットワーク上のインスタンスへ通信する ことが可能です。最初は書かなくても OK です。\nauto eth0 iface eth0 inet static address netmask dns-nameservers dns-search auto eth1 iface eth1 inet static address netmask auto eth2 iface eth2 inet static address netmask gateway 10.200.10.1 dns-nameservers 8.8.8.8 8.8.4.4 dns-search cpi.ad.jp auto eth3 iface eth3 inet static address netmask # 仮想ネットワークへのルーティング # up route add -net gw # up route add -net gw compute ノード 3 nics を下記の通り設定します。\nauto eth0 iface eth0 inet static address netmask dns-nameservers dns-search auto eth1 iface eth1 inet static address netmask auto eth2 iface eth2 inet static address netmask gateway dns-nameservers dns-search Cookbooks, Roles, Environments 等の準備 下記の操作は全て workstation ノードからの操作です。 また chef のインストールや chef サーバの構築方法については割愛します。\nrcbops/chef-cookbooks を取得します。\n% git clone https://github.com/rcbops/chef-cookbooks.git % cd chef-cookbooks % git checkout -b havana remotes/origin/havana % # .chef 配下の準備割愛。各 Chef サーバ環境に合わせる % git submodule init % git submodule sync % git submodule update % knife cookbook upload -o cookbooks -a % knife role from file roles/*.rb 今回の構成用の environment を生成します。それぞれの環境に合わせて作成してくだ さい。生成のコツは各 Cookbooks の attributes を見ながら設定することです。 生成した json ファイルを environments ディレクトリ配下に配置します。\n{ \"name\": \"havana-neutron\", \"description\": \"\", \"cookbook_versions\": { }, \"json_class\": \"Chef::Environment\", \"chef_type\": \"environment\", \"default_attributes\": { }, \"override_attributes\": { \"package_component\": \"havana\", \"osops_networks\": { \"management\": \"10.200.10.0/24\", \"public\": \"10.200.9.0/24\", \"nova\": \"10.200.10.0/24\" }, \"nova\": { \"config\": { \"use_single_default_gateway\": false, \"ram_allocation_ratio\": \"1\", \"cpu_allocation_ratio\": \"16\" }, \"network\": { \"provider\": \"neutron\", \"network_type\": \"vlan\" }, \"apply_patches\": true, \"libvirt\": { \"vncserver_listen\": \"0.0.0.0\", \"virt_type\": \"kvm\" }, \"db\": { \"password\": \"nova\" }, \"services\": { \"novnc-proxy\": { \"network\": \"public\" }, \"ec2-admin\": { \"network\": \"management\" } } }, \"cinder\": { \"db\": { \"password\": \"cinder\" } }, \"keystone\": { \"admin_user\": \"admin\", \"tenants\": [ \"admin\", \"service\" ], \"users\": { \"admin\": { \"password\": \"secrete\", \"roles\": { \"admin\": [ \"admin\" ] } }, \"demo\": { \"password\": \"demo\", \"default_tenant\" : \"service\", \"roles\": { \"service\": [ \"service\" ] } } }, \"db\": { \"password\": \"keystone\" } }, \"horizon\": { \"theme\": \"Rackspace\", \"db\": { \"password\": \"horizon\" }, \"endpoint_type\" : \"publicURL\", \"endpoint_scheme\" : \"http\" }, \"mysql\": { \"root_network_acl\": \"%\", \"allow_remote_root\": true, \"server_root_password\": \"secrete\", \"server_repl_password\": \"secrete\", \"server_debian_password\": \"secrete\" }, \"monitoring\": { \"procmon_provider\": \"monit\", \"metric_provider\": \"collectd\" }, \"glance\": { \"images\": [ \"precise\", \"cirros\" ], \"image\": { }, \"image_upload\": false, \"db\": { \"password\": \"glance\" } }, \"neutron\": { \"service_pass\": \"neutron\", \"db\": { \"password\": \"neutron\" } }, \"developer_mode\": false } } environment ファイルの chef サーバへのアップロード。\n% knife environment from file environments/havana-neutron.json knife bootstrap によるデプロイ 下記の通り knife bootstrap することで各ノードをデプロイします。\ncontroller ノードのデプロイ。\n% knife bootstrap -N \\ -r 'role[single-controller]','role[cinder-volume]' \\ -E havana-neutron -x --sudo network ノードのデプロイ。台数分デプロイしてください。\n% knife bootstrap -N \\ -r 'role[single-network-node]','recipe[nova-network::neutron-l3-agent]' \\ -E neutron-havana -x --sudo compute ノードのデプロイ。台数分デプロイしてください。\n% knife bootstrap -N \\ -r 'role[single-compute]' \\ -E havana-neutron -x --sudo openvswitch の物理 NIC とブリッジインタフェースマッピング作業 各ノードで下記の通り物理 NIC とブリッジのマッピング作業を行ってください。操作 は必ず management ネットワークを介して行うようにしましょう。その他のネットワー クから操作すると通信が途絶える可能性があります。\nnetwork ノード\n% sudo ovs-vsctl add-port br-eth1 eth1 % sudo ovs-vsctl add-port br-ex eth3 compute ノード\n% sudo ovs-vsctl add-port br-eth1 eth1 まとめと考察 havana の roles にはコアプロジェクトのコンポーネントが入っています。つまり ceilometer と heat も上記のデプロイで入ってきます。ceilometer に関して公式のド キュメントではデータ格納用 DB として mongodb が記されていますが、ここでは mysqld 上に格納する構成になっていました。これは個人的には非常に助かります。 また、compute ノードから controller ノードの public api を叩く必要が出てきて、 compute ノードにも public ネットワーク用の NIC を足しましたが、こうするべきな のかどうかは今後考えてみます。理想は management ネットワークを介することですが attributes の調整でけではうまくいきませんでした。‘havana’ ブランチはまだ開発が 進んでいるので改善されるかもしれません。コントリビュートするのも手だと思います。\n",
   "wordCount" : "737",
-  "inLanguage": "en",
+  "inLanguage": "ja",
   "image": "https://jedipunkz.rocks/preview/jedipunkz.jpg","datePublished": "2013-11-17T00:00:00Z",
   "dateModified": "2013-11-17T00:00:00Z",
   "author":{
@@ -129,7 +129,7 @@
     "@id": "https://jedipunkz.rocks/preview/post/openstack-havana-chef-deploy/"
   },
   "publisher": {
-    "@type": "Organization",
+    "@type": "Person",
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
@@ -192,14 +192,16 @@
 
 <article class="post-single">
   <header class="post-header">
-    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
-    <h1 class="post-title">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
       OpenStack Havana を Chef でデプロイ
     </h1>
     <div class="post-description">
       rcbops/chef-cookbooks を使った OpenStack Havana の自動デプロイ手順と4ネットワーク構成
     </div>
-    
+    <div class="post-meta"><span title='2013-11-17 00:00:00 +0000 UTC'>2013-11-17</span>&nbsp;·&nbsp;4 分&nbsp;·&nbsp;jedipunkz
+
+</div>
   </header> 
   <div class="post-content"><p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 <p>毎度お馴染みになった OpenStack の Chef によるデプロイですが、今回は OpenStack
@@ -482,14 +484,16 @@ attributes の調整でけではうまくいきませんでした。&lsquo;havan
   </div>
 
   <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
 <nav class="paginav">
   <a class="prev" href="https://jedipunkz.rocks/preview/post/vyatta-timemachine-netatalk/">
-    <span class="title">« Prev</span>
+    <span class="title">« 前へ</span>
     <br>
     <span>Vyatta で Mac 用 TimeMachine サーバ兼ファイルサーバを構築！</span>
   </a>
   <a class="next" href="https://jedipunkz.rocks/preview/post/elasticsearch-second-study-report/">
-    <span class="title">Next »</span>
+    <span class="title">次へ »</span>
     <br>
     <span>第2回 Elasticsearch 勉強会参加レポート</span>
   </a>
@@ -642,12 +646,12 @@ attributes の調整でけではうまくいきませんでした。&lsquo;havan
 
         const copybutton = document.createElement('button');
         copybutton.classList.add('copy-code');
-        copybutton.innerHTML = 'copy';
+        copybutton.innerHTML = 'コピー';
 
         function copyingDone() {
-            copybutton.innerHTML = 'copied!';
+            copybutton.innerHTML = 'コピーされました!';
             setTimeout(() => {
-                copybutton.innerHTML = 'copy';
+                copybutton.innerHTML = 'コピー';
             }, 2000);
         }
 

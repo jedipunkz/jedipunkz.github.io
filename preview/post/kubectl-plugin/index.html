@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="auto">
+<html lang="ja" dir="auto">
 
 <head><meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.rocks/preview/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="https://jedipunkz.rocks/preview/post/kubectl-plugin/">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/preview/post/kubectl-plugin/">
 <noscript>
     <style>
         #theme-toggle,
@@ -73,7 +73,7 @@
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="k8s コンテナをインクリメンタルサーチ&ログインする kubectl プラグインの開発">
   <meta property="og:description" content="Go 言語で開発した Kubernetes ポッドとコンテナのインクリメンタルサーチログイン kubectl プラグイン">
-  <meta property="og:locale" content="en">
+  <meta property="og:locale" content="ja">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2023-06-16T23:28:09+09:00">
@@ -117,7 +117,7 @@
   ],
   "articleBody": "こんにちは。jedipunkz です。\n今回は、kubectl プラグインを開発したことがなかったので、Go の学習と合わせてためしに1つ作ってみたのでその内容を記したいと思います。\n開発した kubectl plugin: kubectl-fuzzy-login 下記が今回開発した kubectl プラグインです。\nhttps://github.com/jedipunkz/kubectl-fuzzy-login\n何が出来るか 下記のキャプチャをご覧頂くと一目瞭然だと思います。\nKubernetes のポッドとコンテナをインクリメンタルサーチしつつ選択し、最終的にコンテナにログイン出来るプラグインになっています。コンテナがサイドカー構成になっていた場合は、そのうちのどのコンテナにログインするかもインクリメンタルサーチ出来ます。なお、このプラグインは Go で開発しました。\nインストール方法 Krew を利用している場合は下記の操作でインストールできます。Krew が事前にインストールされている必要があります。\ngit clone https://github.com/jedipunkz/kubectl-fuzzy-login.git kubectl krew install --manifest=./kubectl-fuzzy-login/krew/fuzzy-login.yaml マニュアル操作でインストールする場合は下記です。\ngit clone https://github.com/jedipunkz/kubectl-fuzzy-login.git cd kubectl-fuzzy-login go build cp kubectl-fuzzy-login /your/bin/path 使用方法 オプション無しで、全 Namespaces を対象に検索・ログインする オプションを使用しない場合は下記のように実行します。\nkubectl fuzzy login まず Pod を選択します。Pod 名の一部を入力することでインクリメンタル・ファジー検索出来ます。その Pod に複数のコンテナ (サイドカー) がある場合、更にコンテナをインクリメンタルサーチ出来ます。最終的にコンテナを選択し Enter ボタンを押すことでコンテナにログイン出来ます。ただしコンテナイメージにシェルが入っていない場合は入ることが出来ません。\nシェル指定 また下記のように -s オプションでデフォルトのシェルを指定することもできます。\nkubectl fuzzy login -s /bin/bash Namespace 指定 Namespace を -n オプションで指定することもできます。\nkubectl fuzzy login -n default Kubectl Plugin 開発の基本 Kubectl Plugin の開発方法の基本について軽く記します。\nKubectl Plugin は、Kubernetes の CLI ツールである kubectl の拡張機能を提供します。これらのプラグインは、ユーザーが独自のカスタムコマンドを作成して kubectl に追加できるようにするためのものです。開発方法は以下の通りです。\n言語の選択 プラグインは任意の言語で書くことができます。Bash でも書けるそうです。kubectlはプラグインを単に新しいプロセスとして実行します。そのため、プラグインはkubectlと同じマシン上で実行できる任意の言語で書くことができます。\nPlugin 名 kubectl- のプレフィックスで始まる名前を持つ必要があります。例えば kubectl-foo-bar という Plugin 名の場合、下記のように Plugin を使用することが出来ます。\nkubectl foo bar Kubernetes クライアントライブラリの使用 プラグインが Kubernetes API と対話する必要がある場合、適切な Kubernetes クライアントライブラリを使用することが推奨されます。Goの場合は、kubernetes/client-go ライブラリが広く使用されているそうです。\nkubectl-fuzzy-login のコード構成の説明 ディレクトリ構成 cmd/root.go ここには、プラグインのエントリーポイントとなるコードが含まれています。このプラグインでは root.go というファイルがエントリーポイントとして機能しています。\n主に以下の処理を行います。\nKubernetesクラスタとの接続を確立します。 PodGetter インターフェースを使用して、クラスタ内の全Podを取得します。 取得したPodの中からユーザーが選択したPodを特定します。 ユーザーが選択したPod内のコンテナを特定します。 PodExecutor インターフェースを使用して、特定のコンテナにログインします。 internal/kubernetes このディレクトリは、プラグインの内部機能を提供します。このプラグインでは、internal/kubernetes というサブディレクトリがあり、Kubernetesクラスタとのやり取りを担当しています。\nPodGetter: このインターフェースは、Kubernetesクラスタから Pod を取得するメソッドを定義しています。 PodExecutor: このインターフェースは、Kubernetesクラスタ上の特定の Pod でコマンドを実行するメソッドを定義しています。 Krew 対応について Krew は kubectl プラグインを管理するためのプラグインマネージャーでプラグインの検索・インストール・更新が行なえます。Krew の公式レポジトリに PR を送って、誰もが自分の開発したプラグインを利用できるようにする方法もあるのですが、PR がマージされる必要があるので、今回はプライベートレポジトリ上に Manifest を作成してそれを利用する方法を取りました。(このあたりは HomeBrew に似ていますね)\n作成した Manifest は下記になります。\nhttps://github.com/jedipunkz/kubectl-fuzzy-login/blob/main/krew/fuzzy-login.yaml\n上記と重複しますが、プライベートレポジトリ上の Manifest を利用して下記の通りこのプラグインをインストール出来ます。\ngit clone https://github.com/jedipunkz/kubectl-fuzzy-login.git kubectl krew install --manifest=./kubectl-fuzzy-login/krew/fuzzy-login.yaml まとめ Kubectl プラグインの開発自体は\nプラグインの命名によって操作方法が設定できる 任意の言語で開発できる Go を使う場合は client-go を使えば良い ということで、比較的簡単に開発することが出来ました。今回は Go の Viper を使って -n や -s オプションを実装しましたが、このあたりも何でも良い気もします。自由度が高い分、逆にどうするべきなのか迷う点はあります。\n",
   "wordCount" : "192",
-  "inLanguage": "en",
+  "inLanguage": "ja",
   "image": "https://jedipunkz.rocks/preview/jedipunkz.jpg","datePublished": "2023-06-16T23:28:09+09:00",
   "dateModified": "2023-06-16T23:28:09+09:00",
   "author":{
@@ -129,7 +129,7 @@
     "@id": "https://jedipunkz.rocks/preview/post/kubectl-plugin/"
   },
   "publisher": {
-    "@type": "Organization",
+    "@type": "Person",
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
@@ -192,14 +192,16 @@
 
 <article class="post-single">
   <header class="post-header">
-    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
-    <h1 class="post-title">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
       k8s コンテナをインクリメンタルサーチ&amp;ログインする kubectl プラグインの開発
     </h1>
     <div class="post-description">
       Go 言語で開発した Kubernetes ポッドとコンテナのインクリメンタルサーチログイン kubectl プラグイン
     </div>
-    
+    <div class="post-meta"><span title='2023-06-16 23:28:09 +0900 +0900'>2023-06-16</span>&nbsp;·&nbsp;1 分&nbsp;·&nbsp;jedipunkz
+
+</div>
   </header> 
   <div class="post-content"><p>こんにちは。<a href="https://twitter.com/jedipunkz">jedipunkz</a> です。</p>
 <p>今回は、kubectl プラグインを開発したことがなかったので、Go の学習と合わせてためしに1つ作ってみたのでその内容を記したいと思います。</p>
@@ -278,14 +280,16 @@
   </div>
 
   <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
 <nav class="paginav">
   <a class="prev" href="https://jedipunkz.rocks/preview/post/vyos-ipoe-pppoe/">
-    <span class="title">« Prev</span>
+    <span class="title">« 前へ</span>
     <br>
     <span>VyOS で IPoE/PPPoE を併用して安定した接続&amp;サーバー公開</span>
   </a>
   <a class="next" href="https://jedipunkz.rocks/preview/post/argo-rollout-progressive-delivery/">
-    <span class="title">Next »</span>
+    <span class="title">次へ »</span>
     <br>
     <span>手軽にローカルで Argo Rollouts, Istio, Prometheus で Progressive Delivery を試す</span>
   </a>
@@ -438,12 +442,12 @@
 
         const copybutton = document.createElement('button');
         copybutton.classList.add('copy-code');
-        copybutton.innerHTML = 'copy';
+        copybutton.innerHTML = 'コピー';
 
         function copyingDone() {
-            copybutton.innerHTML = 'copied!';
+            copybutton.innerHTML = 'コピーされました!';
             setTimeout(() => {
-                copybutton.innerHTML = 'copy';
+                copybutton.innerHTML = 'コピー';
             }, 2000);
         }
 

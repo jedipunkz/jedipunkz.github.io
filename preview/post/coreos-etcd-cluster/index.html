@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" dir="auto">
+<html lang="ja" dir="auto">
 
 <head><meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -18,7 +18,7 @@
 <link rel="mask-icon" href="https://jedipunkz.rocks/preview/safari-pinned-tab.svg">
 <meta name="theme-color" content="#2e2e33">
 <meta name="msapplication-TileColor" content="#2e2e33">
-<link rel="alternate" hreflang="en" href="https://jedipunkz.rocks/preview/post/coreos-etcd-cluster/">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/preview/post/coreos-etcd-cluster/">
 <noscript>
     <style>
         #theme-toggle,
@@ -73,7 +73,7 @@
   <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
   <meta property="og:title" content="CoreOS etcd のクラスタとその応用性">
   <meta property="og:description" content="CoreOS の etcd クラスタ構成とクラスタエイブルな KVS データベースとしての応用方法">
-  <meta property="og:locale" content="en">
+  <meta property="og:locale" content="ja">
   <meta property="og:type" content="article">
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2013-12-09T00:00:00+00:00">
@@ -117,7 +117,7 @@
   ],
   "articleBody": "こんにちは。@jedipunkz です。\n皆さん CoreOS は利用されたことありますか？CoreOS は軽量な docker との相性の良 い OS です。下記が公式サイト。\nhttp://coreos.com/\n特徴としては下記の3つがあります。\netcd systemd docker ここではこの中の etcd について注目していきたいと思います。etcd はクラスタエイ ブルな KVS データベースです。コンフィギュレーションをクラスタ間で共有すること がなので、オーケストレーションの分野でも期待出来るのでは？と個人的に感じていま す。今回は etcd のクラスタ構成構築の手順とその基本動作の確認、またどう応用出来 るのか？について記していきたいと思います。\n参考 URL http://coreos.com/using-coreos/etcd/ https://github.com/coreos/etcd ビルド go 1.1 or later をインストールして etcd のコンパイル準備を行います。Ubuntu Saucy のパッケージを用いると容易に行えます。\n% apt-get -y install golang coreos/etcd を取得しビルド\n% git clone https://github.com/coreos/etcd % cd coreos % ./build % ./etcd --version v0.2.0-rc1-60-g73f04d5 CoreOS の用意 ここではたまたま手元にあった OpenStack を用いて CoreOS のイメージを登録してい みます。ベアメタルでも可能ですのでその場合は手順を読み替えて作業してみてくださ い。OpenStack 等クラウドプラットフォームを利用する場合は metadata サービスが必 須となるので注意してください。\n% wget http://storage.core-os.net/coreos/amd64-generic/dev-channel/coreos_production_openstack_image.img.bz2 % bunzip2 coreos_production_openstack_image.img.bz2 % glance image-create --name coreos-image --container-format ovf \\ --disk-format qcow2 --file coreos_production_openstack_image.img nova boot にて CoreOS を起動します。(下記は例)\n% nova keypair-add testkey01 \u003e testkey01.pem % nova boot --nic net-id .... --image coreos-image --flavor 1 --key_name testkey01 coreos01 CoreOS 上での etcd クラスタ起動 上記でコンパイルした etcd のバイナリを起動したインスタンス (CoreOS) に転送しま す。scp 等で転送してください。\nここでは 1 node 上で複数のポート番号を用いて 3 つの etcd を稼働することでクラ スタを構築します。\n7002 番ポートを peer addr として master を起動。listen ポートは 4002\n% ./etcd -peer-addr 127.0.0.1:7002 -addr 127.0.0.1:4002 -data-dir machines/machine1 -name machine1 上記の master を参照する slaves (残り2台) を起動。\n% ./etcd -peer-addr 127.0.0.1:7003 -addr 127.0.0.1:4003 -peers 127.0.0.1:7002 -data-dir machines/machine2 -name machine2 % ./etcd -peer-addr 127.0.0.1:7004 -addr 127.0.0.1:4004 -peers 127.0.0.1:7002 -data-dir machines/machine3 -name machine3 クラスタ構成内のノード情報を確認する。\n% curl -L http://127.0.0.1:4002/v2/machines [etcd] Dec 4 03:46:44.153 INFO | URLs: machine1 / machine1 (http://127.0.0.1:4002,http://127.0.0.1:4003,http://127.0.0.1:4004) http://127.0.0.1:4002, http://127.0.0.1:4003, http://127.0.0.1:4004 leader (master) 情報を確認する。\n% curl -L http://127.0.0.1:4002/v2/leader http://127.0.0.1:7002 上記で起動した master プロセスが leader (master) になっていることを確認出来る と思います。\nキーの投入と参照 テストでキーと値を入力してみましょう。‘foo’ キーに ‘bar’ という値を投入てくだ さい。\n% curl -L http://127.0.0.1:4002/v2/keys/foo -XPUT -d value=bar クラスタ内全てのプロセスから上記のキーの取得できることを確認します。\n% curl -L http://127.0.0.1:4002/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} % curl -L http://127.0.0.1:4003/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} % curl -L http://127.0.0.1:4004/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} master のシャットダウンと master 選挙後の動作確認 テストで master のプロセスをシャットダウンしてみます。\nmaster プロセスのシャットダウン\n% kill その他 2 つのプロセスから ‘foo’ キーの確認を行う。\n% curl -L http://127.0.0.1:4004/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} % curl -L http://127.0.0.1:4003/v2/keys/foo {\"action\":\"get\",\"node\":{\"key\":\"/foo\",\"value\":\"bar\",\"modifiedIndex\":4,\"createdIndex\":4}} 勿論、旧 master からは確認出来ない。\n% curl -L http://127.0.0.1:4002/v2/keys/foo curl: (7) Failed connect to 127.0.0.1:4002; Connection refused 新 master の確認を行う。選挙の結果 3 つ目のプロセスが master に昇格しているこ とが確認出来る。\n% curl -L http://127.0.0.1:4003/v2/leader http://127.0.0.1:7004 考察とその応用性について とてもシンプルな KVS ではあるけど大きな可能性を秘めていると思っています。オー ケストレーション等への応用です。お互いのノード (今回はプロセス) 間で情報をやり とりできるので自律的なクラスタの構築も可能になるのでは？と思っています。\n’etcenv’ という @mattn さんが開発したツールを見てみましょう。\nhttps://github.com/mattn/etcdenv\n下記、README から引用。\n$ curl http://127.0.0.1:4001/v1/keys/app/db -d value=\"newdb\" $ curl http://127.0.0.1:4001/v1/keys/app/cache -d value=\"new cache\" $ curl http://localhost:4001/v1/keys/app [{\"action\":\"GET\",\"key\":\"/app/db\",\"value\":\"newdb\",\"index\":4},{\"action\":\"GET\",\"key\":\"/app/cache\",\"value\":\"new cache\",\"index\":4}] $ etcdenv -key=/app/ DB=newdb CACHE=new cache $ etcdenv -key=/app/ ruby web.rb クラスタ間の情報を環境変数に落としこむツールです。自ノードの環境変数まで落ちれ ば、クラスタ構築も色々想像出来るのではないでしょうか？\n軽量で docker との相性も良くて etcd 等の仕組みも持っている CoreOS にはこれから も期待です。\n",
   "wordCount" : "358",
-  "inLanguage": "en",
+  "inLanguage": "ja",
   "image": "https://jedipunkz.rocks/preview/jedipunkz.jpg","datePublished": "2013-12-09T00:00:00Z",
   "dateModified": "2013-12-09T00:00:00Z",
   "author":{
@@ -129,7 +129,7 @@
     "@id": "https://jedipunkz.rocks/preview/post/coreos-etcd-cluster/"
   },
   "publisher": {
-    "@type": "Organization",
+    "@type": "Person",
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
@@ -192,14 +192,16 @@
 
 <article class="post-single">
   <header class="post-header">
-    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">Home</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
-    <h1 class="post-title">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/preview/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/preview/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
       CoreOS etcd のクラスタとその応用性
     </h1>
     <div class="post-description">
       CoreOS の etcd クラスタ構成とクラスタエイブルな KVS データベースとしての応用方法
     </div>
-    
+    <div class="post-meta"><span title='2013-12-09 00:00:00 +0000 UTC'>2013-12-09</span>&nbsp;·&nbsp;2 分&nbsp;·&nbsp;jedipunkz
+
+</div>
   </header> 
   <div class="post-content"><p>こんにちは。<a href="https://twitter.com/jedipunkz">@jedipunkz</a> です。</p>
 <p>皆さん CoreOS は利用されたことありますか？CoreOS は軽量な docker との相性の良
@@ -316,14 +318,16 @@ Saucy のパッケージを用いると容易に行えます。</p>
   </div>
 
   <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
 <nav class="paginav">
   <a class="prev" href="https://jedipunkz.rocks/preview/post/chef-autonoumous-cluster/">
-    <span class="title">« Prev</span>
+    <span class="title">« 前へ</span>
     <br>
     <span>Chef で自律的クラスタを考える</span>
   </a>
   <a class="next" href="https://jedipunkz.rocks/preview/post/ironic-openstack-beremetal/">
-    <span class="title">Next »</span>
+    <span class="title">次へ »</span>
     <br>
     <span>Ironic でベアメタル OpenStack ！..の一歩手前</span>
   </a>
@@ -476,12 +480,12 @@ Saucy のパッケージを用いると容易に行えます。</p>
 
         const copybutton = document.createElement('button');
         copybutton.classList.add('copy-code');
-        copybutton.innerHTML = 'copy';
+        copybutton.innerHTML = 'コピー';
 
         function copyingDone() {
-            copybutton.innerHTML = 'copied!';
+            copybutton.innerHTML = 'コピーされました!';
             setTimeout(() => {
-                copybutton.innerHTML = 'copy';
+                copybutton.innerHTML = 'コピー';
             }, 2000);
         }
 
