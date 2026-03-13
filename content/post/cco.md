@@ -1,5 +1,5 @@
 ---
-title: "cco - 複数の Claude Code エージェントを1つのターミナルから起動・監視するツールを作った"
+title: "複数の Claude Code エージェントを1つのターミナルから起動・監視するツールを作った"
 description: "Go で実装した TUI ダッシュボード付きの Claude Code マルチエージェント管理ツール cco の設計と実装について紹介します"
 date: 2026-03-14T00:00:00+09:00
 Categories: ["AI", "tools", "development", "Go"]
