@@ -1,5 +1,5 @@
 ---
-title: "Go の goroutine と channel を理解する"
+title: "[Go 再学習] Go の goroutine と channel を理解する"
 date: 2026-04-04T00:00:00+09:00
 Categories: ["go"]
 draft: false
