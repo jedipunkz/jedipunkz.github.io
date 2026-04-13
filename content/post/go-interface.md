@@ -1,11 +1,11 @@
 ---
-title: "Go の interface を理解する"
-date: 2026-04-12T00:00:00+09:00
+title: "[Go 再学習] Go の interface を理解する"
+date: 2026-04-13T00:00:00+09:00
 Categories: ["go"]
 draft: false
 description: "Go の interface の基本から実践的なパターンまで、サンプルコードを交えて解説する"
 ---
-Go の学習を進める中で、interface は最初のうち「なんとなくわかるが使いこなせない」という感覚を持ちやすい機能の1つだと思います。この記事では基本的な定義から実務でよく登場するパターンまでをサンプルコードとともに整理しました。
+Go の再学習をしている最中なのですが、学習当初 Go Interface は「なんとなく分かるが使いこなせない」という感覚を持っていました。自分のコードでも使っているのですが、どのようなパターンで使えるのかを網羅的には知っていない状態だったのでこれを機に調べてみました。この記事では基本的な定義から実務でよく登場するパターンまでをサンプルコードと共に整理しました。
 
 コードは以下のレポジトリにあります。
 
@@ -13,7 +13,7 @@ https://github.com/jedipunkz/go-tips
 
 ## interface とは
 
-interface はメソッドのシグネチャの集合を定義する型です。Go の interface は「暗黙的な実装」が特徴で、Java や C# のように `implements` キーワードを書く必要がありません。ある型が interface に定義されたメソッドをすべて持っていれば、自動的にその interface を満たします。
+interface はメソッドのシグネチャの集合を定義する型です。ある型が interface に定義されたメソッドをすべて持っていれば、自動的にその interface を満たします。
 
 この設計により、既存のコードを変更せずに後から interface に適合させることができます。
 
@@ -34,7 +34,7 @@ import (
 )
 
 // Shape インターフェースを定義する
-// メソッドセットを持つ型は暗黙的にこのインターフェースを満たす
+// メソッドセットを持つ型はこのインターフェースを満たす
 type Shape interface {
 	Area() float64
 	Perimeter() float64
@@ -92,7 +92,8 @@ Rectangle: 面積: 24.00, 周長: 20.00
 
 ## パターン2: ポリモーフィズム
 
-複数の実装を同じ interface でまとめて扱うパターンです。`Notifier` interface を Email・Slack・SMS の3種類で実装し、一括送信します。
+複数の実装を同じ interface でまとめて扱うパターンです。同じ関数で異なる型を扱えます。
+
 
 ### 使い所
 
@@ -168,7 +169,7 @@ func main() {
 
 ## パターン3: interface の埋め込み
 
-小さな interface を組み合わせて大きな interface を作る「埋め込み」パターンです。インターフェース分離の原則（ISP）を実践する際に有効です。
+小さな interface を組み合わせて大きな interface を作る「埋め込み」パターンです。
 
 ### 使い所
 
@@ -363,9 +364,12 @@ func main() {
 
 ## パターン5: 依存性注入 (Dependency Injection)
 
-interface を使って依存関係を外から注入するパターンです。`UserService` はリポジトリの具体的な実装を知らず、`UserRepository` interface だけに依存します。
+interface を使って依存関係を外から注入するパターンです。
+
 
 ### 使い所
+
+`UserService` はリポジトリの具体的な実装を知らず、`UserRepository` interface だけに依存します。
 
 `UserService` が `MySQLUserRepository` を直接参照していると、テスト時に DB が必要になります。`UserRepository` interface を定義してコンストラクタで受け取るようにすれば、テスト時はインメモリ実装を、本番は MySQL 実装を渡すだけで差し替えができます。コードの修正なしに依存先を切り替えられるのが DI の強みです。
 
@@ -458,249 +462,10 @@ func main() {
 エラー: ユーザー 3 が見つかりません
 ```
 
-## パターン6: 空の interface (any)
-
-`any`（`interface{}` の別名）はあらゆる型を受け取れます。型情報が失われるため取り出す際に型アサーションが必要になります。
-
-### 使い所
-
-複数の異なる型の値を同じコンテナに格納したい場合（設定値のキー・バリューストアなど）に使います。ただし型安全性が失われるため、型が一致する場合はジェネリクスを使う方が望ましいです。`any` は「どうしても型を決められない」ときの最後の手段と考えるのがよいでしょう。
-
-```go
-package main
-
-import "fmt"
-
-func printValue(v any) {
-	switch x := v.(type) {
-	case int:
-		fmt.Printf("int: %d\n", x)
-	case float64:
-		fmt.Printf("float64: %.2f\n", x)
-	case string:
-		fmt.Printf("string: %q\n", x)
-	case bool:
-		fmt.Printf("bool: %v\n", x)
-	case []int:
-		fmt.Printf("[]int: %v\n", x)
-	case nil:
-		fmt.Println("nil")
-	default:
-		fmt.Printf("その他(%T): %v\n", x, x)
-	}
-}
-
-type Store struct {
-	data map[string]any
-}
-
-func NewStore() *Store {
-	return &Store{data: make(map[string]any)}
-}
-
-func (s *Store) Set(key string, value any) {
-	s.data[key] = value
-}
-
-func (s *Store) Get(key string) (any, bool) {
-	v, ok := s.data[key]
-	return v, ok
-}
-
-func main() {
-	fmt.Println("=== any の型アサーション ===")
-	values := []any{42, 3.14, "hello", true, []int{1, 2, 3}, nil}
-	for _, v := range values {
-		printValue(v)
-	}
-
-	fmt.Println("\n=== 汎用ストア ===")
-	store := NewStore()
-	store.Set("age", 30)
-	store.Set("name", "Gopher")
-
-	if v, ok := store.Get("name"); ok {
-		if name, ok := v.(string); ok {
-			fmt.Printf("名前: %s\n", name)
-		}
-	}
-
-	if v, ok := store.Get("age"); ok {
-		if age, ok := v.(int); ok {
-			fmt.Printf("年齢: %d\n", age)
-		}
-	}
-}
-```
-
-`any` を使うと取り出す際に必ず型アサーションが必要になり、型ミスマッチは実行時まで検出されません。Go 1.18 以降はジェネリクス (`[T any]`) でより安全に書けるケースが多いです。
-
-### 実行結果
-
-```
-=== any の型アサーション ===
-int: 42
-float64: 3.14
-string: "hello"
-bool: true
-[]int: [1 2 3]
-nil
-
-=== 汎用ストア ===
-名前: Gopher
-年齢: 30
-```
-
-## パターン7: io.Reader / io.Writer
-
-Go 標準ライブラリを代表する interface です。ファイル・ネットワーク・バッファなど、あらゆる I/O を同じ関数で扱えます。
-
-### 使い所
-
-「ファイルから読み込む」「HTTP レスポンスから読み込む」「メモリ上のバッファから読み込む」という処理は本来すべて異なる具体型です。`io.Reader` を受け取るように書いておけば、同じ関数でどの入力元にも対応できます。ログの出力先を `os.Stderr` にするか `bytes.Buffer` にするかをテスト時だけ差し替える、といったことが簡単にできます。
-
-```go
-package main
-
-import (
-	"bytes"
-	"fmt"
-	"io"
-	"strings"
-)
-
-// CountingWriter は書き込んだバイト数を記録する io.Writer ラッパー
-type CountingWriter struct {
-	w     io.Writer
-	count int64
-}
-
-func (cw *CountingWriter) Write(p []byte) (int, error) {
-	n, err := cw.w.Write(p)
-	cw.count += int64(n)
-	return n, err
-}
-
-// UpperWriter は書き込み内容を大文字に変換する io.Writer ラッパー
-type UpperWriter struct {
-	w io.Writer
-}
-
-func (uw *UpperWriter) Write(p []byte) (int, error) {
-	return uw.w.Write([]byte(strings.ToUpper(string(p))))
-}
-
-func main() {
-	src := strings.NewReader("Hello, Go Interface!\n")
-
-	var buf bytes.Buffer
-	cw := &CountingWriter{w: &buf}
-	uw := &UpperWriter{w: cw}
-
-	// io.Reader -> UpperWriter -> CountingWriter -> bytes.Buffer
-	n, err := io.Copy(uw, src)
-	if err != nil {
-		fmt.Printf("エラー: %v\n", err)
-		return
-	}
-
-	fmt.Printf("書き込み結果: %s", buf.String())
-	fmt.Printf("転送バイト数(io.Copy): %d\n", n)
-	fmt.Printf("カウント(CountingWriter): %d\n", cw.count)
-}
-```
-
-`UpperWriter` と `CountingWriter` はどちらも `io.Writer` を受け取って `io.Writer` を実装する「ラッパー」です。このように interface を実装しながら内部に別の interface を持つ構造をデコレーターパターンと呼びます。`io.Copy` は `io.Reader` と `io.Writer` だけを要求するため、どんな組み合わせでも透過的に動きます。
-
-### 実行結果
-
-```
-書き込み結果: HELLO, GO INTERFACE!
-転送バイト数(io.Copy): 21
-カウント(CountingWriter): 21
-```
-
-## パターン8: fmt.Stringer
-
-`fmt.Stringer` interface を実装すると、`fmt.Println` などで自動的に `String()` が呼ばれます。
-
-### 使い所
-
-独自の型をデバッグ出力やログに出す際、デフォルトの `{10 20}` のような表示では意味がわかりません。`String()` を実装しておくと `fmt` パッケージが自動的に使ってくれるため、呼び出し側で変換コードを書く必要がなくなります。
-
-```go
-package main
-
-import "fmt"
-
-type Direction int
-
-const (
-	North Direction = iota
-	South
-	East
-	West
-)
-
-func (d Direction) String() string {
-	switch d {
-	case North:
-		return "北"
-	case South:
-		return "南"
-	case East:
-		return "東"
-	case West:
-		return "西"
-	default:
-		return "不明"
-	}
-}
-
-type Point struct {
-	X, Y int
-}
-
-func (p Point) String() string {
-	return fmt.Sprintf("(%d, %d)", p.X, p.Y)
-}
-
-type Player struct {
-	Name     string
-	Position Point
-	Facing   Direction
-}
-
-func (p Player) String() string {
-	return fmt.Sprintf("プレイヤー[%s] 位置:%s 向き:%s", p.Name, p.Position, p.Facing)
-}
-
-func main() {
-	player := Player{
-		Name:     "勇者",
-		Position: Point{X: 10, Y: 20},
-		Facing:   North,
-	}
-
-	fmt.Println(player)
-	fmt.Printf("向いている方向: %v\n", player.Facing)
-	fmt.Printf("現在地: %s\n", player.Position)
-}
-```
-
-`Player.String()` の中で `p.Position` と `p.Facing` を `%s` でフォーマットしていますが、これらも `Stringer` を実装しているため再帰的に `String()` が呼ばれます。`fmt` パッケージは `Stringer` を自動検出するため、`%v` でも `%s` でも同様に機能します。
-
-### 実行結果
-
-```
-プレイヤー[勇者] 位置:(10, 20) 向き:北
-向いている方向: 北
-現在地: (10, 20)
-```
 
 ## まとめ
 
-Go の interface は小さく定義して組み合わせる設計が基本です。パターンごとに整理すると以下のようになります。
+パターンごとに整理すると以下のようになります。
 
 | パターン | 用途 |
 |---|---|
@@ -709,8 +474,5 @@ Go の interface は小さく定義して組み合わせる設計が基本です
 | 埋め込み | 最小限の能力だけを要求する |
 | 型アサーション | interface から具体型を安全に取り出す |
 | 依存性注入 | 具体的な実装をコンストラクタで差し替える |
-| 空の interface | 型を問わない汎用コンテナ（最後の手段） |
-| io.Reader/Writer | ファイル・バッファ・ネットワークを統一的に扱う |
-| fmt.Stringer | fmt パッケージによる自動文字列変換 |
 
-interface を小さく保つことで、テスト時のモック差し替えや新しい実装の追加が容易になります。特に依存性注入と io.Reader/Writer のパターンは実務で頻繁に登場するため、早めに慣れておくと Go のコードが読みやすくなると思います。
+interface を小さく保つことで、テスト時のモック差し替えや新しい実装の追加が容易になると考えると良さそうです。
