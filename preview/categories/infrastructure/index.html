@@ -149,25 +149,6 @@
 
 <article class="post-entry tag-entry"> 
   <header class="entry-header">
-    <h2 class="entry-hint-parent">Harnessing Claude&#39;s Intelligence: エージェントハーネスエンジニアリングの最新知見
-    </h2>
-  </header>
-  <div class="entry-content">
-    <p>2026年4月2日、Anthropic の Claude Platform チームの Lance Martin が公式ブログ「Harnessing Claude’s Intelligence」を公開した。本記事はその内容を日本語で網羅的に解説する。
-エージェントを構築する上で「ハーネス」とは、モデルの能力を引き出すための設計・実装全体を指す。このブログポストは、モデルの進化に伴いハーネスをどう再設計すべきかという問いに対する、Anthropic 自身の回答である。
-背景: モデルは「育てられる」 Anthropic の共同創業者 Chris Olah の言葉を引用しながら記事は始まる。
-「Claude のような生成 AI システムは、構築されるというより育てられる」
-エージェントフレームワークは「Claude が単独ではできないこと」に関する仮定を埋め込んでいる。しかしモデルの能力は継続的に向上する。その仮定を定期的に見直さなければ、ハーネスは能力の足かせになってしまう。
-全体構造 この記事が示す設計思想は3つのパターンに集約される。
-&#43;----------------------------------------------------&#43; | Agent Harness Design: 3 Patterns | | | | Pattern 1: Use what Claude already knows | | Pattern 2: Ask &#34;What can I stop doing?&#34; | | Pattern 3: Set boundaries carefully | &#43;----------------------------------------------------&#43; Pattern 1: Claude がすでに知っていることを使う 基本ツールの力を信頼する Claude 3.5 Sonnet は bash とテキストエディタツールだけを使って SWE-bench Verified で 49% を達成した。これは当時の state-of-the-art である。
-...</p>
-  </div>
-  <footer class="entry-footer"><span title='2026-04-13 00:00:00 +0000 UTC'>2026-04-13</span>&nbsp;·&nbsp;4 分&nbsp;·&nbsp;jedipunkz</footer>
-  <a class="entry-link" aria-label="post link to Harnessing Claude&#39;s Intelligence: エージェントハーネスエンジニアリングの最新知見" href="https://jedipunkz.rocks/preview/post/harnessing-claudes-intelligence/"></a>
-</article>
-
-<article class="post-entry tag-entry"> 
-  <header class="entry-header">
     <h2 class="entry-hint-parent">Conftest OPA で Terraform コード開発に制約を設ける
     </h2>
   </header>
@@ -302,6 +283,31 @@ trace post PutTelemetryRecords &#43;--------&#43; &#43;----------------&#43; &#4
   </div>
   <footer class="entry-footer"><span title='2024-01-14 00:23:37 +0900 +0900'>2024-01-14</span>&nbsp;·&nbsp;3 分&nbsp;·&nbsp;jedipunkz</footer>
   <a class="entry-link" aria-label="post link to Go, OpenTelemetry で AWS にログ・トレースを計装してみる" href="https://jedipunkz.rocks/preview/post/opentelemetry-aws/"></a>
+</article>
+
+<article class="post-entry tag-entry"> 
+  <header class="entry-header">
+    <h2 class="entry-hint-parent">自前開発した Prometheus Exporter で自宅ルータのメトリクス監視運用している話
+    </h2>
+  </header>
+  <div class="entry-content">
+    <p>こんにちは @jedipunkz です。
+自宅のルータについても可観測性を向上して普段の運用に役立てています。例えば長期スパンでのネットワーク通信料の推移や CPU, Mem 使用率、あとハードウェアの温度の推移などを観測しています。
+今までは Prometheus の Node Exporter を使ってホストの情報を Prometheus Server に提供していたのですが、自分で Go で Prometheus Exporter を書いて運用するにようになったので、それについてまとめます。
+Grafana の可視化情報 下記が可視化された情報です。CPU, Mem やネットワーク送信量、またハードウェアの温度を可視化して運用しています。
+ソース置き場 結論になりますが下記にソースを置いています。
+https://github.com/jedipunkz/linux-tiny-exporter
+ネットワーク送信・受信メトリクスを説明 実際にはこのコードでは CPU 使用率, Memory 使用率, Disk IO, Network トラヒック, ハードウェア温度を取得・提供しているのですが、ここでは例としてネットワークトラヒックに関するメトリクスを Prometheus Server に提供するコードを説明しようと思います。
+パッケージのインポート Prometheus のクライアントライブラリから2つのパッケージをインポートしています。
+“github.com/prometheus/client_golang/prometheus”: これは Prometheus の基本的なクライアントライブラリで、メトリクスを定義、収集、エクスポートするための機能を提供します。
+“github.com/prometheus/client_golang/prometheus/promhttp”: これは Prometheus の HTTP サーバーとクライアントのためのライブラリで、HTTP 経由でメトリクスを公開するためのハンドラを提供します。
+&#34;github.com/prometheus/client_golang/prometheus&#34; &#34;github.com/prometheus/client_golang/prometheus/promhttp&#34; ネットワークトラヒックに関する構造体定義 ここからは Internal Packege のコード解説です。
+NetCollector という構造体が定義しています。この構造体は、ネットワークインターフェースごとの受信バイト数、送信バイト数、受信パケット数、送信パケット数の差分を保持します。~Diff はそれぞれの値の差分を保持します。前回のスクレイプ（データ収集）からの変化を表します。
+type NetCollector struct { receivedBytesDiff *prometheus.Desc transmitBytesDiff *prometheus.Desc receivedPacketsDiff *prometheus.Desc transmitPacketsDiff *prometheus.Desc lastReceivedBytes map[string]float64 lastTransmitBytes map[string]float64 lastReceivedPackets map[string]float64 lastTransmitPackets map[string]float64 } コンストラクタ NewNetCollector 関数は、新しい NetCollector インスタンスを作成します。この関数では、各メトリクスの差分を表す prometheus.Desc オブジェクトを作成し、それらを NetCollector 構造体の対応するフィールドに設定します。また、前回のスクレイプ時の各メトリクスの値を保持するマップも作成します。
+...</p>
+  </div>
+  <footer class="entry-footer"><span title='2024-01-13 22:28:22 +0900 +0900'>2024-01-13</span>&nbsp;·&nbsp;3 分&nbsp;·&nbsp;jedipunkz</footer>
+  <a class="entry-link" aria-label="post link to 自前開発した Prometheus Exporter で自宅ルータのメトリクス監視運用している話" href="https://jedipunkz.rocks/preview/post/linux-tiny-exporter/"></a>
 </article>
 <footer class="page-footer">
   <nav class="pagination">
