@@ -78,39 +78,17 @@
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2021-04-13T18:35:36+09:00">
     <meta property="article:modified_time" content="2021-04-13T18:35:36+09:00">
-      <meta property="og:image" content="https://jedipunkz.rocks/jedipunkz.jpg">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_80fc53dc1bfa46aa.jpg">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://jedipunkz.rocks/jedipunkz.jpg">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_80fc53dc1bfa46aa.jpg">
 <meta name="twitter:title" content="Go 言語と awscli を使って ECS/Fargate 上でコマンド実行してみた">
 <meta name="twitter:description" content="ECS Execute Command と Run Task 機能を Go 言語および awscli で実行する方法">
-
-
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  "itemListElement": [
-    {
-      "@type": "ListItem",
-      "position":  1 ,
-      "name": "Posts",
-      "item": "https://jedipunkz.rocks/post/"
-    }, 
-    {
-      "@type": "ListItem",
-      "position":  2 ,
-      "name": "Go 言語と awscli を使って ECS/Fargate 上でコマンド実行してみた",
-      "item": "https://jedipunkz.rocks/post/ecs-execute-command/"
-    }
-  ]
-}
-</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "BlogPosting",
   "headline": "Go 言語と awscli を使って ECS/Fargate 上でコマンド実行してみた",
-  "name": "Go 言語と awscli を使って ECS\/Fargate 上でコマンド実行してみた",
+  "name": "Go 言語と awscli を使って ECS/Fargate 上でコマンド実行してみた",
   "description": "ECS Execute Command と Run Task 機能を Go 言語および awscli で実行する方法",
   "keywords": [
     
@@ -118,7 +96,7 @@
   "articleBody": "こんにちは @jedipunkz 🚀 です。\n最近、職場では ECS/Fargate でサービスを運用しています。そこで ECS Task 上でコマンドを実行する必要に迫られて幾つか調べたのですが、複数の方法があり検証をしてみました。これには 2021/03 にリリースされたばかりの ECS 上のコンテナでコマンドを実行する機能も含まれています。\n自分たちは自動化する必要があったので Go 言語 (aws-sdk-go) を中心に検証実施しましたが同時に awscli でも動作検証しましたので、その方法をこの記事に記そうかと思います。\n下記の2つの ECS の機能についてそれぞれ Go 言語, awscli で動作検証実施しました。\n(1) ECS Execute Command (2021/03 リリース) (2) ECS Run Task 用いるツール類 下記のツールを前提に記事を記します。\naws-sdk-go Terraform awscli 共通で必要な taskRoleArn まず Task Definition に対して executeRoleArn とは別に TaskRoleArn の付与が必要になります。\nresource \"aws_ecs_task_definition\" \"sample\" { family = \"sample\" cpu = \"256\" memory = \"512\" network_mode = \"awsvpc\" requires_compatibilities = [\"FARGATE\"] execution_role_arn = module.ecs_task_execution_role.iam_role_arn task_role_arn = module.ecs_task__role.iam_role_arn container_definitions = data.template_file.container_definition_sample.rendered } taksRoleArn の内容については https://docs.aws.amazon.com/ja_jp/AmazonECS/latest/developerguide/task-iam-roles.html に情報があり、下記が必要になります。\n{ \"Version\": \"2012-10-17\", \"Statement\": [ { \"Sid\": \"\", \"Effect\": \"Allow\", \"Principal\": { \"Service\": \"ecs-tasks.amazonaws.com\" }, \"Action\": \"sts:AssumeRole\" } ] } コマンド実行 (1) ECS Exuecute Command (2021/03 リリース) まず最近リリースされた ECS コマンド実行について試します。Terraform やその他の周辺の技術 (aws 公式 GitHub Actions 等も)、この機能にはまだ対応していません。 awscli (v1, v2), session-manager, aws-sdk-go 等が既に対応しています。ここでは awscli, aws-sdk-go を使ってこの機能を試してみます。\n(2021/04/21 追記) 下記の通り Terraform も aws 公式 GitHub Actions も既に対応されていました。\nTerraform Execute Command 対応 aws 公式 ECS Task Definition Render GitHub Actions awscli, session-manager, aws-sdk-go は比較的新しいバージョンを事前にインストールする必要があります。\nまず taskExecute IAM Role に下記の権限が追加で必要です。\nstatement { effect = \"Allow\" actions = [ \"ssmmessages:CreateControlChannel\", \"ssmmessages:CreateDataChannel\", \"ssmmessages:OpenControlChannel\", \"ssmmessages:OpenDataChannel\" ] resources = [\"*\"] } ECS Service に対してコマンド実行の有効化を実施します。\n$ aws ecs update-service \\ --cluster \\ --service \\ --task \\ --enable-execute-command #\u003c--- 有効化 次に --enable-execute-command オプションを付与して Task を起動します。\n$ aws ecs run-task --cluster \\ --task-definition \\ --network-configuration \"awsvpcConfiguration={subnets=[\"Subnet_ID1\", \"Subnet_ID2\"],securityGroups=[\"SecurityGroupId\"],assignPublicIp=DISABLED}\" \\ --launch-type FARGATE --enable-execute-command 準備が整ったので、コマンドを実行してみます。\naws ecs execute-command --cluster \\ --task --container \\ --interactive --command \"ps ax\" The Session Manager plugin was installed successfully. Use the AWS CLI to start a session. Starting session with SessionId: ecs-execute-command-0b2c79e1e775f274c PID USER TIME COMMAND 1 root 0:00 /bin/sh -c nginx -g \"daemon off;\" 7 root 0:00 nginx: master process nginx -g daemon off; 8 nginx 0:00 nginx: worker process 9 nginx 0:00 nginx: worker process 10 root 0:00 /managed-agents/execute-command/amazon-ssm-agent 23 root 0:00 /managed-agents/execute-command/ssm-agent-worker 72 root 0:00 /managed-agents/execute-command/ssm-session-worker ecs-ex 80 root 0:00 ps ax Exiting session with sessionId: ecs-execute-command-0b2c79e1e775f274c. 上記の通り、コマンド ps ax の結果が得られました。\n次に aws-sdk-go を使ってコマンドを実行してみます。\npackage main import ( \"fmt\" \"github.com/aws/aws-sdk-go/aws\" \"github.com/aws/aws-sdk-go/aws/awserr\" \"github.com/aws/aws-sdk-go/aws/session\" \"github.com/aws/aws-sdk-go/service/ecs\" ) func main() { svc := ecs.New(session.New(aws.NewConfig().WithRegion(\"ap-northeast-1\"))) input := \u0026ecs.ExecuteCommandInput{ Cluster: aws.String(\"\"), Command: aws.String(\"ps aux\"), Container: aws.String(\"\"), Interactive: aws.Bool(true), Task: aws.String(\"\"), } result, err := svc.ExecuteCommand(input) if err != nil { if aerr, ok := err.(awserr.Error); ok { fmt.Println(aerr.Error()) } fmt.Println(err.Error()) return } fmt.Println(result) } これをビルドし、実行すると下記のようなシンタックスで結果が得られます。(参考: https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_ExecuteCommand.html)\n{ \"clusterArn\": \"string\", \"containerArn\": \"string\", \"containerName\": \"string\", \"interactive\": boolean, \"session\": { \"sessionId\": \"string\", \"streamUrl\": \"string\", \"tokenValue\": \"string\" }, \"taskArn\": \"string\": } 残念ながらコマンド結果はレスポンスには入っていないようです。が、コマンドは正常を正常に叩いたかの API レスポンスとしてはエラーも検知出来ます。\n※[2021/04/14] aws の Tori さんから指摘頂きました。API からのレスポンスを利用して session-manager-plugin コマンドを実行するとコンテナに接続できるそうです！\n(2) ECS Run Task によるコマンドのオーバーライド 次に ECS Run Task によるコマンドのオーバーライドについて記します。こちらは以前からある機能なのでほぼすべての周辺ツールが対応している認識です。まず awscli で動作確認してみます。\n下記の json ファイルを作成して、タスク定義に記してあるコンテナ名と、コマンドを記します。\n{ \"containerOverrides\": [ { \"name\": \"\", \"command\": [ \"\" ] } ] } awscli を用いてコマンドを Overrides しつつ Run Task 実行します。\naws ecs run-task --cluster \\ --task-definition \\ --network-configuration \"awsvpcConfiguration={subnets=[\"\", \"\"],securityGroups=[\"SecurityGroupId\"],assignPublicIp=DISABLED}\" \\ --launch-type FARGATE \\ --overrides file://\u003c作成した json ファイル\u003e.json 結果は API からの応答内容だけでコマンド実行結果は含まれていません。タスク定義で logConfiguration を記していると、そこにコマンド実行結果が出力されます。\nではつぎに aws-sdk-go を使って Run Task してみます。下記のサンプルコードを記します。環境情報は適宜差し替える必要があります。\npackage main import ( \"fmt\" \"github.com/aws/aws-sdk-go/aws\" \"github.com/aws/aws-sdk-go/aws/awserr\" \"github.com/aws/aws-sdk-go/aws/session\" \"github.com/aws/aws-sdk-go/service/ecs\" ) func main() { // svc := ecs.New(session.New(aws.NewConfig().WithRegion(\"ap-northeast-1\"))) sess := session.Must(session.NewSessionWithOptions(session.Options{ Config: aws.Config{ CredentialsChainVerboseErrors: aws.Bool(true), }, })) svc := ecs.New(sess) input := \u0026ecs.RunTaskInput{ Cluster: aws.String(\"), TaskDefinition: aws.String(\"\u003cTaskDefinition:Revision\u003e), Overrides: \u0026ecs.TaskOverride{ ContainerOverrides: []*ecs.ContainerOverride{ { Name: aws.String(\"\"), Command: aws.StringSlice([]string{\"\u003c実行したいコマンドを記す\u003e\"}), }, }, }, NetworkConfiguration: \u0026ecs.NetworkConfiguration{ AwsvpcConfiguration: \u0026ecs.AwsVpcConfiguration{ Subnets: aws.StringSlice([]string{\"\", \"\"}), // サブネットID AssignPublicIp: aws.String(\"DISABLED\"), // 必要に応じて }, }, LaunchType: aws.String(\"FARGATE\"), } result, err := svc.RunTask(input) if err != nil { if aerr, ok := err.(awserr.Error); ok { switch aerr.Code() { case ecs.ErrCodeServerException: fmt.Println(ecs.ErrCodeServerException, aerr.Error()) case ecs.ErrCodeClientException: fmt.Println(ecs.ErrCodeClientException, aerr.Error()) case ecs.ErrCodeInvalidParameterException: fmt.Println(ecs.ErrCodeInvalidParameterException, aerr.Error()) case ecs.ErrCodeClusterNotFoundException: fmt.Println(ecs.ErrCodeClusterNotFoundException, aerr.Error()) case ecs.ErrCodeUnsupportedFeatureException: fmt.Println(ecs.ErrCodeUnsupportedFeatureException, aerr.Error()) case ecs.ErrCodePlatformUnknownException: fmt.Println(ecs.ErrCodePlatformUnknownException, aerr.Error()) case ecs.ErrCodePlatformTaskDefinitionIncompatibilityException: fmt.Println(ecs.ErrCodePlatformTaskDefinitionIncompatibilityException, aerr.Error()) case ecs.ErrCodeAccessDeniedException: fmt.Println(ecs.ErrCodeAccessDeniedException, aerr.Error()) case ecs.ErrCodeBlockedException: fmt.Println(ecs.ErrCodeBlockedException, aerr.Error()) default: fmt.Println(aerr.Error()) } } else { fmt.Println(err.Error()) } return } fmt.Println(result) } ビルド \u0026 実行するとレスポンスが得られます。がこちらもレスポンスにはコマンド結果が入っていないので、awscli の際と同様にタスク定義内で logConfiguration を指定してログ送信設定を行うと良いでしょう。Cloudwatch Logs などを介して、コマンド実行結果を確認することが可能です。\nまとめ それぞれの良い点・悪い点を下記にまとめてみました。\nCommand Exec の特徴 Terraform, aws 公式 GitHub Actions 等がまだ対応していない awscli ではコマンド結果が得られるが aws-sdk を用いると API のレスポンスにコマンド結果が入ってない 実行する際には TaskId を指定。よって予め Run Task などで Task を起動させるのが前提になる インタラクティブ(対話的) にコマンドを実行出来るそう (未検証) Run Task の特徴 古くからある機能で公式・周辺の技術が対応済み コマンド実行結果は Task 定義に記した logConfiguration に転送することが可能 (Cloudwatch, Datadog 等など) 実行する際には Task Defintion を指定。予め Task が起動している必要はない。 それぞれ特徴がありますが、Execute Command の方はコマンド結果を得る方法が今の所、別途仕組みを用意する必要がありそうです。ログ転送や、Task を別途起動しておく必要が無い点、またコマンド実行終了と共に Task が自動的に終了してくれる点など、自動化する上では Run Task が好ましいなぁと感じています。\n今後 Execute Command がどう変わってくるか期待ですが、awscli を使って単純にデバッグしたい等の要望の時には重宝しそうだなと感じてます。\n",
   "wordCount" : "677",
   "inLanguage": "ja",
-  "image": "https://jedipunkz.rocks/jedipunkz.jpg","datePublished": "2021-04-13T18:35:36+09:00",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_80fc53dc1bfa46aa.jpg","datePublished": "2021-04-13T18:35:36+09:00",
   "dateModified": "2021-04-13T18:35:36+09:00",
   "author":{
     "@type": "Person",
@@ -133,11 +111,12 @@
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
-      "url": "https://jedipunkz.rocks/favicon.ico"
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
     }
   }
 }
 </script>
+
 </head>
 
 <body class="" id="top">

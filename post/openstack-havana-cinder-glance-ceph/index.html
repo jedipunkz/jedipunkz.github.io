@@ -78,33 +78,11 @@
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2014-04-04T00:00:00+00:00">
     <meta property="article:modified_time" content="2014-04-04T00:00:00+00:00">
-      <meta property="og:image" content="https://jedipunkz.rocks/jedipunkz.jpg">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_b5a4184353d432e5.jpg">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://jedipunkz.rocks/jedipunkz.jpg">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_b5a4184353d432e5.jpg">
 <meta name="twitter:title" content="OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携">
 <meta name="twitter:description" content="OpenStack Havana の Glance と Cinder を Ceph 分散ストレージに連携させる詳細手順">
-
-
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  "itemListElement": [
-    {
-      "@type": "ListItem",
-      "position":  1 ,
-      "name": "Posts",
-      "item": "https://jedipunkz.rocks/post/"
-    }, 
-    {
-      "@type": "ListItem",
-      "position":  2 ,
-      "name": "OpenStack Havana Cinder,Glance の分散ストレージ Ceph 連携",
-      "item": "https://jedipunkz.rocks/post/openstack-havana-cinder-glance-ceph/"
-    }
-  ]
-}
-</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -118,7 +96,7 @@
   "articleBody": "こんにちは！@jedipunkz です。\n今回は Havana 版の OpenStack Glance, Cinder と分散ストレージの Ceph を連携させ る手順を書いていきます。元ネタはこちら。下記の Ceph の公式サイトに手順です。\nhttps://ceph.com/docs/master/rbd/rbd-openstack/\nこの手順から下記の変更を行って、ここでは記していきます。\nNova + Ceph 連携させない cinder-backup は今のところ動作確認出来ていないので省く 諸々の手順がそのままでは実施出来ないので補足を入れていく。 cinder-backup は Cinder で作成した仮想ディスクのバックアップを Ceph ストレージ 上に取ることが出来るのですが、そもそも Ceph 上にある仮想ディスクを Ceph にバッ クアップ取っても意味が薄いですし、まだ動いていないので今回は省きます。LVM やそ の他ストレージを使った Cinder 連携をされている方にとっては cinder-backup の Ceph 連携は意味が大きくなってくると思います。\n構成 下記の通りの物理ネットワーク6つの構成です。 OpenStack, Ceph 共に最小構成を前提にします。\n+--------------------------------------------------------------------- external | +--------------+--(-----------+--------------+------------------------------------------ public | | | | | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | controller | | network | | compute | | ceph01 | | ceph02 | | ceph03 | +------------+ +------------+ +------------+ +------------+ +------------+ +------------+ | | | | | | | | | | | | | | | | +--------------+--(-----------+--(-----------+--(--(--------+--(--(--------+--(--(------- management | | | | | | | | | | | +--------------+--(-----------(--(-----------(--(-----------(--(------- guest | | | | | | | | +--------------------------------+-----------+--(-----------+--(-----------+--(------- storage | | | +--------------+--------------+------- cluster 特徴\n最小構成 controller x 1 + network x 1 + compute x 1 + ceph x 3 OpenStack API の相互通信は management ネットワーク OpenStack VM 間通信は guest ネットワーク OpenStack 外部通信は public ネットワーク OpenStack VM の floating-ip (グローバル) 通信は external ネットワーク Ceph と OpenStack 間の通信は storage ネットワーク Ceph の OSD 間通信は cluster ネットワーク ここには記されていないホスト ‘workstation’ から OpenStack, Ceph をデプロイ 前提の構成 前提構成の OpenStack と Ceph ですが、ここでは構築方法は割愛します。OpenStack は rcbops/chef-cookbooks を。Ceph は ceph-deploy を使って自分は構築しました。 下記の自分のブログに構築手順が載っているので参考にしてみてください。\nOpenStack 構築方法\nhttp://jedipunkz.github.io/post/openstack-havana-chef-deploy/\nCeph 構築方法\nhttp://jedipunkz.github.io/post/journal-ssd-ceph-deploy/\nOpenStack + Ceph 連携手順 では実際に連携するための手順を記していきます。\nrbd pool の作成 Ceph ノードの何れかで下記の手順を実施し rbd pool を作成する。\nceph01% sudo ceph osd pool create volumes 128 ceph01% sudo ceph osd pool create images 128 ceph01% sudo ceph osd pool create backups 128 ssh 鍵の配置 Ceph ノードから OpenStack の controller, compute ノードへ接続出来るよう鍵を配 布します。\nceph01% ssh-copy-id @ ceph01% ssh-copy-id @ sudoers の設定 controller, compute ノード上で sudoers の設定を予め実施する。 /etc/sudoers.d/ として保存する。\nALL = (root) NOPASSWD:ALL ceph パッケージのインストール controller ノード, compute ノード上で Ceph パッケージをインストールする。\ncontroller% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add - controller% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list controller% sudo apt-get update \u0026\u0026 sudo apt-get install -y python-ceph ceph-common compute% wget -q -O- 'https://ceph.com/git/?p=ceph.git;a=blob_plain;f=keys/release.asc' | sudo apt-key add - compute% echo deb http://ceph.com/debian/ $(lsb_release -sc) main | sudo tee /etc/apt/sources.list.d/ceph.list compute% sudo apt-get update \u0026\u0026 sudo apt-get install -y python-ceph ceph-common controller ノード, compute ノード上でディレクトリを作成する。\ncontroller% sudo mkdir /etc/ceph compute % sudo mkdir /etc/ceph ceph.conf を controller, compute ノードへ配布する。\nceph01% sudo -i ceph01# ssh sudo tee /etc/ceph/ceph.conf ",
   "wordCount" : "778",
   "inLanguage": "ja",
-  "image": "https://jedipunkz.rocks/jedipunkz.jpg","datePublished": "2014-04-04T00:00:00Z",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_b5a4184353d432e5.jpg","datePublished": "2014-04-04T00:00:00Z",
   "dateModified": "2014-04-04T00:00:00Z",
   "author":{
     "@type": "Person",
@@ -133,11 +111,12 @@
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
-      "url": "https://jedipunkz.rocks/favicon.ico"
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
     }
   }
 }
 </script>
+
 </head>
 
 <body class="" id="top">

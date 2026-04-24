@@ -78,33 +78,11 @@
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2026-03-14T00:00:00+09:00">
     <meta property="article:modified_time" content="2026-03-14T00:00:00+09:00">
-      <meta property="og:image" content="https://jedipunkz.rocks/jedipunkz.jpg">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_dbb44d5dedfa27b8.jpg">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://jedipunkz.rocks/jedipunkz.jpg">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_dbb44d5dedfa27b8.jpg">
 <meta name="twitter:title" content="複数の Claude Code エージェントを1つのターミナルから起動・監視するツールを作った">
 <meta name="twitter:description" content="Go で実装した TUI ダッシュボード付きの Claude Code マルチエージェント管理ツール axの設計と実装について紹介します">
-
-
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  "itemListElement": [
-    {
-      "@type": "ListItem",
-      "position":  1 ,
-      "name": "Posts",
-      "item": "https://jedipunkz.rocks/post/"
-    }, 
-    {
-      "@type": "ListItem",
-      "position":  2 ,
-      "name": "複数の Claude Code エージェントを1つのターミナルから起動・監視するツールを作った",
-      "item": "https://jedipunkz.rocks/post/cco/"
-    }
-  ]
-}
-</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -118,7 +96,7 @@
   "articleBody": "jedipunkz です。\n背景 Claude Code を日常的に使う中で、複数のエージェントを同時に動かしたいというシーンが増えてきました。例えば複数の独立したタスクを並列で走らせたいとき、それぞれのエージェントが今どんな状態にあるかをターミナル1つで把握したいと思っていました。\n幾つかのアプローチについて 以前Zellij を使って Claude Code のマルチエージェント並列・直列実行環境を作った という記事を書いたのですが、これは1つのレポジトリに対して複数の機能開発・リファクタ・その他修正を並列でそれぞれ別の Claude Code で行い最終的にそれぞれの git worktree 上の差分をマージする統合管理 Claude Code を実現するものでした。これは Claude Code 純正の機能 Sub Agents とは異なり複数の Claude Code をオーケストレーションするモノとして利用していたのですが、対象が1つのレポジトリに限定されること、また最終的にそれぞれの差分をマージするのであれば Sub Agents で事足りる事も多くなってきていました。\nそれに対して最近の要件としては下記のように変化してきました。\n複数のレポジトリの修正を行いたい それぞれのエージェントのオーケストレーションよりも、それぞれの可視化と管理をしたい そこで Go で ax というツールを作りました。 リポジトリはこちらです: https://github.com/jedipunkz/ax\nax とは ax は「1つのターミナルから複数の Claude Code エージェントを起動・監視する」ためのCLI ツールです。\n主な機能は以下の通りです。\nax agent でエージェントを起動（git リポジトリ内では自動で git worktree を作成） ax dash で TUI ダッシュボードを開き、全エージェントの状態をリアルタイムで確認 バックグラウンドのデーモンプロセスが Unix ドメインソケット経由でエージェントと TUI 間の状態を管理 スクリーンショット 表示は下記のようになります。vim キーバインドで移動出来ます。\nアーキテクチャ システムは3つの層で構成されています。\n┌──────────────────────────────────────────────────┐ │ TUI Dashboard (ax dash) │ │ - list, detailed │ │ - realtime display with socket │ └────────────────────┬─────────────────────────────┘ │ JSON-lines / Unix socket ┌────────────────────▼─────────────────────────────┐ │ Daemon (~/.ax/ax.sock, ~/.ax/state.json) │ └────────────────────┬─────────────────────────────┘ │ state updates ┌────────────────────▼─────────────────────────────┐ │ Agent Process Layer (ax agent) │ │ - Boot Sub Processes with PTY │ │ - Detect Idle Status │ │ - Output Logs into ~/.ax/agents//output.log │ └──────────────────────────────────────────────────┘ エージェントプロセス (ax agent) ax agent は PTY (Pseudo-Terminal) を使って Claude Code サブプロセスを起動します。PTY を経由することで双方向の I/O を実現しつつ、出力ストリームを監視して状態検出に使います。\nClaude Code は処理中（思考中・ツール実行中・出力ストリーミング中）は継続的に stdout にバイト列を流します。入力プロンプトを出して待機状態になると stdout が止まります。この特性を利用して 2秒間無出力 であれば「waiting you」状態として検出します。\n状態管理と IPC デーモンは2つのメカニズムで状態を管理します。\n~/.ax/state.json: アプリ再起動をまたいで状態を復元するための永続スナップショット ~/.ax/ax.sock: JSON-lines プロトコルによるリアルタイムなメッセージストリーミング デーモンは自動起動する設計で、エージェントや TUI がソケットに到達できない場合、バックグラウンドプロセスとして自動でフォークして最大3秒間ソケットの利用可能を待ちます。\ngit worktree との統合 ax agent を git リポジトリ内で実行すると、自動的に専用の git worktree を ~/.ax/worktrees/-/ に作成し、ax/ という名前のブランチを切ります。Claude Code はこの隔離された worktree 内で動作するため、各エージェントの変更がメインの作業ツリーに干渉しません。\nディレクトリ構成 下記のようにホームディレクトリ上にファイルが構成されます。\n~/.ax/ ├── ax.sock # Unix ドメインソケット (デーモン IPC) ├── state.json # エージェント状態スナップショット ├── agents/ │ └── / │ └── output.log # エージェントごとの出力ログ └── worktrees/ └── -/ # エージェントごとの git worktree インストールと使い方 Go がインストールされていれば以下でインストールできます。claude CLI が $PATH にある必要があります。\ngo install github.com/jedipunkz/ax@latest TUI ダッシュボードの起動 ax dash エージェントを起動すると下記のような TUI で状態を確認できます。\nrunning agent-1 ./my-repo \"Implement feature X\" 00:42 waiting agent-2 ./my-repo \"Write tests\" 01:15 success agent-3 ./other \"Refactor utils\" done エージェントの起動 ax agent ax agent -n # 明示的に名前をつけたい場合。ブランチ名を指定すると管理上良い キーバインド キー アクション j / ↓ カーソルを下に移動 k / ↑ カーソルを上に移動 space 詳細ビューを開く esc / q 一覧に戻る、または終了 K 選択中のエージェントを強制終了 (SIGTERM) ステータスインジケーター シンボル 意味 ⠋ running Claude が処理中 waiting you 入力待ち (プロンプト表示中) success 終了コード 0 で正常終了 failed 非ゼロ終了コードで異常終了 killed シグナルによる強制終了 終了済みのエージェントは終了後 5 分間表示され続けます。\n実装で工夫した点 PTY によるアイドル検出 Claude Code の「処理中」と「入力待ち」の区別は PTY 出力のアイドル時間で判定しています。2秒という閾値は実際に使いながら調整した値です。短すぎると誤検知が増え、長すぎると UI の応答が遅くなります。\nデーモンの自動起動 明示的な ax daemon コマンドを不要にするため、エージェントや TUI がソケットを見つけられない場合にデーモンを自動フォークする設計にしました。ユーザーが「デーモンを先に起動する」という手順を意識しなくてよいため、体験がシンプルになります。\nbubbletea による TUI TUI は bubbletea フレームワークで実装しています。一覧ビューと詳細ビューの2画面構成で、詳細ビューではエージェントのメタデータ（経過時間・作業ディレクトリ・起動引数・起動タイムスタンプ）と最新の出力ログをスクロール表示できます。\nまとめ ax を使うと、複数の Claude Code エージェントの状態を1つのターミナルで把握しながら並列作業できます。git worktree との統合により各エージェントが独立した作業ツリーを持つため、変更が互いに干渉しない点も便利です。\n今、ax の開発自体もこの ax を使って行っています。それぞれのエージェントの操作完了時に PR 作成を指示して作業を完結する、という使い方です。複数の機能を1つに PR にまとめるなら Sub Agents や以前の自分の記事の Swarm SKILL が良いですが、実際の作業ではそれぞれ機能・修正ごとに PR を作るので、今はこの ax が自分に適していると感じています。\nぜひ使ってみてください。フィードバックや Issue も歓迎です。\n",
   "wordCount" : "366",
   "inLanguage": "ja",
-  "image": "https://jedipunkz.rocks/jedipunkz.jpg","datePublished": "2026-03-14T00:00:00+09:00",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_dbb44d5dedfa27b8.jpg","datePublished": "2026-03-14T00:00:00+09:00",
   "dateModified": "2026-03-14T00:00:00+09:00",
   "author":{
     "@type": "Person",
@@ -133,11 +111,12 @@
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
-      "url": "https://jedipunkz.rocks/favicon.ico"
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
     }
   }
 }
 </script>
+
 </head>
 
 <body class="" id="top">

@@ -78,33 +78,11 @@
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2014-12-13T00:00:00+00:00">
     <meta property="article:modified_time" content="2014-12-13T00:00:00+00:00">
-      <meta property="og:image" content="https://jedipunkz.rocks/jedipunkz.jpg">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_10ea5dac00f2f7b0.jpg">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://jedipunkz.rocks/jedipunkz.jpg">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_10ea5dac00f2f7b0.jpg">
 <meta name="twitter:title" content="Aviator でモダンに OpenStack を操作する">
 <meta name="twitter:description" content="Ruby ライブラリ Aviator による OpenStack 操作とシンタックス確認機能の紹介">
-
-
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  "itemListElement": [
-    {
-      "@type": "ListItem",
-      "position":  1 ,
-      "name": "Posts",
-      "item": "https://jedipunkz.rocks/post/"
-    }, 
-    {
-      "@type": "ListItem",
-      "position":  2 ,
-      "name": "Aviator でモダンに OpenStack を操作する",
-      "item": "https://jedipunkz.rocks/post/aviator-openstack/"
-    }
-  ]
-}
-</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -118,7 +96,7 @@
   "articleBody": "こんにちは。@jedipunkz です。\n自分は Ruby を普段使うのでいつも Fog というライブラリを使って OpenStack, AWS を操作していました。Fog を使うとクラウドの操作が Ruby のネイティブコードで行え るのでシステムコマンド打つよりミス無く済みます。\nFog より後発で Aviator というライブラリが登場してきたので少し使ってみたのです がまだ未完成なところがあるものの便利な点もあって今後に期待だったので紹介します。\n認証情報を yaml ファイルに記す 接続に必要な認証情報を yaml ファイルで記述します。名前を ‘aviator.yml’ として 保存。この時に下記のように環境毎に認証情報を別けて書くことができます。こうする ことでコードの中で開発用・サービス用等と使い分けられます。\nproduction: provider: openstack auth_service: name: identity host_uri: request: create_token validator: list_tenants auth_credentials: username: password: tenant_name: development: provider: openstack auth_service: name: identity host_uri: request: create_token validator: list_tenants auth_credentials: username: password: tenant_name: シンタックス確認 +++\n次に aviator のシンタックスを確認します。Fog に無い機能で、コマンドラインでシ ンタックスを確認できてしかも指定可能はパラメータと必須なパラメータと共にサンプ ルコードまで提供してくれます。公式サイトに’サーバ作成’のメソッドが掲載されてい るので、ここでは仮想ディスクを作るシンタックスを確認してみます。\n% gem install aviator % aviator describe openstack volume # \u003c-- 利用可能な機能を確認 Available requests for openstack volume_service: v1 public list_volume_types v1 public list_volumes v1 public delete_volume v1 public create_volume v1 public get_volume v1 public update_volume v1 public root % aviator describe openstack volume v1 public create_volume # \u003c-- シンタックスを確認 :Request =\u003e create_volume Parameters: +---------------------+-----------+ | NAME | REQUIRED? | +---------------------+-----------+ | availability_zone | N | | display_description | Y | | display_name | Y | | metadata | N | | size | Y | | snapshot_id | N | | volume_type | N | +---------------------+-----------+ Sample Code: session.volume_service.request(:create_volume) do |params| params.volume_type = value params.availability_zone = value params.snapshot_id = value params.metadata = value params.display_name = value params.display_description = value params.size = value end このように create_volume というメソッドが用意されていて、指定出来るパラメータ・ 必須なパラメータが確認できます。必須なモノには “Y” が REQUIRED に付いています。 またサンプルコードが出力されるので、めちゃ便利です。\nでは create_volume のシンタックスがわかったので、コードを書いてみましょう。\nコードを書いてみる +++\n#!/usr/bin/env ruby require 'aviator' require 'json' volume_session = Aviator::Session.new( :config_file =\u003e '/home/thirai/aviator/aviator.yml', :environment =\u003e :production, :log_file =\u003e '/home/thirai/aviator/aviator.log' ) volume_session.authenticate volume_session.volume_service.request(:create_volume) do |params| params.display_description = 'testvol' params.display_name = 'testvol01' params.size = 1 end puts volume_session.volume_service.request(:list_volumes).body 6行目で先ほど作成した認証情報ファイル aviator.yml とログ出力ファイル aviator.log を指定します。12行目で実際に OpenStack にログインしています。\n14-18行目はサンプルコードそのままです。必須パラメータの display_description, display_name, size のみを指定し仮想ディスクを作成しました。最後の puts … は 実際に作成した仮想ディスク一覧を出力しています。\n結果は下記のとおりです。\n{ volumes: [{ status: 'available', display_name: 'testvol01', attachments: [], availability_zone: 'az3', bootable: 'false', created_at: description = 'testvol', volume_type: 'standard', snapshot_id: nil, source_volid: nil, metadata: }, id: '3a5f616e-a732-4442-a419-10369111bd4c', size: 1 }] } まとめ +++\nサンプルコードやパラメータ一覧等がひと目でわかる aviator はとても便利です。ま だ利用できるクラウドプラットフォームが OpenStack しかないのと、Neutron の機能 がスッポリ抜けているので、まだ利用するには早いかもです…。逆に言えばコントリ ビューションするチャンスなので、もし気になった方がいたら開発に参加してみるのも いいかもしれません。\n",
   "wordCount" : "314",
   "inLanguage": "ja",
-  "image": "https://jedipunkz.rocks/jedipunkz.jpg","datePublished": "2014-12-13T00:00:00Z",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_10ea5dac00f2f7b0.jpg","datePublished": "2014-12-13T00:00:00Z",
   "dateModified": "2014-12-13T00:00:00Z",
   "author":{
     "@type": "Person",
@@ -133,11 +111,12 @@
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
-      "url": "https://jedipunkz.rocks/favicon.ico"
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
     }
   }
 }
 </script>
+
 </head>
 
 <body class="" id="top">

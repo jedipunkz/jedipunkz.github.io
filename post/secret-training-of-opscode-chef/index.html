@@ -78,33 +78,11 @@
     <meta property="article:section" content="post">
     <meta property="article:published_time" content="2012-10-06T00:00:00+00:00">
     <meta property="article:modified_time" content="2012-10-06T00:00:00+00:00">
-      <meta property="og:image" content="https://jedipunkz.rocks/jedipunkz.jpg">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_ef53dfaaedbe3a99.jpg">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://jedipunkz.rocks/jedipunkz.jpg">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_ef53dfaaedbe3a99.jpg">
 <meta name="twitter:title" content="Secret Training of Opscode Chef">
 <meta name="twitter:description" content="Opscode Chef のシークレットトレーニングの参加レポートとハンズオン内容の紹介">
-
-
-<script type="application/ld+json">
-{
-  "@context": "https://schema.org",
-  "@type": "BreadcrumbList",
-  "itemListElement": [
-    {
-      "@type": "ListItem",
-      "position":  1 ,
-      "name": "Posts",
-      "item": "https://jedipunkz.rocks/post/"
-    }, 
-    {
-      "@type": "ListItem",
-      "position":  2 ,
-      "name": "Secret Training of Opscode Chef",
-      "item": "https://jedipunkz.rocks/post/secret-training-of-opscode-chef/"
-    }
-  ]
-}
-</script>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -118,7 +96,7 @@
   "articleBody": "昨日、開かれた “Opscode Chef のシークレットトレーニング” に参加してきました。\n場所はうちの会社で KDDI ウェブコミュニケーションズ。主催はクリエーションオンラ インさんでした。講師は Sean OMeara (@someara) さん。今後 Chef のトレーニングを 日本で開くため、事前に内容についてフィードバックが欲しかったそうで、オープンな レッスンではありませんでしたが、次回以降、日本でも期待できそうです。\n内容は chef の基本・メリット・考え方などを網羅した資料で1時間程進められ、その 後はハンズオンがメインでした。今日は実際にハンズオンの内容を書いていこうかと思 います。\nchef workstation 環境は揃っている前提にします。また chef server として opscode の hosted chef (opscode が提供している chef のホスティングサービス, chef-server として動作します) を使います。またターゲットホストは当日は ec2 イ ンスタンスを使いましたが、chef ワークステーションから到達できるホストであれば 何でも良いでしょう。\nまずは chef-repo のクローン。講習会で使われたものです。\ngit clone https://github.com/opscode/chef-repo-workshop-sysadmin.git chef-repo 予め cookbook が入っています。\n次に、manage.opscode.com へアクセスしアカウントを作ります。Free アカウントが誰 でも作れるようになっています。\nhttps://manage.opscode.com へアクセス -\u003e Sign Up をクリック -\u003e アカウント情報 を入力 -\u003e submit -\u003e メールにて verify -\u003e 自分のアカウント名をクリック -\u003e Get a new key をクリックし \u003cアカウント名\u003e.pem をダウンロード -\u003e create a organization をクリックし Free を選択し、適当な名前で organization を作成。 validation key と knife.rb をダウンロード\nこれらで得た3つのファイル (2つの pem とknife.rb) を chef-repo/.chef/ 配下に置 きます。これで準備 OK。knife.rb を見ると、opscode の chef ホスティングにアクセ スするよう記述があります。\n% cp /knife.rb /.pem /-validation.pem chef-repo/.chef/ トレーニング用 chef-repo には予め幾つかの cookbook と role, data_bag が入って います。これらを knife を使ってアップロードします。\n% cd chef-repo % knife cookbook upload -a % knife role from file role/*.rb % knife data bag create users % knife data bag from file users nagiosadmin.json そして bootstrap を実行。.chef/bootstrap ディレクトリに chef-full.erb ファイル が入っていて bash スクリプトになっている。knife bootstrap でこの bash スクリプ トをターゲットホスト上で実行することになる。中身はと言うと chef 環境をインストー ルしているようだ。\nchef 環境をどうやってノードに入れているかなぁ。preseed 使うかな。手作業じゃ意 味ないしなぁと考えていたのですが、こうやればいいのですね。参考になります。これ は簡単。\nではいよいよ bootstrap を実行。\n% knife bootstrap -r 'role[base],role[monitoring]' --sudo -x -P IP アドレス、ssh ユーザ名・パスワードは適宜入れてください。これで cookbooks ディ レクトリ配下の各種 cookbook が実行されました。中身は nagios とそれに依存する apache2, openssl, mysql, php 等。\n次に cookbook を新たにダウンロードし knife upload してみます。\n% knife cookbook site download chef-client % tar zxvf chef-client-1.2.0.tar.gz -C cookbooks/ % knife cookbook upload chef-client 「アカウントの pem がない場合 validation が用いられるが、一旦サーバと通信出来た ら validation は必要なくなる。それどころか wi-fi パスワードのようなものなので validation は削除することを強くすすめる」と Sean が言っていました。chef 環境は すでに bootstrap で入っているものの、validation を削除するための recipe を base という role に追加し、実行してみます。\nSean の言っていたこと、間違っていたら指摘してください( \u003e\u003c ) 英語だったので自信 ないです。\n% vim role/base.rb name \"base\" description \"Base role applied to all nodes.\" run_list( \"recipe[apt]\", \"recipe[nagios::client]\" \"recipe[chef-client::delete_validation]\" ) default_attributes( \"nagios\" =\u003e { \"server_role\" =\u003e \"monitoring\" } ) role をアップロード。\n% knife role from file roles/base.rb ターゲットホストで chef-client を実行。ここで バージョン 10.14 から登場した why-run を試してから実行。\ntarget# chef-client -Fdoc -lfatal --color --why-run target# chef-client -Fdoc -lfatal --color もしくはワークステーションから knife ssh を使っても良い。\n% knife search node \"role:base\" -a cloud.public_ipv4 % knife ssh \"role:base\" \"sudo chef-client -Fmin\" -x ubuntu -P opscodechef -a cloud.public_ipv4 -a cloud.public_ipv4 とは、AWS EC2 や OpenStack, CloudStack 環境ではインスタン スの eth0 インターフェースにプライベート IP アドレスが付与されているケースが 殆どなため、グローバル IP アドレスを検索し実行している。\n大きな流れはこれでおしまい。\nトレーニングでは bento, minitest, cucumber-chef 等の紹介があったが、詳細な内容 については見送られた。昼休み1時間をはさんで計7時間の長丁場だったが、chef 初級 を脱するのには最適なトレーニングだった。これからトレーニング内容や種別を組んで いくそうなので、内容は変わってくるかもしれない。あとでフィードバックをしなく ちゃ。\n個人的には OpenStack に興味を持っているので chef を使って OpenStack をデプロイ したい。今年6月には ‘Chef for OpenStack’ というアナウンスがあり、DELL, RackSpace, HP 等の大企業がパートナーとして参加することになったと発表があった。 今まで openstack cookbook は長くメンテナンスされてこなかったので、これには期待 している。\n最後にこの機会を作って下さった クリエーションオンラインさん、opscode の Sean さん、mr.devops さん、ありがとうございましたー。貴重な体験でした。\n",
   "wordCount" : "390",
   "inLanguage": "ja",
-  "image": "https://jedipunkz.rocks/jedipunkz.jpg","datePublished": "2012-10-06T00:00:00Z",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_ef53dfaaedbe3a99.jpg","datePublished": "2012-10-06T00:00:00Z",
   "dateModified": "2012-10-06T00:00:00Z",
   "author":{
     "@type": "Person",
@@ -133,11 +111,12 @@
     "name": "jedipunkz 🚀 のブログ",
     "logo": {
       "@type": "ImageObject",
-      "url": "https://jedipunkz.rocks/favicon.ico"
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
     }
   }
 }
 </script>
+
 </head>
 
 <body class="" id="top">
