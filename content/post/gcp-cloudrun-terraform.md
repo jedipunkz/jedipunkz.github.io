@@ -1,8 +1,8 @@
 ---
 title: "初学: Google Cloud の Cloud Run ベストプラクティス構成を組んで学ぶ"
-description: "Cloud Run、Cloud Deploy、Cloud Build、Load Balancer、Cloud Armor を組み合わせた本番グレードの GCP インフラを Terraform で実装する手順と設計のポイント"
+description: "Cloud Run、Cloud Deploy、Cloud Build、Load Balancer、Cloud Armor を組み合わせた本番グレードの Google Cloud インフラを Terraform で実装する手順と設計のポイント"
 date: 2026-04-25T00:00:00+09:00
-Categories: ["infrastructure", "gcp", "terraform"]
+Categories: ["infrastructure", "google cloud", "terraform"]
 draft: false
 ---
 
