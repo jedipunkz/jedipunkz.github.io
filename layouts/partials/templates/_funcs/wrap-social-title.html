@@ -3,35 +3,61 @@
 {{- $title = replaceRE `[\p{So}\p{Sk}]` "" $title -}}
 {{- $title = replaceRE `\s+` " " $title -}}
 {{- $title = strings.TrimSpace $title -}}
-{{- if and (gt (len (findRE `[\p{Han}\p{Hiragana}\p{Katakana}]` $title)) 0) (gt (len (findRE `\s` $title)) 0) -}}
-  {{- $title = replaceRE `\s+` "" $title -}}
-{{- end -}}
 
-{{- $parts := split $title " " -}}
-{{- if le (len $parts) 1 -}}
-  {{- if gt (len $title) 14 -}}
-    {{- $chunks := findRE `.{1,14}` $title -}}
-    {{- delimit $chunks "\n" -}}
-  {{- else -}}
-    {{- $title -}}
-  {{- end -}}
-{{- else -}}
-  {{- $best := 0 -}}
-  {{- $bestScore := 9999 -}}
-  {{- range $i, $_ := first (sub (len $parts) 1) $parts -}}
-    {{- $left := delimit (first (add $i 1) $parts) " " -}}
-    {{- $right := delimit (after (add $i 1) $parts) " " -}}
-    {{- $score := math.Abs (sub (len $left) (len $right)) -}}
-    {{- if and (ge (len $left) 10) (ge (len $right) 10) (lt $score $bestScore) -}}
-      {{- $best = $i -}}
-      {{- $bestScore = $score -}}
+{{- if gt (len (findRE `[\p{Han}\p{Hiragana}\p{Katakana}]` $title)) 0 -}}
+  {{- /* CJK titles: wrap by display width (CJK char = 2, ASCII char = 1) without breaking inside Latin words or dropping spaces */ -}}
+  {{- $tokens := findRE `[^\x00-\x7F]|[!-~]+|\s` $title -}}
+  {{- $limit := 26 -}}
+  {{- $lines := slice -}}
+  {{- $cur := "" -}}
+  {{- $width := 0 -}}
+  {{- range $tokens -}}
+    {{- $tw := 2 -}}
+    {{- if findRE `^[\x00-\x7F]` . -}}
+      {{- $tw = len . -}}
+    {{- end -}}
+    {{- if and (gt $width 0) (gt (add $width $tw) $limit) -}}
+      {{- $lines = $lines | append (strings.TrimSpace $cur) -}}
+      {{- $cur = "" -}}
+      {{- $width = 0 -}}
+    {{- end -}}
+    {{- if not (and (eq $cur "") (eq . " ")) -}}
+      {{- $cur = printf "%s%s" $cur . -}}
+      {{- $width = add $width $tw -}}
     {{- end -}}
   {{- end -}}
-  {{- if eq $bestScore 9999 -}}
-    {{- $title -}}
+  {{- $cur = strings.TrimSpace $cur -}}
+  {{- if gt (len $cur) 0 -}}
+    {{- $lines = $lines | append $cur -}}
+  {{- end -}}
+  {{- delimit $lines "\n" -}}
+{{- else -}}
+  {{- $parts := split $title " " -}}
+  {{- if le (len $parts) 1 -}}
+    {{- if gt (len $title) 14 -}}
+      {{- $chunks := findRE `.{1,14}` $title -}}
+      {{- delimit $chunks "\n" -}}
+    {{- else -}}
+      {{- $title -}}
+    {{- end -}}
   {{- else -}}
-    {{- $left := delimit (first (add $best 1) $parts) " " -}}
-    {{- $right := delimit (after (add $best 1) $parts) " " -}}
-    {{- printf "%s\n%s" $left $right -}}
+    {{- $best := 0 -}}
+    {{- $bestScore := 9999 -}}
+    {{- range $i, $_ := first (sub (len $parts) 1) $parts -}}
+      {{- $left := delimit (first (add $i 1) $parts) " " -}}
+      {{- $right := delimit (after (add $i 1) $parts) " " -}}
+      {{- $score := math.Abs (sub (len $left) (len $right)) -}}
+      {{- if and (ge (len $left) 10) (ge (len $right) 10) (lt $score $bestScore) -}}
+        {{- $best = $i -}}
+        {{- $bestScore = $score -}}
+      {{- end -}}
+    {{- end -}}
+    {{- if eq $bestScore 9999 -}}
+      {{- $title -}}
+    {{- else -}}
+      {{- $left := delimit (first (add $best 1) $parts) " " -}}
+      {{- $right := delimit (after (add $best 1) $parts) " " -}}
+      {{- printf "%s\n%s" $left $right -}}
+    {{- end -}}
   {{- end -}}
 {{- end -}}
