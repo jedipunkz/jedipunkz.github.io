@@ -1,6 +1,6 @@
 ---
 title: "ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える"
-description: "Google が公開した ADK Go 2.0 の新しいグラフワークフローエンジンを公式サンプルコードを実際に動かしながら読み解き、インシデント対応エージェントにどう応用できるかを考えます"
+description: "Google が公開した ADK Go 2.0 の新しいグラフワークフローエンジンを公式サンプルコードを実際に動かしながら読み解き、Datadog・Cloud Run・Slack を使ったインシデント対応エージェントとして書いてみます"
 date: 2026-07-31T12:00:00+09:00
 Categories: ["AI", "Go", "SRE", "Agent"]
 draft: false
@@ -16,13 +16,13 @@ draft: false
 // This is the canonical "LLM as the brain, engine does the routing" pattern.
 ```
 
-LLM は「脳」であって「ルータ」ではない、分岐そのものはエンジン（＝決定的なコード）が担う、という設計思想です。これは SRE のインシデント対応エージェントを考える上でかなり本質的な話に見えたので、リポジトリを実際に clone して公式サンプルを読み、さらに自分でインシデントトリアージのワークフローを書いてビルド・実行するところまでやってみました。
+LLM は「脳」であって「ルータ」ではない、分岐そのものはエンジン（＝決定的なコード）が担う、という設計思想です。これは SRE のインシデント対応エージェントを考える上でかなり本質的な話に見えたので、リポジトリを実際に clone して公式サンプルを読み、さらに自分でインシデントトリアージのワークフローを書いてビルド・実行するところまでやってみました。観測は Datadog、デプロイ先は Google Cloud Run、承認は Slack という構成にしています。
 
 この記事は以下の三本柱で構成します。
 
 1. ADK の基本（そもそも ADK でエージェントをどう書くのか）
 2. 2.0 の新機能（グラフワークフローエンジンを中心に）
-3. SRE Agent における応用（実際に動くコードを書いてみた）
+3. SRE Agent における応用（Datadog / Cloud Run / Slack で実際に動くコードを書いてみた）
 
 なお、記事中のコードはすべて [google/adk-go](https://github.com/google/adk-go) の実際のサンプルか、自分で書いて `go vet` とビルド・実行を通したものです。
 
@@ -266,7 +266,7 @@ START ─┬─> RenewableEnergyResearcher ─┐
        └─> CarbonCaptureResearcher ───┘   (Join)   (func)      (LLM)
 ```
 
-配線は `EdgeBuilder` の fluent API で書けます。
+ノードのつなぎ方は `EdgeBuilder` の fluent API で書けます。
 
 ```go
 eb := workflow.NewEdgeBuilder()
@@ -435,69 +435,144 @@ ADK Go 2.0 のグラフは、この境界を**構造として**引けます。
 
 ### インシデントトリアージのワークフローを書いてみた
 
-実際に書いてみました。以下は `go vet` を通し、実際に実行して動作確認したコードです（LLM 部分をスタブに差し替えた版で end-to-end の動作を確認しています）。
+実際に書いてみました。観測は Datadog、デプロイ先は Google Cloud Run、承認は Slack、という自分に馴染みのある構成です。以下のコードは `go vet` とビルドを通し、後述の中断・再開プロトコルについては実際に走らせて動作確認しています。
 
 グラフはこうなります。
 
 ```mermaid
 flowchart LR
-  S((START)) --> M[fetch_metrics]
-  S --> L[fetch_logs]
-  S --> D[fetch_deploys]
+  S((START)) --> M[datadog_metrics]
+  S --> L[datadog_logs]
+  S --> D[cloudrun_revisions]
   M --> G[gather<br/>JoinNode]
   L --> G
   D --> G
   G --> E[build_evidence<br/>Go]
-  E --> X[diagnose<br/>LLM]
-  X --> C[decide_action<br/>Go]
-  C -->|rollback| R[propose_rollback<br/>HITL]
+  E --> X[diagnose<br/>LLM: 仮説を3つ]
+  X --> C[decide_action<br/>Go: 最終判断]
+  C -->|rollback| R[rollback<br/>Slack 承認]
   C -->|scale_out| SC[scale_out]
   C -->|escalate| P[page_oncall]
 ```
 
-ポイントは、**LLM ノード `diagnose` は分岐の手前にいるが、分岐の判断材料ではない**ことです。`decide_action` は LLM の出力ではなく、`build_evidence` が session state に保存した生の証拠データを読んで決めます。
+ポイントは、**LLM ノード `diagnose` は分岐の手前にいるが、分岐の判断材料そのものではない**ことです。`decide_action` は LLM の文章ではなく、`build_evidence` が session state に保存した生の証拠データを読んで決めます。LLM の仮説は「決定の検証」に使います（後述）。
 
-まず証拠を集めるフェーズ。外部 API を叩くのでリトライとタイムアウトを付けます。
+#### 証拠を集める：Datadog と Cloud Run
+
+まず収集フェーズ。外部 API を叩くのでリトライとタイムアウトを付けます。
 
 ```go
 fetchCfg := workflow.NodeConfig{
 	RetryConfig: workflow.DefaultRetryConfig(),
 	Timeout:     15 * time.Second,
 }
-metricsNode := workflow.NewFunctionNode(nodeMetrics, fetchMetrics, fetchCfg)
-logsNode := workflow.NewFunctionNode(nodeLogs, fetchLogs, fetchCfg)
-deploysNode := workflow.NewFunctionNode(nodeDeploys, fetchDeploys, fetchCfg)
+metricsNode := workflow.NewFunctionNode(nodeMetrics, fetchDatadogMetrics, fetchCfg)
+logsNode := workflow.NewFunctionNode(nodeLogs, fetchDatadogLogs, fetchCfg)
+deploysNode := workflow.NewFunctionNode(nodeDeploys, fetchCloudRunDeploy, fetchCfg)
 ```
 
-`fetchMetrics` などは普通の Go 関数です。実運用では Cloud Monitoring や Prometheus を叩く場所になります。
+メトリクスは Datadog の Metrics Query API を3本叩いて、エラー率・p99 レイテンシ・CPU 使用率を取ります。ここは LLM を一切通しません。
 
 ```go
-type Metrics struct {
-	ErrorRate     float64 `json:"errorRate"`
-	LatencyP99Ms  int     `json:"latencyP99Ms"`
-	CPUSaturation float64 `json:"cpuSaturation"`
-}
+func fetchDatadogMetrics(ctx agent.Context, service string) (DatadogMetrics, error) {
+	ddCtx, client := datadogAPI(ctx)
+	api := datadogV1.NewMetricsApi(client)
 
-func fetchMetrics(_ agent.Context, service string) (Metrics, error) {
-	// 実運用では Cloud Monitoring / Prometheus を叩く
-	return Metrics{ErrorRate: 0.18, LatencyP99Ms: 2400, CPUSaturation: 0.42}, nil
+	to := time.Now().Unix()
+	from := to - int64(lookback.Seconds())
+
+	errRate, err := queryScalar(ddCtx, api, from, to, fmt.Sprintf(
+		"sum:trace.http.request.errors{service:%s}.as_rate()/sum:trace.http.request.hits{service:%s}.as_rate()",
+		service, service))
+	if err != nil {
+		return DatadogMetrics{}, err
+	}
+	latency, err := queryScalar(ddCtx, api, from, to, fmt.Sprintf(
+		"p99:trace.http.request.duration{service:%s}", service))
+	if err != nil {
+		return DatadogMetrics{}, err
+	}
+	cpu, err := queryScalar(ddCtx, api, from, to, fmt.Sprintf(
+		"avg:gcp.run.container.cpu.utilizations{service_name:%s}", service))
+	if err != nil {
+		return DatadogMetrics{}, err
+	}
+
+	return DatadogMetrics{
+		ErrorRate:     errRate,
+		LatencyP99Ms:  int(latency * 1000),
+		CPUSaturation: cpu,
+	}, nil
 }
 ```
 
-3つの収集を並列に走らせて `JoinNode` で待ち合わせ、`build_evidence` で1つの構造体にまとめます。ここで **session state に生データを保存しておく**のが後で効きます。
+ログは Datadog Logs の Aggregate API で、エラーメッセージ別に上位3件を集計します。
+
+```go
+resp, _, err := api.AggregateLogs(ddCtx, datadogV2.LogsAggregateRequest{
+	Filter: &datadogV2.LogsQueryFilter{
+		Query: &query, // "service:checkout-api status:error"
+		From:  &from,  // "now-15m0s"
+	},
+	Compute: []datadogV2.LogsCompute{{
+		Aggregation: datadogV2.LOGSAGGREGATIONFUNCTION_COUNT,
+		Type:        datadogV2.LOGSCOMPUTETYPE_TOTAL.Ptr(),
+	}},
+	GroupBy: []datadogV2.LogsGroupBy{{
+		Facet: groupField, // "@error.message"
+		Limit: &limit,
+	}},
+})
+```
+
+デプロイ状況は Cloud Run のリビジョン一覧から取ります。最新リビジョンの作成時刻から「デプロイ後何分か」を、2番目のリビジョンから「ロールバック先」を得ます。この2つが後の判断の要になります。
+
+```go
+func fetchCloudRunDeploy(ctx agent.Context, service string) (CloudRunDeploy, error) {
+	svc, err := run.NewService(ctx)
+	if err != nil {
+		return CloudRunDeploy{}, fmt.Errorf("run.NewService: %w", err)
+	}
+
+	parent := fmt.Sprintf("projects/%s/locations/%s/services/%s", gcpProject, gcpRegion, service)
+	resp, err := run.NewProjectsLocationsServicesRevisionsService(svc).List(parent).Context(ctx).Do()
+	if err != nil {
+		return CloudRunDeploy{}, fmt.Errorf("listing revisions of %s: %w", parent, err)
+	}
+	if len(resp.Revisions) == 0 {
+		return CloudRunDeploy{}, fmt.Errorf("no revisions found for %s", parent)
+	}
+
+	// List は作成時刻の新しい順に返る。
+	latest := resp.Revisions[0]
+	out := CloudRunDeploy{
+		Service:        service,
+		LatestRevision: shortName(latest.Name),
+	}
+	if len(resp.Revisions) > 1 {
+		out.PreviousRevision = shortName(resp.Revisions[1].Name)
+	}
+	if t, err := time.Parse(time.RFC3339, latest.CreateTime); err == nil {
+		out.MinutesSinceDeploy = int(time.Since(t).Minutes())
+	}
+	return out, nil
+}
+```
+
+この3つを `JoinNode` で待ち合わせ、`build_evidence` で1つの構造体にまとめます。ここで **session state に生データを保存しておく**のが後で効きます。
 
 ```go
 func buildEvidence(ctx agent.Context, gathered map[string]any) (string, error) {
-	ev := Evidence{Service: "checkout-api"}
+	ev := Evidence{Service: targetService}
 	var err error
-	if ev.Metrics, err = decodeInto[Metrics](gathered[nodeMetrics]); err != nil {
-		return "", fmt.Errorf("decoding metrics: %w", err)
+	if ev.Metrics, err = decodeInto[DatadogMetrics](gathered[nodeMetrics]); err != nil {
+		return "", fmt.Errorf("decoding datadog metrics: %w", err)
 	}
-	if ev.Logs, err = decodeInto[LogDigest](gathered[nodeLogs]); err != nil {
-		return "", fmt.Errorf("decoding logs: %w", err)
+	if ev.Logs, err = decodeInto[DatadogLogs](gathered[nodeLogs]); err != nil {
+		return "", fmt.Errorf("decoding datadog logs: %w", err)
 	}
-	if ev.Deploy, err = decodeInto[DeployInfo](gathered[nodeDeploys]); err != nil {
-		return "", fmt.Errorf("decoding deploys: %w", err)
+	if ev.Deploy, err = decodeInto[CloudRunDeploy](gathered[nodeDeploys]); err != nil {
+		return "", fmt.Errorf("decoding cloud run revisions: %w", err)
 	}
 
 	// 決定ノードが後から読めるように state に置く。LLM の出力ではなく
@@ -514,19 +589,83 @@ func buildEvidence(ctx agent.Context, gathered map[string]any) (string, error) {
 }
 ```
 
-LLM には診断だけをさせます。ここで **「アクションを提案するな」と明示している**のが今回の肝です。
+#### 診断：仮説を3つ立てさせる
+
+ここが LLM の出番です。人間の SRE がインシデント時にやっていることを言語化すると、「証拠を見て、ありうる原因をいくつか思い浮かべて、証拠と照らして絞り込む」という作業になります。いきなり結論を1つ出させるより、**明示的に複数の仮説を立てさせてから絞り込ませる**ほうが、思考の過程が残るぶん人間がレビューしやすい。
+
+`llmagent.Config` には `OutputSchema` があるので、出力形式を強制できます。ここで「必ず3つ」「カテゴリはこの語彙から選ぶ」と縛ります。
 
 ```go
-diagnoser, err := llmagent.New(llmagent.Config{
-	Name:        "diagnose",
-	Model:       model,
-	Description: "summarises incident evidence for a human responder",
-	Instruction: "Given the incident evidence, write at most three sentences describing the " +
-		"most likely cause. Do not propose an action; the runbook is chosen elsewhere.",
-})
+var diagnosisSchema = &genai.Schema{
+	Type: genai.TypeObject,
+	Properties: map[string]*genai.Schema{
+		"hypotheses": {
+			Type:     genai.TypeArray,
+			MinItems: genai.Ptr(int64(3)),
+			MaxItems: genai.Ptr(int64(3)),
+			Items: &genai.Schema{
+				Type: genai.TypeObject,
+				Properties: map[string]*genai.Schema{
+					"id":    {Type: genai.TypeString, Description: "h1, h2, h3 のいずれか"},
+					"title": {Type: genai.TypeString, Description: "仮説の一行要約"},
+					"category": {
+						Type: genai.TypeString,
+						Enum: []string{catBadDeploy, catResource, catDependency, catUnknown},
+					},
+					"confidence": {Type: genai.TypeNumber, Description: "0.0-1.0"},
+					"evidence":   {Type: genai.TypeString, Description: "この仮説を支持する証拠"},
+				},
+				Required: []string{"id", "title", "category", "confidence", "evidence"},
+			},
+		},
+		"topId":     {Type: genai.TypeString, Description: "最も確からしい仮説の id"},
+		"rationale": {Type: genai.TypeString, Description: "他の2つを退けた理由"},
+	},
+	Required: []string{"hypotheses", "topId", "rationale"},
+}
 ```
 
-そして決定ノード。これが全体で一番重要な部分です。
+`category` を enum で縛っているのが地味に重要で、これによって LLM の出力が**下流の Go コードが理解できる語彙の中に必ず収まります**。自由記述だと後段で文字列マッチする羽目になり、routing/llm サンプルと同じ「正規化とフォールバック」の問題が発生します。スキーマで縛れるならそちらのほうが確実です。
+
+プロンプト側でも、3つ立てて最後に絞り込むという手順を明示します。
+
+```go
+const diagnoseInstruction = `You are an SRE assistant triaging a production incident.
+
+You are given evidence collected from Datadog (metrics, logs) and Google Cloud Run
+(revision history).
+
+Do exactly this:
+1. Form EXACTLY three distinct hypotheses for the root cause. They must be mutually
+   distinguishable, not three phrasings of the same idea.
+2. For each hypothesis, cite the specific evidence that supports it and assign a
+   confidence between 0.0 and 1.0.
+3. Finally pick the single most likely hypothesis as topId and explain in rationale
+   why the other two are less likely.
+
+Do NOT propose a remediation action. The runbook is chosen by the workflow, not by you.`
+```
+
+最後の一行が肝で、**対処の提案は LLM の仕事ではない**と明示しています。LLM がやるのは「原因の候補を3つ挙げて1つに絞る」ところまでです。
+
+#### 判断：ポリシー判定とその検証、という二段構え
+
+そして決定ノード。ここが全体で一番重要な部分です。1段目で証拠だけを見た決定的なポリシー判定を行い、2段目で LLM の仮説を「検証」として使います。
+
+```go
+// policyRoute は証拠だけを見て候補となる対処を決める。LLM は一切関与しない。
+// 併せて「その対処が前提としている障害カテゴリ」を返す。
+func policyRoute(ev Evidence) (route, assumedCategory string) {
+	switch {
+	case ev.Deploy.MinutesSinceDeploy <= 30 && ev.Deploy.PreviousRevision != "" && ev.Metrics.ErrorRate > 0.05:
+		return routeRollback, catBadDeploy
+	case ev.Metrics.CPUSaturation > 0.85 && ev.Metrics.ErrorRate <= 0.05:
+		return routeScaleOut, catResource
+	default:
+		return routeEscalate, catUnknown
+	}
+}
+```
 
 ```go
 func decideAction(ctx agent.Context, diagnosis any, emit func(*session.Event) error) (any, error) {
@@ -539,23 +678,33 @@ func decideAction(ctx agent.Context, diagnosis any, emit func(*session.Event) er
 		return nil, fmt.Errorf("decoding evidence: %w", err)
 	}
 
-	// ポリシーは全て決定的な Go のコード。LLM の所見はイベントに載せて
-	// 人間に見せるが、分岐の判断には使わない。
-	var route string
-	switch {
-	case ev.Deploy.MinutesSinceDeploy <= 30 && ev.Metrics.ErrorRate > 0.05:
-		route = routeRollback
-	case ev.Metrics.CPUSaturation > 0.85 && ev.Metrics.ErrorRate <= 0.05:
-		route = routeScaleOut
-	default:
-		route = routeEscalate
+	// 1段目：証拠だけを見た決定的なポリシー判定。
+	route, assumed := policyRoute(ev)
+
+	// 2段目：LLM の仮説を「検証」に使う。ポリシーの前提と最有力仮説が
+	// 食い違う、あるいは確信度が低い場合は自動実行せず人間に上げる。
+	var d Diagnosis
+	reason := "policy and top hypothesis agree"
+	if err := json.Unmarshal([]byte(fmt.Sprint(diagnosis)), &d); err != nil {
+		route, reason = routeEscalate, "could not parse diagnosis"
+	} else if top, ok := d.Top(); !ok {
+		route, reason = routeEscalate, "topId does not match any hypothesis"
+	} else if route != routeEscalate {
+		switch {
+		case top.Category != assumed:
+			route = routeEscalate
+			reason = fmt.Sprintf("policy assumed %s but top hypothesis is %s", assumed, top.Category)
+		case top.Confidence < minTopConfidence:
+			route = routeEscalate
+			reason = fmt.Sprintf("top hypothesis confidence %.2f below %.2f", top.Confidence, minTopConfidence)
+		}
 	}
 
 	out := session.NewEvent(ctx, ctx.InvocationID())
 	out.Routes = []string{route}
 	out.Output = ev
 	out.Content = &genai.Content{Parts: []*genai.Part{{
-		Text: fmt.Sprintf("decision=%s\nLLM diagnosis: %v", route, diagnosis),
+		Text: fmt.Sprintf("decision=%s (%s)\n%s", route, reason, formatHypotheses(d)),
 	}}}
 	if err := emit(out); err != nil {
 		return nil, err
@@ -564,9 +713,9 @@ func decideAction(ctx agent.Context, diagnosis any, emit func(*session.Event) er
 }
 ```
 
-`diagnosis`（LLM の出力）は引数で受け取っていますが、`switch` の条件には**一切登場しません**。人間に見せるためにイベントの `Content` に載せるだけです。「デプロイから30分以内でエラー率が5%を超えていたらロールバック」という判断は、LLM の気分ではなくコードが決めます。この関数は `agent.Context` のモックさえ用意すれば LLM 抜きで単体テストできますし、閾値を変えたときの影響もレビューできます。
+LLM の出力が影響しうるのは **「自動実行するか、人間に上げるか」の一方向だけ**です。LLM の仮説がポリシーと一致すれば予定どおり実行し、食い違えば `escalate` に落ちる。LLM が「新しい対処を思いつく」ことはできませんし、LLM が壊れても最悪 `escalate`（人を呼ぶ）に倒れます。これは前バージョンで「答えが出ていない点」として書いた二段構えの話を、そのままコードにしたものです。
 
-配線は `EdgeBuilder` で書きます。`AddRoutes` を使うとルート値と遷移先の対応がマップで一望できます。
+グラフの組み立ては `EdgeBuilder` で書きます。`AddRoutes` を使うとルート値と遷移先の対応がマップで一望できます。
 
 ```go
 eb := workflow.NewEdgeBuilder()
@@ -582,70 +731,327 @@ eb.AddRoutes(decideNode, map[string]workflow.Node{
 })
 ```
 
-### 承認ゲートを HITL で表現する
+### 承認を Slack で取る
 
-ロールバックは本番に変更を加えるので、L2（実行前に人間の承認が必要）として承認を挟みます。`ResumeOrRequestInput` の re-entry パターンをそのまま使えます。
+ロールバックは本番のトラフィックを動かすので、L2（実行前に人間の承認が必要）として承認を挟みます。ただし承認をターミナルで取るわけにはいきません。実際のインシデント対応は Slack で回っているので、承認も Slack で完結させたい。
+
+#### ADK の中断・再開プロトコル
+
+ADK の HITL がどういうプロトコルで動いているかを押さえると、Slack への橋渡しは素直に書けます。`cmd/launcher/console/hitl.go` を読むと分かるのですが、実体はこうです。
+
+1. ノードが `workflow.NewRequestInputEvent` を emit すると、`adk_request_input`（= `workflow.WorkflowInputFunctionCallName`）という名前の **FunctionCall パート**を持つイベントが流れ、その ID が `Event.LongRunningToolIDs` に載る。ワークフローは `NodeWaiting` に落ちる
+2. **同じ ID を持つ FunctionResponse** をユーザメッセージとして `Runner.Run` に流し込むと、待っていたノードが再開する
+
+つまりコンソールランチャーがやっているのは「1 を標準出力に出す」「標準入力を 2 に変換する」だけです。ここを Slack に差し替えればいい。
+
+```
+[ノード] --RequestInput--> [Slack にボタン付きメッセージを投稿] --中断--
+                                                                    |
+                                        ユーザがボタンを押す         |
+                                                                    v
+[ノード再開] <--FunctionResponse-- [/slack/interactions ハンドラ] <--
+```
+
+#### 中断側：Slack にボタンを投げる
+
+ノードは、中断する前に Slack へ承認依頼を投稿します。ボタンの `value` に「どのセッションのどの中断か」を JSON で埋め込んでおくのがポイントです。
 
 ```go
-func proposeRollback(ctx agent.Context, ev Evidence, emit func(*session.Event) error) (string, error) {
-	reply, err := workflow.ResumeOrRequestInput(ctx, emit, session.RequestInput{
-		InterruptID: "approve_rollback-" + ctx.InvocationID(),
-		Message: fmt.Sprintf("Roll back %s to the previous release? (deploy %s, %d min ago, error rate %.1f%%) [yes/no]",
-			ev.Service, ev.Deploy.LastDeployID, ev.Deploy.MinutesSinceDeploy, ev.Metrics.ErrorRate*100),
-	})
+type approvalRef struct {
+	SessionID   string `json:"sessionId"`
+	UserID      string `json:"userId"`
+	InterruptID string `json:"interruptId"`
+	Answer      string `json:"answer"`
+}
+```
+
+```go
+blocks := []slack.Block{
+	slack.NewSectionBlock(
+		slack.NewTextBlockObject(slack.MarkdownType, "*:rotating_light: "+headline+"*", false, false),
+		nil, nil),
+	slack.NewSectionBlock(
+		slack.NewTextBlockObject(slack.MarkdownType, "```"+strings.Join(details, "\n")+"```", false, false),
+		nil, nil),
+	slack.NewActionBlock("approval",
+		slack.NewButtonBlockElement("approve", ref("yes"),
+			slack.NewTextBlockObject(slack.PlainTextType, "Approve", false, false)),
+		slack.NewButtonBlockElement("deny", ref("no"),
+			slack.NewTextBlockObject(slack.PlainTextType, "Deny", false, false)),
+	),
+}
+
+_, _, err := s.api.PostMessage(s.channel,
+	slack.MsgOptionText(headline, false), // 通知欄用のフォールバック
+	slack.MsgOptionBlocks(blocks...),
+)
+```
+
+ノード本体はこうなります。**再開後（2回目の実行）は Slack に投げ直さない**よう `ResumedInput` で判定しているのが実装上の注意点です。re-entry モードではノードが頭から再実行されるので、素直に書くと承認依頼が二重投稿されます。
+
+```go
+func newProposeRollback(approver *slackApprover) workflow.EmittingFunctionFn[Evidence, string] {
+	return func(ctx agent.Context, ev Evidence, emit func(*session.Event) error) (string, error) {
+		interruptID := "approve_rollback-" + ctx.InvocationID()
+
+		// 1回目は Slack に承認を投げてから中断する。2回目（再開後）は
+		// ResumedInput から回答が返るので Slack には投げない。
+		if _, answered := ctx.ResumedInput(interruptID); !answered {
+			err := approver.Ask(ctx.Session().ID(), ctx.Session().UserID(), interruptID,
+				fmt.Sprintf("Roll back %s?", ev.Service),
+				[]string{
+					fmt.Sprintf("service           : %s", ev.Service),
+					fmt.Sprintf("current revision  : %s (%d min ago)", ev.Deploy.LatestRevision, ev.Deploy.MinutesSinceDeploy),
+					fmt.Sprintf("rollback target   : %s", ev.Deploy.PreviousRevision),
+					fmt.Sprintf("error rate        : %.1f%%", ev.Metrics.ErrorRate*100),
+					fmt.Sprintf("p99 latency       : %d ms", ev.Metrics.LatencyP99Ms),
+					fmt.Sprintf("top error         : %s", firstOr(ev.Logs.TopErrors, "(none)")),
+				})
+			if err != nil {
+				return "", err
+			}
+		}
+
+		reply, err := workflow.ResumeOrRequestInput(ctx, emit, session.RequestInput{
+			InterruptID: interruptID,
+			Message: fmt.Sprintf("Shift 100%% of Cloud Run traffic on %s from %s back to %s?",
+				ev.Service, ev.Deploy.LatestRevision, ev.Deploy.PreviousRevision),
+		})
+		if err != nil {
+			return "", err
+		}
+
+		decision, _ := reply.(map[string]any)
+		answer, _ := decision["answer"].(string)
+		approverName, _ := decision["approver"].(string)
+		if answer != "yes" {
+			return fmt.Sprintf("rollback declined by %s; escalating to on-call", approverName), nil
+		}
+		if err := shiftTraffic(ctx, ev.Service, ev.Deploy.PreviousRevision); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("shifted traffic on %s to %s (approved by %s)",
+			ev.Service, ev.Deploy.PreviousRevision, approverName), nil
+	}
+}
+```
+
+実際のロールバックは Cloud Run のトラフィックを直前のリビジョンに 100% 寄せる操作です。
+
+```go
+func shiftTraffic(ctx context.Context, service, revision string) error {
+	svc, err := run.NewService(ctx)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("run.NewService: %w", err)
 	}
-	if answer, _ := reply.(string); answer != "yes" {
-		return "rollback declined by operator; escalating to on-call", nil
+	name := fmt.Sprintf("projects/%s/locations/%s/services/%s", gcpProject, gcpRegion, service)
+	patch := &run.GoogleCloudRunV2Service{
+		Traffic: []*run.GoogleCloudRunV2TrafficTarget{{
+			Type:     "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION",
+			Revision: revision,
+			Percent:  100,
+		}},
 	}
-	return fmt.Sprintf("rolled back %s from %s", ev.Service, ev.Deploy.LastDeployID), nil
+	_, err = run.NewProjectsLocationsServicesService(svc).Patch(name, patch).Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("patching traffic on %s: %w", name, err)
+	}
+	return nil
 }
 ```
+
+#### 再開側：ボタン押下を FunctionResponse に変換する
+
+Slack の Interactivity Request URL に割り当てるハンドラです。署名を検証し、ボタンの `value` から相関情報を取り出し、バックグラウンドでワークフローを再開します。
 
 ```go
-rerun := true
-rollbackNode := workflow.NewEmittingFunctionNode("rollback", proposeRollback,
-	workflow.NodeConfig{RerunOnResume: &rerun})
-```
+func (s *slackResumeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "cannot read body", http.StatusBadRequest)
+		return
+	}
 
-自律性レベルがノードの `NodeConfig` として表現できる、というのがきれいだと思いました。L2 のまま運用したいノードには HITL を挟み、統計が溜まって L3 に上げられると判断したらそのノードから HITL を外す。**昇格が設定変更として表現できる**わけです。逆に「このノードはまだ L2」というのがコード上で一目で分かります。
+	// 署名検証。これを省くと誰でもロールバックを承認できてしまう。
+	verifier, err := slack.NewSecretsVerifier(r.Header, s.signingSecret)
+	if err != nil {
+		http.Error(w, "bad signature headers", http.StatusUnauthorized)
+		return
+	}
+	if _, err := verifier.Write(body); err != nil {
+		http.Error(w, "cannot verify", http.StatusInternalServerError)
+		return
+	}
+	if err := verifier.Ensure(); err != nil {
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
+	}
 
-さらに、この中断はプロセス再起動を跨いで復帰できます。深夜のインシデントで承認待ちのままエージェントのプロセスが死んでも、セッション履歴から状態を再構成して続きから再開できる、というのは運用上そこそこ大きい話です。
+	payload, err := parseInteractionPayload(body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if len(payload.ActionCallback.BlockActions) == 0 {
+		http.Error(w, "no block action", http.StatusBadRequest)
+		return
+	}
 
-### 実行結果
+	var ref approvalRef
+	if err := json.Unmarshal([]byte(payload.ActionCallback.BlockActions[0].Value), &ref); err != nil {
+		http.Error(w, "bad action value", http.StatusBadRequest)
+		return
+	}
 
-スタブ版を実際に動かした出力です。
+	// Slack は3秒以内の応答を要求するので、ワークフローの再開は
+	// バックグラウンドに回して即座に 200 を返す。
+	go s.resume(context.Background(), ref, payload.User.Name)
 
-```
-Agent -> decision=rollback
-LLM diagnosis: STUB DIAGNOSIS for:
-Incident evidence:
-{
-  "service": "checkout-api",
-  "metrics": {
-    "errorRate": 0.18,
-    "latencyP99Ms": 2400,
-    "cpuSaturation": 0.42
-  },
-  "logs": {
-    "topErrors": [
-      "panic: nil map write",
-      "context deadline exceeded"
-    ],
-    "volume": 18342
-  },
-  "deploy": {
-    "lastDeployId": "rel-2026-07-31.3",
-    "minutesSinceDeploy": 7
-  }
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"replace_original":true,"text":%q}`,
+		fmt.Sprintf("%s による判断: %s", payload.User.Name, ref.Answer))
 }
-Agent -> Roll back checkout-api to the previous release? (deploy rel-2026-07-31.3, 7 min ago, error rate 18.0%) [yes/no]
-User -> yes
-Agent -> rolled back checkout-api from rel-2026-07-31.3
 ```
 
-fan-out での並列収集、Join での待ち合わせ、state 経由での証拠の受け渡し、決定的なルーティング、HITL による中断と再開が一通り動いています。
+そして再開の本体。ここが Slack と ADK をつなぐ一点です。
+
+```go
+func (s *slackResumeServer) resume(ctx context.Context, ref approvalRef, approver string) {
+	msg := &genai.Content{
+		Role: string(genai.RoleUser),
+		Parts: []*genai.Part{{
+			FunctionResponse: &genai.FunctionResponse{
+				// ID は中断時の InterruptID と一致させる。ADK は
+				// この ID で待機中のノードを引き当てる。
+				ID:   ref.InterruptID,
+				Name: workflow.WorkflowInputFunctionCallName,
+				// unwrapResponse はキーが1個のときしかアンラップ
+				// しないので、必ず "payload" 単独にまとめる。
+				Response: map[string]any{
+					"payload": map[string]any{
+						"answer":   ref.Answer,
+						"approver": approver,
+					},
+				},
+			},
+		}},
+	}
+
+	for ev, err := range s.runner.Run(ctx, ref.UserID, ref.SessionID, msg, agent.RunConfig{}) {
+		if err != nil {
+			log.Printf("resume %s: %v", ref.InterruptID, err)
+			return
+		}
+		// ...
+	}
+}
+```
+
+#### ハマった点：`payload` は単独キーにする
+
+ここは実際に動かしてみて引っかかったところなので書いておきます。最初 `Response` をこう書いていました。
+
+```go
+Response: map[string]any{
+	"payload":  ref.Answer,   // "yes"
+	"approver": approver,     // "jedipunkz"
+},
+```
+
+これでワークフローは再開するのですが、ノード側で `reply.(string)` が外れて `answer != "yes"` となり、承認したのに `declined` に倒れました。原因は `workflow/persistence.go` の `unwrapResponse` にあります。
+
+```go
+// unwrapResponse extracts the original value from a FunctionResponse
+// payload. A sole single-key wrapper — {"result": v} (adk-python),
+// {"response": v} or {"payload": v} (adk-go) — is unwrapped, with
+// string values JSON-parsed when possible; anything else passes
+// through.
+func unwrapResponse(data map[string]any) any {
+	if len(data) != 1 {
+		return data
+	}
+	// ...
+}
+```
+
+**キーが1個のときしかアンラップしない**仕様でした。2キー以上にすると map がそのままノードに渡り、型アサーションが静かに外れます。エラーにならず「承認したのに拒否扱い」になるので、インシデント対応でこれをやると洒落になりません。承認者名も一緒に運びたい場合は `payload` の中に入れ子にします。
+
+```go
+Response: map[string]any{
+	"payload": map[string]any{
+		"answer":   ref.Answer,
+		"approver": approver,
+	},
+},
+```
+
+#### 実行形態：ランチャーではなく常駐サーバ
+
+Slack で承認を取る以上、`console` の対話ループは使いません。アラート受信とボタン押下という2つの入口を持つ常駐サーバとして動かします。
+
+```go
+r, err := runner.New(runner.Config{
+	AppName:           "incident_triage",
+	Agent:             root,
+	SessionService:    session.InMemoryService(),
+	AutoCreateSession: true,
+})
+if err != nil {
+	log.Fatalf("runner.New: %v", err)
+}
+
+mux := http.NewServeMux()
+// Datadog Webhook などのアラート受信口。ワークフローを起動する。
+mux.Handle("POST /alerts", &alertHandler{runner: r})
+// Slack の Interactivity Request URL。中断を再開する。
+mux.Handle("POST /slack/interactions", newSlackResumeServer(r))
+
+log.Printf("incident triage server listening on :8080")
+if err := http.ListenAndServe(":8080", mux); err != nil {
+	log.Fatalf("server: %v", err)
+}
+```
+
+本番では `session.InMemoryService()` ではなく `session/database` の `NewSessionService` を使います。ADK の中断がプロセス再起動を跨いで復帰できるのは、セッションが永続化されている場合の話だからです。逆に言えば、永続セッションさえ用意すれば**深夜3時に承認待ちのままエージェントのプロセスが死んでも、朝に誰かが Slack のボタンを押した時点で続きから再開できる**。承認待ち時間が数時間になりうる SRE の HITL では、これはかなり大きい性質だと思います。
+
+### 動作確認
+
+Datadog と Slack の実アカウントがないと通しでは動かせないので、この設計で一番の要である「FunctionResponse を送れば中断が再開するのか」だけを切り出して検証しました。ワークフローを1ノードだけにして、Slack ハンドラが送るのと同じ形の `FunctionResponse` を `Runner.Run` に流し込みます。
+
+```go
+// --- turn 1: start the run, expect it to pause and expose an interrupt ---
+for ev, err := range r.Run(ctx, userID, sessionID,
+	genai.NewContentFromText("checkout-api", genai.RoleUser), agent.RunConfig{}) {
+	// ev.LongRunningToolIDs に載った FunctionCall の ID を拾う
+}
+
+// --- turn 2: what the Slack interaction handler sends back ---
+resume := &genai.Content{
+	Role: string(genai.RoleUser),
+	Parts: []*genai.Part{{
+		FunctionResponse: &genai.FunctionResponse{
+			ID:   interruptID,
+			Name: workflow.WorkflowInputFunctionCallName,
+			Response: map[string]any{
+				"payload": map[string]any{
+					"answer":   "yes",
+					"approver": "jedipunkz",
+				},
+			},
+		},
+	}},
+}
+```
+
+出力です。
+
+```
+PAUSED  name=adk_request_input id=approve_rollback-e-5f2626af-5663-44eb-97eb-440402b547ac message=Roll back checkout-api?
+RESUMED output="rolled back, approved by jedipunkz"
+OK: FunctionResponse-by-interrupt-ID resumes the paused node
+```
+
+中断 ID をボタンに埋めて、押されたら同じ ID の `FunctionResponse` を投げ返す。Slack 連携で書くべきコードは本質的にこれだけでした。ADK 側が「中断は FunctionCall、再開は FunctionResponse」という汎用的な形に落としてくれているので、Slack に限らず PagerDuty でも自前の Web UI でも同じ構造で書けるはずです。
 
 ### 応用を考えるうえで気になっている点
 
@@ -653,7 +1059,9 @@ fan-out での並列収集、Join での待ち合わせ、state 経由での証�
 
 **閾値をどこで管理するか。** 上の `decideAction` は閾値がハードコードされています。実際には「サービスごとにエラー率の閾値が違う」「エラーバジェットの消費速度で判断したい」という話になるので、ポリシーは外部設定に出したくなります。ただし外部設定にすると今度は「レビューできる」という利点が薄れる可能性があり、どこで線を引くかは考えどころです。
 
-**LLM を判断に使いたくなる領域は必ずある。** 「デプロイ直後にエラー率が上がった」は決定的に書けますが、「複数サービスにまたがる連鎖障害の起点はどこか」は決定的に書けません。前者は Go、後者は LLM、という分割は理屈では分かるのですが、実際のインシデントはその中間にあるものが多いです。この場合、LLM に判断させたうえで**その判断を実行前にコードで検証する**（提案されたアクションがホワイトリストに入っているか、blast radius が閾値以下か）という二段構えになるのかもしれません。グラフで書くなら「LLM ノード → 検証ノード（Go）→ ルーティング」という形です。
+**「仮説が一致したら実行してよい」と言えるのか。** 今回の `decideAction` は、ポリシーの前提と LLM の最有力仮説が一致したときだけ自動実行に進みます。安全側に倒れる設計にはなっていますが、LLM の仮説が「証拠から素直に導ける結論」をなぞっているだけなら、検証としてはほとんど機能していない可能性があります（ポリシーも仮説も同じ証拠を見ているので、相関して当然とも言える）。本当に検証として効いているかは、過去インシデントを流して「ポリシーは rollback と言ったが LLM が別カテゴリを挙げた」ケースがどれだけ出るかを測らないと分かりません。ここは L2→L3 の昇格判断に使う統計とセットで見るべきところだと思っています。
+
+**確信度の閾値をどう決めるか。** `minTopConfidence = 0.6` も完全に勘です。LLM が返す confidence がキャリブレートされている保証はどこにもないので、この数字に意味を持たせるには実データでの分布を見る必要があります。
 
 **動的ノードとのバランス。** インシデント対応は「調べて、分からなかったらもう少し調べる」という反復が本質なので、完全に静的なグラフでは表現しきれない部分があります。`NewDynamicNode` で調査ループを書き、確定した対処だけを静的グラフに戻す、というハイブリッドが現実解な気がしていますが、そうすると動的ノードの中身が結局ブラックボックスになるジレンマがあります。
 
@@ -666,7 +1074,8 @@ ADK Go 2.0 のグラフワークフローエンジンを、公式サンプルを
 - ADK の基本は「モデル + 指示 + ツール」で、Go の型からツールのスキーマが自動生成されるのが気持ちいい
 - 2.0 の中心はグラフワークフローエンジン。ノードとエッジで書き、fan-out / fan-in / 条件分岐 / HITL / リトライがフレームワーク側の機能になった
 - ルーティングは LLM ではなくエンジンが行う。LLM は分類結果を1単語返すだけで、どこに飛ぶかはエッジの静的な宣言で決まる
-- この分割は SRE のインシデント対応エージェントにそのまま効きそう。「LLM は診断、Go は判断」に分けると、実行しうる操作がレビューでき、判断が再現でき、自律性レベルがノード設定として表現できる
+- この分割は SRE のインシデント対応エージェントにそのまま効きそう。「LLM は仮説を3つ立てるところまで、Go が最終判断」に分けると、実行しうる操作がレビューでき、判断が再現でき、自律性レベルがノード設定として表現できる
+- HITL は「中断は FunctionCall、再開は同じ ID の FunctionResponse」という汎用的な形なので、Slack のボタンに橋渡しするコードはごく短い。永続セッションと組み合わせると、承認待ちのままプロセスが死んでも復帰できる
 
 「LLM に全部任せない」というのは一見後退に見えますが、本番環境に手を入れるエージェントを作る文脈では、むしろこれが前に進むための条件だと思います。LLM に任せる範囲を絞れば絞るほど、その範囲について統計が取れて、安心して自律度を上げられる。ADK Go 2.0 のグラフは、その「絞る」作業をフレームワークの構造として支援してくれている、というのが読んでみた感想でした。
 
@@ -678,3 +1087,7 @@ ADK Go 2.0 のグラフワークフローエンジンを、公式サンプルを
 - [ADK Go 2.0 migration guide (README-v2.md)](https://github.com/google/adk-go/blob/main/README-v2.md)
 - [ADK Documentation](https://google.github.io/adk-docs/)
 - [Google が提唱する AI in SRE とは何か](/post/ai-sre-google/)
+- [Datadog Metrics Query API](https://docs.datadoghq.com/api/latest/metrics/)
+- [Datadog Logs Aggregate API](https://docs.datadoghq.com/api/latest/logs/)
+- [Cloud Run Admin API v2](https://cloud.google.com/run/docs/reference/rest)
+- [Slack: Handling user interaction in your Slack apps](https://api.slack.com/interactivity/handling)
