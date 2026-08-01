@@ -1,6 +1,6 @@
 ---
 title: "ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える"
-description: "Google が公開した ADK Go 2.0 の新しいグラフワークフローエンジンを公式サンプルコードを実際に動かしながら読み解き、Datadog MCP・Cloud Run・Slack を使ったインシデント対応エージェントに応用してみます"
+description: "Google が公開した ADK Go 2.0 の新しいグラフワークフローエンジンを公式サンプルコードを実際に動かしながら読み解き、インシデント対応エージェントにどう応用できるかを考えます"
 date: 2026-07-31T12:00:00+09:00
 Categories: ["AI", "Go", "SRE", "Agent"]
 draft: false
@@ -16,13 +16,13 @@ draft: false
 // This is the canonical "LLM as the brain, engine does the routing" pattern.
 ```
 
-LLM は「脳」であって「ルータ」ではない、分岐そのものはエンジン（＝決定的なコード）が担う、という設計思想です。これは SRE のインシデント対応エージェントを考える上でかなり本質的な話に見えたので、リポジトリを実際に clone して公式サンプルを読み、さらに自分でインシデントトリアージのワークフローを書いてビルド・実行するところまでやってみました。観測は Datadog の公式 MCP サーバ、デプロイ先は Google Cloud Run、承認は Slack という構成にしています。
+LLM は「脳」であって「ルータ」ではない、分岐そのものはエンジン（＝決定的なコード）が担う、という設計思想です。これは SRE のインシデント対応エージェントを考える上でかなり本質的な話に見えたので、リポジトリを実際に clone して公式サンプルを読み、さらに自分でインシデントトリアージのワークフローを書いてビルド・実行するところまでやってみました。
 
 この記事は以下の三本柱で構成します。
 
 1. ADK の基本（そもそも ADK でエージェントをどう書くのか）
 2. 2.0 の新機能（グラフワークフローエンジンを中心に）
-3. SRE Agent における応用（Datadog MCP / Cloud Run / Slack で実際に動くコードを書いてみた）
+3. SRE Agent における応用（実際に動くコードを書いてみた）
 
 なお、記事中のコードはすべて [google/adk-go](https://github.com/google/adk-go) の実際のサンプルか、自分で書いて `go vet` とビルド・実行を通したものです。
 
@@ -266,7 +266,7 @@ START ─┬─> RenewableEnergyResearcher ─┐
        └─> CarbonCaptureResearcher ───┘   (Join)   (func)      (LLM)
 ```
 
-ノードのつなぎ方は `EdgeBuilder` の fluent API で書けます。
+配線は `EdgeBuilder` の fluent API で書けます。
 
 ```go
 eb := workflow.NewEdgeBuilder()
@@ -418,188 +418,155 @@ var _ agent.Context = (*fakeContext)(nil)
 
 以前 [Google が提唱する AI in SRE とは何か](/post/ai-sre-google/) という記事で、SRE 自律性の5段階モデル（L0〜L4）を紹介しました。L2 は「AI が実行前に人間の明示的承認を必要とする」段階、L3 は「十分に定義されたシナリオで AI が独立実行する」段階です。
 
-このモデルを実装に落とすときに困るのが、**「十分に定義されたシナリオ」をどこに書くのか**という問題です。全部プロンプトに書いて LLM に任せると、同じアラートで毎回違う判断が出うるし、「このエージェントは何をしうるのか」をレビューできないし、昇格ゲート（L2→L3）の判定に必要な統計も取れません。
+このモデルを実装に落とすときに困るのが、**「十分に定義されたシナリオ」をどこに書くのか**という問題です。全部プロンプトに書いて LLM に任せると、
 
-ADK Go 2.0 のグラフは、この境界を**構造として**引けます。LLM は大量の非構造データを読んで所見を書き、Go のコードがどの Runbook を実行するか決める。実行しうる操作の全集合はグラフのエッジとして静的に宣言されているので、コードレビューで確認できます。
+- 同じアラートで毎回違う判断をする可能性がある（＝再現性がない）
+- 「このエージェントは何をしうるのか」をレビューできない
+- 昇格ゲート（L2→L3）の判定に必要な統計を取るにも、そもそも判断の分布が安定しない
+
+という状態になります。インシデント対応で本番環境に変更を加える以上、ここは譲れないところです。
+
+ADK Go 2.0 のグラフは、この境界を**構造として**引けます。
+
+- **LLM がやること**: 大量の非構造データ（ログ、メトリクス、変更履歴）を読んで所見を書く
+- **Go のコードがやること**: どの Runbook を実行するか決める、承認を挟むか決める
+
+そして実行しうる操作の全集合はグラフのエッジとして静的に宣言されているので、コードレビューで確認できます。
 
 ### インシデントトリアージのワークフローを書いてみた
 
-観測は Datadog、デプロイ先は Google Cloud Run、承認は Slack という構成で書いてみました。以下のコードは `go vet` とビルドを通しています。
+実際に書いてみました。以下は `go vet` を通し、実際に実行して動作確認したコードです（LLM 部分をスタブに差し替えた版で end-to-end の動作を確認しています）。
+
+グラフはこうなります。
 
 ```mermaid
 flowchart LR
-  S((START)) --> M[datadog_metrics]
-  S --> L[datadog_logs]
-  S --> D[cloudrun_revisions]
+  S((START)) --> M[fetch_metrics]
+  S --> L[fetch_logs]
+  S --> D[fetch_deploys]
   M --> G[gather<br/>JoinNode]
   L --> G
   D --> G
   G --> E[build_evidence<br/>Go]
-  E --> X[diagnose<br/>LLM: 仮説を3つ]
-  X --> C[decide_action<br/>Go: 最終判断]
-  C -->|rollback| R[rollback<br/>Slack 承認]
+  E --> X[diagnose<br/>LLM]
+  X --> C[decide_action<br/>Go]
+  C -->|rollback| R[propose_rollback<br/>HITL]
   C -->|scale_out| SC[scale_out]
   C -->|escalate| P[page_oncall]
 ```
 
-**LLM ノード `diagnose` は分岐の手前にいるが、分岐の判断材料そのものではない**、というのがこのグラフの読みどころです。
+ポイントは、**LLM ノード `diagnose` は分岐の手前にいるが、分岐の判断材料ではない**ことです。`decide_action` は LLM の出力ではなく、`build_evidence` が session state に保存した生の証拠データを読んで決めます。
 
-#### 収集：Datadog 公式 MCP をグラフのノードから直接呼ぶ
-
-Datadog は[マネージドのリモート MCP サーバ](https://docs.datadoghq.com/mcp_server/)を提供していて、`get_datadog_metric` や `analyze_datadog_logs` といったツールが使えます。当初は Datadog の Go SDK を直接叩いていたのですが、MCP に寄せたら SDK 依存がまるごと不要になりました。
-
-ここで悩ましいのは、MCP は本来「LLM にツールを使わせる」ための仕組みだという点です。素直に `llmagent.Config.Tools` に渡すと、いつどのツールをどんな引数で呼ぶかは LLM 任せになります。それはこの記事で書いてきた設計方針と正面から衝突します。
-
-結論から言うと、**MCP ツールを LLM に渡さずグラフのノードから直接呼ぶ**ことができました。ADK の MCP ツールは `Run(ctx agent.Context, args any) (map[string]any, error)` を実装しているので、そこを直接叩けばいいだけです。
+まず証拠を集めるフェーズ。外部 API を叩くのでリトライとタイムアウトを付けます。
 
 ```go
-const datadogMCPEndpoint = "https://mcp.datadoghq.com/v1/mcp"
+fetchCfg := workflow.NodeConfig{
+	RetryConfig: workflow.DefaultRetryConfig(),
+	Timeout:     15 * time.Second,
+}
+metricsNode := workflow.NewFunctionNode(nodeMetrics, fetchMetrics, fetchCfg)
+logsNode := workflow.NewFunctionNode(nodeLogs, fetchLogs, fetchCfg)
+deploysNode := workflow.NewFunctionNode(nodeDeploys, fetchDeploys, fetchCfg)
+```
 
-// これを LlmAgent に渡すと「LLM が好きに Datadog を叩く」形になるが、
-// 今回は渡さない。グラフのノードから直接呼ぶ。
-func newDatadogToolset() (tool.Toolset, error) {
-	return mcptoolset.New(mcptoolset.Config{
-		Endpoint: datadogMCPEndpoint,
-		Auth:     auth.StaticToken(os.Getenv("DD_MCP_TOKEN")),
-	})
+`fetchMetrics` などは普通の Go 関数です。実運用では Cloud Monitoring や Prometheus を叩く場所になります。
+
+```go
+type Metrics struct {
+	ErrorRate     float64 `json:"errorRate"`
+	LatencyP99Ms  int     `json:"latencyP99Ms"`
+	CPUSaturation float64 `json:"cpuSaturation"`
 }
 
-// callMCP は toolset から名前でツールを引き当てて、その場で実行する。
-// LLM は一切関与しない。呼ぶツールも引数も Go のコードが決める。
-func callMCP(ctx agent.Context, ts tool.Toolset, name string, args map[string]any) (map[string]any, error) {
-	tools, err := ts.Tools(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("listing datadog mcp tools: %w", err)
-	}
-	for _, t := range tools {
-		if t.Name() != name {
-			continue
-		}
-		r, ok := t.(runnableTool) // Run(agent.Context, any) (map[string]any, error)
-		if !ok {
-			return nil, fmt.Errorf("mcp tool %q is not directly runnable", name)
-		}
-		return r.Run(ctx, args)
-	}
-	return nil, fmt.Errorf("datadog mcp tool %q not found", name)
+func fetchMetrics(_ agent.Context, service string) (Metrics, error) {
+	// 実運用では Cloud Monitoring / Prometheus を叩く
+	return Metrics{ErrorRate: 0.18, LatencyP99Ms: 2400, CPUSaturation: 0.42}, nil
 }
 ```
 
-あとは普通の `FunctionNode` の中から呼ぶだけです。
+3つの収集を並列に走らせて `JoinNode` で待ち合わせ、`build_evidence` で1つの構造体にまとめます。ここで **session state に生データを保存しておく**のが後で効きます。
 
 ```go
-out, err := callMCP(ctx, ts, "get_datadog_metric", map[string]any{
-	"query": fmt.Sprintf("sum:trace.http.request.errors{service:%s}.as_rate()", service),
-	"from":  from,
-	"to":    to,
+func buildEvidence(ctx agent.Context, gathered map[string]any) (string, error) {
+	ev := Evidence{Service: "checkout-api"}
+	var err error
+	if ev.Metrics, err = decodeInto[Metrics](gathered[nodeMetrics]); err != nil {
+		return "", fmt.Errorf("decoding metrics: %w", err)
+	}
+	if ev.Logs, err = decodeInto[LogDigest](gathered[nodeLogs]); err != nil {
+		return "", fmt.Errorf("decoding logs: %w", err)
+	}
+	if ev.Deploy, err = decodeInto[DeployInfo](gathered[nodeDeploys]); err != nil {
+		return "", fmt.Errorf("decoding deploys: %w", err)
+	}
+
+	// 決定ノードが後から読めるように state に置く。LLM の出力ではなく
+	// この生データが、あとで分岐を決める唯一の根拠になる。
+	if err := ctx.State().Set(stateEvidence, ev); err != nil {
+		return "", fmt.Errorf("saving evidence: %w", err)
+	}
+
+	b, err := json.MarshalIndent(ev, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return "Incident evidence:\n" + string(b), nil
+}
+```
+
+LLM には診断だけをさせます。ここで **「アクションを提案するな」と明示している**のが今回の肝です。
+
+```go
+diagnoser, err := llmagent.New(llmagent.Config{
+	Name:        "diagnose",
+	Model:       model,
+	Description: "summarises incident evidence for a human responder",
+	Instruction: "Given the incident evidence, write at most three sentences describing the " +
+		"most likely cause. Do not propose an action; the runbook is chosen elsewhere.",
 })
 ```
 
-MCP 経由にすると認証も接続管理も ADK 側が持ってくれる一方、戻り値が `map[string]any` になって型が失われます。なので**ノードの境界で型付き構造体に落とし**、以降は `Evidence` として扱う形にしました。ADK には `workflow.NewToolNode` というツールをそのままノード化するコンストラクタもあり、生の出力を素通しでよければそちらのほうが短く書けます。今回は「証拠は型で持ちたい」ので `FunctionNode` の中で呼ぶ形を選びました。
-
-なお、各ツールの引数スキーマはサーバが公開しているものに従う必要があります。`Toolset.Tools()` で取れる `Declaration()` を起動時にダンプして確認するのが確実です。
-
-デプロイ情報は Cloud Run のリビジョン一覧から取ります。最新リビジョンの作成時刻から「デプロイ後何分か」、2番目から「ロールバック先」を得ます。この2つが後の判断の要になります。
+そして決定ノード。これが全体で一番重要な部分です。
 
 ```go
-resp, err := run.NewProjectsLocationsServicesRevisionsService(svc).List(parent).Context(ctx).Do()
-// resp.Revisions は作成時刻の新しい順。[0] が現行、[1] がロールバック先。
-```
+func decideAction(ctx agent.Context, diagnosis any, emit func(*session.Event) error) (any, error) {
+	raw, err := ctx.State().Get(stateEvidence)
+	if err != nil {
+		return nil, fmt.Errorf("reading evidence: %w", err)
+	}
+	ev, err := decodeInto[Evidence](raw)
+	if err != nil {
+		return nil, fmt.Errorf("decoding evidence: %w", err)
+	}
 
-3つの収集を `JoinNode` で待ち合わせ、`build_evidence` で1つの `Evidence` にまとめます。ここで **session state に生データを保存しておく**のが後で効きます。
-
-```go
-// 決定ノードが後から読めるように state に置く。LLM の出力ではなく
-// この生データが、あとで分岐を決める唯一の根拠になる。
-if err := ctx.State().Set(stateEvidence, ev); err != nil {
-	return "", fmt.Errorf("saving evidence: %w", err)
-}
-```
-
-#### 診断：仮説を3つ立てさせる
-
-人間の SRE がインシデント時にやっていることを言語化すると、「証拠を見て、ありうる原因をいくつか思い浮かべて、証拠と照らして絞り込む」という作業になります。いきなり結論を1つ出させるより、明示的に複数の仮説を立てさせてから絞り込ませるほうが、思考の過程が残るぶん人間がレビューしやすい。
-
-`llmagent.Config` には `OutputSchema` があるので、出力形式を強制できます。
-
-```go
-"hypotheses": {
-	Type:     genai.TypeArray,
-	MinItems: genai.Ptr(int64(3)),
-	MaxItems: genai.Ptr(int64(3)),
-	Items: &genai.Schema{
-		Type: genai.TypeObject,
-		Properties: map[string]*genai.Schema{
-			"id":    {Type: genai.TypeString},
-			"title": {Type: genai.TypeString},
-			"category": {
-				Type: genai.TypeString,
-				Enum: []string{catBadDeploy, catResource, catDependency, catUnknown},
-			},
-			"confidence": {Type: genai.TypeNumber},
-			"evidence":   {Type: genai.TypeString},
-		},
-		Required: []string{"id", "title", "category", "confidence", "evidence"},
-	},
-},
-```
-
-`category` を enum で縛っているのが地味に重要で、これによって LLM の出力が**下流の Go コードが理解できる語彙の中に必ず収まります**。自由記述だと後段で文字列マッチする羽目になり、routing/llm サンプルと同じ「正規化とフォールバック」の問題が発生します。スキーマで縛れるならそちらのほうが確実です。
-
-プロンプト側では3つ立てて最後に絞り込む手順を明示し、最後にこう書いています。
-
-```
-Do NOT propose a remediation action. The runbook is chosen by the workflow, not by you.
-```
-
-**対処の提案は LLM の仕事ではない**。LLM がやるのは「原因の候補を3つ挙げて1つに絞る」ところまでです。
-
-#### 判断：ポリシー判定とその検証、という二段構え
-
-決定ノードが全体で一番重要な部分です。1段目で証拠だけを見た決定的なポリシー判定を行い、2段目で LLM の仮説を「検証」として使います。
-
-```go
-// policyRoute は証拠だけを見て候補となる対処を決める。LLM は一切関与しない。
-// 併せて「その対処が前提としている障害カテゴリ」を返す。
-func policyRoute(ev Evidence) (route, assumedCategory string) {
+	// ポリシーは全て決定的な Go のコード。LLM の所見はイベントに載せて
+	// 人間に見せるが、分岐の判断には使わない。
+	var route string
 	switch {
-	case ev.Deploy.MinutesSinceDeploy <= 30 && ev.Deploy.PreviousRevision != "" && ev.Metrics.ErrorRate > 0.05:
-		return routeRollback, catBadDeploy
+	case ev.Deploy.MinutesSinceDeploy <= 30 && ev.Metrics.ErrorRate > 0.05:
+		route = routeRollback
 	case ev.Metrics.CPUSaturation > 0.85 && ev.Metrics.ErrorRate <= 0.05:
-		return routeScaleOut, catResource
+		route = routeScaleOut
 	default:
-		return routeEscalate, catUnknown
+		route = routeEscalate
 	}
+
+	out := session.NewEvent(ctx, ctx.InvocationID())
+	out.Routes = []string{route}
+	out.Output = ev
+	out.Content = &genai.Content{Parts: []*genai.Part{{
+		Text: fmt.Sprintf("decision=%s\nLLM diagnosis: %v", route, diagnosis),
+	}}}
+	if err := emit(out); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 ```
 
-```go
-// 1段目：証拠だけを見た決定的なポリシー判定。
-route, assumed := policyRoute(ev)
+`diagnosis`（LLM の出力）は引数で受け取っていますが、`switch` の条件には**一切登場しません**。人間に見せるためにイベントの `Content` に載せるだけです。「デプロイから30分以内でエラー率が5%を超えていたらロールバック」という判断は、LLM の気分ではなくコードが決めます。この関数は `agent.Context` のモックさえ用意すれば LLM 抜きで単体テストできますし、閾値を変えたときの影響もレビューできます。
 
-// 2段目：LLM の仮説を「検証」に使う。ポリシーの前提と最有力仮説が
-// 食い違う、あるいは確信度が低い場合は自動実行せず人間に上げる。
-if top, ok := d.Top(); ok && route != routeEscalate {
-	switch {
-	case top.Category != assumed:
-		route = routeEscalate
-		reason = fmt.Sprintf("policy assumed %s but top hypothesis is %s", assumed, top.Category)
-	case top.Confidence < minTopConfidence:
-		route = routeEscalate
-		reason = fmt.Sprintf("top hypothesis confidence %.2f below %.2f", top.Confidence, minTopConfidence)
-	}
-}
-
-out := session.NewEvent(ctx, ctx.InvocationID())
-out.Routes = []string{route}
-out.Output = ev
-```
-
-診断 JSON のパースに失敗した場合や `topId` がどの仮説にも一致しない場合も `escalate` に落としています。
-
-LLM の出力が影響しうるのは **「自動実行するか、人間に上げるか」の一方向だけ**です。LLM が「新しい対処を思いつく」ことはできませんし、LLM が壊れても最悪 `escalate`（人を呼ぶ）に倒れます。
-
-グラフの組み立ては `EdgeBuilder` で書きます。`AddRoutes` を使うとルート値と遷移先の対応がマップで一望できます。
+配線は `EdgeBuilder` で書きます。`AddRoutes` を使うとルート値と遷移先の対応がマップで一望できます。
 
 ```go
 eb := workflow.NewEdgeBuilder()
@@ -615,96 +582,70 @@ eb.AddRoutes(decideNode, map[string]workflow.Node{
 })
 ```
 
-### 承認を Slack で取る
+### 承認ゲートを HITL で表現する
 
-ロールバックは本番のトラフィックを動かすので、L2（実行前に人間の承認が必要）として承認を挟みます。ただし実際のインシデント対応は Slack で回っているので、承認もそこで完結させたい。
-
-`cmd/launcher/console/hitl.go` を読むと、ADK の中断・再開が汎用的な形に落ちていることが分かります。
-
-1. ノードが `workflow.NewRequestInputEvent` を emit すると、`adk_request_input`（= `workflow.WorkflowInputFunctionCallName`）という名前の **FunctionCall パート**を持つイベントが流れ、ワークフローが停止する
-2. **同じ ID を持つ FunctionResponse** をユーザメッセージとして `Runner.Run` に流し込むと、待っていたノードが再開する
-
-コンソールランチャーがやっているのは「1 を標準出力に出す」「標準入力を 2 に変換する」だけです。ここを Slack に差し替えます。中断側は Block Kit のボタンを投稿し、その `value` に「どのセッションのどの中断か」を JSON で埋め込んでおきます。再開側は Slack の Interactivity Request URL でそれを受け取り、署名を検証してから `FunctionResponse` に変換します。
+ロールバックは本番に変更を加えるので、L2（実行前に人間の承認が必要）として承認を挟みます。`ResumeOrRequestInput` の re-entry パターンをそのまま使えます。
 
 ```go
-msg := &genai.Content{
-	Role: string(genai.RoleUser),
-	Parts: []*genai.Part{{
-		FunctionResponse: &genai.FunctionResponse{
-			// ID は中断時の InterruptID と一致させる。ADK は
-			// この ID で待機中のノードを引き当てる。
-			ID:   ref.InterruptID,
-			Name: workflow.WorkflowInputFunctionCallName,
-			Response: map[string]any{
-				"payload": map[string]any{
-					"answer":   ref.Answer,
-					"approver": approver,
-				},
-			},
-		},
-	}},
-}
-
-// あとは中断していたセッションに流し込むだけ。
-for ev, err := range s.runner.Run(ctx, ref.UserID, ref.SessionID, msg, agent.RunConfig{}) { /* ... */ }
-```
-
-ノード側で1つだけ注意点があります。re-entry モードではノードが頭から再実行されるので、素直に書くと承認依頼が Slack に二重投稿されます。`ResumedInput` で「もう回答済みか」を見て弾きます。
-
-```go
-// 1回目は Slack に承認を投げてから中断する。2回目（再開後）は
-// ResumedInput から回答が返るので Slack には投げない。
-if _, answered := ctx.ResumedInput(interruptID); !answered {
-	if err := approver.Ask(ctx.Session().ID(), ctx.Session().UserID(), interruptID, headline, details); err != nil {
+func proposeRollback(ctx agent.Context, ev Evidence, emit func(*session.Event) error) (string, error) {
+	reply, err := workflow.ResumeOrRequestInput(ctx, emit, session.RequestInput{
+		InterruptID: "approve_rollback-" + ctx.InvocationID(),
+		Message: fmt.Sprintf("Roll back %s to the previous release? (deploy %s, %d min ago, error rate %.1f%%) [yes/no]",
+			ev.Service, ev.Deploy.LastDeployID, ev.Deploy.MinutesSinceDeploy, ev.Metrics.ErrorRate*100),
+	})
+	if err != nil {
 		return "", err
 	}
-}
-
-reply, err := workflow.ResumeOrRequestInput(ctx, emit, session.RequestInput{
-	InterruptID: interruptID,
-	Message:     "...",
-})
-```
-
-#### ハマった点：`payload` は単独キーにする
-
-実際に動かして引っかかったので書いておきます。最初 `Response` をこう書いていました。
-
-```go
-Response: map[string]any{
-	"payload":  ref.Answer,   // "yes"
-	"approver": approver,     // "jedipunkz"
-},
-```
-
-ワークフローは再開するのですが、ノード側で `reply.(string)` が外れて `answer != "yes"` となり、**承認したのに `declined` に倒れました**。原因は `workflow/persistence.go` の `unwrapResponse` です。
-
-```go
-// A sole single-key wrapper — {"result": v} (adk-python),
-// {"response": v} or {"payload": v} (adk-go) — is unwrapped
-func unwrapResponse(data map[string]any) any {
-	if len(data) != 1 {
-		return data
+	if answer, _ := reply.(string); answer != "yes" {
+		return "rollback declined by operator; escalating to on-call", nil
 	}
-	// ...
+	return fmt.Sprintf("rolled back %s from %s", ev.Service, ev.Deploy.LastDeployID), nil
 }
 ```
 
-**キーが1個のときしかアンラップしない**仕様でした。2キー以上にすると map がそのままノードに渡り、型アサーションが静かに外れます。エラーにならないのが厄介で、承認したのに拒否扱いになる。承認者名も一緒に運びたい場合は上のコードのように `payload` の中に入れ子にします。
-
-なお Slack で承認を取る以上、`console` の対話ループは使いません。アラート受信（`/alerts`）とボタン押下（`/slack/interactions`）の2つの入口を持つ常駐サーバとして `runner.New` を直接使います。セッションサービスも `session.InMemoryService()` ではなく `session/database` を使います。ADK の中断がプロセス再起動を跨いで復帰できるのは永続化されている場合の話で、逆に言えば永続セッションさえあれば**深夜3時に承認待ちのままプロセスが死んでも、朝に誰かがボタンを押した時点で続きから再開できる**。承認待ちが数時間になりうる SRE の HITL では、これはかなり大きい性質だと思います。
-
-### 動作確認
-
-Datadog と Slack の実アカウントがないと通しでは動かせないので、設計の要である「FunctionResponse を送れば中断が再開するのか」だけを切り出して検証しました。ワークフローを1ノードにして、Slack ハンドラが送るのと同じ形の `FunctionResponse` を `Runner.Run` に流し込みます。
-
-```
-PAUSED  name=adk_request_input id=approve_rollback-e-5f2626af-... message=Roll back checkout-api?
-RESUMED output="rolled back, approved by jedipunkz"
-OK: FunctionResponse-by-interrupt-ID resumes the paused node
+```go
+rerun := true
+rollbackNode := workflow.NewEmittingFunctionNode("rollback", proposeRollback,
+	workflow.NodeConfig{RerunOnResume: &rerun})
 ```
 
-中断 ID をボタンに埋めて、押されたら同じ ID の `FunctionResponse` を投げ返す。Slack 連携で書くべきコードは本質的にこれだけでした。ADK が「中断は FunctionCall、再開は FunctionResponse」という汎用的な形に落としてくれているので、PagerDuty でも自前の Web UI でも同じ構造で書けるはずです。
+自律性レベルがノードの `NodeConfig` として表現できる、というのがきれいだと思いました。L2 のまま運用したいノードには HITL を挟み、統計が溜まって L3 に上げられると判断したらそのノードから HITL を外す。**昇格が設定変更として表現できる**わけです。逆に「このノードはまだ L2」というのがコード上で一目で分かります。
+
+さらに、この中断はプロセス再起動を跨いで復帰できます。深夜のインシデントで承認待ちのままエージェントのプロセスが死んでも、セッション履歴から状態を再構成して続きから再開できる、というのは運用上そこそこ大きい話です。
+
+### 実行結果
+
+スタブ版を実際に動かした出力です。
+
+```
+Agent -> decision=rollback
+LLM diagnosis: STUB DIAGNOSIS for:
+Incident evidence:
+{
+  "service": "checkout-api",
+  "metrics": {
+    "errorRate": 0.18,
+    "latencyP99Ms": 2400,
+    "cpuSaturation": 0.42
+  },
+  "logs": {
+    "topErrors": [
+      "panic: nil map write",
+      "context deadline exceeded"
+    ],
+    "volume": 18342
+  },
+  "deploy": {
+    "lastDeployId": "rel-2026-07-31.3",
+    "minutesSinceDeploy": 7
+  }
+}
+Agent -> Roll back checkout-api to the previous release? (deploy rel-2026-07-31.3, 7 min ago, error rate 18.0%) [yes/no]
+User -> yes
+Agent -> rolled back checkout-api from rel-2026-07-31.3
+```
+
+fan-out での並列収集、Join での待ち合わせ、state 経由での証拠の受け渡し、決定的なルーティング、HITL による中断と再開が一通り動いています。
 
 ### 応用を考えるうえで気になっている点
 
@@ -712,9 +653,7 @@ OK: FunctionResponse-by-interrupt-ID resumes the paused node
 
 **閾値をどこで管理するか。** 上の `decideAction` は閾値がハードコードされています。実際には「サービスごとにエラー率の閾値が違う」「エラーバジェットの消費速度で判断したい」という話になるので、ポリシーは外部設定に出したくなります。ただし外部設定にすると今度は「レビューできる」という利点が薄れる可能性があり、どこで線を引くかは考えどころです。
 
-**「仮説が一致したら実行してよい」と言えるのか。** 今回の `decideAction` は、ポリシーの前提と LLM の最有力仮説が一致したときだけ自動実行に進みます。安全側に倒れる設計にはなっていますが、LLM の仮説が「証拠から素直に導ける結論」をなぞっているだけなら、検証としてはほとんど機能していない可能性があります（ポリシーも仮説も同じ証拠を見ているので、相関して当然とも言える）。本当に検証として効いているかは、過去インシデントを流して「ポリシーは rollback と言ったが LLM が別カテゴリを挙げた」ケースがどれだけ出るかを測らないと分かりません。ここは L2→L3 の昇格判断に使う統計とセットで見るべきところだと思っています。
-
-**確信度の閾値をどう決めるか。** `minTopConfidence = 0.6` も完全に勘です。LLM が返す confidence がキャリブレートされている保証はどこにもないので、この数字に意味を持たせるには実データでの分布を見る必要があります。
+**LLM を判断に使いたくなる領域は必ずある。** 「デプロイ直後にエラー率が上がった」は決定的に書けますが、「複数サービスにまたがる連鎖障害の起点はどこか」は決定的に書けません。前者は Go、後者は LLM、という分割は理屈では分かるのですが、実際のインシデントはその中間にあるものが多いです。この場合、LLM に判断させたうえで**その判断を実行前にコードで検証する**（提案されたアクションがホワイトリストに入っているか、blast radius が閾値以下か）という二段構えになるのかもしれません。グラフで書くなら「LLM ノード → 検証ノード（Go）→ ルーティング」という形です。
 
 **動的ノードとのバランス。** インシデント対応は「調べて、分からなかったらもう少し調べる」という反復が本質なので、完全に静的なグラフでは表現しきれない部分があります。`NewDynamicNode` で調査ループを書き、確定した対処だけを静的グラフに戻す、というハイブリッドが現実解な気がしていますが、そうすると動的ノードの中身が結局ブラックボックスになるジレンマがあります。
 
@@ -727,9 +666,7 @@ ADK Go 2.0 のグラフワークフローエンジンを、公式サンプルを
 - ADK の基本は「モデル + 指示 + ツール」で、Go の型からツールのスキーマが自動生成されるのが気持ちいい
 - 2.0 の中心はグラフワークフローエンジン。ノードとエッジで書き、fan-out / fan-in / 条件分岐 / HITL / リトライがフレームワーク側の機能になった
 - ルーティングは LLM ではなくエンジンが行う。LLM は分類結果を1単語返すだけで、どこに飛ぶかはエッジの静的な宣言で決まる
-- この分割は SRE のインシデント対応エージェントにそのまま効きそう。「LLM は仮説を3つ立てるところまで、Go が最終判断」に分けると、実行しうる操作がレビューでき、判断が再現でき、自律性レベルがノード設定として表現できる
-- HITL は「中断は FunctionCall、再開は同じ ID の FunctionResponse」という汎用的な形なので、Slack のボタンに橋渡しするコードはごく短い。永続セッションと組み合わせると、承認待ちのままプロセスが死んでも復帰できる
-- MCP ツールは LLM に渡さずグラフのノードから直接呼べる。`Run(ctx, args)` を叩くだけで、呼ぶツールも引数も Go のコードが決められる
+- この分割は SRE のインシデント対応エージェントにそのまま効きそう。「LLM は診断、Go は判断」に分けると、実行しうる操作がレビューでき、判断が再現でき、自律性レベルがノード設定として表現できる
 
 「LLM に全部任せない」というのは一見後退に見えますが、本番環境に手を入れるエージェントを作る文脈では、むしろこれが前に進むための条件だと思います。LLM に任せる範囲を絞れば絞るほど、その範囲について統計が取れて、安心して自律度を上げられる。ADK Go 2.0 のグラフは、その「絞る」作業をフレームワークの構造として支援してくれている、というのが読んでみた感想でした。
 
@@ -741,7 +678,3 @@ ADK Go 2.0 のグラフワークフローエンジンを、公式サンプルを
 - [ADK Go 2.0 migration guide (README-v2.md)](https://github.com/google/adk-go/blob/main/README-v2.md)
 - [ADK Documentation](https://google.github.io/adk-docs/)
 - [Google が提唱する AI in SRE とは何か](/post/ai-sre-google/)
-- [Datadog MCP Server](https://docs.datadoghq.com/mcp_server/)
-- [Datadog MCP Server Tools](https://docs.datadoghq.com/mcp_server/tools/)
-- [Cloud Run Admin API v2](https://cloud.google.com/run/docs/reference/rest)
-- [Slack: Handling user interaction in your Slack apps](https://api.slack.com/interactivity/handling)
