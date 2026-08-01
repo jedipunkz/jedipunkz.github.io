@@ -435,7 +435,7 @@ ADK Go 2.0 のグラフは、この境界を**構造として**引けます。
 
 ### インシデントトリアージのワークフローを書いてみた
 
-実際に書いてみました。以下は `go vet` を通し、実際に実行して動作確認したコードです（LLM 部分をスタブに差し替えた版で end-to-end の動作を確認しています）。
+実際に書いてみました。以下は `go vet` を通し、実際に実行して動作確認したコードです（LLM 部分をスタブに差し替えた版で end-to-end の動作を確認しています）。動くもの一式は [jedipunkz/adk-playground の sre-agent](https://github.com/jedipunkz/adk-playground/tree/main/sre-agent) に置きました。記事中では要点だけを抜き出しているので、グラフの全体像やテストはそちらを見てください。
 
 グラフはこうなります。
 
@@ -682,3 +682,4 @@ ADK Go 2.0 のグラフワークフローエンジンを、公式サンプルを
 - [ADK Documentation](https://google.github.io/adk-docs/)
 - [datadog-api-client-go](https://github.com/DataDog/datadog-api-client-go)
 - [Google が提唱する AI in SRE とは何か](/post/ai-sre-google/)
+- [jedipunkz/adk-playground — sre-agent](https://github.com/jedipunkz/adk-playground/tree/main/sre-agent)（この記事で書いたコード）
