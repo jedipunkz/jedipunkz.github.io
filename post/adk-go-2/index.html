@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="ja" dir="auto">
+
+<head><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える | jedipunkz 🚀 のブログ</title>
+<meta name="keywords" content="">
+<meta name="description" content="Google が公開した ADK Go 2.0 の新しいグラフワークフローエンジンを公式サンプルコードを実際に動かしながら読み解き、インシデント対応エージェントにどう応用できるかを考えます">
+<meta name="author" content="jedipunkz">
+<link rel="canonical" href="https://jedipunkz.rocks/post/adk-go-2/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.b01bbec0cf3007d40fb71d8142b512d543a9bfcda15e0e5529eb1abdf890d74e.css" integrity="sha256-sBu&#43;wM8wB9QPtx2BQrUS1UOpv82hXg5VKesavfiQ104=" rel="preload stylesheet" as="style">
+<link rel="icon" href="https://jedipunkz.rocks/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.rocks/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.rocks/favicon-32x32.png">
+<link rel="apple-touch-icon" href="https://jedipunkz.rocks/apple-touch-icon.png">
+<link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/adk-go-2/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-track {
+                background: 0 0;
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-thumb {
+                border-color: var(--theme);
+            }
+        }
+
+    </style>
+</noscript>
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-2H91XCYVZ8"></script>
+      <script>
+        var doNotTrack = false;
+        if ( false ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-2H91XCYVZ8');
+        }
+      </script><meta property="og:url" content="https://jedipunkz.rocks/post/adk-go-2/">
+  <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
+  <meta property="og:title" content="ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える">
+  <meta property="og:description" content="Google が公開した ADK Go 2.0 の新しいグラフワークフローエンジンを公式サンプルコードを実際に動かしながら読み解き、インシデント対応エージェントにどう応用できるかを考えます">
+  <meta property="og:locale" content="ja">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="post">
+    <meta property="article:published_time" content="2026-07-31T12:00:00+09:00">
+    <meta property="article:modified_time" content="2026-07-31T12:00:00+09:00">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_2a567a78abd6000f.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_2a567a78abd6000f.jpg">
+<meta name="twitter:image:alt" content="ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える">
+<meta name="twitter:title" content="ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える">
+<meta name="twitter:description" content="Google が公開した ADK Go 2.0 の新しいグラフワークフローエンジンを公式サンプルコードを実際に動かしながら読み解き、インシデント対応エージェントにどう応用できるかを考えます">
+  <meta name="twitter:site" content="@jedipunkz">
+  <meta name="twitter:creator" content="@jedipunkz">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える",
+  "name": "ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える",
+  "description": "Google が公開した ADK Go 2.0 の新しいグラフワークフローエンジンを公式サンプルコードを実際に動かしながら読み解き、インシデント対応エージェントにどう応用できるかを考えます",
+  "keywords": [
+    
+  ],
+  "articleBody": "こんにちは。ジェダイパンくず☁️ です。\n2026年6月30日に ADK (Agent Development Kit) for Go の 2.0 がリリースされました。目玉は「グラフベースのワークフローエンジン」で、エージェントアプリケーションをノードとエッジのグラフとして記述するという方向に大きく舵を切っています。\n自分がこのリリースで一番興味を持ったのは、公式サンプルの examples/workflow/routing/llm/ に書かれていたこのコメントでした。\n// This is the canonical \"LLM as the brain, engine does the routing\" pattern. LLM は「脳」であって「ルータ」ではない、分岐そのものはエンジン（＝決定的なコード）が担う、という設計思想です。これは SRE のインシデント対応エージェントを考える上でかなり本質的な話に見えたので、リポジトリを実際に clone して公式サンプルを読み、さらに自分でインシデントトリアージのワークフローを書いてビルド・実行するところまでやってみました。\nこの記事は以下の三本柱で構成します。\nADK の基本（そもそも ADK でエージェントをどう書くのか） 2.0 の新機能（グラフワークフローエンジンを中心に） SRE Agent における応用（実際に動くコードを書いてみた） なお、記事中のコードはすべて google/adk-go の実際のサンプルか、自分で書いて go vet とビルド・実行を通したものです。\nADK の基本 インストール 2.0 からモジュールパスが google.golang.org/adk/v2 に変わりました。Go 1.25 以上が必要です。\ngo get google.golang.org/adk/v2 最小のエージェント ADK の世界観は「エージェント = モデル + 指示 + ツール」です。公式の examples/quickstart/main.go がその最小形です。\nmodel, err := gemini.NewModel(ctx, \"gemini-flash-latest\", \u0026genai.ClientConfig{ APIKey: os.Getenv(\"GOOGLE_API_KEY\"), }) if err != nil { log.Fatalf(\"Failed to create model: %v\", err) } a, err := llmagent.New(llmagent.Config{ Name: \"weather_time_agent\", Model: model, Description: \"Agent to answer questions about the time and weather in a city.\", Instruction: \"Your SOLE purpose is to answer questions about the current time and weather in a specific city. You MUST refuse to answer any questions unrelated to time or weather.\", Tools: []tool.Tool{ geminitool.GoogleSearch{}, }, }) if err != nil { log.Fatalf(\"Failed to create agent: %v\", err) } config := \u0026launcher.Config{ AgentLoader: agent.NewSingleLoader(a), } l := full.NewLauncher() if err = l.Execute(ctx, config, os.Args[1:]); err != nil { log.Fatalf(\"Run failed: %v\\n\\n%s\", err, l.CommandLineSyntax()) } 登場人物を整理すると以下です。\n要素 役割 model LLM のバックエンド。Gemini 以外も差し替え可能 llmagent.Config.Instruction いわゆるシステムプロンプト Tools エージェントが呼べる関数群 launcher CLI (console)、Web UI、REST サーバなどの実行形態を提供するランナー full.NewLauncher() は便利で、同じバイナリを console で起動すればターミナル対話、web で起動すれば Dev UI が立ち上がります。エージェントのロジックと実行形態が分離されているのが Go らしいところです。\nツールを自分で書く ツールは Go の関数をそのまま登録できます。examples/tools/multipletools/main.go から抜粋します。\ntype Input struct { LineCount int `json:\"lineCount\"` } type Output struct { Poem string `json:\"poem\"` } handler := func(ctx agent.Context, input Input) (Output, error) { return Output{ Poem: strings.Repeat(\"A line of a poem,\", input.LineCount) + \"\\n\", }, nil } poemTool, err := functiontool.New(functiontool.Config{ Name: \"poem\", Description: \"Returns poem\", }, handler) 入出力の JSON Schema は Go の型から自動生成されます。ここが Python 版と比べたときの Go 版の気持ちよさで、ツールの引数スキーマを手で書く必要がありません。\nここまでが 1.x 系から変わらない「ADK の基本」です。ここから 2.0 の話に入ります。\n2.0 の新機能 グラフワークフローエンジン 2.0 の中心は workflow パッケージです。アプリケーションを「ノードをエッジでつないだグラフ」として宣言し、スケジューラが実行します。\n最小の例が examples/workflow/basic/main.go です。\n// 1. Define functions for nodes upperFn := func(ctx agent.Context, input string) (string, error) { if input == \"\" { return \"No input received\", nil } return strings.ToUpper(input), nil } suffixFn := func(ctx agent.Context, input string) (string, error) { return input + \" IS AWESOME!\", nil } // 2. Create Nodes nodeConfig := workflow.NodeConfig{ RetryConfig: workflow.DefaultRetryConfig(), } nodeA := workflow.NewFunctionNode(\"upper\", upperFn, nodeConfig) nodeB := workflow.NewFunctionNode(\"suffix\", suffixFn, nodeConfig) // 3. Define flow (Edges) edges := workflow.Chain(workflow.Start, nodeA, nodeB) // 4. Create Workflow Agent myWorkflow, err := workflowagent.New(workflowagent.Config{ Name: \"simple_sequence_workflow\", Description: \"Converts string to uppercase and appends a suffix\", Edges: edges, }) 注目したいのは NewFunctionNode がジェネリクスで、ノードの入出力の型が Go の関数シグネチャからそのまま推論される点です。upperFn は string を受けて string を返すので、このノードの入力型・出力型は string になります。グラフのつなぎ間違いがある程度型で守られます。\nこのワークフロー全体が workflowagent.New で「1つのエージェント」になるので、launcher に渡す使い方は quickstart とまったく同じです。\nノードの種類 2.0 では用途別にノードのコンストラクタが用意されています。実際にリポジトリの workflow/ 配下を grep すると以下が確認できます。\nコンストラクタ 用途 NewFunctionNode Go の関数をノード化。型推論が効く NewEmittingFunctionNode イベントを自分で emit できる。ストリーミングや分岐、HITL に使う NewAgentNode LlmAgent などのエージェントをノード化 NewToolNode ツールをそのままグラフの1ステップにする NewJoinNode fan-in の同期バリア NewDynamicNode 実行順序を Go のコードとして書く動的オーケストレーション NewWorkflowNode サブワークフローを1ノードとして埋め込む NewParallelWorker リスト入力に対して並列に実行 ルーティング：LLM に全部やらせない ここが個人的に一番刺さった部分です。冒頭に挙げた examples/workflow/routing/llm/main.go を見ていきます。\nこのサンプルは、ユーザの発言を question / statement / exclamation に分類して、それぞれ別のハンドラに振り分けます。LLM に渡されるプロンプトはこれだけです。\nconst classifierInstruction = `Classify the user's message into one of three categories: - \"question\": ends with '?' or asks for information - \"exclamation\": expresses strong emotion, often ends with '!' - \"statement\": a neutral declarative sentence Answer with EXACTLY one word, lowercase, no punctuation: question, exclamation, or statement.` LLM の仕事は「1単語を返す」ことだけです。どこに分岐するかは LLM に決めさせません。分岐はこの下流のノードが決定的に行います。\n// routeByClassification turns the classifier's one-word output into a // routing event; returning nil suppresses the default terminal event. func routeByClassification(ctx agent.Context, input any, emit func(*session.Event) error) (any, error) { // Normalise defensively in case the LLM ignored the one-word // instruction; off-script replies fall through to \"statement\". category := strings.TrimRight(strings.ToLower(strings.TrimSpace(fmt.Sprint(input))), \".\") if category != \"question\" \u0026\u0026 category != \"exclamation\" \u0026\u0026 category != \"statement\" { category = \"statement\" } ev := session.NewEvent(ctx, ctx.InvocationID()) ev.Routes = []string{category} if err := emit(ev); err != nil { return nil, err } return nil, nil } そしてグラフのエッジ側で、ルート値と遷移先の対応を静的に宣言します。\nedges := workflow.Concat( workflow.Chain(workflow.Start, classifyNode, routeNode), []workflow.Edge{ {From: routeNode, To: question, Route: workflow.StringRoute(\"question\")}, {From: routeNode, To: statement, Route: workflow.StringRoute(\"statement\")}, {From: routeNode, To: exclamation, Route: workflow.StringRoute(\"exclamation\")}, }, ) この構造の何が良いかというと、\nLLM が指示を無視して “this is a question” などと返しても、routeByClassification の正規化で statement にフォールバックする。壊れ方が予測可能になる グラフを見れば「起こりうる遷移の全集合」が読める。LLM が勝手に未知の状態に飛ぶことがない ルーティングのロジックが Go の関数なので、LLM 抜きで単体テストできる ちなみに Route インタフェースの実装はこれだけです。エッジは「イベントに付いた Routes に自分の値が入っているか」しか見ません。\ntype Route interface { Matches(event *session.Event) bool } func matchRoute(routeValue string, event *session.Event) bool { for _, v := range event.Routes { if v == routeValue { return true } } return false } StringRoute のほかに IntRoute、BoolRoute、複数値をまとめて受ける MultiRoute[T] があります。examples/workflow/routing/int/ ではサイコロの目 1〜10 を MultiRoute[int]{1, 2, 3} のようにレンジで振り分けています。\nそして重要なのは、分類そのものに LLM が要らないなら使わなくていいということです。同じ構造で LLM を完全に外した examples/workflow/routing/string/ が用意されていて、classifyAndRoute の中身は単なる Go の switch です。\ntrimmed := strings.TrimSpace(msg) switch { case strings.HasSuffix(trimmed, \"?\"): return \"question\" case strings.HasSuffix(trimmed, \"!\"): return \"exclamation\" default: return \"statement\" } グラフの形は LLM 版とまったく同じで、判断主体だけが差し替わっています。「この判断は LLM が要るのか、要らないのか」をノード単位で選べる。これが 2.0 の設計で一番効いている部分だと思います。\nfan-out / fan-in（並列とバリア） examples/workflow/complex/main.go は3つのリサーチャーエージェントを並列に走らせ、JoinNode で待ち合わせて統合します。\nSTART ─┬─\u003e RenewableEnergyResearcher ─┐ ├─\u003e EVResearcher ──────────────┼─\u003e gather ─\u003e format ─\u003e SynthesisAgent └─\u003e CarbonCaptureResearcher ───┘ (Join) (func) (LLM) エッジの定義は EdgeBuilder の fluent API で書けます。\neb := workflow.NewEdgeBuilder() eb.AddFanOut(workflow.Start, renewableNode, electricVehicleNode, carbonNode) eb.AddFanIn(gatherNode, renewableNode, electricVehicleNode, carbonNode) eb.Add(gatherNode, formatNode) eb.Add(formatNode, synthNode) JoinNode は全ての先行ノードが終わってから1回だけ発火し、後続に map[ノード名]出力 を渡します。受け取る側はこうなります。\nfunc formatSummaries(_ agent.Context, gathered map[string]any) (string, error) { sections := []struct{ label, key string }{ {\"Renewable Energy\", renewableResearcher}, {\"Electric Vehicles\", electricVehicleResearcher}, {\"Carbon Capture\", carbonResearcher}, } // ... } サンプルのコメントに「マップを range せず固定スライスを回すことでプロンプトを決定的に保つ」と書かれているのが細かいですが良いです。並列実行の結果をそのまま LLM に食わせると順序が非決定になるので、ここも決定的なコードで整形しています。\nHuman-in-the-Loop 2.0 では任意のノードが実行を止めて人間の入力を要求できます。しかもこの中断はプロセス再起動を跨いで復帰できます（セッション履歴から再構成される）。\n再開モードは2種類あります。\nhandoff: 人間の回答が次のノードの入力として流れる（RerunOnResume: \u0026false。nil の場合もエンジンは現状 handoff として扱う） re-entry: 中断したノードが最初から再実行され、回答は ResumedInput から読める（RerunOnResume: \u0026true） re-entry パターンが examples/workflow/hitl_rerun/main.go です。ResumeOrRequestInput が「1回目は質問して中断、2回目は回答を返す」を1つの呼び出しにまとめてくれます。\nrerun := true greet := workflow.NewEmittingFunctionNode[any, any](\"greet\", func(nc agent.Context, _ any, emit func(*session.Event) error) (any, error) { reply, err := workflow.ResumeOrRequestInput(nc, emit, session.RequestInput{ InterruptID: \"ask_name-\" + nc.InvocationID(), Message: \"What's your name?\", }) if err != nil { return nil, err } name, _ := reply.(string) if name == \"\" { name = \"stranger\" } return fmt.Sprintf(\"Hello, %s!\", name), nil }, workflow.NodeConfig{RerunOnResume: \u0026rerun}, ) 実装は拍子抜けするほど素直です。\nfunc ResumeOrRequestInput(ctx agent.Context, emit func(*session.Event) error, req session.RequestInput) (any, error) { if reply, ok := ctx.ResumedInput(req.InterruptID); ok { return reply, nil } if err := emit(NewRequestInputEvent(ctx, req)); err != nil { return nil, err } return nil, ErrNodeInterrupted } InterruptID に nc.InvocationID() を混ぜているのがポイントで、これは同一実行内では安定して回答を対応付けられる一方、実行ごとにはユニークになるためです。ここを固定文字列にすると Dev UI が「その ID はもう回答済み」と判断して次回以降プロンプトを出さなくなります。ソースのコメントにわざわざ書いてあるので、実際に踏んだ人がいるのでしょう。\n動的オーケストレーション グラフを静的に宣言するのではなく、実行順序を Go のコードとして書きたい場合は NewDynamicNode を使います。\nmyWorkflow := workflow.NewDynamicNode[string, string](\"greeter_workflow\", func(nc agent.Context, in string, _ func(*session.Event) error) (string, error) { return workflow.RunNode[string](nc, greeterNode, in) }, workflow.NodeConfig{}, ) workflow.RunNode で任意のノードをその場で呼べます。for ループや if 分岐をそのまま書けるので、静的グラフでは表現しづらい制御フローはこちらに逃がせます。動的ノードは既定で RerunOnResume=\u0026true なので、HITL と組み合わせるとオーケストレータの本体が頭から再実行され、回答は nc.ResumedInput(...) で拾う形になります。\nリトライとタイムアウト NodeConfig にスケジューラレベルの信頼性設定が入りました。\ntype NodeConfig struct { ParallelWorker bool RerunOnResume *bool WaitForOutput *bool RetryConfig *RetryConfig Timeout time.Duration EmitsOwnSpan bool } RetryConfig は MaxAttempts / InitialDelay / MaxDelay / BackoffFactor / Jitter / ShouldRetry を持つフラットな構造体です。推奨は DefaultRetryConfig() を起点に上書きする書き方で、構造体リテラルで作ると未設定フィールドがゼロ値（＝リトライなし）になるので注意、とドキュメントに明記されています。\nrc := workflow.DefaultRetryConfig() rc.MaxAttempts = 10 cfg := workflow.NodeConfig{RetryConfig: rc} そのほかの改善と破壊的変更 グラフエンジン以外では以下が入っています。\nagent.Context の統一: これまで別物だった ToolContext と CallbackContext が1つの agent.Context に統合されました LlmAgent のモード: ModeChat / ModeTask / ModeSingleTurn の3つ。既定値はサブエージェントとしては ModeChat、ワークフローのノードとしては ModeSingleTurn になります。つまり NewAgentNode で包んだ LLM エージェントは、チャット履歴ではなく先行ノードの出力を入力として消費するモードになります テレメトリの一貫性: 単体エージェントでもグラフでも同じ span ツリーになる 破壊的変更としては README-v2.md に以下が挙がっています。\nモジュールパスが google.golang.org/adk/v2 に変更 session.NewEvent が第1引数に context.Context を要求するようになった // Before ev := session.NewEvent(ctx.InvocationID()) // After ev := session.NewEvent(ctx, ctx.InvocationID()) これはイベント ID とタイムスタンプを platform パッケージ経由で取得するようになったためで、platform.WithTimeProvider などを ctx に載せることで決定的でリプレイ可能なイベントを作れるようになっています。ワークフローエンジンが再開可能である以上、必然の変更に見えます。\nコンテキスト統合に伴い、テストのモックが壊れる。手で足りないメソッドを生やす代わりに agent.StrictContextMock を埋め込む方法が推奨されています。未実装メソッドを呼ぶと黙ってゼロ値を返さず panic するので、想定外の呼び出しがテストで顕在化します type fakeContext struct { agent.StrictContextMock } var _ agent.Context = (*fakeContext)(nil) SRE Agent における応用 ここからが本題です。前置きした「LLM は脳、ルーティングはエンジン」という思想が、SRE のインシデント対応エージェントにどう効くのかを考えます。\nなぜこの分割が SRE で効きそうなのか 以前 Google が提唱する AI in SRE とは何か という記事で、SRE 自律性の5段階モデル（L0〜L4）を紹介しました。L2 は「AI が実行前に人間の明示的承認を必要とする」段階、L3 は「十分に定義されたシナリオで AI が独立実行する」段階です。\nこのモデルを実装に落とすときに困るのが、「十分に定義されたシナリオ」をどこに書くのかという問題です。全部プロンプトに書いて LLM に任せると、\n同じアラートで毎回違う判断をする可能性がある（＝再現性がない） 「このエージェントは何をしうるのか」をレビューできない 昇格ゲート（L2→L3）の判定に必要な統計を取るにも、そもそも判断の分布が安定しない という状態になります。インシデント対応で本番環境に変更を加える以上、ここは譲れないところです。\nADK Go 2.0 のグラフは、この境界を構造として引けます。\nLLM がやること: 大量の非構造データ（ログ、メトリクス、変更履歴）を読んで所見を書く Go のコードがやること: どの Runbook を実行するか決める、承認を挟むか決める そして実行しうる操作の全集合はグラフのエッジとして静的に宣言されているので、コードレビューで確認できます。\nインシデントトリアージのワークフローを書いてみた 実際に書いてみました。以下は go vet を通し、実際に実行して動作確認したコードです（LLM 部分をスタブに差し替えた版で end-to-end の動作を確認しています）。動くもの一式は jedipunkz/adk-playground の sre-agent に置きました。記事中では要点だけを抜き出しているので、グラフの全体像やテストはそちらを見てください。\nグラフはこうなります。\nflowchart LR S((START)) --\u003e M[fetch_metrics] S --\u003e L[fetch_logs] S --\u003e D[fetch_deploys] M --\u003e G[gatherJoinNode] L --\u003e G D --\u003e G G --\u003e E[build_evidenceGo] E --\u003e X[diagnoseLLM] X --\u003e C[decide_actionGo] C --\u003e|rollback| R[propose_rollbackHITL] C --\u003e|scale_out| SC[scale_out] C --\u003e|escalate| P[page_oncall] ポイントは、LLM ノード diagnose は分岐の手前にいるが、分岐の判断材料ではないことです。decide_action は LLM の出力ではなく、build_evidence が session state に保存した生の証拠データを読んで決めます。\nまず証拠を集めるフェーズ。外部 API を叩くのでリトライとタイムアウトを付けます。\nfetchCfg := workflow.NodeConfig{ RetryConfig: workflow.DefaultRetryConfig(), Timeout: 15 * time.Second, } metricsNode := workflow.NewFunctionNode(nodeMetrics, fetchMetrics, fetchCfg) logsNode := workflow.NewFunctionNode(nodeLogs, fetchLogs, fetchCfg) deploysNode := workflow.NewFunctionNode(nodeDeploys, fetchDeploys, fetchCfg) fetchMetrics などは普通の Go 関数です。ここではログとメトリクスを Datadog から取る想定にしました。\ntype Metrics struct { ErrorRate float64 `json:\"errorRate\"` LatencyP99Ms int `json:\"latencyP99Ms\"` CPUSaturation float64 `json:\"cpuSaturation\"` } func fetchMetrics(_ agent.Context, service string) (Metrics, error) { // 実運用では datadog-api-client-go の MetricsApi.QueryTimeseriesData に // sum:trace.http.request.errors{service:checkout-api}.as_rate() などを投げる return Metrics{ErrorRate: 0.18, LatencyP99Ms: 2400, CPUSaturation: 0.42}, nil } fetchLogs も同じ形で、Logs API に service:checkout-api status:error を投げて上位のエラーと件数を LogDigest に詰めるだけです。ここで大事なのは、どのクエリをどの窓で投げるかを Go のコードが決めていることです。Datadog の MCP サーバを LLM に渡して「調べて」とやる構成も組めますが、それだと取得範囲が実行ごとにぶれて、後段の decideAction が同じインシデントで同じ判断を返す保証がなくなります。LLM に渡すのは集め終えた証拠だけ、という分担はここでも変えません。\n3つの収集を並列に走らせて JoinNode で待ち合わせ、build_evidence で1つの構造体にまとめます。ここで session state に生データを保存しておくのが後で効きます。\nfunc buildEvidence(ctx agent.Context, gathered map[string]any) (string, error) { ev := Evidence{Service: \"checkout-api\"} var err error if ev.Metrics, err = decodeInto[Metrics](gathered[nodeMetrics]); err != nil { return \"\", fmt.Errorf(\"decoding metrics: %w\", err) } if ev.Logs, err = decodeInto[LogDigest](gathered[nodeLogs]); err != nil { return \"\", fmt.Errorf(\"decoding logs: %w\", err) } if ev.Deploy, err = decodeInto[DeployInfo](gathered[nodeDeploys]); err != nil { return \"\", fmt.Errorf(\"decoding deploys: %w\", err) } // 決定ノードが後から読めるように state に置く。LLM の出力ではなく // この生データが、あとで分岐を決める唯一の根拠になる。 if err := ctx.State().Set(stateEvidence, ev); err != nil { return \"\", fmt.Errorf(\"saving evidence: %w\", err) } b, err := json.MarshalIndent(ev, \"\", \" \") if err != nil { return \"\", err } return \"Incident evidence:\\n\" + string(b), nil } LLM には診断だけをさせます。ここで 「アクションを提案するな」と明示しているのが今回の肝です。\ndiagnoser, err := llmagent.New(llmagent.Config{ Name: \"diagnose\", Model: model, Description: \"summarises incident evidence for a human responder\", Instruction: \"Given the incident evidence, write at most three sentences describing the \" + \"most likely cause. Do not propose an action; the runbook is chosen elsewhere.\", }) そして決定ノード。これが全体で一番重要な部分です。\nfunc decideAction(ctx agent.Context, diagnosis any, emit func(*session.Event) error) (any, error) { raw, err := ctx.State().Get(stateEvidence) if err != nil { return nil, fmt.Errorf(\"reading evidence: %w\", err) } ev, err := decodeInto[Evidence](raw) if err != nil { return nil, fmt.Errorf(\"decoding evidence: %w\", err) } // ポリシーは全て決定的な Go のコード。LLM の所見はイベントに載せて // 人間に見せるが、分岐の判断には使わない。 var route string switch { case ev.Deploy.MinutesSinceDeploy \u003c= 30 \u0026\u0026 ev.Metrics.ErrorRate \u003e 0.05: route = routeRollback case ev.Metrics.CPUSaturation \u003e 0.85 \u0026\u0026 ev.Metrics.ErrorRate \u003c= 0.05: route = routeScaleOut default: route = routeEscalate } out := session.NewEvent(ctx, ctx.InvocationID()) out.Routes = []string{route} out.Output = ev out.Content = \u0026genai.Content{Parts: []*genai.Part{{ Text: fmt.Sprintf(\"decision=%s\\nLLM diagnosis: %v\", route, diagnosis), }}} if err := emit(out); err != nil { return nil, err } return nil, nil } diagnosis（LLM の出力）は引数で受け取っていますが、switch の条件には一切登場しません。人間に見せるためにイベントの Content に載せるだけです。「デプロイから30分以内でエラー率が5%を超えていたらロールバック」という判断は、LLM の気分ではなくコードが決めます。この関数は agent.Context のモックさえ用意すれば LLM 抜きで単体テストできますし、閾値を変えたときの影響もレビューできます。\nエッジの定義は EdgeBuilder で書きます。AddRoutes を使うとルート値と遷移先の対応がマップで一望できます。\neb := workflow.NewEdgeBuilder() eb.AddFanOut(workflow.Start, metricsNode, logsNode, deploysNode) eb.AddFanIn(gatherNode, metricsNode, logsNode, deploysNode) eb.Add(gatherNode, evidenceNode) eb.Add(evidenceNode, diagnoseNode) eb.Add(diagnoseNode, decideNode) eb.AddRoutes(decideNode, map[string]workflow.Node{ routeRollback: rollbackNode, routeScaleOut: scaleNode, routeEscalate: escalateNode, }) 承認ゲートを HITL で表現する ロールバックは本番に変更を加えるので、L2（実行前に人間の承認が必要）として承認を挟みます。ResumeOrRequestInput の re-entry パターンをそのまま使えます。\nfunc proposeRollback(ctx agent.Context, ev Evidence, emit func(*session.Event) error) (string, error) { reply, err := workflow.ResumeOrRequestInput(ctx, emit, session.RequestInput{ InterruptID: \"approve_rollback-\" + ctx.InvocationID(), Message: fmt.Sprintf(\"Roll back %s to the previous release? (deploy %s, %d min ago, error rate %.1f%%) [yes/no]\", ev.Service, ev.Deploy.LastDeployID, ev.Deploy.MinutesSinceDeploy, ev.Metrics.ErrorRate*100), }) if err != nil { return \"\", err } if answer, _ := reply.(string); answer != \"yes\" { return \"rollback declined by operator; escalating to on-call\", nil } return fmt.Sprintf(\"rolled back %s from %s\", ev.Service, ev.Deploy.LastDeployID), nil } rerun := true rollbackNode := workflow.NewEmittingFunctionNode(\"rollback\", proposeRollback, workflow.NodeConfig{RerunOnResume: \u0026rerun}) 自律性レベルがノードの NodeConfig として表現できる、というのがきれいだと思いました。L2 のまま運用したいノードには HITL を挟み、統計が溜まって L3 に上げられると判断したらそのノードから HITL を外す。昇格が設定変更として表現できるわけです。逆に「このノードはまだ L2」というのがコード上で一目で分かります。\nさらに、この中断はプロセス再起動を跨いで復帰できます。深夜のインシデントで承認待ちのままエージェントのプロセスが死んでも、セッション履歴から状態を再構成して続きから再開できる、というのは運用上そこそこ大きい話です。\n実行結果 スタブ版を実際に動かした出力です。\nAgent -\u003e decision=rollback LLM diagnosis: STUB DIAGNOSIS for: Incident evidence: { \"service\": \"checkout-api\", \"metrics\": { \"errorRate\": 0.18, \"latencyP99Ms\": 2400, \"cpuSaturation\": 0.42 }, \"logs\": { \"topErrors\": [ \"panic: nil map write\", \"context deadline exceeded\" ], \"volume\": 18342 }, \"deploy\": { \"lastDeployId\": \"rel-2026-07-31.3\", \"minutesSinceDeploy\": 7 } } Agent -\u003e Roll back checkout-api to the previous release? (deploy rel-2026-07-31.3, 7 min ago, error rate 18.0%) [yes/no] User -\u003e yes Agent -\u003e rolled back checkout-api from rel-2026-07-31.3 fan-out での並列収集、Join での待ち合わせ、state 経由での証拠の受け渡し、決定的なルーティング、HITL による中断と再開が一通り動いています。\n応用を考えるうえで気になっている点 いくつか、まだ自分の中で答えが出ていないところを正直に書いておきます。\n閾値をどこで管理するか。 上の decideAction は閾値がハードコードされています。実際には「サービスごとにエラー率の閾値が違う」「Datadog の SLO のエラーバジェット消費速度で判断したい」という話になるので、ポリシーは外部設定に出したくなります。ただし外部設定にすると今度は「レビューできる」という利点が薄れる可能性があり、どこで線を引くかは考えどころです。\nLLM を判断に使いたくなる領域は必ずある。 「デプロイ直後にエラー率が上がった」は決定的に書けますが、「複数サービスにまたがる連鎖障害の起点はどこか」は決定的に書けません。前者は Go、後者は LLM、という分割は理屈では分かるのですが、実際のインシデントはその中間にあるものが多いです。この場合、LLM に判断させたうえでその判断を実行前にコードで検証する（提案されたアクションがホワイトリストに入っているか、blast radius が閾値以下か）という二段構えになるのかもしれません。グラフで書くなら「LLM ノード → 検証ノード（Go）→ ルーティング」という形です。\n動的ノードとのバランス。 インシデント対応は「調べて、分からなかったらもう少し調べる」という反復が本質なので、完全に静的なグラフでは表現しきれない部分があります。NewDynamicNode で調査ループを書き、確定した対処だけを静的グラフに戻す、というハイブリッドが現実解な気がしていますが、そうすると動的ノードの中身が結局ブラックボックスになるジレンマがあります。\nこのあたりは実際に運用してみないと分からないので、もう少し手を動かしてみるつもりです。\nまとめ ADK Go 2.0 のグラフワークフローエンジンを、公式サンプルを読みながら追いかけてみました。\nADK の基本は「モデル + 指示 + ツール」で、Go の型からツールのスキーマが自動生成されるのが気持ちいい 2.0 の中心はグラフワークフローエンジン。ノードとエッジで書き、fan-out / fan-in / 条件分岐 / HITL / リトライがフレームワーク側の機能になった ルーティングは LLM ではなくエンジンが行う。LLM は分類結果を1単語返すだけで、どこに飛ぶかはエッジの静的な宣言で決まる この分割は SRE のインシデント対応エージェントにそのまま効きそう。「LLM は診断、Go は判断」に分けると、実行しうる操作がレビューでき、判断が再現でき、自律性レベルがノード設定として表現できる 「LLM に全部任せない」というのは一見後退に見えますが、本番環境に手を入れるエージェントを作る文脈では、むしろこれが前に進むための条件だと思います。LLM に任せる範囲を絞れば絞るほど、その範囲について統計が取れて、安心して自律度を上げられる。ADK Go 2.0 のグラフは、その「絞る」作業をフレームワークの構造として支援してくれている、というのが読んでみた感想でした。\n参考 Announcing ADK Go 2.0 google/adk-go ADK Go v2.0.0 Release ADK Go 2.0 migration guide (README-v2.md) ADK Documentation datadog-api-client-go Google が提唱する AI in SRE とは何か jedipunkz/adk-playground — sre-agent（この記事で書いたコード） ",
+  "wordCount" : "1909",
+  "inLanguage": "ja",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_2a567a78abd6000f.jpg","datePublished": "2026-07-31T12:00:00+09:00",
+  "dateModified": "2026-07-31T12:00:00+09:00",
+  "author":{
+    "@type": "Person",
+    "name": "jedipunkz"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "https://jedipunkz.rocks/post/adk-go-2/"
+  },
+  "publisher": {
+    "@type": "Person",
+    "name": "jedipunkz 🚀 のブログ",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
+    }
+  }
+}
+</script>
+
+</head>
+
+<body class="" id="top">
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.body.classList.add('dark');
+    } else if (localStorage.getItem("pref-theme") === "light") {
+        document.body.classList.remove('dark')
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark');
+    }
+
+</script>
+
+<header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="https://jedipunkz.rocks/" accesskey="h" title="jedipunkz 🚀 のブログ (Alt + H)">jedipunkz 🚀 のブログ</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="https://jedipunkz.rocks/about" title="About Me">
+                    <span>About Me</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
+      ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える
+    </h1>
+    <div class="post-description">
+      Google が公開した ADK Go 2.0 の新しいグラフワークフローエンジンを公式サンプルコードを実際に動かしながら読み解き、インシデント対応エージェントにどう応用できるかを考えます
+    </div>
+    <div class="post-meta"><span title='2026-07-31 12:00:00 +0900 +0900'>2026-07-31</span>&nbsp;·&nbsp;9 分&nbsp;·&nbsp;jedipunkz
+
+</div>
+  </header> 
+  <div class="post-content"><p>こんにちは。<a href="https://x.com/jedipunkz">ジェダイパンくず☁️</a> です。</p>
+<p>2026年6月30日に <a href="https://developers.googleblog.com/announcing-adk-go-20/">ADK (Agent Development Kit) for Go の 2.0</a> がリリースされました。目玉は「グラフベースのワークフローエンジン」で、エージェントアプリケーションを<strong>ノードとエッジのグラフとして記述する</strong>という方向に大きく舵を切っています。</p>
+<p>自分がこのリリースで一番興味を持ったのは、公式サンプルの <code>examples/workflow/routing/llm/</code> に書かれていたこのコメントでした。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="c1">// This is the canonical &#34;LLM as the brain, engine does the routing&#34; pattern.</span>
+</span></span></code></pre></div><p>LLM は「脳」であって「ルータ」ではない、分岐そのものはエンジン（＝決定的なコード）が担う、という設計思想です。これは SRE のインシデント対応エージェントを考える上でかなり本質的な話に見えたので、リポジトリを実際に clone して公式サンプルを読み、さらに自分でインシデントトリアージのワークフローを書いてビルド・実行するところまでやってみました。</p>
+<p>この記事は以下の三本柱で構成します。</p>
+<ol>
+<li>ADK の基本（そもそも ADK でエージェントをどう書くのか）</li>
+<li>2.0 の新機能（グラフワークフローエンジンを中心に）</li>
+<li>SRE Agent における応用（実際に動くコードを書いてみた）</li>
+</ol>
+<p>なお、記事中のコードはすべて <a href="https://github.com/google/adk-go">google/adk-go</a> の実際のサンプルか、自分で書いて <code>go vet</code> とビルド・実行を通したものです。</p>
+<h2 id="adk-の基本">ADK の基本<a hidden class="anchor" aria-hidden="true" href="#adk-の基本">#</a></h2>
+<h3 id="インストール">インストール<a hidden class="anchor" aria-hidden="true" href="#インストール">#</a></h3>
+<p>2.0 からモジュールパスが <code>google.golang.org/adk/v2</code> に変わりました。Go 1.25 以上が必要です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">go get google.golang.org/adk/v2
+</span></span></code></pre></div><h3 id="最小のエージェント">最小のエージェント<a hidden class="anchor" aria-hidden="true" href="#最小のエージェント">#</a></h3>
+<p>ADK の世界観は「エージェント = モデル + 指示 + ツール」です。公式の <code>examples/quickstart/main.go</code> がその最小形です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">model</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">gemini</span><span class="p">.</span><span class="nf">NewModel</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="s">&#34;gemini-flash-latest&#34;</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">genai</span><span class="p">.</span><span class="nx">ClientConfig</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">APIKey</span><span class="p">:</span> <span class="nx">os</span><span class="p">.</span><span class="nf">Getenv</span><span class="p">(</span><span class="s">&#34;GOOGLE_API_KEY&#34;</span><span class="p">),</span>
+</span></span><span class="line"><span class="cl"><span class="p">})</span>
+</span></span><span class="line"><span class="cl"><span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">log</span><span class="p">.</span><span class="nf">Fatalf</span><span class="p">(</span><span class="s">&#34;Failed to create model: %v&#34;</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nx">a</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">llmagent</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="nx">llmagent</span><span class="p">.</span><span class="nx">Config</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Name</span><span class="p">:</span>        <span class="s">&#34;weather_time_agent&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Model</span><span class="p">:</span>       <span class="nx">model</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Description</span><span class="p">:</span> <span class="s">&#34;Agent to answer questions about the time and weather in a city.&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Instruction</span><span class="p">:</span> <span class="s">&#34;Your SOLE purpose is to answer questions about the current time and weather in a specific city. You MUST refuse to answer any questions unrelated to time or weather.&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Tools</span><span class="p">:</span> <span class="p">[]</span><span class="nx">tool</span><span class="p">.</span><span class="nx">Tool</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="nx">geminitool</span><span class="p">.</span><span class="nx">GoogleSearch</span><span class="p">{},</span>
+</span></span><span class="line"><span class="cl">	<span class="p">},</span>
+</span></span><span class="line"><span class="cl"><span class="p">})</span>
+</span></span><span class="line"><span class="cl"><span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">log</span><span class="p">.</span><span class="nf">Fatalf</span><span class="p">(</span><span class="s">&#34;Failed to create agent: %v&#34;</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nx">config</span> <span class="o">:=</span> <span class="o">&amp;</span><span class="nx">launcher</span><span class="p">.</span><span class="nx">Config</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">AgentLoader</span><span class="p">:</span> <span class="nx">agent</span><span class="p">.</span><span class="nf">NewSingleLoader</span><span class="p">(</span><span class="nx">a</span><span class="p">),</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nx">l</span> <span class="o">:=</span> <span class="nx">full</span><span class="p">.</span><span class="nf">NewLauncher</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl"><span class="k">if</span> <span class="nx">err</span> <span class="p">=</span> <span class="nx">l</span><span class="p">.</span><span class="nf">Execute</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">config</span><span class="p">,</span> <span class="nx">os</span><span class="p">.</span><span class="nx">Args</span><span class="p">[</span><span class="mi">1</span><span class="p">:]);</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">log</span><span class="p">.</span><span class="nf">Fatalf</span><span class="p">(</span><span class="s">&#34;Run failed: %v\n\n%s&#34;</span><span class="p">,</span> <span class="nx">err</span><span class="p">,</span> <span class="nx">l</span><span class="p">.</span><span class="nf">CommandLineSyntax</span><span class="p">())</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><p>登場人物を整理すると以下です。</p>
+<table>
+  <thead>
+      <tr>
+          <th>要素</th>
+          <th>役割</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>model</code></td>
+          <td>LLM のバックエンド。Gemini 以外も差し替え可能</td>
+      </tr>
+      <tr>
+          <td><code>llmagent.Config.Instruction</code></td>
+          <td>いわゆるシステムプロンプト</td>
+      </tr>
+      <tr>
+          <td><code>Tools</code></td>
+          <td>エージェントが呼べる関数群</td>
+      </tr>
+      <tr>
+          <td><code>launcher</code></td>
+          <td>CLI (<code>console</code>)、Web UI、REST サーバなどの実行形態を提供するランナー</td>
+      </tr>
+  </tbody>
+</table>
+<p><code>full.NewLauncher()</code> は便利で、同じバイナリを <code>console</code> で起動すればターミナル対話、<code>web</code> で起動すれば Dev UI が立ち上がります。エージェントのロジックと実行形態が分離されているのが Go らしいところです。</p>
+<h3 id="ツールを自分で書く">ツールを自分で書く<a hidden class="anchor" aria-hidden="true" href="#ツールを自分で書く">#</a></h3>
+<p>ツールは Go の関数をそのまま登録できます。<code>examples/tools/multipletools/main.go</code> から抜粋します。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">type</span> <span class="nx">Input</span> <span class="kd">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">LineCount</span> <span class="kt">int</span> <span class="s">`json:&#34;lineCount&#34;`</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="kd">type</span> <span class="nx">Output</span> <span class="kd">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Poem</span> <span class="kt">string</span> <span class="s">`json:&#34;poem&#34;`</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="nx">handler</span> <span class="o">:=</span> <span class="kd">func</span><span class="p">(</span><span class="nx">ctx</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span> <span class="nx">input</span> <span class="nx">Input</span><span class="p">)</span> <span class="p">(</span><span class="nx">Output</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="nx">Output</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="nx">Poem</span><span class="p">:</span> <span class="nx">strings</span><span class="p">.</span><span class="nf">Repeat</span><span class="p">(</span><span class="s">&#34;A line of a poem,&#34;</span><span class="p">,</span> <span class="nx">input</span><span class="p">.</span><span class="nx">LineCount</span><span class="p">)</span> <span class="o">+</span> <span class="s">&#34;\n&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="p">},</span> <span class="kc">nil</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="nx">poemTool</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">functiontool</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="nx">functiontool</span><span class="p">.</span><span class="nx">Config</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Name</span><span class="p">:</span>        <span class="s">&#34;poem&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Description</span><span class="p">:</span> <span class="s">&#34;Returns poem&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl"><span class="p">},</span> <span class="nx">handler</span><span class="p">)</span>
+</span></span></code></pre></div><p>入出力の JSON Schema は Go の型から自動生成されます。ここが Python 版と比べたときの Go 版の気持ちよさで、ツールの引数スキーマを手で書く必要がありません。</p>
+<p>ここまでが 1.x 系から変わらない「ADK の基本」です。ここから 2.0 の話に入ります。</p>
+<h2 id="20-の新機能">2.0 の新機能<a hidden class="anchor" aria-hidden="true" href="#20-の新機能">#</a></h2>
+<h3 id="グラフワークフローエンジン">グラフワークフローエンジン<a hidden class="anchor" aria-hidden="true" href="#グラフワークフローエンジン">#</a></h3>
+<p>2.0 の中心は <code>workflow</code> パッケージです。アプリケーションを「ノードをエッジでつないだグラフ」として宣言し、スケジューラが実行します。</p>
+<p>最小の例が <code>examples/workflow/basic/main.go</code> です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="c1">// 1. Define functions for nodes</span>
+</span></span><span class="line"><span class="cl"><span class="nx">upperFn</span> <span class="o">:=</span> <span class="kd">func</span><span class="p">(</span><span class="nx">ctx</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span> <span class="nx">input</span> <span class="kt">string</span><span class="p">)</span> <span class="p">(</span><span class="kt">string</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">input</span> <span class="o">==</span> <span class="s">&#34;&#34;</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="s">&#34;No input received&#34;</span><span class="p">,</span> <span class="kc">nil</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="nx">strings</span><span class="p">.</span><span class="nf">ToUpper</span><span class="p">(</span><span class="nx">input</span><span class="p">),</span> <span class="kc">nil</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="nx">suffixFn</span> <span class="o">:=</span> <span class="kd">func</span><span class="p">(</span><span class="nx">ctx</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span> <span class="nx">input</span> <span class="kt">string</span><span class="p">)</span> <span class="p">(</span><span class="kt">string</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="nx">input</span> <span class="o">+</span> <span class="s">&#34; IS AWESOME!&#34;</span><span class="p">,</span> <span class="kc">nil</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1">// 2. Create Nodes</span>
+</span></span><span class="line"><span class="cl"><span class="nx">nodeConfig</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nx">NodeConfig</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">RetryConfig</span><span class="p">:</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">DefaultRetryConfig</span><span class="p">(),</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="nx">nodeA</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">NewFunctionNode</span><span class="p">(</span><span class="s">&#34;upper&#34;</span><span class="p">,</span> <span class="nx">upperFn</span><span class="p">,</span> <span class="nx">nodeConfig</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nx">nodeB</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">NewFunctionNode</span><span class="p">(</span><span class="s">&#34;suffix&#34;</span><span class="p">,</span> <span class="nx">suffixFn</span><span class="p">,</span> <span class="nx">nodeConfig</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1">// 3. Define flow (Edges)</span>
+</span></span><span class="line"><span class="cl"><span class="nx">edges</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">Chain</span><span class="p">(</span><span class="nx">workflow</span><span class="p">.</span><span class="nx">Start</span><span class="p">,</span> <span class="nx">nodeA</span><span class="p">,</span> <span class="nx">nodeB</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1">// 4. Create Workflow Agent</span>
+</span></span><span class="line"><span class="cl"><span class="nx">myWorkflow</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">workflowagent</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="nx">workflowagent</span><span class="p">.</span><span class="nx">Config</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Name</span><span class="p">:</span>        <span class="s">&#34;simple_sequence_workflow&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Description</span><span class="p">:</span> <span class="s">&#34;Converts string to uppercase and appends a suffix&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Edges</span><span class="p">:</span>       <span class="nx">edges</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl"><span class="p">})</span>
+</span></span></code></pre></div><p>注目したいのは <code>NewFunctionNode</code> がジェネリクスで、<strong>ノードの入出力の型が Go の関数シグネチャからそのまま推論される</strong>点です。<code>upperFn</code> は <code>string</code> を受けて <code>string</code> を返すので、このノードの入力型・出力型は <code>string</code> になります。グラフのつなぎ間違いがある程度型で守られます。</p>
+<p>このワークフロー全体が <code>workflowagent.New</code> で「1つのエージェント」になるので、<code>launcher</code> に渡す使い方は quickstart とまったく同じです。</p>
+<h3 id="ノードの種類">ノードの種類<a hidden class="anchor" aria-hidden="true" href="#ノードの種類">#</a></h3>
+<p>2.0 では用途別にノードのコンストラクタが用意されています。実際にリポジトリの <code>workflow/</code> 配下を grep すると以下が確認できます。</p>
+<table>
+  <thead>
+      <tr>
+          <th>コンストラクタ</th>
+          <th>用途</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td><code>NewFunctionNode</code></td>
+          <td>Go の関数をノード化。型推論が効く</td>
+      </tr>
+      <tr>
+          <td><code>NewEmittingFunctionNode</code></td>
+          <td>イベントを自分で emit できる。ストリーミングや分岐、HITL に使う</td>
+      </tr>
+      <tr>
+          <td><code>NewAgentNode</code></td>
+          <td><code>LlmAgent</code> などのエージェントをノード化</td>
+      </tr>
+      <tr>
+          <td><code>NewToolNode</code></td>
+          <td>ツールをそのままグラフの1ステップにする</td>
+      </tr>
+      <tr>
+          <td><code>NewJoinNode</code></td>
+          <td>fan-in の同期バリア</td>
+      </tr>
+      <tr>
+          <td><code>NewDynamicNode</code></td>
+          <td>実行順序を Go のコードとして書く動的オーケストレーション</td>
+      </tr>
+      <tr>
+          <td><code>NewWorkflowNode</code></td>
+          <td>サブワークフローを1ノードとして埋め込む</td>
+      </tr>
+      <tr>
+          <td><code>NewParallelWorker</code></td>
+          <td>リスト入力に対して並列に実行</td>
+      </tr>
+  </tbody>
+</table>
+<h3 id="ルーティングllm-に全部やらせない">ルーティング：LLM に全部やらせない<a hidden class="anchor" aria-hidden="true" href="#ルーティングllm-に全部やらせない">#</a></h3>
+<p>ここが個人的に一番刺さった部分です。冒頭に挙げた <code>examples/workflow/routing/llm/main.go</code> を見ていきます。</p>
+<p>このサンプルは、ユーザの発言を question / statement / exclamation に分類して、それぞれ別のハンドラに振り分けます。LLM に渡されるプロンプトはこれだけです。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">const</span> <span class="nx">classifierInstruction</span> <span class="p">=</span> <span class="s">`Classify the user&#39;s message into one of three categories:
+</span></span></span><span class="line"><span class="cl"><span class="s">- &#34;question&#34;: ends with &#39;?&#39; or asks for information
+</span></span></span><span class="line"><span class="cl"><span class="s">- &#34;exclamation&#34;: expresses strong emotion, often ends with &#39;!&#39;
+</span></span></span><span class="line"><span class="cl"><span class="s">- &#34;statement&#34;: a neutral declarative sentence
+</span></span></span><span class="line"><span class="cl"><span class="s">
+</span></span></span><span class="line"><span class="cl"><span class="s">Answer with EXACTLY one word, lowercase, no punctuation: question, exclamation, or statement.`</span>
+</span></span></code></pre></div><p>LLM の仕事は「1単語を返す」ことだけです。<strong>どこに分岐するかは LLM に決めさせません</strong>。分岐はこの下流のノードが決定的に行います。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="c1">// routeByClassification turns the classifier&#39;s one-word output into a</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// routing event; returning nil suppresses the default terminal event.</span>
+</span></span><span class="line"><span class="cl"><span class="kd">func</span> <span class="nf">routeByClassification</span><span class="p">(</span><span class="nx">ctx</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span> <span class="nx">input</span> <span class="kt">any</span><span class="p">,</span> <span class="nx">emit</span> <span class="kd">func</span><span class="p">(</span><span class="o">*</span><span class="nx">session</span><span class="p">.</span><span class="nx">Event</span><span class="p">)</span> <span class="kt">error</span><span class="p">)</span> <span class="p">(</span><span class="kt">any</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="c1">// Normalise defensively in case the LLM ignored the one-word</span>
+</span></span><span class="line"><span class="cl">	<span class="c1">// instruction; off-script replies fall through to &#34;statement&#34;.</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">category</span> <span class="o">:=</span> <span class="nx">strings</span><span class="p">.</span><span class="nf">TrimRight</span><span class="p">(</span><span class="nx">strings</span><span class="p">.</span><span class="nf">ToLower</span><span class="p">(</span><span class="nx">strings</span><span class="p">.</span><span class="nf">TrimSpace</span><span class="p">(</span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprint</span><span class="p">(</span><span class="nx">input</span><span class="p">))),</span> <span class="s">&#34;.&#34;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">category</span> <span class="o">!=</span> <span class="s">&#34;question&#34;</span> <span class="o">&amp;&amp;</span> <span class="nx">category</span> <span class="o">!=</span> <span class="s">&#34;exclamation&#34;</span> <span class="o">&amp;&amp;</span> <span class="nx">category</span> <span class="o">!=</span> <span class="s">&#34;statement&#34;</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="nx">category</span> <span class="p">=</span> <span class="s">&#34;statement&#34;</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">ev</span> <span class="o">:=</span> <span class="nx">session</span><span class="p">.</span><span class="nf">NewEvent</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">ctx</span><span class="p">.</span><span class="nf">InvocationID</span><span class="p">())</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">ev</span><span class="p">.</span><span class="nx">Routes</span> <span class="p">=</span> <span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="nx">category</span><span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nf">emit</span><span class="p">(</span><span class="nx">ev</span><span class="p">);</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">err</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="kc">nil</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><p>そしてグラフのエッジ側で、ルート値と遷移先の対応を静的に宣言します。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">edges</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">Concat</span><span class="p">(</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">workflow</span><span class="p">.</span><span class="nf">Chain</span><span class="p">(</span><span class="nx">workflow</span><span class="p">.</span><span class="nx">Start</span><span class="p">,</span> <span class="nx">classifyNode</span><span class="p">,</span> <span class="nx">routeNode</span><span class="p">),</span>
+</span></span><span class="line"><span class="cl">	<span class="p">[]</span><span class="nx">workflow</span><span class="p">.</span><span class="nx">Edge</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="p">{</span><span class="nx">From</span><span class="p">:</span> <span class="nx">routeNode</span><span class="p">,</span> <span class="nx">To</span><span class="p">:</span> <span class="nx">question</span><span class="p">,</span> <span class="nx">Route</span><span class="p">:</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">StringRoute</span><span class="p">(</span><span class="s">&#34;question&#34;</span><span class="p">)},</span>
+</span></span><span class="line"><span class="cl">		<span class="p">{</span><span class="nx">From</span><span class="p">:</span> <span class="nx">routeNode</span><span class="p">,</span> <span class="nx">To</span><span class="p">:</span> <span class="nx">statement</span><span class="p">,</span> <span class="nx">Route</span><span class="p">:</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">StringRoute</span><span class="p">(</span><span class="s">&#34;statement&#34;</span><span class="p">)},</span>
+</span></span><span class="line"><span class="cl">		<span class="p">{</span><span class="nx">From</span><span class="p">:</span> <span class="nx">routeNode</span><span class="p">,</span> <span class="nx">To</span><span class="p">:</span> <span class="nx">exclamation</span><span class="p">,</span> <span class="nx">Route</span><span class="p">:</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">StringRoute</span><span class="p">(</span><span class="s">&#34;exclamation&#34;</span><span class="p">)},</span>
+</span></span><span class="line"><span class="cl">	<span class="p">},</span>
+</span></span><span class="line"><span class="cl"><span class="p">)</span>
+</span></span></code></pre></div><p>この構造の何が良いかというと、</p>
+<ul>
+<li>LLM が指示を無視して &ldquo;this is a question&rdquo; などと返しても、<code>routeByClassification</code> の正規化で <code>statement</code> にフォールバックする。<strong>壊れ方が予測可能</strong>になる</li>
+<li>グラフを見れば「起こりうる遷移の全集合」が読める。LLM が勝手に未知の状態に飛ぶことがない</li>
+<li>ルーティングのロジックが Go の関数なので、LLM 抜きで単体テストできる</li>
+</ul>
+<p>ちなみに <code>Route</code> インタフェースの実装はこれだけです。エッジは「イベントに付いた <code>Routes</code> に自分の値が入っているか」しか見ません。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">type</span> <span class="nx">Route</span> <span class="kd">interface</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nf">Matches</span><span class="p">(</span><span class="nx">event</span> <span class="o">*</span><span class="nx">session</span><span class="p">.</span><span class="nx">Event</span><span class="p">)</span> <span class="kt">bool</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="kd">func</span> <span class="nf">matchRoute</span><span class="p">(</span><span class="nx">routeValue</span> <span class="kt">string</span><span class="p">,</span> <span class="nx">event</span> <span class="o">*</span><span class="nx">session</span><span class="p">.</span><span class="nx">Event</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">for</span> <span class="nx">_</span><span class="p">,</span> <span class="nx">v</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">event</span><span class="p">.</span><span class="nx">Routes</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">if</span> <span class="nx">v</span> <span class="o">==</span> <span class="nx">routeValue</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">			<span class="k">return</span> <span class="kc">true</span>
+</span></span><span class="line"><span class="cl">		<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="kc">false</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><p><code>StringRoute</code> のほかに <code>IntRoute</code>、<code>BoolRoute</code>、複数値をまとめて受ける <code>MultiRoute[T]</code> があります。<code>examples/workflow/routing/int/</code> ではサイコロの目 1〜10 を <code>MultiRoute[int]{1, 2, 3}</code> のようにレンジで振り分けています。</p>
+<p>そして重要なのは、<strong>分類そのものに LLM が要らないなら使わなくていい</strong>ということです。同じ構造で LLM を完全に外した <code>examples/workflow/routing/string/</code> が用意されていて、<code>classifyAndRoute</code> の中身は単なる Go の switch です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">trimmed</span> <span class="o">:=</span> <span class="nx">strings</span><span class="p">.</span><span class="nf">TrimSpace</span><span class="p">(</span><span class="nx">msg</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="k">switch</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl"><span class="k">case</span> <span class="nx">strings</span><span class="p">.</span><span class="nf">HasSuffix</span><span class="p">(</span><span class="nx">trimmed</span><span class="p">,</span> <span class="s">&#34;?&#34;</span><span class="p">):</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="s">&#34;question&#34;</span>
+</span></span><span class="line"><span class="cl"><span class="k">case</span> <span class="nx">strings</span><span class="p">.</span><span class="nf">HasSuffix</span><span class="p">(</span><span class="nx">trimmed</span><span class="p">,</span> <span class="s">&#34;!&#34;</span><span class="p">):</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="s">&#34;exclamation&#34;</span>
+</span></span><span class="line"><span class="cl"><span class="k">default</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="s">&#34;statement&#34;</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><p>グラフの形は LLM 版とまったく同じで、判断主体だけが差し替わっています。「この判断は LLM が要るのか、要らないのか」をノード単位で選べる。これが 2.0 の設計で一番効いている部分だと思います。</p>
+<h3 id="fan-out--fan-in並列とバリア">fan-out / fan-in（並列とバリア）<a hidden class="anchor" aria-hidden="true" href="#fan-out--fan-in並列とバリア">#</a></h3>
+<p><code>examples/workflow/complex/main.go</code> は3つのリサーチャーエージェントを並列に走らせ、<code>JoinNode</code> で待ち合わせて統合します。</p>
+<pre tabindex="0"><code>START ─┬─&gt; RenewableEnergyResearcher ─┐
+       ├─&gt; EVResearcher ──────────────┼─&gt; gather ─&gt; format ─&gt; SynthesisAgent
+       └─&gt; CarbonCaptureResearcher ───┘   (Join)   (func)      (LLM)
+</code></pre><p>エッジの定義は <code>EdgeBuilder</code> の fluent API で書けます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">eb</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">NewEdgeBuilder</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl"><span class="nx">eb</span><span class="p">.</span><span class="nf">AddFanOut</span><span class="p">(</span><span class="nx">workflow</span><span class="p">.</span><span class="nx">Start</span><span class="p">,</span> <span class="nx">renewableNode</span><span class="p">,</span> <span class="nx">electricVehicleNode</span><span class="p">,</span> <span class="nx">carbonNode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nx">eb</span><span class="p">.</span><span class="nf">AddFanIn</span><span class="p">(</span><span class="nx">gatherNode</span><span class="p">,</span> <span class="nx">renewableNode</span><span class="p">,</span> <span class="nx">electricVehicleNode</span><span class="p">,</span> <span class="nx">carbonNode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nx">eb</span><span class="p">.</span><span class="nf">Add</span><span class="p">(</span><span class="nx">gatherNode</span><span class="p">,</span> <span class="nx">formatNode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nx">eb</span><span class="p">.</span><span class="nf">Add</span><span class="p">(</span><span class="nx">formatNode</span><span class="p">,</span> <span class="nx">synthNode</span><span class="p">)</span>
+</span></span></code></pre></div><p><code>JoinNode</code> は全ての先行ノードが終わってから1回だけ発火し、後続に <code>map[ノード名]出力</code> を渡します。受け取る側はこうなります。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span> <span class="nf">formatSummaries</span><span class="p">(</span><span class="nx">_</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span> <span class="nx">gathered</span> <span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">any</span><span class="p">)</span> <span class="p">(</span><span class="kt">string</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">sections</span> <span class="o">:=</span> <span class="p">[]</span><span class="kd">struct</span><span class="p">{</span> <span class="nx">label</span><span class="p">,</span> <span class="nx">key</span> <span class="kt">string</span> <span class="p">}{</span>
+</span></span><span class="line"><span class="cl">		<span class="p">{</span><span class="s">&#34;Renewable Energy&#34;</span><span class="p">,</span> <span class="nx">renewableResearcher</span><span class="p">},</span>
+</span></span><span class="line"><span class="cl">		<span class="p">{</span><span class="s">&#34;Electric Vehicles&#34;</span><span class="p">,</span> <span class="nx">electricVehicleResearcher</span><span class="p">},</span>
+</span></span><span class="line"><span class="cl">		<span class="p">{</span><span class="s">&#34;Carbon Capture&#34;</span><span class="p">,</span> <span class="nx">carbonResearcher</span><span class="p">},</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="c1">// ...</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><p>サンプルのコメントに「マップを range せず固定スライスを回すことでプロンプトを決定的に保つ」と書かれているのが細かいですが良いです。並列実行の結果をそのまま LLM に食わせると順序が非決定になるので、ここも決定的なコードで整形しています。</p>
+<h3 id="human-in-the-loop">Human-in-the-Loop<a hidden class="anchor" aria-hidden="true" href="#human-in-the-loop">#</a></h3>
+<p>2.0 では任意のノードが実行を止めて人間の入力を要求できます。しかもこの中断はプロセス再起動を跨いで復帰できます（セッション履歴から再構成される）。</p>
+<p>再開モードは2種類あります。</p>
+<ul>
+<li><strong>handoff</strong>: 人間の回答が次のノードの入力として流れる（<code>RerunOnResume: &amp;false</code>。nil の場合もエンジンは現状 handoff として扱う）</li>
+<li><strong>re-entry</strong>: 中断したノードが最初から再実行され、回答は <code>ResumedInput</code> から読める（<code>RerunOnResume: &amp;true</code>）</li>
+</ul>
+<p>re-entry パターンが <code>examples/workflow/hitl_rerun/main.go</code> です。<code>ResumeOrRequestInput</code> が「1回目は質問して中断、2回目は回答を返す」を1つの呼び出しにまとめてくれます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">rerun</span> <span class="o">:=</span> <span class="kc">true</span>
+</span></span><span class="line"><span class="cl"><span class="nx">greet</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nx">NewEmittingFunctionNode</span><span class="p">[</span><span class="kt">any</span><span class="p">,</span> <span class="kt">any</span><span class="p">](</span><span class="s">&#34;greet&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="kd">func</span><span class="p">(</span><span class="nx">nc</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span> <span class="nx">_</span> <span class="kt">any</span><span class="p">,</span> <span class="nx">emit</span> <span class="kd">func</span><span class="p">(</span><span class="o">*</span><span class="nx">session</span><span class="p">.</span><span class="nx">Event</span><span class="p">)</span> <span class="kt">error</span><span class="p">)</span> <span class="p">(</span><span class="kt">any</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="nx">reply</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">ResumeOrRequestInput</span><span class="p">(</span><span class="nx">nc</span><span class="p">,</span> <span class="nx">emit</span><span class="p">,</span> <span class="nx">session</span><span class="p">.</span><span class="nx">RequestInput</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">			<span class="nx">InterruptID</span><span class="p">:</span> <span class="s">&#34;ask_name-&#34;</span> <span class="o">+</span> <span class="nx">nc</span><span class="p">.</span><span class="nf">InvocationID</span><span class="p">(),</span>
+</span></span><span class="line"><span class="cl">			<span class="nx">Message</span><span class="p">:</span>     <span class="s">&#34;What&#39;s your name?&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">		<span class="p">})</span>
+</span></span><span class="line"><span class="cl">		<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">			<span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">err</span>
+</span></span><span class="line"><span class="cl">		<span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">		<span class="nx">name</span><span class="p">,</span> <span class="nx">_</span> <span class="o">:=</span> <span class="nx">reply</span><span class="p">.(</span><span class="kt">string</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">		<span class="k">if</span> <span class="nx">name</span> <span class="o">==</span> <span class="s">&#34;&#34;</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">			<span class="nx">name</span> <span class="p">=</span> <span class="s">&#34;stranger&#34;</span>
+</span></span><span class="line"><span class="cl">		<span class="p">}</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">&#34;Hello, %s!&#34;</span><span class="p">,</span> <span class="nx">name</span><span class="p">),</span> <span class="kc">nil</span>
+</span></span><span class="line"><span class="cl">	<span class="p">},</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">workflow</span><span class="p">.</span><span class="nx">NodeConfig</span><span class="p">{</span><span class="nx">RerunOnResume</span><span class="p">:</span> <span class="o">&amp;</span><span class="nx">rerun</span><span class="p">},</span>
+</span></span><span class="line"><span class="cl"><span class="p">)</span>
+</span></span></code></pre></div><p>実装は拍子抜けするほど素直です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span> <span class="nf">ResumeOrRequestInput</span><span class="p">(</span><span class="nx">ctx</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span> <span class="nx">emit</span> <span class="kd">func</span><span class="p">(</span><span class="o">*</span><span class="nx">session</span><span class="p">.</span><span class="nx">Event</span><span class="p">)</span> <span class="kt">error</span><span class="p">,</span> <span class="nx">req</span> <span class="nx">session</span><span class="p">.</span><span class="nx">RequestInput</span><span class="p">)</span> <span class="p">(</span><span class="kt">any</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">reply</span><span class="p">,</span> <span class="nx">ok</span> <span class="o">:=</span> <span class="nx">ctx</span><span class="p">.</span><span class="nf">ResumedInput</span><span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">InterruptID</span><span class="p">);</span> <span class="nx">ok</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="nx">reply</span><span class="p">,</span> <span class="kc">nil</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nf">emit</span><span class="p">(</span><span class="nf">NewRequestInputEvent</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">req</span><span class="p">));</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">err</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">ErrNodeInterrupted</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><p><code>InterruptID</code> に <code>nc.InvocationID()</code> を混ぜているのがポイントで、これは同一実行内では安定して回答を対応付けられる一方、実行ごとにはユニークになるためです。ここを固定文字列にすると Dev UI が「その ID はもう回答済み」と判断して次回以降プロンプトを出さなくなります。ソースのコメントにわざわざ書いてあるので、実際に踏んだ人がいるのでしょう。</p>
+<h3 id="動的オーケストレーション">動的オーケストレーション<a hidden class="anchor" aria-hidden="true" href="#動的オーケストレーション">#</a></h3>
+<p>グラフを静的に宣言するのではなく、実行順序を Go のコードとして書きたい場合は <code>NewDynamicNode</code> を使います。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">myWorkflow</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nx">NewDynamicNode</span><span class="p">[</span><span class="kt">string</span><span class="p">,</span> <span class="kt">string</span><span class="p">](</span><span class="s">&#34;greeter_workflow&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="kd">func</span><span class="p">(</span><span class="nx">nc</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span> <span class="nx">in</span> <span class="kt">string</span><span class="p">,</span> <span class="nx">_</span> <span class="kd">func</span><span class="p">(</span><span class="o">*</span><span class="nx">session</span><span class="p">.</span><span class="nx">Event</span><span class="p">)</span> <span class="kt">error</span><span class="p">)</span> <span class="p">(</span><span class="kt">string</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="nx">workflow</span><span class="p">.</span><span class="nx">RunNode</span><span class="p">[</span><span class="kt">string</span><span class="p">](</span><span class="nx">nc</span><span class="p">,</span> <span class="nx">greeterNode</span><span class="p">,</span> <span class="nx">in</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">	<span class="p">},</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">workflow</span><span class="p">.</span><span class="nx">NodeConfig</span><span class="p">{},</span>
+</span></span><span class="line"><span class="cl"><span class="p">)</span>
+</span></span></code></pre></div><p><code>workflow.RunNode</code> で任意のノードをその場で呼べます。for ループや if 分岐をそのまま書けるので、静的グラフでは表現しづらい制御フローはこちらに逃がせます。動的ノードは既定で <code>RerunOnResume=&amp;true</code> なので、HITL と組み合わせるとオーケストレータの本体が頭から再実行され、回答は <code>nc.ResumedInput(...)</code> で拾う形になります。</p>
+<h3 id="リトライとタイムアウト">リトライとタイムアウト<a hidden class="anchor" aria-hidden="true" href="#リトライとタイムアウト">#</a></h3>
+<p><code>NodeConfig</code> にスケジューラレベルの信頼性設定が入りました。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">type</span> <span class="nx">NodeConfig</span> <span class="kd">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">ParallelWorker</span> <span class="kt">bool</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">RerunOnResume</span>  <span class="o">*</span><span class="kt">bool</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">WaitForOutput</span>  <span class="o">*</span><span class="kt">bool</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">RetryConfig</span>    <span class="o">*</span><span class="nx">RetryConfig</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Timeout</span>        <span class="nx">time</span><span class="p">.</span><span class="nx">Duration</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">EmitsOwnSpan</span>   <span class="kt">bool</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><p><code>RetryConfig</code> は <code>MaxAttempts</code> / <code>InitialDelay</code> / <code>MaxDelay</code> / <code>BackoffFactor</code> / <code>Jitter</code> / <code>ShouldRetry</code> を持つフラットな構造体です。推奨は <code>DefaultRetryConfig()</code> を起点に上書きする書き方で、構造体リテラルで作ると未設定フィールドがゼロ値（＝リトライなし）になるので注意、とドキュメントに明記されています。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">rc</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">DefaultRetryConfig</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl"><span class="nx">rc</span><span class="p">.</span><span class="nx">MaxAttempts</span> <span class="p">=</span> <span class="mi">10</span>
+</span></span><span class="line"><span class="cl"><span class="nx">cfg</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nx">NodeConfig</span><span class="p">{</span><span class="nx">RetryConfig</span><span class="p">:</span> <span class="nx">rc</span><span class="p">}</span>
+</span></span></code></pre></div><h3 id="そのほかの改善と破壊的変更">そのほかの改善と破壊的変更<a hidden class="anchor" aria-hidden="true" href="#そのほかの改善と破壊的変更">#</a></h3>
+<p>グラフエンジン以外では以下が入っています。</p>
+<ul>
+<li><strong><code>agent.Context</code> の統一</strong>: これまで別物だった <code>ToolContext</code> と <code>CallbackContext</code> が1つの <code>agent.Context</code> に統合されました</li>
+<li><strong>LlmAgent のモード</strong>: <code>ModeChat</code> / <code>ModeTask</code> / <code>ModeSingleTurn</code> の3つ。既定値はサブエージェントとしては <code>ModeChat</code>、ワークフローのノードとしては <code>ModeSingleTurn</code> になります。つまり <code>NewAgentNode</code> で包んだ LLM エージェントは、チャット履歴ではなく<strong>先行ノードの出力を入力として消費する</strong>モードになります</li>
+<li><strong>テレメトリの一貫性</strong>: 単体エージェントでもグラフでも同じ span ツリーになる</li>
+</ul>
+<p>破壊的変更としては <a href="https://github.com/google/adk-go/blob/main/README-v2.md">README-v2.md</a> に以下が挙がっています。</p>
+<ol>
+<li>モジュールパスが <code>google.golang.org/adk/v2</code> に変更</li>
+<li><code>session.NewEvent</code> が第1引数に <code>context.Context</code> を要求するようになった</li>
+</ol>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="c1">// Before</span>
+</span></span><span class="line"><span class="cl"><span class="nx">ev</span> <span class="o">:=</span> <span class="nx">session</span><span class="p">.</span><span class="nf">NewEvent</span><span class="p">(</span><span class="nx">ctx</span><span class="p">.</span><span class="nf">InvocationID</span><span class="p">())</span>
+</span></span><span class="line"><span class="cl"><span class="c1">// After</span>
+</span></span><span class="line"><span class="cl"><span class="nx">ev</span> <span class="o">:=</span> <span class="nx">session</span><span class="p">.</span><span class="nf">NewEvent</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">ctx</span><span class="p">.</span><span class="nf">InvocationID</span><span class="p">())</span>
+</span></span></code></pre></div><p>これはイベント ID とタイムスタンプを <code>platform</code> パッケージ経由で取得するようになったためで、<code>platform.WithTimeProvider</code> などを ctx に載せることで<strong>決定的でリプレイ可能なイベント</strong>を作れるようになっています。ワークフローエンジンが再開可能である以上、必然の変更に見えます。</p>
+<ol start="3">
+<li>コンテキスト統合に伴い、テストのモックが壊れる。手で足りないメソッドを生やす代わりに <code>agent.StrictContextMock</code> を埋め込む方法が推奨されています。未実装メソッドを呼ぶと黙ってゼロ値を返さず panic するので、想定外の呼び出しがテストで顕在化します</li>
+</ol>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">type</span> <span class="nx">fakeContext</span> <span class="kd">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">agent</span><span class="p">.</span><span class="nx">StrictContextMock</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="kd">var</span> <span class="nx">_</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span> <span class="p">=</span> <span class="p">(</span><span class="o">*</span><span class="nx">fakeContext</span><span class="p">)(</span><span class="kc">nil</span><span class="p">)</span>
+</span></span></code></pre></div><h2 id="sre-agent-における応用">SRE Agent における応用<a hidden class="anchor" aria-hidden="true" href="#sre-agent-における応用">#</a></h2>
+<p>ここからが本題です。前置きした「LLM は脳、ルーティングはエンジン」という思想が、SRE のインシデント対応エージェントにどう効くのかを考えます。</p>
+<h3 id="なぜこの分割が-sre-で効きそうなのか">なぜこの分割が SRE で効きそうなのか<a hidden class="anchor" aria-hidden="true" href="#なぜこの分割が-sre-で効きそうなのか">#</a></h3>
+<p>以前 <a href="/post/ai-sre-google/">Google が提唱する AI in SRE とは何か</a> という記事で、SRE 自律性の5段階モデル（L0〜L4）を紹介しました。L2 は「AI が実行前に人間の明示的承認を必要とする」段階、L3 は「十分に定義されたシナリオで AI が独立実行する」段階です。</p>
+<p>このモデルを実装に落とすときに困るのが、<strong>「十分に定義されたシナリオ」をどこに書くのか</strong>という問題です。全部プロンプトに書いて LLM に任せると、</p>
+<ul>
+<li>同じアラートで毎回違う判断をする可能性がある（＝再現性がない）</li>
+<li>「このエージェントは何をしうるのか」をレビューできない</li>
+<li>昇格ゲート（L2→L3）の判定に必要な統計を取るにも、そもそも判断の分布が安定しない</li>
+</ul>
+<p>という状態になります。インシデント対応で本番環境に変更を加える以上、ここは譲れないところです。</p>
+<p>ADK Go 2.0 のグラフは、この境界を<strong>構造として</strong>引けます。</p>
+<ul>
+<li><strong>LLM がやること</strong>: 大量の非構造データ（ログ、メトリクス、変更履歴）を読んで所見を書く</li>
+<li><strong>Go のコードがやること</strong>: どの Runbook を実行するか決める、承認を挟むか決める</li>
+</ul>
+<p>そして実行しうる操作の全集合はグラフのエッジとして静的に宣言されているので、コードレビューで確認できます。</p>
+<h3 id="インシデントトリアージのワークフローを書いてみた">インシデントトリアージのワークフローを書いてみた<a hidden class="anchor" aria-hidden="true" href="#インシデントトリアージのワークフローを書いてみた">#</a></h3>
+<p>実際に書いてみました。以下は <code>go vet</code> を通し、実際に実行して動作確認したコードです（LLM 部分をスタブに差し替えた版で end-to-end の動作を確認しています）。動くもの一式は <a href="https://github.com/jedipunkz/adk-playground/tree/main/sre-agent">jedipunkz/adk-playground の sre-agent</a> に置きました。記事中では要点だけを抜き出しているので、グラフの全体像やテストはそちらを見てください。</p>
+<p>グラフはこうなります。</p>
+<pre class="mermaid">
+  flowchart LR
+  S((START)) --&gt; M[fetch_metrics]
+  S --&gt; L[fetch_logs]
+  S --&gt; D[fetch_deploys]
+  M --&gt; G[gather&lt;br/&gt;JoinNode]
+  L --&gt; G
+  D --&gt; G
+  G --&gt; E[build_evidence&lt;br/&gt;Go]
+  E --&gt; X[diagnose&lt;br/&gt;LLM]
+  X --&gt; C[decide_action&lt;br/&gt;Go]
+  C --&gt;|rollback| R[propose_rollback&lt;br/&gt;HITL]
+  C --&gt;|scale_out| SC[scale_out]
+  C --&gt;|escalate| P[page_oncall]
+</pre>
+<p>ポイントは、<strong>LLM ノード <code>diagnose</code> は分岐の手前にいるが、分岐の判断材料ではない</strong>ことです。<code>decide_action</code> は LLM の出力ではなく、<code>build_evidence</code> が session state に保存した生の証拠データを読んで決めます。</p>
+<p>まず証拠を集めるフェーズ。外部 API を叩くのでリトライとタイムアウトを付けます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">fetchCfg</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nx">NodeConfig</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">RetryConfig</span><span class="p">:</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">DefaultRetryConfig</span><span class="p">(),</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Timeout</span><span class="p">:</span>     <span class="mi">15</span> <span class="o">*</span> <span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl"><span class="nx">metricsNode</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">NewFunctionNode</span><span class="p">(</span><span class="nx">nodeMetrics</span><span class="p">,</span> <span class="nx">fetchMetrics</span><span class="p">,</span> <span class="nx">fetchCfg</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nx">logsNode</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">NewFunctionNode</span><span class="p">(</span><span class="nx">nodeLogs</span><span class="p">,</span> <span class="nx">fetchLogs</span><span class="p">,</span> <span class="nx">fetchCfg</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nx">deploysNode</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">NewFunctionNode</span><span class="p">(</span><span class="nx">nodeDeploys</span><span class="p">,</span> <span class="nx">fetchDeploys</span><span class="p">,</span> <span class="nx">fetchCfg</span><span class="p">)</span>
+</span></span></code></pre></div><p><code>fetchMetrics</code> などは普通の Go 関数です。ここではログとメトリクスを Datadog から取る想定にしました。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">type</span> <span class="nx">Metrics</span> <span class="kd">struct</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">ErrorRate</span>     <span class="kt">float64</span> <span class="s">`json:&#34;errorRate&#34;`</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">LatencyP99Ms</span>  <span class="kt">int</span>     <span class="s">`json:&#34;latencyP99Ms&#34;`</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">CPUSaturation</span> <span class="kt">float64</span> <span class="s">`json:&#34;cpuSaturation&#34;`</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="kd">func</span> <span class="nf">fetchMetrics</span><span class="p">(</span><span class="nx">_</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span> <span class="nx">service</span> <span class="kt">string</span><span class="p">)</span> <span class="p">(</span><span class="nx">Metrics</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="c1">// 実運用では datadog-api-client-go の MetricsApi.QueryTimeseriesData に</span>
+</span></span><span class="line"><span class="cl">	<span class="c1">// sum:trace.http.request.errors{service:checkout-api}.as_rate() などを投げる</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="nx">Metrics</span><span class="p">{</span><span class="nx">ErrorRate</span><span class="p">:</span> <span class="mf">0.18</span><span class="p">,</span> <span class="nx">LatencyP99Ms</span><span class="p">:</span> <span class="mi">2400</span><span class="p">,</span> <span class="nx">CPUSaturation</span><span class="p">:</span> <span class="mf">0.42</span><span class="p">},</span> <span class="kc">nil</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><p><code>fetchLogs</code> も同じ形で、Logs API に <code>service:checkout-api status:error</code> を投げて上位のエラーと件数を <code>LogDigest</code> に詰めるだけです。ここで大事なのは、<strong>どのクエリをどの窓で投げるかを Go のコードが決めている</strong>ことです。Datadog の MCP サーバを LLM に渡して「調べて」とやる構成も組めますが、それだと取得範囲が実行ごとにぶれて、後段の <code>decideAction</code> が同じインシデントで同じ判断を返す保証がなくなります。LLM に渡すのは集め終えた証拠だけ、という分担はここでも変えません。</p>
+<p>3つの収集を並列に走らせて <code>JoinNode</code> で待ち合わせ、<code>build_evidence</code> で1つの構造体にまとめます。ここで <strong>session state に生データを保存しておく</strong>のが後で効きます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span> <span class="nf">buildEvidence</span><span class="p">(</span><span class="nx">ctx</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span> <span class="nx">gathered</span> <span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">any</span><span class="p">)</span> <span class="p">(</span><span class="kt">string</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">ev</span> <span class="o">:=</span> <span class="nx">Evidence</span><span class="p">{</span><span class="nx">Service</span><span class="p">:</span> <span class="s">&#34;checkout-api&#34;</span><span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="kd">var</span> <span class="nx">err</span> <span class="kt">error</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">ev</span><span class="p">.</span><span class="nx">Metrics</span><span class="p">,</span> <span class="nx">err</span> <span class="p">=</span> <span class="nx">decodeInto</span><span class="p">[</span><span class="nx">Metrics</span><span class="p">](</span><span class="nx">gathered</span><span class="p">[</span><span class="nx">nodeMetrics</span><span class="p">]);</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="s">&#34;&#34;</span><span class="p">,</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;decoding metrics: %w&#34;</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">ev</span><span class="p">.</span><span class="nx">Logs</span><span class="p">,</span> <span class="nx">err</span> <span class="p">=</span> <span class="nx">decodeInto</span><span class="p">[</span><span class="nx">LogDigest</span><span class="p">](</span><span class="nx">gathered</span><span class="p">[</span><span class="nx">nodeLogs</span><span class="p">]);</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="s">&#34;&#34;</span><span class="p">,</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;decoding logs: %w&#34;</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">ev</span><span class="p">.</span><span class="nx">Deploy</span><span class="p">,</span> <span class="nx">err</span> <span class="p">=</span> <span class="nx">decodeInto</span><span class="p">[</span><span class="nx">DeployInfo</span><span class="p">](</span><span class="nx">gathered</span><span class="p">[</span><span class="nx">nodeDeploys</span><span class="p">]);</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="s">&#34;&#34;</span><span class="p">,</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;decoding deploys: %w&#34;</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">	<span class="c1">// 決定ノードが後から読めるように state に置く。LLM の出力ではなく</span>
+</span></span><span class="line"><span class="cl">	<span class="c1">// この生データが、あとで分岐を決める唯一の根拠になる。</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">ctx</span><span class="p">.</span><span class="nf">State</span><span class="p">().</span><span class="nf">Set</span><span class="p">(</span><span class="nx">stateEvidence</span><span class="p">,</span> <span class="nx">ev</span><span class="p">);</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="s">&#34;&#34;</span><span class="p">,</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;saving evidence: %w&#34;</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">	<span class="nx">b</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">MarshalIndent</span><span class="p">(</span><span class="nx">ev</span><span class="p">,</span> <span class="s">&#34;&#34;</span><span class="p">,</span> <span class="s">&#34;  &#34;</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="s">&#34;&#34;</span><span class="p">,</span> <span class="nx">err</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="s">&#34;Incident evidence:\n&#34;</span> <span class="o">+</span> <span class="nb">string</span><span class="p">(</span><span class="nx">b</span><span class="p">),</span> <span class="kc">nil</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><p>LLM には診断だけをさせます。ここで <strong>「アクションを提案するな」と明示している</strong>のが今回の肝です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">diagnoser</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">llmagent</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="nx">llmagent</span><span class="p">.</span><span class="nx">Config</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Name</span><span class="p">:</span>        <span class="s">&#34;diagnose&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Model</span><span class="p">:</span>       <span class="nx">model</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Description</span><span class="p">:</span> <span class="s">&#34;summarises incident evidence for a human responder&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">Instruction</span><span class="p">:</span> <span class="s">&#34;Given the incident evidence, write at most three sentences describing the &#34;</span> <span class="o">+</span>
+</span></span><span class="line"><span class="cl">		<span class="s">&#34;most likely cause. Do not propose an action; the runbook is chosen elsewhere.&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl"><span class="p">})</span>
+</span></span></code></pre></div><p>そして決定ノード。これが全体で一番重要な部分です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span> <span class="nf">decideAction</span><span class="p">(</span><span class="nx">ctx</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span> <span class="nx">diagnosis</span> <span class="kt">any</span><span class="p">,</span> <span class="nx">emit</span> <span class="kd">func</span><span class="p">(</span><span class="o">*</span><span class="nx">session</span><span class="p">.</span><span class="nx">Event</span><span class="p">)</span> <span class="kt">error</span><span class="p">)</span> <span class="p">(</span><span class="kt">any</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">raw</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">ctx</span><span class="p">.</span><span class="nf">State</span><span class="p">().</span><span class="nf">Get</span><span class="p">(</span><span class="nx">stateEvidence</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;reading evidence: %w&#34;</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">ev</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">decodeInto</span><span class="p">[</span><span class="nx">Evidence</span><span class="p">](</span><span class="nx">raw</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;decoding evidence: %w&#34;</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">	<span class="c1">// ポリシーは全て決定的な Go のコード。LLM の所見はイベントに載せて</span>
+</span></span><span class="line"><span class="cl">	<span class="c1">// 人間に見せるが、分岐の判断には使わない。</span>
+</span></span><span class="line"><span class="cl">	<span class="kd">var</span> <span class="nx">route</span> <span class="kt">string</span>
+</span></span><span class="line"><span class="cl">	<span class="k">switch</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="k">case</span> <span class="nx">ev</span><span class="p">.</span><span class="nx">Deploy</span><span class="p">.</span><span class="nx">MinutesSinceDeploy</span> <span class="o">&lt;=</span> <span class="mi">30</span> <span class="o">&amp;&amp;</span> <span class="nx">ev</span><span class="p">.</span><span class="nx">Metrics</span><span class="p">.</span><span class="nx">ErrorRate</span> <span class="p">&gt;</span> <span class="mf">0.05</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">		<span class="nx">route</span> <span class="p">=</span> <span class="nx">routeRollback</span>
+</span></span><span class="line"><span class="cl">	<span class="k">case</span> <span class="nx">ev</span><span class="p">.</span><span class="nx">Metrics</span><span class="p">.</span><span class="nx">CPUSaturation</span> <span class="p">&gt;</span> <span class="mf">0.85</span> <span class="o">&amp;&amp;</span> <span class="nx">ev</span><span class="p">.</span><span class="nx">Metrics</span><span class="p">.</span><span class="nx">ErrorRate</span> <span class="o">&lt;=</span> <span class="mf">0.05</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">		<span class="nx">route</span> <span class="p">=</span> <span class="nx">routeScaleOut</span>
+</span></span><span class="line"><span class="cl">	<span class="k">default</span><span class="p">:</span>
+</span></span><span class="line"><span class="cl">		<span class="nx">route</span> <span class="p">=</span> <span class="nx">routeEscalate</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">	<span class="nx">out</span> <span class="o">:=</span> <span class="nx">session</span><span class="p">.</span><span class="nf">NewEvent</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">ctx</span><span class="p">.</span><span class="nf">InvocationID</span><span class="p">())</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">out</span><span class="p">.</span><span class="nx">Routes</span> <span class="p">=</span> <span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="nx">route</span><span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">out</span><span class="p">.</span><span class="nx">Output</span> <span class="p">=</span> <span class="nx">ev</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">out</span><span class="p">.</span><span class="nx">Content</span> <span class="p">=</span> <span class="o">&amp;</span><span class="nx">genai</span><span class="p">.</span><span class="nx">Content</span><span class="p">{</span><span class="nx">Parts</span><span class="p">:</span> <span class="p">[]</span><span class="o">*</span><span class="nx">genai</span><span class="p">.</span><span class="nx">Part</span><span class="p">{{</span>
+</span></span><span class="line"><span class="cl">		<span class="nx">Text</span><span class="p">:</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">&#34;decision=%s\nLLM diagnosis: %v&#34;</span><span class="p">,</span> <span class="nx">route</span><span class="p">,</span> <span class="nx">diagnosis</span><span class="p">),</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}}}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nf">emit</span><span class="p">(</span><span class="nx">out</span><span class="p">);</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">err</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="kc">nil</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><p><code>diagnosis</code>（LLM の出力）は引数で受け取っていますが、<code>switch</code> の条件には<strong>一切登場しません</strong>。人間に見せるためにイベントの <code>Content</code> に載せるだけです。「デプロイから30分以内でエラー率が5%を超えていたらロールバック」という判断は、LLM の気分ではなくコードが決めます。この関数は <code>agent.Context</code> のモックさえ用意すれば LLM 抜きで単体テストできますし、閾値を変えたときの影響もレビューできます。</p>
+<p>エッジの定義は <code>EdgeBuilder</code> で書きます。<code>AddRoutes</code> を使うとルート値と遷移先の対応がマップで一望できます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">eb</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">NewEdgeBuilder</span><span class="p">()</span>
+</span></span><span class="line"><span class="cl"><span class="nx">eb</span><span class="p">.</span><span class="nf">AddFanOut</span><span class="p">(</span><span class="nx">workflow</span><span class="p">.</span><span class="nx">Start</span><span class="p">,</span> <span class="nx">metricsNode</span><span class="p">,</span> <span class="nx">logsNode</span><span class="p">,</span> <span class="nx">deploysNode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nx">eb</span><span class="p">.</span><span class="nf">AddFanIn</span><span class="p">(</span><span class="nx">gatherNode</span><span class="p">,</span> <span class="nx">metricsNode</span><span class="p">,</span> <span class="nx">logsNode</span><span class="p">,</span> <span class="nx">deploysNode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nx">eb</span><span class="p">.</span><span class="nf">Add</span><span class="p">(</span><span class="nx">gatherNode</span><span class="p">,</span> <span class="nx">evidenceNode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nx">eb</span><span class="p">.</span><span class="nf">Add</span><span class="p">(</span><span class="nx">evidenceNode</span><span class="p">,</span> <span class="nx">diagnoseNode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nx">eb</span><span class="p">.</span><span class="nf">Add</span><span class="p">(</span><span class="nx">diagnoseNode</span><span class="p">,</span> <span class="nx">decideNode</span><span class="p">)</span>
+</span></span><span class="line"><span class="cl"><span class="nx">eb</span><span class="p">.</span><span class="nf">AddRoutes</span><span class="p">(</span><span class="nx">decideNode</span><span class="p">,</span> <span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="nx">workflow</span><span class="p">.</span><span class="nx">Node</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">routeRollback</span><span class="p">:</span> <span class="nx">rollbackNode</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">routeScaleOut</span><span class="p">:</span> <span class="nx">scaleNode</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">routeEscalate</span><span class="p">:</span> <span class="nx">escalateNode</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl"><span class="p">})</span>
+</span></span></code></pre></div><h3 id="承認ゲートを-hitl-で表現する">承認ゲートを HITL で表現する<a hidden class="anchor" aria-hidden="true" href="#承認ゲートを-hitl-で表現する">#</a></h3>
+<p>ロールバックは本番に変更を加えるので、L2（実行前に人間の承認が必要）として承認を挟みます。<code>ResumeOrRequestInput</code> の re-entry パターンをそのまま使えます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span> <span class="nf">proposeRollback</span><span class="p">(</span><span class="nx">ctx</span> <span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span> <span class="nx">ev</span> <span class="nx">Evidence</span><span class="p">,</span> <span class="nx">emit</span> <span class="kd">func</span><span class="p">(</span><span class="o">*</span><span class="nx">session</span><span class="p">.</span><span class="nx">Event</span><span class="p">)</span> <span class="kt">error</span><span class="p">)</span> <span class="p">(</span><span class="kt">string</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">reply</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">ResumeOrRequestInput</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">emit</span><span class="p">,</span> <span class="nx">session</span><span class="p">.</span><span class="nx">RequestInput</span><span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="nx">InterruptID</span><span class="p">:</span> <span class="s">&#34;approve_rollback-&#34;</span> <span class="o">+</span> <span class="nx">ctx</span><span class="p">.</span><span class="nf">InvocationID</span><span class="p">(),</span>
+</span></span><span class="line"><span class="cl">		<span class="nx">Message</span><span class="p">:</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">&#34;Roll back %s to the previous release? (deploy %s, %d min ago, error rate %.1f%%) [yes/no]&#34;</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">			<span class="nx">ev</span><span class="p">.</span><span class="nx">Service</span><span class="p">,</span> <span class="nx">ev</span><span class="p">.</span><span class="nx">Deploy</span><span class="p">.</span><span class="nx">LastDeployID</span><span class="p">,</span> <span class="nx">ev</span><span class="p">.</span><span class="nx">Deploy</span><span class="p">.</span><span class="nx">MinutesSinceDeploy</span><span class="p">,</span> <span class="nx">ev</span><span class="p">.</span><span class="nx">Metrics</span><span class="p">.</span><span class="nx">ErrorRate</span><span class="o">*</span><span class="mi">100</span><span class="p">),</span>
+</span></span><span class="line"><span class="cl">	<span class="p">})</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="s">&#34;&#34;</span><span class="p">,</span> <span class="nx">err</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">if</span> <span class="nx">answer</span><span class="p">,</span> <span class="nx">_</span> <span class="o">:=</span> <span class="nx">reply</span><span class="p">.(</span><span class="kt">string</span><span class="p">);</span> <span class="nx">answer</span> <span class="o">!=</span> <span class="s">&#34;yes&#34;</span> <span class="p">{</span>
+</span></span><span class="line"><span class="cl">		<span class="k">return</span> <span class="s">&#34;rollback declined by operator; escalating to on-call&#34;</span><span class="p">,</span> <span class="kc">nil</span>
+</span></span><span class="line"><span class="cl">	<span class="p">}</span>
+</span></span><span class="line"><span class="cl">	<span class="k">return</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">&#34;rolled back %s from %s&#34;</span><span class="p">,</span> <span class="nx">ev</span><span class="p">.</span><span class="nx">Service</span><span class="p">,</span> <span class="nx">ev</span><span class="p">.</span><span class="nx">Deploy</span><span class="p">.</span><span class="nx">LastDeployID</span><span class="p">),</span> <span class="kc">nil</span>
+</span></span><span class="line"><span class="cl"><span class="p">}</span>
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">rerun</span> <span class="o">:=</span> <span class="kc">true</span>
+</span></span><span class="line"><span class="cl"><span class="nx">rollbackNode</span> <span class="o">:=</span> <span class="nx">workflow</span><span class="p">.</span><span class="nf">NewEmittingFunctionNode</span><span class="p">(</span><span class="s">&#34;rollback&#34;</span><span class="p">,</span> <span class="nx">proposeRollback</span><span class="p">,</span>
+</span></span><span class="line"><span class="cl">	<span class="nx">workflow</span><span class="p">.</span><span class="nx">NodeConfig</span><span class="p">{</span><span class="nx">RerunOnResume</span><span class="p">:</span> <span class="o">&amp;</span><span class="nx">rerun</span><span class="p">})</span>
+</span></span></code></pre></div><p>自律性レベルがノードの <code>NodeConfig</code> として表現できる、というのがきれいだと思いました。L2 のまま運用したいノードには HITL を挟み、統計が溜まって L3 に上げられると判断したらそのノードから HITL を外す。<strong>昇格が設定変更として表現できる</strong>わけです。逆に「このノードはまだ L2」というのがコード上で一目で分かります。</p>
+<p>さらに、この中断はプロセス再起動を跨いで復帰できます。深夜のインシデントで承認待ちのままエージェントのプロセスが死んでも、セッション履歴から状態を再構成して続きから再開できる、というのは運用上そこそこ大きい話です。</p>
+<h3 id="実行結果">実行結果<a hidden class="anchor" aria-hidden="true" href="#実行結果">#</a></h3>
+<p>スタブ版を実際に動かした出力です。</p>
+<pre tabindex="0"><code>Agent -&gt; decision=rollback
+LLM diagnosis: STUB DIAGNOSIS for:
+Incident evidence:
+{
+  &#34;service&#34;: &#34;checkout-api&#34;,
+  &#34;metrics&#34;: {
+    &#34;errorRate&#34;: 0.18,
+    &#34;latencyP99Ms&#34;: 2400,
+    &#34;cpuSaturation&#34;: 0.42
+  },
+  &#34;logs&#34;: {
+    &#34;topErrors&#34;: [
+      &#34;panic: nil map write&#34;,
+      &#34;context deadline exceeded&#34;
+    ],
+    &#34;volume&#34;: 18342
+  },
+  &#34;deploy&#34;: {
+    &#34;lastDeployId&#34;: &#34;rel-2026-07-31.3&#34;,
+    &#34;minutesSinceDeploy&#34;: 7
+  }
+}
+Agent -&gt; Roll back checkout-api to the previous release? (deploy rel-2026-07-31.3, 7 min ago, error rate 18.0%) [yes/no]
+User -&gt; yes
+Agent -&gt; rolled back checkout-api from rel-2026-07-31.3
+</code></pre><p>fan-out での並列収集、Join での待ち合わせ、state 経由での証拠の受け渡し、決定的なルーティング、HITL による中断と再開が一通り動いています。</p>
+<h3 id="応用を考えるうえで気になっている点">応用を考えるうえで気になっている点<a hidden class="anchor" aria-hidden="true" href="#応用を考えるうえで気になっている点">#</a></h3>
+<p>いくつか、まだ自分の中で答えが出ていないところを正直に書いておきます。</p>
+<p><strong>閾値をどこで管理するか。</strong> 上の <code>decideAction</code> は閾値がハードコードされています。実際には「サービスごとにエラー率の閾値が違う」「Datadog の SLO のエラーバジェット消費速度で判断したい」という話になるので、ポリシーは外部設定に出したくなります。ただし外部設定にすると今度は「レビューできる」という利点が薄れる可能性があり、どこで線を引くかは考えどころです。</p>
+<p><strong>LLM を判断に使いたくなる領域は必ずある。</strong> 「デプロイ直後にエラー率が上がった」は決定的に書けますが、「複数サービスにまたがる連鎖障害の起点はどこか」は決定的に書けません。前者は Go、後者は LLM、という分割は理屈では分かるのですが、実際のインシデントはその中間にあるものが多いです。この場合、LLM に判断させたうえで<strong>その判断を実行前にコードで検証する</strong>（提案されたアクションがホワイトリストに入っているか、blast radius が閾値以下か）という二段構えになるのかもしれません。グラフで書くなら「LLM ノード → 検証ノード（Go）→ ルーティング」という形です。</p>
+<p><strong>動的ノードとのバランス。</strong> インシデント対応は「調べて、分からなかったらもう少し調べる」という反復が本質なので、完全に静的なグラフでは表現しきれない部分があります。<code>NewDynamicNode</code> で調査ループを書き、確定した対処だけを静的グラフに戻す、というハイブリッドが現実解な気がしていますが、そうすると動的ノードの中身が結局ブラックボックスになるジレンマがあります。</p>
+<p>このあたりは実際に運用してみないと分からないので、もう少し手を動かしてみるつもりです。</p>
+<h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
+<p>ADK Go 2.0 のグラフワークフローエンジンを、公式サンプルを読みながら追いかけてみました。</p>
+<ul>
+<li>ADK の基本は「モデル + 指示 + ツール」で、Go の型からツールのスキーマが自動生成されるのが気持ちいい</li>
+<li>2.0 の中心はグラフワークフローエンジン。ノードとエッジで書き、fan-out / fan-in / 条件分岐 / HITL / リトライがフレームワーク側の機能になった</li>
+<li>ルーティングは LLM ではなくエンジンが行う。LLM は分類結果を1単語返すだけで、どこに飛ぶかはエッジの静的な宣言で決まる</li>
+<li>この分割は SRE のインシデント対応エージェントにそのまま効きそう。「LLM は診断、Go は判断」に分けると、実行しうる操作がレビューでき、判断が再現でき、自律性レベルがノード設定として表現できる</li>
+</ul>
+<p>「LLM に全部任せない」というのは一見後退に見えますが、本番環境に手を入れるエージェントを作る文脈では、むしろこれが前に進むための条件だと思います。LLM に任せる範囲を絞れば絞るほど、その範囲について統計が取れて、安心して自律度を上げられる。ADK Go 2.0 のグラフは、その「絞る」作業をフレームワークの構造として支援してくれている、というのが読んでみた感想でした。</p>
+<h2 id="参考">参考<a hidden class="anchor" aria-hidden="true" href="#参考">#</a></h2>
+<ul>
+<li><a href="https://developers.googleblog.com/announcing-adk-go-20/">Announcing ADK Go 2.0</a></li>
+<li><a href="https://github.com/google/adk-go">google/adk-go</a></li>
+<li><a href="https://github.com/google/adk-go/releases/tag/v2.0.0">ADK Go v2.0.0 Release</a></li>
+<li><a href="https://github.com/google/adk-go/blob/main/README-v2.md">ADK Go 2.0 migration guide (README-v2.md)</a></li>
+<li><a href="https://google.github.io/adk-docs/">ADK Documentation</a></li>
+<li><a href="https://github.com/DataDog/datadog-api-client-go">datadog-api-client-go</a></li>
+<li><a href="/post/ai-sre-google/">Google が提唱する AI in SRE とは何か</a></li>
+<li><a href="https://github.com/jedipunkz/adk-playground/tree/main/sre-agent">jedipunkz/adk-playground — sre-agent</a>（この記事で書いたコード）</li>
+</ul>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
+<nav class="paginav">
+  <a class="next" href="https://jedipunkz.rocks/post/rag-playground/">
+    <span class="title">次へ »</span>
+    <br>
+    <span>RAG を動かして基本を理解する</span>
+  </a>
+</nav>
+
+
+<ul class="share-buttons">
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える on x"
+            href="https://x.com/intent/tweet/?text=ADK%20Go%202.0%20%e3%81%ae%e3%82%b0%e3%83%a9%e3%83%95%e3%83%af%e3%83%bc%e3%82%af%e3%83%95%e3%83%ad%e3%83%bc%e3%82%92%e8%aa%ad%e3%82%93%e3%81%a7%20SRE%20Agent%20%e3%81%b8%e3%81%ae%e5%bf%9c%e7%94%a8%e3%82%92%e8%80%83%e3%81%88%e3%82%8b&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-2%2f&amp;hashtags=">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M512 62.554 L 512 449.446 C 512 483.97 483.97 512 449.446 512 L 62.554 512 C 28.03 512 0 483.97 0 449.446 L 0 62.554 C 0 28.03 28.029 0 62.554 0 L 449.446 0 C 483.971 0 512 28.03 512 62.554 Z M 269.951 190.75 L 182.567 75.216 L 56 75.216 L 207.216 272.95 L 63.9 436.783 L 125.266 436.783 L 235.9 310.383 L 332.567 436.783 L 456 436.783 L 298.367 228.367 L 432.367 75.216 L 371.033 75.216 Z M 127.633 110 L 164.101 110 L 383.481 400.065 L 349.5 400.065 Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える on linkedin"
+            href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-2%2f&amp;title=ADK%20Go%202.0%20%e3%81%ae%e3%82%b0%e3%83%a9%e3%83%95%e3%83%af%e3%83%bc%e3%82%af%e3%83%95%e3%83%ad%e3%83%bc%e3%82%92%e8%aa%ad%e3%82%93%e3%81%a7%20SRE%20Agent%20%e3%81%b8%e3%81%ae%e5%bf%9c%e7%94%a8%e3%82%92%e8%80%83%e3%81%88%e3%82%8b&amp;summary=ADK%20Go%202.0%20%e3%81%ae%e3%82%b0%e3%83%a9%e3%83%95%e3%83%af%e3%83%bc%e3%82%af%e3%83%95%e3%83%ad%e3%83%bc%e3%82%92%e8%aa%ad%e3%82%93%e3%81%a7%20SRE%20Agent%20%e3%81%b8%e3%81%ae%e5%bf%9c%e7%94%a8%e3%82%92%e8%80%83%e3%81%88%e3%82%8b&amp;source=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-2%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-288.985,423.278l0,-225.717l-75.04,0l0,225.717l75.04,0Zm270.539,0l0,-129.439c0,-69.333 -37.018,-101.586 -86.381,-101.586c-39.804,0 -57.634,21.891 -67.617,37.266l0,-31.958l-75.021,0c0.995,21.181 0,225.717 0,225.717l75.02,0l0,-126.056c0,-6.748 0.486,-13.492 2.474,-18.315c5.414,-13.475 17.767,-27.434 38.494,-27.434c27.135,0 38.007,20.707 38.007,51.037l0,120.768l75.024,0Zm-307.552,-334.556c-25.674,0 -42.448,16.879 -42.448,39.002c0,21.658 16.264,39.002 41.455,39.002l0.484,0c26.165,0 42.452,-17.344 42.452,-39.002c-0.485,-22.092 -16.241,-38.954 -41.943,-39.002Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える on reddit"
+            href="https://reddit.com/submit?url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-2%2f&title=ADK%20Go%202.0%20%e3%81%ae%e3%82%b0%e3%83%a9%e3%83%95%e3%83%af%e3%83%bc%e3%82%af%e3%83%95%e3%83%ad%e3%83%bc%e3%82%92%e8%aa%ad%e3%82%93%e3%81%a7%20SRE%20Agent%20%e3%81%b8%e3%81%ae%e5%bf%9c%e7%94%a8%e3%82%92%e8%80%83%e3%81%88%e3%82%8b">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-3.446,265.638c0,-22.964 -18.616,-41.58 -41.58,-41.58c-11.211,0 -21.361,4.457 -28.841,11.666c-28.424,-20.508 -67.586,-33.757 -111.204,-35.278l18.941,-89.121l61.884,13.157c0.756,15.734 13.642,28.29 29.56,28.29c16.407,0 29.706,-13.299 29.706,-29.701c0,-16.403 -13.299,-29.702 -29.706,-29.702c-11.666,0 -21.657,6.792 -26.515,16.578l-69.105,-14.69c-1.922,-0.418 -3.939,-0.042 -5.585,1.036c-1.658,1.073 -2.811,2.761 -3.224,4.686l-21.152,99.438c-44.258,1.228 -84.046,14.494 -112.837,35.232c-7.468,-7.164 -17.589,-11.591 -28.757,-11.591c-22.965,0 -41.585,18.616 -41.585,41.58c0,16.896 10.095,31.41 24.568,37.918c-0.639,4.135 -0.99,8.328 -0.99,12.576c0,63.977 74.469,115.836 166.33,115.836c91.861,0 166.334,-51.859 166.334,-115.836c0,-4.218 -0.347,-8.387 -0.977,-12.493c14.564,-6.47 24.735,-21.034 24.735,-38.001Zm-119.474,108.193c-20.27,20.241 -59.115,21.816 -70.534,21.816c-11.428,0 -50.277,-1.575 -70.522,-21.82c-3.007,-3.008 -3.007,-7.882 0,-10.889c3.003,-2.999 7.882,-3.003 10.885,0c12.777,12.781 40.11,17.317 59.637,17.317c19.522,0 46.86,-4.536 59.657,-17.321c3.016,-2.999 7.886,-2.995 10.885,0.008c3.008,3.011 3.003,7.882 -0.008,10.889Zm-5.23,-48.781c-16.373,0 -29.701,-13.324 -29.701,-29.698c0,-16.381 13.328,-29.714 29.701,-29.714c16.378,0 29.706,13.333 29.706,29.714c0,16.374 -13.328,29.698 -29.706,29.698Zm-160.386,-29.702c0,-16.381 13.328,-29.71 29.714,-29.71c16.369,0 29.689,13.329 29.689,29.71c0,16.373 -13.32,29.693 -29.689,29.693c-16.386,0 -29.714,-13.32 -29.714,-29.693Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える on facebook"
+            href="https://facebook.com/sharer/sharer.php?u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-2%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-106.468,0l0,-192.915l66.6,0l12.672,-82.621l-79.272,0l0,-53.617c0,-22.603 11.073,-44.636 46.58,-44.636l36.042,0l0,-70.34c0,0 -32.71,-5.582 -63.982,-5.582c-65.288,0 -107.96,39.569 -107.96,111.204l0,62.971l-72.573,0l0,82.621l72.573,0l0,192.915l-191.104,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える on whatsapp"
+            href="https://api.whatsapp.com/send?text=ADK%20Go%202.0%20%e3%81%ae%e3%82%b0%e3%83%a9%e3%83%95%e3%83%af%e3%83%bc%e3%82%af%e3%83%95%e3%83%ad%e3%83%bc%e3%82%92%e8%aa%ad%e3%82%93%e3%81%a7%20SRE%20Agent%20%e3%81%b8%e3%81%ae%e5%bf%9c%e7%94%a8%e3%82%92%e8%80%83%e3%81%88%e3%82%8b%20-%20https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-2%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-58.673,127.703c-33.842,-33.881 -78.847,-52.548 -126.798,-52.568c-98.799,0 -179.21,80.405 -179.249,179.234c-0.013,31.593 8.241,62.428 23.927,89.612l-25.429,92.884l95.021,-24.925c26.181,14.28 55.659,21.807 85.658,21.816l0.074,0c98.789,0 179.206,-80.413 179.247,-179.243c0.018,-47.895 -18.61,-92.93 -52.451,-126.81Zm-126.797,275.782l-0.06,0c-26.734,-0.01 -52.954,-7.193 -75.828,-20.767l-5.441,-3.229l-56.386,14.792l15.05,-54.977l-3.542,-5.637c-14.913,-23.72 -22.791,-51.136 -22.779,-79.287c0.033,-82.142 66.867,-148.971 149.046,-148.971c39.793,0.014 77.199,15.531 105.329,43.692c28.128,28.16 43.609,65.592 43.594,105.4c-0.034,82.149 -66.866,148.983 -148.983,148.984Zm81.721,-111.581c-4.479,-2.242 -26.499,-13.075 -30.604,-14.571c-4.105,-1.495 -7.091,-2.241 -10.077,2.241c-2.986,4.483 -11.569,14.572 -14.182,17.562c-2.612,2.988 -5.225,3.364 -9.703,1.12c-4.479,-2.241 -18.91,-6.97 -36.017,-22.23c-13.314,-11.876 -22.304,-26.542 -24.916,-31.026c-2.612,-4.484 -0.279,-6.908 1.963,-9.14c2.016,-2.007 4.48,-5.232 6.719,-7.847c2.24,-2.615 2.986,-4.484 4.479,-7.472c1.493,-2.99 0.747,-5.604 -0.374,-7.846c-1.119,-2.241 -10.077,-24.288 -13.809,-33.256c-3.635,-8.733 -7.327,-7.55 -10.077,-7.688c-2.609,-0.13 -5.598,-0.158 -8.583,-0.158c-2.986,0 -7.839,1.121 -11.944,5.604c-4.105,4.484 -15.675,15.32 -15.675,37.364c0,22.046 16.048,43.342 18.287,46.332c2.24,2.99 31.582,48.227 76.511,67.627c10.685,4.615 19.028,7.371 25.533,9.434c10.728,3.41 20.492,2.929 28.209,1.775c8.605,-1.285 26.499,-10.833 30.231,-21.295c3.732,-10.464 3.732,-19.431 2.612,-21.298c-1.119,-1.869 -4.105,-2.99 -8.583,-5.232Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える on telegram"
+            href="https://telegram.me/share/url?text=ADK%20Go%202.0%20%e3%81%ae%e3%82%b0%e3%83%a9%e3%83%95%e3%83%af%e3%83%bc%e3%82%af%e3%83%95%e3%83%ad%e3%83%bc%e3%82%92%e8%aa%ad%e3%82%93%e3%81%a7%20SRE%20Agent%20%e3%81%b8%e3%81%ae%e5%bf%9c%e7%94%a8%e3%82%92%e8%80%83%e3%81%88%e3%82%8b&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-2%2f">
+            <svg version="1.1" xml:space="preserve" viewBox="2 2 28 28" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M26.49,29.86H5.5a3.37,3.37,0,0,1-2.47-1,3.35,3.35,0,0,1-1-2.47V5.48A3.36,3.36,0,0,1,3,3,3.37,3.37,0,0,1,5.5,2h21A3.38,3.38,0,0,1,29,3a3.36,3.36,0,0,1,1,2.46V26.37a3.35,3.35,0,0,1-1,2.47A3.38,3.38,0,0,1,26.49,29.86Zm-5.38-6.71a.79.79,0,0,0,.85-.66L24.73,9.24a.55.55,0,0,0-.18-.46.62.62,0,0,0-.41-.17q-.08,0-16.53,6.11a.59.59,0,0,0-.41.59.57.57,0,0,0,.43.52l4,1.24,1.61,4.83a.62.62,0,0,0,.63.43.56.56,0,0,0,.4-.17L16.54,20l4.09,3A.9.9,0,0,0,21.11,23.15ZM13.8,20.71l-1.21-4q8.72-5.55,8.78-5.55c.15,0,.23,0,.23.16a.18.18,0,0,1,0,.06s-2.51,2.3-7.52,6.8Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える on ycombinator"
+            href="https://news.ycombinator.com/submitlink?t=ADK%20Go%202.0%20%e3%81%ae%e3%82%b0%e3%83%a9%e3%83%95%e3%83%af%e3%83%bc%e3%82%af%e3%83%95%e3%83%ad%e3%83%bc%e3%82%92%e8%aa%ad%e3%82%93%e3%81%a7%20SRE%20Agent%20%e3%81%b8%e3%81%ae%e5%bf%9c%e7%94%a8%e3%82%92%e8%80%83%e3%81%88%e3%82%8b&u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-2%2f">
+            <svg version="1.1" xml:space="preserve" width="30px" height="30px" viewBox="0 0 512 512" fill="currentColor"
+                xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+                <path
+                    d="M449.446 0C483.971 0 512 28.03 512 62.554L512 449.446C512 483.97 483.97 512 449.446 512L62.554 512C28.03 512 0 483.97 0 449.446L0 62.554C0 28.03 28.029 0 62.554 0L449.446 0ZM183.8767 87.9921H121.8427L230.6673 292.4508V424.0079H281.3328V292.4508L390.1575 87.9921H328.1233L256 238.2489z" />
+            </svg>
+        </a>
+    </li>
+</ul>
+
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="https://jedipunkz.rocks/">jedipunkz 🚀 のブログ</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a><script type="module">
+  if (document.querySelector("pre.mermaid")) {
+    const { default: mermaid } = await import(
+      "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
+    );
+    
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        darkMode: true,
+        background: "#1a1b26",
+        mainBkg: "#24283b",
+        primaryColor: "#24283b",
+        primaryTextColor: "#c0caf5",
+        primaryBorderColor: "#7aa2f7",
+        secondaryColor: "#414868",
+        secondaryTextColor: "#c0caf5",
+        secondaryBorderColor: "#565f89",
+        tertiaryColor: "#1f2335",
+        tertiaryTextColor: "#c0caf5",
+        tertiaryBorderColor: "#565f89",
+        lineColor: "#7dcfff",
+        textColor: "#c0caf5",
+        nodeTextColor: "#c0caf5",
+        edgeLabelBackground: "#1a1b26",
+        clusterBkg: "#1f2335",
+        clusterBorder: "#565f89",
+        titleColor: "#c0caf5"
+      }
+    });
+    await mermaid.run();
+  }
+</script>
+
+
+<script>
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        if (document.body.className.includes("dark")) {
+            document.body.classList.remove('dark');
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            document.body.classList.add('dark');
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+<script>
+    document.querySelectorAll('pre > code').forEach((codeblock) => {
+        const container = codeblock.parentNode.parentNode;
+
+        const copybutton = document.createElement('button');
+        copybutton.classList.add('copy-code');
+        copybutton.innerHTML = 'コピー';
+
+        function copyingDone() {
+            copybutton.innerHTML = 'コピーされました!';
+            setTimeout(() => {
+                copybutton.innerHTML = 'コピー';
+            }, 2000);
+        }
+
+        copybutton.addEventListener('click', (cb) => {
+            if ('clipboard' in navigator) {
+                navigator.clipboard.writeText(codeblock.textContent);
+                copyingDone();
+                return;
+            }
+
+            const range = document.createRange();
+            range.selectNodeContents(codeblock);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            try {
+                document.execCommand('copy');
+                copyingDone();
+            } catch (e) { };
+            selection.removeRange(range);
+        });
+
+        if (container.classList.contains("highlight")) {
+            container.appendChild(copybutton);
+        } else if (container.parentNode.firstChild == container) {
+            
+        } else if (codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.nodeName == "TABLE") {
+            
+            codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.appendChild(copybutton);
+        } else {
+            
+            codeblock.parentNode.appendChild(copybutton);
+        }
+    });
+</script>
+</body>
+
+</html>

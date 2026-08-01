@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="ja" dir="auto">
+
+<head><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>Google が提唱する AI in SRE とは何か | jedipunkz 🚀 のブログ</title>
+<meta name="keywords" content="">
+<meta name="description" content="Google SRE チームが発表した「AI in SRE」レポートを体系的に解説しつつ、Google Cloud &#43; Datadog &#43; AWS という現場で Datadog DASH 2026 の AI 機能をどう活かすか、スタートアップでの実現可能性まで考察します">
+<meta name="author" content="jedipunkz">
+<link rel="canonical" href="https://jedipunkz.rocks/post/ai-sre-google/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.b01bbec0cf3007d40fb71d8142b512d543a9bfcda15e0e5529eb1abdf890d74e.css" integrity="sha256-sBu&#43;wM8wB9QPtx2BQrUS1UOpv82hXg5VKesavfiQ104=" rel="preload stylesheet" as="style">
+<link rel="icon" href="https://jedipunkz.rocks/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.rocks/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.rocks/favicon-32x32.png">
+<link rel="apple-touch-icon" href="https://jedipunkz.rocks/apple-touch-icon.png">
+<link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/ai-sre-google/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-track {
+                background: 0 0;
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-thumb {
+                border-color: var(--theme);
+            }
+        }
+
+    </style>
+</noscript>
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-2H91XCYVZ8"></script>
+      <script>
+        var doNotTrack = false;
+        if ( false ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-2H91XCYVZ8');
+        }
+      </script><meta property="og:url" content="https://jedipunkz.rocks/post/ai-sre-google/">
+  <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
+  <meta property="og:title" content="Google が提唱する AI in SRE とは何か">
+  <meta property="og:description" content="Google SRE チームが発表した「AI in SRE」レポートを体系的に解説しつつ、Google Cloud &#43; Datadog &#43; AWS という現場で Datadog DASH 2026 の AI 機能をどう活かすか、スタートアップでの実現可能性まで考察します">
+  <meta property="og:locale" content="ja">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="post">
+    <meta property="article:published_time" content="2026-06-12T12:00:00+09:00">
+    <meta property="article:modified_time" content="2026-06-12T12:00:00+09:00">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_eb1fc468974df411.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_eb1fc468974df411.jpg">
+<meta name="twitter:image:alt" content="Google が提唱する AI in SRE とは何か">
+<meta name="twitter:title" content="Google が提唱する AI in SRE とは何か">
+<meta name="twitter:description" content="Google SRE チームが発表した「AI in SRE」レポートを体系的に解説しつつ、Google Cloud &#43; Datadog &#43; AWS という現場で Datadog DASH 2026 の AI 機能をどう活かすか、スタートアップでの実現可能性まで考察します">
+  <meta name="twitter:site" content="@jedipunkz">
+  <meta name="twitter:creator" content="@jedipunkz">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Google が提唱する AI in SRE とは何か",
+  "name": "Google が提唱する AI in SRE とは何か",
+  "description": "Google SRE チームが発表した「AI in SRE」レポートを体系的に解説しつつ、Google Cloud + Datadog + AWS という現場で Datadog DASH 2026 の AI 機能をどう活かすか、スタートアップでの実現可能性まで考察します",
+  "keywords": [
+    
+  ],
+  "articleBody": "こんにちは。ジェダイパンくず☁️ です。\nGoogle SRE チームが公開したレポート「AI in SRE: How Google is Engineering the Future of Reliable Operations」を読んで、その内容を体系的にまとめました。著者は Ioannis Papapanagiotou、Stevan Malesevic、Chris Heiser、Ruslan Meshenberg の4名です。\n読んでみて感じたのは、これは単なる「AI でアラートを減らそう」という効率化の話ではない、ということです。SRE そのものが AI によって構造的に変容していく過程を、具体的なシステム名・フレームワーク・測定結果を交えて論じた内容になっています。以前 2026年6月現時点において SRE がどう AI に向き合っているか調べてみた という記事で業界全体の動向を俯瞰しましたが、この Google のレポートはその中でも「いつ・どこまで自律度を上げるか」をデータで決める仕組みまで踏み込んでいる点で抜きん出ています。本記事ではその設計思想を順を追って整理します。\nなお本記事の後半、具体的な方法論を扱う章には「自分たちの現場での実践方法考案」という節を添えました。自分たちの現場では現時点では Google Cloud + Datadog + AWS というプラットフォームで構成されていて、Google ほどの規模はありません。なので Google が内製した仕組みを、なるべくプロダクトを利用する方向に反転させて考えています。その最有力候補が、DASH 2026 で AI 機能を大きく広げた Datadog の Bits シリーズです。後半の具体論に対して「これは Google だから出来ることなのか？日本のスタートアップでも現実的に回せるのか」を考えていきます。\nAI in SRE とはどのような概念なのか AI 支援開発によって生産性が最大4倍向上することを目指す組織が急増しています。それ自体は良いことなのですが、問題はその先にあります。コードレビューや運用プロセスという「人間がボトルネック」になる部分は、コード生成と同じ速度では4倍速になりません。AI 生成コードの量に対して従来のコードレビュー手法はスケールせず、システム複雑性の急速な増加に標準的な運用プロセスが追いつかない、という歪みが顕在化します。\nGoogle SRE はこの課題に対して、AI を既存業務に貼り付けるのではなく、信頼性の基盤そのものを作り直すという立場を取っています。\n“SRE is architecting a new foundation for reliability”\nその新しい基盤として、3つの中核コンポーネントを開発しています。本記事の後半で詳しく扱いますが、まず全体像として以下を押さえておくと読みやすくなります。\nコンポーネント 役割 AI Operator 本番アラートに自動対応するオペレータ Actus 厳密なガードレール IRM Analyzer 人間の運用知識を継続的に取り込む評価パイプライン AI Operator が「推論エンジン」、Actus が「実行エンジン」、IRM Analyzer が「(Actus が) へ渡すための情報を作成するパイプライン」、という分担です。この3者が分離されている点が後述する安全設計の肝になるようです。\n6つのリスク領域 本番環境で AI を動かすにあたり、Google はまず何が危険なのかを6つのリスク領域として明示しています。\n進化する人間の専門知識：オペレータが「手動で直す人」から「AI エージェントを監督するアーキテクト」へシフトする変化への対応 説明可能性と信頼の構築：自律エージェントの判断をリアルタイム追跡し、すべての意思決定を監査可能にする必要性 データ整合性とバイアス軽減：本番環境データの品質と完全性、そして公平性の確保 動的環境でのモデルドリフト：進化し続けるシステム行動へ AI モデルが適応できるか セキュリティベクトル：敵対的攻撃・データポイズニング・プロンプトインジェクションへの対策 意図しない自動化の結果：フィードバックループや連鎖障害の防止 リスク低減のための3要素 これら6つのリスクに対し、Google SRE は Safety Trifecta と呼ぶ3本柱のモデルを採用しています。透明性・リアルタイムリスク評価・段階的認可の3つで、いずれもすべてのエージェントシステムに対するアーキテクチャ上の必須要件として位置づけられています。\n(1) 透明性（Transparency） 「AI のアクションと判断は観測可能かつ理解可能でなければならない」という原則です。\n“AI actions and decisions must be observable and understandable”\nエージェントは使用したシグナル、検討した仮説、行動選択の理由、信頼度レベルをすべて記録します。\n(2) リアルタイムリスク評価（Real-time Risk Evaluation) 提案されるすべての自動アクションは、現在の本番状態・エラーバジェット残量・進行中のデプロイメント・時間帯といった文脈に基づいてリスクが評価されます。同じ操作でも「深夜・デプロイ直後・エラーバジェット枯渇寸前」なら危険度は跳ね上がる、という当たり前の感覚をシステムに織り込んでいるわけです。\n(3) 段階的認可（Progressive Authorization) 自律性レベルを段階的にスケールさせる仕組みで、後述の L0〜L4 モデルと連動します。エージェントは限定された権限から始まり、信頼性を実証するにつれて権限が拡大します。\nアーキテクチャ上のガードレール Safety Trifecta が思想だとすれば、それを実装レベルで担保するのが以下のガードレールです。\nガードレール 内容 アンビエント・アクセス権限なし エージェント固有の認証と最小権限の原則。開発者の credential を流用させない エージェント・サーキット・ブレーカー エージェント固有のレート制限と自動遮断。暴走ループを止められるようにする ドライラン必須化 ドライランモードの標準実装\u0026強制。本番を変更する前に影響を予測する ゼロトラスト実行 安全機構を備えたツール経由のみ本番操作を許可。エージェントが本番を落とせない SRE 自律性の5段階モデル（L0〜L4） 自律性を5段階で定義した SRE Autonomy Levels です。自動車の自動運転レベルと同じ発想ですが、SRE 文脈に合わせて「監視・調査・承認・実行・自己主導」という5軸で各レベルを評価しています。\nレベル 監視 調査 承認 実行 自己主導 L0：手動 人間 人間 人間 人間 人間 L1：支援 自動 自動 人間 人間 人間 L2：部分自律 自動 自動 人間 自動 人間 L3：高度自律 自動 自動 自動 自動 人間 L4：完全自律 自動 自動 自動 自動 自動 各レベルの位置づけを言葉で補足すると、以下のようになります。\nL0（手動実行）：すべてが人間駆動の、従来の SRE スタイル。 L1（支援）：AI が分析と提案を提供し、人間が承認・実行する。後述のアラート充実化や Incident Hypothesis がここに該当する。 L2（部分自律）：AI が実行前に人間の明示的承認を必要とする。ステージングや安全なパスが確立されている操作向け。 L3（高度自律）：十分に定義されたシナリオで AI が独立実行する。Google の AI Operator は軽微インシデントに対してこの L3 を達成している。 L4（完全自律）：複数ステップの解決と複雑なシナリオ管理までを AI が担う。障害発生から安定状態の確認までインシデントライフサイクル全体を回す段階で、現時点では研究段階。 ここで注目すべきところはレベルの昇格が自動でも主観でもなく、統計的な成功績に基づいて決まる点です。前述の記事でも書きましたが、エージェントは人間が検証した過去インシデントに対して統計的に有意な成功率を示して初めて、次のレベルに上がれます。\n昇格 ゲート条件 L0 → L1 監視・調査を自動化できるツールの整備 L1 → L2 正確な提案生成と、安全な実行パスの確立 L2 → L3 高精度・高信頼性の実証。リスクに比例した、より厳格な検証 L3 → L4 マルチステップ解決能力と、動的な戦略適応の実証 「いつ自律度を上げるか」を推測ではなく計測値で決める。なのでここも計測する必要がありそうです。\n人間の運用知識を継承する評価フレームワーク 自律性をデータで判定する以上、その判定の物差しとなる「人間の理想的な対応」データを大量に集める必要があります。Google は人間の運用経験を「ゴールデンデータ」として継続的に収集・評価する仕組みを構築しています。\nIRM-Analyzer インシデント管理ツールのチャット、インシデント記録、コマンドラインエントリといった断片的なソースから、AI が以下を自動抽出します。\n主要イベント（タイムライン） 実施したアクション 使用したツール 検討した仮説 これをもとに、各インシデントで「人間が実際にどう動いたか」という操作軌跡を時系列に再構成し、構造化します。この軌跡がエージェントの学習・強化ループ・プレイブック改善の素材になります。\n3階層のデータ品質分類 集めたデータはすべて同じ品質ではありません。Google は生成方法と信頼度に応じてデータを3階層に分類しています。\n階層 生成方法 信頼度・特性 Bronze 自動ラベラーによる発見的生成 低〜中。高速だが品質は粗い Silver プログラム生成 + Gold データとの数学的キャリブレーション 中。品質と量を両立 Gold 人間専門家による検証済みデータ 高。キャリブレーションの基準となる ここで問題になるのが、品質の粗い Bronze データでエージェントを評価すると「精度ギャップ（accuracy gap）」が生じることです。これを埋めるために、層化サンプリング（stratified sampling）で多様なインシデントを選び出して人間がレビューし、Gold データを継続生成します。そして Gold データを基準に Silver データを数学的に較正し続けることで、安価に量を確保しつつ精度のギャップを縮めていく、という流れになっています。\nGolden データの生成フロー 問題は、こうした高品質ラベルをどうやって追加負担なく集めるかです。Google の答えは、収集作業を通常のインシデント対応ワークフローに溶け込ませることでした。\nオンコーラーがインシデント解決を宣言する際、システムが構造化された緩和提案を自動生成します。オンコーラーはそれを承認・修正・拒否するだけで、結果的にシームレスに高品質ラベルが収集される仕組みです。普段の作業の延長で済むため、ラベリングのための追加負担がほとんど発生しません。\n継続的夜間評価 集めた Golden データは、毎晩の自動評価でエージェントの品質計測に使われます。直近の実インシデントからなる動的なデータセットに対して、2種類の評価手法を組み合わせる点がポイントです。\nLLM-as-a-Judge：推論の妥当性・調査軌跡・ツール呼び出しといった定性的な側面を、Golden データと照らして採点する 決定論的スコアリング：最終出力の精度・再現率を機械的に測定する。緩和アクションのパラメータ（対象バイナリやバージョンまで含む）が Golden Data と完全一致する場合のみ「正確」と判定する 2つ目の判定基準が厳しいのが特徴です。「だいたい合っている提案」は不正解扱いで、実際にそのまま実行可能な正確なパラメータまで一致して初めて正解とみなされます。曖昧な提案を評価上の合格にしないことで、自律実行に耐える精度を担保しているわけです。\nSRE ライフサイクル全体への AI 統合ロードマップ AI を単一のツールとして捉えるのではなく、SRE のライフサイクル全体に段階的に組み込むロードマップを示しています。観察 → アラート充実化 → 調査支援（L1) → 自律緩和（L3) という順で、人間の関与を少しずつ減らしていく構成です。\n1. 本番環境の観察：Detectr 従来のメトリクス・ログ・トレースベースの監視には「既知の障害モードしか検出できない」「実際のユーザーストーリーを捉えられない」という根本的な限界があります。Google が開発した Detectr は Gemini を活用し以下のような非構造化のユーザーシグナルを分析することでテレメトリには現れない未知の障害を早期検出します。\nカスタマーサポートチケット 外部フォーラムへの投稿 ソーシャルメディア ただ大量のユーザー投稿をそのまま読むだけではノイズに埋もれてしまいます。Detectr はマルチパスの AI パイプラインでこれを処理します。\nパス 処理内容 Filter 無関係な投稿を除去しデータを分類する Cluster 関連する報告をグループ化し障害候補を特定する De-Noise ノイズの多いクラスタを除外する Report トリアージ用の構造化された障害通知を生成する 関連フィードボリュームそのものが信号となり、ノイズは段階的にフィルタリングされます。Cloud・Ads・YouTube・Search の複数チームで採用され、早期検知と深い状況理解によって累計で数百時間の顧客影響削減を達成しています。\n2. アラート充実化：AI Alert AI Alert は、未加工のアラートが人間に届く前に横取りし、リッチなコンテキストで補強して初期調査時間を削減します。約2分という厳密な実行時間枠の中で、以下を並列クエリします。\nモニタリングシステム ロギングプラットフォーム 本番変更ログ 依存関係グラフ 設計上重要なのは、AI Alert があくまで読み取り専用モードで動作し、推測的な結論ではなく検証可能なファクトとエビデンスベースの洞察だけを提示する点です。すべての所見にはソースへのリンクが付き、人間が裏取りできるようになっています。本番を変更する AI Operator とは役割をはっきり分けているわけです。\n3. インシデント調査支援（L1） ここからは人間が承認・実行する前提で、AI が調査を支援する L1 のツール群です。\nIncident Hypothesis（インシデント仮説） LLM と RAG（検索拡張生成）を組み合わせ、以下を総合分析して根本原因の有力候補と、それを検証するための具体的な手順を提示します。\nリアルタイム異常 サービスプレイブック アプリケーションログ インシデント管理データ 類似過去インシデントのパターン A/B テストで MTTM（平均緩和時間）を10% 削減することが確認されています。結果はオンコーラーが普段使う調査・監視ツールの中に直接表示され、コンテキストスイッチを最小化しています。\nInvestigation Dashboard（調査ダッシュボード） インシデント調査では、複数の静的ダッシュボードを行き来してデータを探し回る「宝探し（scavenger hunt）」が認知負荷を押し上げます。Investigation Dashboard はこれを解消するもので、動的な AI 駆動システムがインシデント固有の「統一ビュー（single pane of glass）」をオンデマンド生成します。オンコーラーと障害の性質の両方に合わせて中身が変化するのも特徴です。\n分析は4段階の能力で構成されます。\n異常検知：ML モデルが時系列の視覚的偏差をフラグ化する 変化の相関：異常をアラート信号と関連付ける 調査価値評価：その異常が深掘りに値するかを判定する 根本原因特定：ロールアウト・実験・容量変更などの候補が真の原因かを見極める、最も高精度な分析 このダッシュボードは100以上のドメイン固有「トラブルシューター」を並列実行する拡張可能なエコシステムになっています。結果として、ML 駆動の異常検知だけで検出数が195%増加し、ダッシュボード全体では対象インシデントの MTTM を約44%削減しています。\nAntigravity CLI（Gemini 駆動 CLI） SRE がターミナルから自然言語で本番環境を操作できるインターフェースです。内部では Model Context Protocol（MCP）を使った Production Agent サーバーが動作し、以下のツールカテゴリを提供します。\nカテゴリ 機能 可観測性 時系列データクエリ、ログ検索、異常検知 インシデント管理 インシデント詳細取得、ステータス更新、バグ起票やポストモーテム出力 トラフィック制御 トラフィックシフト、容量変更 インフラストラクチャ コンピュートジョブ検査 モジュール化された Skills ライブラリにより、ドメイン固有の問題解決と、ポリシー準拠で安全なミティゲーション（トラフィックドレインなど、後述の Actus でゲートされる操作）を実現します。複雑なデバッグ作業の参入障壁を下げ、仮説検証を高速に回せるようにするのが狙いです。\n自分たちの現場での実践方法考案 我々のようなスタートアップ企業で AI in SRE を始めるなら、インシデント発生から対応オペレーションまでのイベント情報をどこで収集出来るかを整理する事かと思います。我々の場合の情報源は社内 Slack, Datadog になります。\nClaude (Claude Code) が Slack, Datadog とコネクタで接続出来るので(今現在その運用をとっている)、これは有用と思います。\nあとは Datadog Bits AI SRE を用いるパターン。Bits AI SRE を主要サービスの重要モニターにだけ先に紐付け、アラート発火時に自律調査を走らせて「競合する仮説 + 根拠データへのリンク」をインシデントチャンネルへ自動投稿する、という運用を想定しています。メトリクス・ログ・トレース・RUM がすでに Datadog に揃っているので、レポートの言う Investigation Dashboard 的な「単一ビュー」は実質ほぼ設定だけで手に入ります。一方 Detectr のような「ユーザーの声から未知障害を検知する」仕組みは Synthetic 監視とサポートチケットの定期トリアージで代替するべきかなぁと感じています。\n自律型ミティゲーション（L3）：AI Operator と Actus L1 の支援ツールは認知負荷を確かに下げますが、運用スケーラビリティを本質的に解決するには、AI が直接本番環境を変更する「実行（actuation）」まで踏み込む必要があります。ここからが L3、つまり AI Operator と Actus の領域です。\nAI Operator 本番アラートの最初のレスポンダーとして機能する自律エージェントです。すでに数千件規模のインシデントで運用されています。\n調査と根本原因分析（RCA） AI Operator はアラートを受け取ると、以下のように多角的な調査を進めます。\n並列型拡張モジュール群（Enrichers）による複数の同時調査 類似インシデントにおける過去の専門家調査事例に基づく推論ガイダンス 仮説の形成と検証サイクル 緩和選択 調査の結果、コンテキストの構造化カタログから適切な緩和策を選択します。選択の際に使うコンテキストは大きく3種類です。\n要素 役割 Enrichers 可観測性の所見やプレイブックなど確実な情報を自動収集する Skills 問題固有の緩和メソッド Few-shot prompts 調査戦略のガイダンス 現在の自律性レベル AI Operator はインシデントの重大度に応じて動作レベルを使い分けます。\n重大運用インシデント：L2（人間 SRE の承認が必須） 軽微インシデント：L3（自律実行） Chain of Thought の可視化 すべての推論ステップが中央集約された UI で可視化され、各段階で人間がコメントしたり方向を指示したりできます。必要に応じて専門サブエージェントを起動して深掘りすることも可能です。長時間に及ぶインシデントでも、厳密なトークン管理によってコンテキストの喪失やハルシネーションを防いでいます。なお、すべての実行トレースは Spanner に保存され、デバッグと継続的改善に使われます。\nエスカレーション 根本原因を特定できない場合、またはセーフティー境界を超える操作が必要な場合は、即座に人間オペレータへエスカレーションします。その際、調査履歴全体をインシデント UI に集約し、人間がスムーズに引き継げるようにします。\nLLM-as-a-Judge による自己改善ループ AI Operator は自分の対応を自分で採点する仕組みを持ちます。自動でインシデントメタデータを分析し、エージェントのアクションを Golden Data（理想的な人間対応）と比較評価します。そして改善すべき領域を特定すると、具体的な実装計画とともにバグとして自動登録する、という「自己改善ループ」を回します。エージェントが自らの欠点をチケット化していくイメージです。\nActus（Mitigation Safety Verification Agent） Actus は、AI Operator の推論能力と本番インフラ実行のギャップを安全に橋渡しする役割を担います。設計上の最大のポイントは、AI Operator（推論エンジン）と Actus（実行エンジン）を分離していることです。これにより、モデルがいくら進化しても、実行ガバナンスは常に決定論的で人間の制御下にある境界の内側に留まります。\nActus は3段階のライフサイクルで動作します。\nPhase 1：標準化された Discovery \u0026 Planning 利用可能な緩和ツール（トラフィックドレイン、容量アップサイズ等）を、動的にフィルタリングしたレジストリとして提供する EvaluateAction リクエストで必要なパラメータをハイドレートする LLM のあいまいなインテントを、検証可能な具体的実行計画へ変換する Phase 2：動的自律性とセーフティーガードレール Actus は段階的認可（Progressive Authorization）を物理的に強制する層でもあります。実行前のプリフライト安全検証として、以下を必須実行します。\n強制的ドライラン（dry_run=true） 正当化検証（そのアクションがオープンされたインシデントに対応するものか） 並行アクション確認（競合する操作が同時に走っていないか） そして高リスクと判定した L3 リクエストや、本番状態が異常なときは、自動で L2 にダウングレードして、人間へ承認リクエストを転送します。\nPhase 3：Post-Action Guardian Long Running Operation（LRO）の状態を保持する インフラをポーリングして、ミティゲーションの成功・失敗を確認する 緊急時には人間オペレータが実行中のエージェントアクションを即座に停止し、新規アクションをブロックし、L3 権限をグローバルに取り消せる どれだけ自律化しても「人間が一発で全部止められる」非常停止装置を残しているのがポイントかもしれません。\n自分たちの現場での実践方法考案 レポートの肝である「推論と実行の分離」に関してはそのまま自分たちの設計原則として採用出来そうと思っています。推論は Datadog（Bits AI SRE）に任せても、実行は必ずうちが管理する経路を通すという事になるかなぁと。\n具体的には、Actus に相当する Bits Remediation / Bits Infrastructure Operations にいきなり広い権限を渡すのではなく、許可する操作を「タスク再起動・オートスケールスケール修正」程度の操作に限定し(ホワイトリスト管理に近いかも)そしてそれぞれを、GCP / AWS の最小権限サービスアカウントと、Terraform 実行のバックエンドに置く等。当面はすべて承認ベース（L2）で運用し、完全自動（L3）は「誤っても影響が局所的かつ即復旧できる」操作にだけ、十分な実績を見てから段階的に拡張していくイメージは持てそうです。\n自分たちの現場は現時点では GCP と AWS のマルチクラウドなので、Google のような単一基盤前提の構成はそもそも作れません。だからこそ Actus 的な役割は自作せず Datadog 側のガードレールに乗せつつ、最後の非常停止は「エージェントの IAM ロール剥奪 / ワークフロー無効化」というクラウド側の操作で握る、という二段構えにするのが現実的だと思っています。重大インシデントでの自律 L3 を Google に倣って追うのはでは筋が悪いと思っていて、これははっきり線を引いておきたいところです。\nAI in SRE を支える技術基盤 ここまで説明したシステムはいずれも以下の技術基盤の上に成り立っていいます。リストアップします。\n高品質な本番データとメタデータ リアルタイムテレメトリ（メトリクス・ログ・トレース) 正確なサービストポロジーと依存グラフ インシデント履歴データ エンジニアリングプレイブックと技術ドキュメント SLO とエラーバジェットの状態 本番ツールカタログ（各ツールがもたらす効果も含む) Google はこれらを実時間でクエリできるようにする部分に多大な投資をしてきた、と述べています。AI 以前のデータ基盤がなければ AI-Ops は成立しない、という順序です。\nRAG プラットフォーム LLM を訓練データではなく「現在の本番状態」にグラウンドさせるための基盤です。リアルタイムのデータソースや内部ドキュメントを LLM がクエリできるようにすることで、文脈に即した応答とアクションを可能にします。\nFine-Tuning 汎用 LLM に対し、Google 内部ツール・本番運用の原則・典型的な障害パターンといったドメイン知識を学習させ、AI 支援の精度と関連性を引き上げます。RAG が「最新の文脈を外から与える」のに対し、Fine-Tuning は「ドメインの素養をモデル自体に染み込ませる」役割で、両者は補完関係にあります。\nModel Context Protocol（MCP） AI が安全かつ効果的に本番環境と相互作用するための標準インターフェース。エージェントがツールを動的に発見して呼び出せるようにする点が肝で、単純な診断コマンドから複雑な緩和アクションまでを同じ枠組みで扱えます。MCP サーバーを通じて、可観測性・インシデント管理・トラフィック制御・インフラ検査の各ツールを提供します。\n強固ななエージェントアイデンティティ管理 エージェントは人間とは別の一意でマシン識別可能なアイデンティティを持つそうです。これにより「人間のみが実行できるアクション」を厳格に区別でき、エージェントのすべての操作を完全な情報として記録できます。監査可能性と否認防止、そして後から権限行使の履歴を再構成できることが自律化の前提として重視されています。\nA2A（Agent-to-Agent）通信プロトコル モニタリング・ロールアウト・容量といったドメインに特化した複数のエージェントが協調して動くための通信プロトコルです。マイクロサービス同士が連携するように、専門エージェント同士が連携して複雑なインシデントを解決する、という構図を目指しています。A2A はオープン仕様として公開されています。\n自分たちの現場での実践方法考案 この章の教訓は、派手な仕組みより地味な前提のほうが大事だ、ということです。RAG も MCP も A2A も Datadog が担いでくれるので作らないというシナリオが現実路線かと。代わりに自分たちがやるべきことは2つに絞れます。\n1つは健全性を保ったデータ管理です。タグ付け、SLO の定義..等かもしれません。これらが雑だとエージェントは誤った情報を根拠に推論する思います。\n要するに「Actus を作る」のは無理でも、「Actus に渡せるきれいなデータと、安全に渡すための権限設計」は各現場で出来ることかなと。AI in SRE の実質的な前提条件はこの地味な2つだと割り切って、ツール導入より先に手を付けるべきだと考えています。\nただ現実路線に寄りすぎている感もあるので、もう少し開発するものの幅を広げられないか検討する余地がアリそうと思っています。\nSRE の未来 AI 統合の最終系は運用だけでなく SDLC（ソフトウェア開発ライフサイクル）そのものの包括です。AI が計画・実装・レビュー・提出までを担うエージェント型 SDLC へ移行し、その大部分がブラックボックス的な高速開発になります。SRE はこの高速・不透明なプロセスをどう管理するかを問われます。\n人間の監視を「左にシフト」する 4倍のコード量に対して行単位のコードレビューはスケールしません。続ければレビュアーの疲弊を招くだけです。Google SRE の答えはレビューの抽象度を一段引き上げることでした。\n設計・意図・ポリシーのレビュー：エンジニアが詳細仕様を AI と共同執筆・承認し、コード生成の前にアーキテクチャとセーフティー制約を検証する Independent Harnesses：コードを生成するエージェントと、テストケースを定義・レビューするエージェントを厳格に分離する。両者を分けることで未検証の要件が機械的に検出されるようにする Adaptive Progressive Rollouts 変更率が高い環境では、従来のカナリアリリースがかえって障壁になります。そこで、AI 作業速度でシステムの健全性を評価できる「継続的本番検証」技術へ投資する、という方向が示されています。\nIntervening Pull Request Problem と AI-Assisted Fix-Forward 急速な AI 生成デプロイメント環境では、従来の「ロールバック」が逆に危険になります。短時間に大量の変更が積み重なった状態で「最後の既知の正常状態」へ単純に巻き戻すと、その間に入った重要なバグ修正やセキュリティパッチまで巻き添えで失われかねないからです。これをレポートでは Intervening Pull Request Problem（介在プルリクエスト問題）と呼んでいます。\n対策として2つのアプローチが挙げられています。\n動的設定・フィーチャーフラグによって、問題のあるコードパスだけを即座に無効化する AI-Assisted Fix-Forward：巻き戻すのではなく、ターゲットを絞ったパッチを自動生成・デプロイし、並行して進む他の変更を保護したままインシデントを解決する SRE の役割の進化 これらを総合すると、SRE の仕事は次のように移っていきます。\n従来 これから システムを手動で運用する 自律エージェントが安全に継続イノベーションできる境界を設計する 手動緩和・オペレーター アーキテクチャ的な意図と、AI 作業速度の補償制御 既知の障害モードへの対応 エージェントエコシステムのガバナンス設計 レポートの言葉を借りれば、人間の監視をアーキテクチャ的な意図へとシフトし、AI 作業速度の補償制御を構築することで、SRE は「システムを運用する」役割から「自律エージェントが継続的にイノベーションできる安全な境界を設計する」役割へ移っていく、ということになります。\nまとめ Google SRE の AI 統合戦略が示すのは、「AI ツールを追加する」という発想ではなく、本番環境ガバナンスの根本的な再構想です。読み終えて印象に残ったのは、技術そのものより「どう安全に権限を渡すか」に多くを割いている点でした。要点を改めて整理すると以下になります。\nSafety Trifecta（透明性・リアルタイムリスク評価・段階的認可）による段階的な信頼構築 Bronze / Silver / Gold の評価データ階層と Nightly Evals による継続的な品質担保 AI Operator + Actus という、推論と実行を分離した責任あるアーキテクチャ L0〜L4 の自律性モデルによって、統計的成功実績に基づき段階的に自律性を拡大 4倍の開発速度でも信頼性を維持するための枠組みとして、また AI 時代の SRE エンジニアが「何を設計すべきか」の指針としてこのレポートは非常に有用だと思います。個人的には、こうした基盤を各社が独自に作り込むよりも、近い将来に出てくるデファクトな仕組みへ寄せていく流れになると見ています。それが Datadog になるのか Anthropic の基盤になるのか .. といったところでしょうか。\n参考 Google SRE - AI in SRE: How Google is Engineering the Future of Reliable Operations Datadog - DASH 2026: Guide to Datadog’s newest announcements Datadog - Meet the new Bits AI SRE: Deeper reasoning, twice as fast ",
+  "wordCount" : "795",
+  "inLanguage": "ja",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_eb1fc468974df411.jpg","datePublished": "2026-06-12T12:00:00+09:00",
+  "dateModified": "2026-06-12T12:00:00+09:00",
+  "author":{
+    "@type": "Person",
+    "name": "jedipunkz"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "https://jedipunkz.rocks/post/ai-sre-google/"
+  },
+  "publisher": {
+    "@type": "Person",
+    "name": "jedipunkz 🚀 のブログ",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
+    }
+  }
+}
+</script>
+
+</head>
+
+<body class="" id="top">
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.body.classList.add('dark');
+    } else if (localStorage.getItem("pref-theme") === "light") {
+        document.body.classList.remove('dark')
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark');
+    }
+
+</script>
+
+<header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="https://jedipunkz.rocks/" accesskey="h" title="jedipunkz 🚀 のブログ (Alt + H)">jedipunkz 🚀 のブログ</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="https://jedipunkz.rocks/about" title="About Me">
+                    <span>About Me</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
+      Google が提唱する AI in SRE とは何か
+    </h1>
+    <div class="post-description">
+      Google SRE チームが発表した「AI in SRE」レポートを体系的に解説しつつ、Google Cloud &#43; Datadog &#43; AWS という現場で Datadog DASH 2026 の AI 機能をどう活かすか、スタートアップでの実現可能性まで考察します
+    </div>
+    <div class="post-meta"><span title='2026-06-12 12:00:00 +0900 +0900'>2026-06-12</span>&nbsp;·&nbsp;4 分&nbsp;·&nbsp;jedipunkz
+
+</div>
+  </header> 
+  <div class="post-content"><p>こんにちは。<a href="https://x.com/jedipunkz">ジェダイパンくず☁️</a> です。</p>
+<p>Google SRE チームが公開したレポート「<a href="https://sre.google/resources/practices-and-processes/ai-engineering-reliable-operations/">AI in SRE: How Google is Engineering the Future of Reliable Operations</a>」を読んで、その内容を体系的にまとめました。著者は Ioannis Papapanagiotou、Stevan Malesevic、Chris Heiser、Ruslan Meshenberg の4名です。</p>
+<p>読んでみて感じたのは、これは単なる「AI でアラートを減らそう」という効率化の話ではない、ということです。SRE そのものが AI によって構造的に変容していく過程を、具体的なシステム名・フレームワーク・測定結果を交えて論じた内容になっています。以前 <a href="/post/sre-ai-2026/">2026年6月現時点において SRE がどう AI に向き合っているか調べてみた</a> という記事で業界全体の動向を俯瞰しましたが、この Google のレポートはその中でも「いつ・どこまで自律度を上げるか」をデータで決める仕組みまで踏み込んでいる点で抜きん出ています。本記事ではその設計思想を順を追って整理します。</p>
+<p>なお本記事の後半、具体的な方法論を扱う章には「自分たちの現場での実践方法考案」という節を添えました。自分たちの現場では現時点では Google Cloud + Datadog + AWS というプラットフォームで構成されていて、Google ほどの規模はありません。なので Google が内製した仕組みを、なるべくプロダクトを利用する方向に反転させて考えています。その最有力候補が、DASH 2026 で AI 機能を大きく広げた Datadog の Bits シリーズです。後半の具体論に対して「これは Google だから出来ることなのか？日本のスタートアップでも現実的に回せるのか」を考えていきます。</p>
+<hr>
+<h2 id="ai-in-sre-とはどのような概念なのか">AI in SRE とはどのような概念なのか<a hidden class="anchor" aria-hidden="true" href="#ai-in-sre-とはどのような概念なのか">#</a></h2>
+<p>AI 支援開発によって生産性が最大4倍向上することを目指す組織が急増しています。それ自体は良いことなのですが、問題はその先にあります。コードレビューや運用プロセスという「人間がボトルネック」になる部分は、コード生成と同じ速度では4倍速になりません。AI 生成コードの量に対して従来のコードレビュー手法はスケールせず、システム複雑性の急速な増加に標準的な運用プロセスが追いつかない、という歪みが顕在化します。</p>
+<p>Google SRE はこの課題に対して、AI を既存業務に貼り付けるのではなく、信頼性の基盤そのものを作り直すという立場を取っています。</p>
+<blockquote>
+<p>&ldquo;SRE is architecting a new foundation for reliability&rdquo;</p></blockquote>
+<p>その新しい基盤として、3つの中核コンポーネントを開発しています。本記事の後半で詳しく扱いますが、まず全体像として以下を押さえておくと読みやすくなります。</p>
+<table>
+  <thead>
+      <tr>
+          <th>コンポーネント</th>
+          <th>役割</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>AI Operator</td>
+          <td>本番アラートに自動対応するオペレータ</td>
+      </tr>
+      <tr>
+          <td>Actus</td>
+          <td>厳密なガードレール</td>
+      </tr>
+      <tr>
+          <td>IRM Analyzer</td>
+          <td>人間の運用知識を継続的に取り込む評価パイプライン</td>
+      </tr>
+  </tbody>
+</table>
+<p>AI Operator が「推論エンジン」、Actus が「実行エンジン」、IRM Analyzer が「(Actus が) へ渡すための情報を作成するパイプライン」、という分担です。この3者が分離されている点が後述する安全設計の肝になるようです。</p>
+<hr>
+<h2 id="6つのリスク領域">6つのリスク領域<a hidden class="anchor" aria-hidden="true" href="#6つのリスク領域">#</a></h2>
+<p>本番環境で AI を動かすにあたり、Google はまず何が危険なのかを6つのリスク領域として明示しています。</p>
+<ol>
+<li>進化する人間の専門知識：オペレータが「手動で直す人」から「AI エージェントを監督するアーキテクト」へシフトする変化への対応</li>
+<li>説明可能性と信頼の構築：自律エージェントの判断をリアルタイム追跡し、すべての意思決定を監査可能にする必要性</li>
+<li>データ整合性とバイアス軽減：本番環境データの品質と完全性、そして公平性の確保</li>
+<li>動的環境でのモデルドリフト：進化し続けるシステム行動へ AI モデルが適応できるか</li>
+<li>セキュリティベクトル：敵対的攻撃・データポイズニング・プロンプトインジェクションへの対策</li>
+<li>意図しない自動化の結果：フィードバックループや連鎖障害の防止</li>
+</ol>
+<h3 id="リスク低減のための3要素">リスク低減のための3要素<a hidden class="anchor" aria-hidden="true" href="#リスク低減のための3要素">#</a></h3>
+<p>これら6つのリスクに対し、Google SRE は Safety Trifecta と呼ぶ3本柱のモデルを採用しています。透明性・リアルタイムリスク評価・段階的認可の3つで、いずれもすべてのエージェントシステムに対するアーキテクチャ上の必須要件として位置づけられています。</p>
+<h4 id="1-透明性transparency">(1) 透明性（Transparency）<a hidden class="anchor" aria-hidden="true" href="#1-透明性transparency">#</a></h4>
+<p>「AI のアクションと判断は観測可能かつ理解可能でなければならない」という原則です。</p>
+<blockquote>
+<p>&ldquo;AI actions and decisions must be observable and understandable&rdquo;</p></blockquote>
+<p>エージェントは使用したシグナル、検討した仮説、行動選択の理由、信頼度レベルをすべて記録します。</p>
+<h4 id="2-リアルタイムリスク評価real-time-risk-evaluation">(2) リアルタイムリスク評価（Real-time Risk Evaluation)<a hidden class="anchor" aria-hidden="true" href="#2-リアルタイムリスク評価real-time-risk-evaluation">#</a></h4>
+<p>提案されるすべての自動アクションは、現在の本番状態・エラーバジェット残量・進行中のデプロイメント・時間帯といった文脈に基づいてリスクが評価されます。同じ操作でも「深夜・デプロイ直後・エラーバジェット枯渇寸前」なら危険度は跳ね上がる、という当たり前の感覚をシステムに織り込んでいるわけです。</p>
+<h4 id="3-段階的認可progressive-authorization">(3) 段階的認可（Progressive Authorization)<a hidden class="anchor" aria-hidden="true" href="#3-段階的認可progressive-authorization">#</a></h4>
+<p>自律性レベルを段階的にスケールさせる仕組みで、後述の L0〜L4 モデルと連動します。エージェントは限定された権限から始まり、信頼性を実証するにつれて権限が拡大します。</p>
+<h3 id="アーキテクチャ上のガードレール">アーキテクチャ上のガードレール<a hidden class="anchor" aria-hidden="true" href="#アーキテクチャ上のガードレール">#</a></h3>
+<p>Safety Trifecta が思想だとすれば、それを実装レベルで担保するのが以下のガードレールです。</p>
+<table>
+  <thead>
+      <tr>
+          <th>ガードレール</th>
+          <th>内容</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>アンビエント・アクセス権限なし</td>
+          <td>エージェント固有の認証と最小権限の原則。開発者の credential を流用させない</td>
+      </tr>
+      <tr>
+          <td>エージェント・サーキット・ブレーカー</td>
+          <td>エージェント固有のレート制限と自動遮断。暴走ループを止められるようにする</td>
+      </tr>
+      <tr>
+          <td>ドライラン必須化</td>
+          <td>ドライランモードの標準実装&amp;強制。本番を変更する前に影響を予測する</td>
+      </tr>
+      <tr>
+          <td>ゼロトラスト実行</td>
+          <td>安全機構を備えたツール経由のみ本番操作を許可。エージェントが本番を落とせない</td>
+      </tr>
+  </tbody>
+</table>
+<hr>
+<h2 id="sre-自律性の5段階モデルl0l4">SRE 自律性の5段階モデル（L0〜L4）<a hidden class="anchor" aria-hidden="true" href="#sre-自律性の5段階モデルl0l4">#</a></h2>
+<p>自律性を5段階で定義した SRE Autonomy Levels です。自動車の自動運転レベルと同じ発想ですが、SRE 文脈に合わせて「監視・調査・承認・実行・自己主導」という5軸で各レベルを評価しています。</p>
+<table>
+  <thead>
+      <tr>
+          <th>レベル</th>
+          <th>監視</th>
+          <th>調査</th>
+          <th>承認</th>
+          <th>実行</th>
+          <th>自己主導</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>L0：手動</td>
+          <td>人間</td>
+          <td>人間</td>
+          <td>人間</td>
+          <td>人間</td>
+          <td>人間</td>
+      </tr>
+      <tr>
+          <td>L1：支援</td>
+          <td>自動</td>
+          <td>自動</td>
+          <td>人間</td>
+          <td>人間</td>
+          <td>人間</td>
+      </tr>
+      <tr>
+          <td>L2：部分自律</td>
+          <td>自動</td>
+          <td>自動</td>
+          <td>人間</td>
+          <td>自動</td>
+          <td>人間</td>
+      </tr>
+      <tr>
+          <td>L3：高度自律</td>
+          <td>自動</td>
+          <td>自動</td>
+          <td>自動</td>
+          <td>自動</td>
+          <td>人間</td>
+      </tr>
+      <tr>
+          <td>L4：完全自律</td>
+          <td>自動</td>
+          <td>自動</td>
+          <td>自動</td>
+          <td>自動</td>
+          <td>自動</td>
+      </tr>
+  </tbody>
+</table>
+<p>各レベルの位置づけを言葉で補足すると、以下のようになります。</p>
+<ul>
+<li>L0（手動実行）：すべてが人間駆動の、従来の SRE スタイル。</li>
+<li>L1（支援）：AI が分析と提案を提供し、人間が承認・実行する。後述のアラート充実化や Incident Hypothesis がここに該当する。</li>
+<li>L2（部分自律）：AI が実行前に人間の明示的承認を必要とする。ステージングや安全なパスが確立されている操作向け。</li>
+<li>L3（高度自律）：十分に定義されたシナリオで AI が独立実行する。Google の AI Operator は軽微インシデントに対してこの L3 を達成している。</li>
+<li>L4（完全自律）：複数ステップの解決と複雑なシナリオ管理までを AI が担う。障害発生から安定状態の確認までインシデントライフサイクル全体を回す段階で、現時点では研究段階。</li>
+</ul>
+<p>ここで注目すべきところはレベルの昇格が自動でも主観でもなく、統計的な成功績に基づいて決まる点です。前述の記事でも書きましたが、エージェントは人間が検証した過去インシデントに対して統計的に有意な成功率を示して初めて、次のレベルに上がれます。</p>
+<table>
+  <thead>
+      <tr>
+          <th>昇格</th>
+          <th>ゲート条件</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>L0 → L1</td>
+          <td>監視・調査を自動化できるツールの整備</td>
+      </tr>
+      <tr>
+          <td>L1 → L2</td>
+          <td>正確な提案生成と、安全な実行パスの確立</td>
+      </tr>
+      <tr>
+          <td>L2 → L3</td>
+          <td>高精度・高信頼性の実証。リスクに比例した、より厳格な検証</td>
+      </tr>
+      <tr>
+          <td>L3 → L4</td>
+          <td>マルチステップ解決能力と、動的な戦略適応の実証</td>
+      </tr>
+  </tbody>
+</table>
+<p>「いつ自律度を上げるか」を推測ではなく計測値で決める。なのでここも計測する必要がありそうです。</p>
+<hr>
+<h2 id="人間の運用知識を継承する評価フレームワーク">人間の運用知識を継承する評価フレームワーク<a hidden class="anchor" aria-hidden="true" href="#人間の運用知識を継承する評価フレームワーク">#</a></h2>
+<p>自律性をデータで判定する以上、その判定の物差しとなる「人間の理想的な対応」データを大量に集める必要があります。Google は人間の運用経験を「ゴールデンデータ」として継続的に収集・評価する仕組みを構築しています。</p>
+<h3 id="irm-analyzer">IRM-Analyzer<a hidden class="anchor" aria-hidden="true" href="#irm-analyzer">#</a></h3>
+<p>インシデント管理ツールのチャット、インシデント記録、コマンドラインエントリといった断片的なソースから、AI が以下を自動抽出します。</p>
+<ul>
+<li>主要イベント（タイムライン）</li>
+<li>実施したアクション</li>
+<li>使用したツール</li>
+<li>検討した仮説</li>
+</ul>
+<p>これをもとに、各インシデントで「人間が実際にどう動いたか」という操作軌跡を時系列に再構成し、構造化します。この軌跡がエージェントの学習・強化ループ・プレイブック改善の素材になります。</p>
+<h3 id="3階層のデータ品質分類">3階層のデータ品質分類<a hidden class="anchor" aria-hidden="true" href="#3階層のデータ品質分類">#</a></h3>
+<p>集めたデータはすべて同じ品質ではありません。Google は生成方法と信頼度に応じてデータを3階層に分類しています。</p>
+<table>
+  <thead>
+      <tr>
+          <th>階層</th>
+          <th>生成方法</th>
+          <th>信頼度・特性</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Bronze</td>
+          <td>自動ラベラーによる発見的生成</td>
+          <td>低〜中。高速だが品質は粗い</td>
+      </tr>
+      <tr>
+          <td>Silver</td>
+          <td>プログラム生成 + Gold データとの数学的キャリブレーション</td>
+          <td>中。品質と量を両立</td>
+      </tr>
+      <tr>
+          <td>Gold</td>
+          <td>人間専門家による検証済みデータ</td>
+          <td>高。キャリブレーションの基準となる</td>
+      </tr>
+  </tbody>
+</table>
+<p>ここで問題になるのが、品質の粗い Bronze データでエージェントを評価すると「精度ギャップ（accuracy gap）」が生じることです。これを埋めるために、層化サンプリング（stratified sampling）で多様なインシデントを選び出して人間がレビューし、Gold データを継続生成します。そして Gold データを基準に Silver データを数学的に較正し続けることで、安価に量を確保しつつ精度のギャップを縮めていく、という流れになっています。</p>
+<h3 id="golden-データの生成フロー">Golden データの生成フロー<a hidden class="anchor" aria-hidden="true" href="#golden-データの生成フロー">#</a></h3>
+<p>問題は、こうした高品質ラベルをどうやって追加負担なく集めるかです。Google の答えは、収集作業を通常のインシデント対応ワークフローに溶け込ませることでした。</p>
+<p>オンコーラーがインシデント解決を宣言する際、システムが構造化された緩和提案を自動生成します。オンコーラーはそれを承認・修正・拒否するだけで、結果的にシームレスに高品質ラベルが収集される仕組みです。普段の作業の延長で済むため、ラベリングのための追加負担がほとんど発生しません。</p>
+<h3 id="継続的夜間評価">継続的夜間評価<a hidden class="anchor" aria-hidden="true" href="#継続的夜間評価">#</a></h3>
+<p>集めた Golden データは、毎晩の自動評価でエージェントの品質計測に使われます。直近の実インシデントからなる動的なデータセットに対して、2種類の評価手法を組み合わせる点がポイントです。</p>
+<ol>
+<li>LLM-as-a-Judge：推論の妥当性・調査軌跡・ツール呼び出しといった定性的な側面を、Golden データと照らして採点する</li>
+<li>決定論的スコアリング：最終出力の精度・再現率を機械的に測定する。緩和アクションのパラメータ（対象バイナリやバージョンまで含む）が Golden Data と完全一致する場合のみ「正確」と判定する</li>
+</ol>
+<p>2つ目の判定基準が厳しいのが特徴です。「だいたい合っている提案」は不正解扱いで、実際にそのまま実行可能な正確なパラメータまで一致して初めて正解とみなされます。曖昧な提案を評価上の合格にしないことで、自律実行に耐える精度を担保しているわけです。</p>
+<hr>
+<h2 id="sre-ライフサイクル全体への-ai-統合ロードマップ">SRE ライフサイクル全体への AI 統合ロードマップ<a hidden class="anchor" aria-hidden="true" href="#sre-ライフサイクル全体への-ai-統合ロードマップ">#</a></h2>
+<p>AI を単一のツールとして捉えるのではなく、SRE のライフサイクル全体に段階的に組み込むロードマップを示しています。観察 → アラート充実化 → 調査支援（L1) → 自律緩和（L3) という順で、人間の関与を少しずつ減らしていく構成です。</p>
+<h3 id="1-本番環境の観察detectr">1. 本番環境の観察：Detectr<a hidden class="anchor" aria-hidden="true" href="#1-本番環境の観察detectr">#</a></h3>
+<p>従来のメトリクス・ログ・トレースベースの監視には「既知の障害モードしか検出できない」「実際のユーザーストーリーを捉えられない」という根本的な限界があります。Google が開発した Detectr は Gemini を活用し以下のような非構造化のユーザーシグナルを分析することでテレメトリには現れない未知の障害を早期検出します。</p>
+<ul>
+<li>カスタマーサポートチケット</li>
+<li>外部フォーラムへの投稿</li>
+<li>ソーシャルメディア</li>
+</ul>
+<p>ただ大量のユーザー投稿をそのまま読むだけではノイズに埋もれてしまいます。Detectr はマルチパスの AI パイプラインでこれを処理します。</p>
+<table>
+  <thead>
+      <tr>
+          <th>パス</th>
+          <th>処理内容</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Filter</td>
+          <td>無関係な投稿を除去しデータを分類する</td>
+      </tr>
+      <tr>
+          <td>Cluster</td>
+          <td>関連する報告をグループ化し障害候補を特定する</td>
+      </tr>
+      <tr>
+          <td>De-Noise</td>
+          <td>ノイズの多いクラスタを除外する</td>
+      </tr>
+      <tr>
+          <td>Report</td>
+          <td>トリアージ用の構造化された障害通知を生成する</td>
+      </tr>
+  </tbody>
+</table>
+<p>関連フィードボリュームそのものが信号となり、ノイズは段階的にフィルタリングされます。Cloud・Ads・YouTube・Search の複数チームで採用され、早期検知と深い状況理解によって累計で数百時間の顧客影響削減を達成しています。</p>
+<h3 id="2-アラート充実化ai-alert">2. アラート充実化：AI Alert<a hidden class="anchor" aria-hidden="true" href="#2-アラート充実化ai-alert">#</a></h3>
+<p>AI Alert は、未加工のアラートが人間に届く前に横取りし、リッチなコンテキストで補強して初期調査時間を削減します。約2分という厳密な実行時間枠の中で、以下を並列クエリします。</p>
+<ul>
+<li>モニタリングシステム</li>
+<li>ロギングプラットフォーム</li>
+<li>本番変更ログ</li>
+<li>依存関係グラフ</li>
+</ul>
+<p>設計上重要なのは、AI Alert があくまで読み取り専用モードで動作し、推測的な結論ではなく検証可能なファクトとエビデンスベースの洞察だけを提示する点です。すべての所見にはソースへのリンクが付き、人間が裏取りできるようになっています。本番を変更する AI Operator とは役割をはっきり分けているわけです。</p>
+<h3 id="3-インシデント調査支援l1">3. インシデント調査支援（L1）<a hidden class="anchor" aria-hidden="true" href="#3-インシデント調査支援l1">#</a></h3>
+<p>ここからは人間が承認・実行する前提で、AI が調査を支援する L1 のツール群です。</p>
+<h4 id="incident-hypothesisインシデント仮説">Incident Hypothesis（インシデント仮説）<a hidden class="anchor" aria-hidden="true" href="#incident-hypothesisインシデント仮説">#</a></h4>
+<p>LLM と RAG（検索拡張生成）を組み合わせ、以下を総合分析して根本原因の有力候補と、それを検証するための具体的な手順を提示します。</p>
+<ul>
+<li>リアルタイム異常</li>
+<li>サービスプレイブック</li>
+<li>アプリケーションログ</li>
+<li>インシデント管理データ</li>
+<li>類似過去インシデントのパターン</li>
+</ul>
+<p>A/B テストで MTTM（平均緩和時間）を10% 削減することが確認されています。結果はオンコーラーが普段使う調査・監視ツールの中に直接表示され、コンテキストスイッチを最小化しています。</p>
+<h4 id="investigation-dashboard調査ダッシュボード">Investigation Dashboard（調査ダッシュボード）<a hidden class="anchor" aria-hidden="true" href="#investigation-dashboard調査ダッシュボード">#</a></h4>
+<p>インシデント調査では、複数の静的ダッシュボードを行き来してデータを探し回る「宝探し（scavenger hunt）」が認知負荷を押し上げます。Investigation Dashboard はこれを解消するもので、動的な AI 駆動システムがインシデント固有の「統一ビュー（single pane of glass）」をオンデマンド生成します。オンコーラーと障害の性質の両方に合わせて中身が変化するのも特徴です。</p>
+<p>分析は4段階の能力で構成されます。</p>
+<ol>
+<li>異常検知：ML モデルが時系列の視覚的偏差をフラグ化する</li>
+<li>変化の相関：異常をアラート信号と関連付ける</li>
+<li>調査価値評価：その異常が深掘りに値するかを判定する</li>
+<li>根本原因特定：ロールアウト・実験・容量変更などの候補が真の原因かを見極める、最も高精度な分析</li>
+</ol>
+<p>このダッシュボードは100以上のドメイン固有「トラブルシューター」を並列実行する拡張可能なエコシステムになっています。結果として、ML 駆動の異常検知だけで検出数が195%増加し、ダッシュボード全体では対象インシデントの MTTM を約44%削減しています。</p>
+<h4 id="antigravity-cligemini-駆動-cli">Antigravity CLI（Gemini 駆動 CLI）<a hidden class="anchor" aria-hidden="true" href="#antigravity-cligemini-駆動-cli">#</a></h4>
+<p>SRE がターミナルから自然言語で本番環境を操作できるインターフェースです。内部では Model Context Protocol（MCP）を使った Production Agent サーバーが動作し、以下のツールカテゴリを提供します。</p>
+<table>
+  <thead>
+      <tr>
+          <th>カテゴリ</th>
+          <th>機能</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>可観測性</td>
+          <td>時系列データクエリ、ログ検索、異常検知</td>
+      </tr>
+      <tr>
+          <td>インシデント管理</td>
+          <td>インシデント詳細取得、ステータス更新、バグ起票やポストモーテム出力</td>
+      </tr>
+      <tr>
+          <td>トラフィック制御</td>
+          <td>トラフィックシフト、容量変更</td>
+      </tr>
+      <tr>
+          <td>インフラストラクチャ</td>
+          <td>コンピュートジョブ検査</td>
+      </tr>
+  </tbody>
+</table>
+<p>モジュール化された Skills ライブラリにより、ドメイン固有の問題解決と、ポリシー準拠で安全なミティゲーション（トラフィックドレインなど、後述の Actus でゲートされる操作）を実現します。複雑なデバッグ作業の参入障壁を下げ、仮説検証を高速に回せるようにするのが狙いです。</p>
+<h3 id="自分たちの現場での実践方法考案">自分たちの現場での実践方法考案<a hidden class="anchor" aria-hidden="true" href="#自分たちの現場での実践方法考案">#</a></h3>
+<p>我々のようなスタートアップ企業で AI in SRE を始めるなら、インシデント発生から対応オペレーションまでのイベント情報をどこで収集出来るかを整理する事かと思います。我々の場合の情報源は社内 Slack, Datadog になります。</p>
+<p>Claude (Claude Code) が Slack, Datadog とコネクタで接続出来るので(今現在その運用をとっている)、これは有用と思います。</p>
+<p>あとは Datadog Bits AI SRE を用いるパターン。Bits AI SRE を主要サービスの重要モニターにだけ先に紐付け、アラート発火時に自律調査を走らせて「競合する仮説 + 根拠データへのリンク」をインシデントチャンネルへ自動投稿する、という運用を想定しています。メトリクス・ログ・トレース・RUM がすでに Datadog に揃っているので、レポートの言う Investigation Dashboard 的な「単一ビュー」は実質ほぼ設定だけで手に入ります。一方 Detectr のような「ユーザーの声から未知障害を検知する」仕組みは Synthetic 監視とサポートチケットの定期トリアージで代替するべきかなぁと感じています。</p>
+<hr>
+<h2 id="自律型ミティゲーションl3ai-operator-と-actus">自律型ミティゲーション（L3）：AI Operator と Actus<a hidden class="anchor" aria-hidden="true" href="#自律型ミティゲーションl3ai-operator-と-actus">#</a></h2>
+<p>L1 の支援ツールは認知負荷を確かに下げますが、運用スケーラビリティを本質的に解決するには、AI が直接本番環境を変更する「実行（actuation）」まで踏み込む必要があります。ここからが L3、つまり AI Operator と Actus の領域です。</p>
+<h3 id="ai-operator">AI Operator<a hidden class="anchor" aria-hidden="true" href="#ai-operator">#</a></h3>
+<p>本番アラートの最初のレスポンダーとして機能する自律エージェントです。すでに数千件規模のインシデントで運用されています。</p>
+<h4 id="調査と根本原因分析rca">調査と根本原因分析（RCA）<a hidden class="anchor" aria-hidden="true" href="#調査と根本原因分析rca">#</a></h4>
+<p>AI Operator はアラートを受け取ると、以下のように多角的な調査を進めます。</p>
+<ul>
+<li>並列型拡張モジュール群（Enrichers）による複数の同時調査</li>
+<li>類似インシデントにおける過去の専門家調査事例に基づく推論ガイダンス</li>
+<li>仮説の形成と検証サイクル</li>
+</ul>
+<h4 id="緩和選択">緩和選択<a hidden class="anchor" aria-hidden="true" href="#緩和選択">#</a></h4>
+<p>調査の結果、コンテキストの構造化カタログから適切な緩和策を選択します。選択の際に使うコンテキストは大きく3種類です。</p>
+<table>
+  <thead>
+      <tr>
+          <th>要素</th>
+          <th>役割</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>Enrichers</td>
+          <td>可観測性の所見やプレイブックなど確実な情報を自動収集する</td>
+      </tr>
+      <tr>
+          <td>Skills</td>
+          <td>問題固有の緩和メソッド</td>
+      </tr>
+      <tr>
+          <td>Few-shot prompts</td>
+          <td>調査戦略のガイダンス</td>
+      </tr>
+  </tbody>
+</table>
+<h4 id="現在の自律性レベル">現在の自律性レベル<a hidden class="anchor" aria-hidden="true" href="#現在の自律性レベル">#</a></h4>
+<p>AI Operator はインシデントの重大度に応じて動作レベルを使い分けます。</p>
+<ul>
+<li>重大運用インシデント：L2（人間 SRE の承認が必須）</li>
+<li>軽微インシデント：L3（自律実行）</li>
+</ul>
+<h4 id="chain-of-thought-の可視化">Chain of Thought の可視化<a hidden class="anchor" aria-hidden="true" href="#chain-of-thought-の可視化">#</a></h4>
+<p>すべての推論ステップが中央集約された UI で可視化され、各段階で人間がコメントしたり方向を指示したりできます。必要に応じて専門サブエージェントを起動して深掘りすることも可能です。長時間に及ぶインシデントでも、厳密なトークン管理によってコンテキストの喪失やハルシネーションを防いでいます。なお、すべての実行トレースは Spanner に保存され、デバッグと継続的改善に使われます。</p>
+<h4 id="エスカレーション">エスカレーション<a hidden class="anchor" aria-hidden="true" href="#エスカレーション">#</a></h4>
+<p>根本原因を特定できない場合、またはセーフティー境界を超える操作が必要な場合は、即座に人間オペレータへエスカレーションします。その際、調査履歴全体をインシデント UI に集約し、人間がスムーズに引き継げるようにします。</p>
+<h4 id="llm-as-a-judge-による自己改善ループ">LLM-as-a-Judge による自己改善ループ<a hidden class="anchor" aria-hidden="true" href="#llm-as-a-judge-による自己改善ループ">#</a></h4>
+<p>AI Operator は自分の対応を自分で採点する仕組みを持ちます。自動でインシデントメタデータを分析し、エージェントのアクションを Golden Data（理想的な人間対応）と比較評価します。そして改善すべき領域を特定すると、具体的な実装計画とともにバグとして自動登録する、という「自己改善ループ」を回します。エージェントが自らの欠点をチケット化していくイメージです。</p>
+<h3 id="actusmitigation-safety-verification-agent">Actus（Mitigation Safety Verification Agent）<a hidden class="anchor" aria-hidden="true" href="#actusmitigation-safety-verification-agent">#</a></h3>
+<p>Actus は、AI Operator の推論能力と本番インフラ実行のギャップを安全に橋渡しする役割を担います。設計上の最大のポイントは、AI Operator（推論エンジン）と Actus（実行エンジン）を分離していることです。これにより、モデルがいくら進化しても、実行ガバナンスは常に決定論的で人間の制御下にある境界の内側に留まります。</p>
+<p>Actus は3段階のライフサイクルで動作します。</p>
+<h4 id="phase-1標準化された-discovery--planning">Phase 1：標準化された Discovery &amp; Planning<a hidden class="anchor" aria-hidden="true" href="#phase-1標準化された-discovery--planning">#</a></h4>
+<ul>
+<li>利用可能な緩和ツール（トラフィックドレイン、容量アップサイズ等）を、動的にフィルタリングしたレジストリとして提供する</li>
+<li><code>EvaluateAction</code> リクエストで必要なパラメータをハイドレートする</li>
+<li>LLM のあいまいなインテントを、検証可能な具体的実行計画へ変換する</li>
+</ul>
+<h4 id="phase-2動的自律性とセーフティーガードレール">Phase 2：動的自律性とセーフティーガードレール<a hidden class="anchor" aria-hidden="true" href="#phase-2動的自律性とセーフティーガードレール">#</a></h4>
+<p>Actus は段階的認可（Progressive Authorization）を物理的に強制する層でもあります。実行前のプリフライト安全検証として、以下を必須実行します。</p>
+<ul>
+<li>強制的ドライラン（<code>dry_run=true</code>）</li>
+<li>正当化検証（そのアクションがオープンされたインシデントに対応するものか）</li>
+<li>並行アクション確認（競合する操作が同時に走っていないか）</li>
+</ul>
+<p>そして高リスクと判定した L3 リクエストや、本番状態が異常なときは、自動で L2 にダウングレードして、人間へ承認リクエストを転送します。</p>
+<h4 id="phase-3post-action-guardian">Phase 3：Post-Action Guardian<a hidden class="anchor" aria-hidden="true" href="#phase-3post-action-guardian">#</a></h4>
+<ul>
+<li>Long Running Operation（LRO）の状態を保持する</li>
+<li>インフラをポーリングして、ミティゲーションの成功・失敗を確認する</li>
+<li>緊急時には人間オペレータが実行中のエージェントアクションを即座に停止し、新規アクションをブロックし、L3 権限をグローバルに取り消せる</li>
+</ul>
+<p>どれだけ自律化しても「人間が一発で全部止められる」非常停止装置を残しているのがポイントかもしれません。</p>
+<h3 id="自分たちの現場での実践方法考案-1">自分たちの現場での実践方法考案<a hidden class="anchor" aria-hidden="true" href="#自分たちの現場での実践方法考案-1">#</a></h3>
+<p>レポートの肝である「推論と実行の分離」に関してはそのまま自分たちの設計原則として採用出来そうと思っています。推論は Datadog（Bits AI SRE）に任せても、実行は必ずうちが管理する経路を通すという事になるかなぁと。</p>
+<p>具体的には、Actus に相当する Bits Remediation / Bits Infrastructure Operations にいきなり広い権限を渡すのではなく、許可する操作を「タスク再起動・オートスケールスケール修正」程度の操作に限定し(ホワイトリスト管理に近いかも)そしてそれぞれを、GCP / AWS の最小権限サービスアカウントと、Terraform 実行のバックエンドに置く等。当面はすべて承認ベース（L2）で運用し、完全自動（L3）は「誤っても影響が局所的かつ即復旧できる」操作にだけ、十分な実績を見てから段階的に拡張していくイメージは持てそうです。</p>
+<p>自分たちの現場は現時点では GCP と AWS のマルチクラウドなので、Google のような単一基盤前提の構成はそもそも作れません。だからこそ Actus 的な役割は自作せず Datadog 側のガードレールに乗せつつ、最後の非常停止は「エージェントの IAM ロール剥奪 / ワークフロー無効化」というクラウド側の操作で握る、という二段構えにするのが現実的だと思っています。重大インシデントでの自律 L3 を Google に倣って追うのはでは筋が悪いと思っていて、これははっきり線を引いておきたいところです。</p>
+<hr>
+<h2 id="ai-in-sre-を支える技術基盤">AI in SRE を支える技術基盤<a hidden class="anchor" aria-hidden="true" href="#ai-in-sre-を支える技術基盤">#</a></h2>
+<p>ここまで説明したシステムはいずれも以下の技術基盤の上に成り立っていいます。リストアップします。</p>
+<h3 id="高品質な本番データとメタデータ">高品質な本番データとメタデータ<a hidden class="anchor" aria-hidden="true" href="#高品質な本番データとメタデータ">#</a></h3>
+<ul>
+<li>リアルタイムテレメトリ（メトリクス・ログ・トレース)</li>
+<li>正確なサービストポロジーと依存グラフ</li>
+<li>インシデント履歴データ</li>
+<li>エンジニアリングプレイブックと技術ドキュメント</li>
+<li>SLO とエラーバジェットの状態</li>
+<li>本番ツールカタログ（各ツールがもたらす効果も含む)</li>
+</ul>
+<p>Google はこれらを実時間でクエリできるようにする部分に多大な投資をしてきた、と述べています。AI 以前のデータ基盤がなければ AI-Ops は成立しない、という順序です。</p>
+<h3 id="rag-プラットフォーム">RAG プラットフォーム<a hidden class="anchor" aria-hidden="true" href="#rag-プラットフォーム">#</a></h3>
+<p>LLM を訓練データではなく「現在の本番状態」にグラウンドさせるための基盤です。リアルタイムのデータソースや内部ドキュメントを LLM がクエリできるようにすることで、文脈に即した応答とアクションを可能にします。</p>
+<h3 id="fine-tuning">Fine-Tuning<a hidden class="anchor" aria-hidden="true" href="#fine-tuning">#</a></h3>
+<p>汎用 LLM に対し、Google 内部ツール・本番運用の原則・典型的な障害パターンといったドメイン知識を学習させ、AI 支援の精度と関連性を引き上げます。RAG が「最新の文脈を外から与える」のに対し、Fine-Tuning は「ドメインの素養をモデル自体に染み込ませる」役割で、両者は補完関係にあります。</p>
+<h3 id="model-context-protocolmcp">Model Context Protocol（MCP）<a hidden class="anchor" aria-hidden="true" href="#model-context-protocolmcp">#</a></h3>
+<p>AI が安全かつ効果的に本番環境と相互作用するための標準インターフェース。エージェントがツールを動的に発見して呼び出せるようにする点が肝で、単純な診断コマンドから複雑な緩和アクションまでを同じ枠組みで扱えます。MCP サーバーを通じて、可観測性・インシデント管理・トラフィック制御・インフラ検査の各ツールを提供します。</p>
+<h3 id="強固ななエージェントアイデンティティ管理">強固ななエージェントアイデンティティ管理<a hidden class="anchor" aria-hidden="true" href="#強固ななエージェントアイデンティティ管理">#</a></h3>
+<p>エージェントは人間とは別の一意でマシン識別可能なアイデンティティを持つそうです。これにより「人間のみが実行できるアクション」を厳格に区別でき、エージェントのすべての操作を完全な情報として記録できます。監査可能性と否認防止、そして後から権限行使の履歴を再構成できることが自律化の前提として重視されています。</p>
+<h3 id="a2aagent-to-agent通信プロトコル">A2A（Agent-to-Agent）通信プロトコル<a hidden class="anchor" aria-hidden="true" href="#a2aagent-to-agent通信プロトコル">#</a></h3>
+<p>モニタリング・ロールアウト・容量といったドメインに特化した複数のエージェントが協調して動くための通信プロトコルです。マイクロサービス同士が連携するように、専門エージェント同士が連携して複雑なインシデントを解決する、という構図を目指しています。A2A は<a href="https://github.com/a2aproject/A2A">オープン仕様として公開</a>されています。</p>
+<h3 id="自分たちの現場での実践方法考案-2">自分たちの現場での実践方法考案<a hidden class="anchor" aria-hidden="true" href="#自分たちの現場での実践方法考案-2">#</a></h3>
+<p>この章の教訓は、派手な仕組みより地味な前提のほうが大事だ、ということです。RAG も MCP も A2A も Datadog が担いでくれるので作らないというシナリオが現実路線かと。代わりに自分たちがやるべきことは2つに絞れます。</p>
+<p>1つは健全性を保ったデータ管理です。タグ付け、SLO の定義..等かもしれません。これらが雑だとエージェントは誤った情報を根拠に推論する思います。</p>
+<p>要するに「Actus を作る」のは無理でも、「Actus に渡せるきれいなデータと、安全に渡すための権限設計」は各現場で出来ることかなと。AI in SRE の実質的な前提条件はこの地味な2つだと割り切って、ツール導入より先に手を付けるべきだと考えています。</p>
+<p>ただ現実路線に寄りすぎている感もあるので、もう少し開発するものの幅を広げられないか検討する余地がアリそうと思っています。</p>
+<hr>
+<h2 id="sre-の未来">SRE の未来<a hidden class="anchor" aria-hidden="true" href="#sre-の未来">#</a></h2>
+<p>AI 統合の最終系は運用だけでなく SDLC（ソフトウェア開発ライフサイクル）そのものの包括です。AI が計画・実装・レビュー・提出までを担うエージェント型 SDLC へ移行し、その大部分がブラックボックス的な高速開発になります。SRE はこの高速・不透明なプロセスをどう管理するかを問われます。</p>
+<h3 id="人間の監視を左にシフトする">人間の監視を「左にシフト」する<a hidden class="anchor" aria-hidden="true" href="#人間の監視を左にシフトする">#</a></h3>
+<p>4倍のコード量に対して行単位のコードレビューはスケールしません。続ければレビュアーの疲弊を招くだけです。Google SRE の答えはレビューの抽象度を一段引き上げることでした。</p>
+<ul>
+<li>設計・意図・ポリシーのレビュー：エンジニアが詳細仕様を AI と共同執筆・承認し、コード生成の前にアーキテクチャとセーフティー制約を検証する</li>
+<li>Independent Harnesses：コードを生成するエージェントと、テストケースを定義・レビューするエージェントを厳格に分離する。両者を分けることで未検証の要件が機械的に検出されるようにする</li>
+</ul>
+<h3 id="adaptive-progressive-rollouts">Adaptive Progressive Rollouts<a hidden class="anchor" aria-hidden="true" href="#adaptive-progressive-rollouts">#</a></h3>
+<p>変更率が高い環境では、従来のカナリアリリースがかえって障壁になります。そこで、AI 作業速度でシステムの健全性を評価できる「継続的本番検証」技術へ投資する、という方向が示されています。</p>
+<h3 id="intervening-pull-request-problem-と-ai-assisted-fix-forward">Intervening Pull Request Problem と AI-Assisted Fix-Forward<a hidden class="anchor" aria-hidden="true" href="#intervening-pull-request-problem-と-ai-assisted-fix-forward">#</a></h3>
+<p>急速な AI 生成デプロイメント環境では、従来の「ロールバック」が逆に危険になります。短時間に大量の変更が積み重なった状態で「最後の既知の正常状態」へ単純に巻き戻すと、その間に入った重要なバグ修正やセキュリティパッチまで巻き添えで失われかねないからです。これをレポートでは Intervening Pull Request Problem（介在プルリクエスト問題）と呼んでいます。</p>
+<p>対策として2つのアプローチが挙げられています。</p>
+<ul>
+<li>動的設定・フィーチャーフラグによって、問題のあるコードパスだけを即座に無効化する</li>
+<li>AI-Assisted Fix-Forward：巻き戻すのではなく、ターゲットを絞ったパッチを自動生成・デプロイし、並行して進む他の変更を保護したままインシデントを解決する</li>
+</ul>
+<h3 id="sre-の役割の進化">SRE の役割の進化<a hidden class="anchor" aria-hidden="true" href="#sre-の役割の進化">#</a></h3>
+<p>これらを総合すると、SRE の仕事は次のように移っていきます。</p>
+<table>
+  <thead>
+      <tr>
+          <th>従来</th>
+          <th>これから</th>
+      </tr>
+  </thead>
+  <tbody>
+      <tr>
+          <td>システムを手動で運用する</td>
+          <td>自律エージェントが安全に継続イノベーションできる境界を設計する</td>
+      </tr>
+      <tr>
+          <td>手動緩和・オペレーター</td>
+          <td>アーキテクチャ的な意図と、AI 作業速度の補償制御</td>
+      </tr>
+      <tr>
+          <td>既知の障害モードへの対応</td>
+          <td>エージェントエコシステムのガバナンス設計</td>
+      </tr>
+  </tbody>
+</table>
+<p>レポートの言葉を借りれば、人間の監視をアーキテクチャ的な意図へとシフトし、AI 作業速度の補償制御を構築することで、SRE は「システムを運用する」役割から「自律エージェントが継続的にイノベーションできる安全な境界を設計する」役割へ移っていく、ということになります。</p>
+<hr>
+<h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
+<p>Google SRE の AI 統合戦略が示すのは、「AI ツールを追加する」という発想ではなく、本番環境ガバナンスの根本的な再構想です。読み終えて印象に残ったのは、技術そのものより「どう安全に権限を渡すか」に多くを割いている点でした。要点を改めて整理すると以下になります。</p>
+<ul>
+<li>Safety Trifecta（透明性・リアルタイムリスク評価・段階的認可）による段階的な信頼構築</li>
+<li>Bronze / Silver / Gold の評価データ階層と Nightly Evals による継続的な品質担保</li>
+<li>AI Operator + Actus という、推論と実行を分離した責任あるアーキテクチャ</li>
+<li>L0〜L4 の自律性モデルによって、統計的成功実績に基づき段階的に自律性を拡大</li>
+</ul>
+<p>4倍の開発速度でも信頼性を維持するための枠組みとして、また AI 時代の SRE エンジニアが「何を設計すべきか」の指針としてこのレポートは非常に有用だと思います。個人的には、こうした基盤を各社が独自に作り込むよりも、近い将来に出てくるデファクトな仕組みへ寄せていく流れになると見ています。それが Datadog になるのか Anthropic の基盤になるのか .. といったところでしょうか。</p>
+<hr>
+<h2 id="参考">参考<a hidden class="anchor" aria-hidden="true" href="#参考">#</a></h2>
+<ul>
+<li><a href="https://sre.google/resources/practices-and-processes/ai-engineering-reliable-operations/">Google SRE - AI in SRE: How Google is Engineering the Future of Reliable Operations</a></li>
+<li><a href="https://www.datadoghq.com/blog/dash-2026-new-feature-roundup-keynote/">Datadog - DASH 2026: Guide to Datadog&rsquo;s newest announcements</a></li>
+<li><a href="https://www.datadoghq.com/blog/bits-ai-sre-deeper-reasoning/">Datadog - Meet the new Bits AI SRE: Deeper reasoning, twice as fast</a></li>
+</ul>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
+<nav class="paginav">
+  <a class="prev" href="https://jedipunkz.rocks/post/rag-playground/">
+    <span class="title">« 前へ</span>
+    <br>
+    <span>RAG を動かして基本を理解する</span>
+  </a>
+  <a class="next" href="https://jedipunkz.rocks/post/ai-rss/">
+    <span class="title">次へ »</span>
+    <br>
+    <span>HackerNews を翻訳・要約して RSS 配信するパイプラインを完全無料で作った話</span>
+  </a>
+</nav>
+
+
+<ul class="share-buttons">
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google が提唱する AI in SRE とは何か on x"
+            href="https://x.com/intent/tweet/?text=Google%20%e3%81%8c%e6%8f%90%e5%94%b1%e3%81%99%e3%82%8b%20AI%20in%20SRE%20%e3%81%a8%e3%81%af%e4%bd%95%e3%81%8b&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fai-sre-google%2f&amp;hashtags=">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M512 62.554 L 512 449.446 C 512 483.97 483.97 512 449.446 512 L 62.554 512 C 28.03 512 0 483.97 0 449.446 L 0 62.554 C 0 28.03 28.029 0 62.554 0 L 449.446 0 C 483.971 0 512 28.03 512 62.554 Z M 269.951 190.75 L 182.567 75.216 L 56 75.216 L 207.216 272.95 L 63.9 436.783 L 125.266 436.783 L 235.9 310.383 L 332.567 436.783 L 456 436.783 L 298.367 228.367 L 432.367 75.216 L 371.033 75.216 Z M 127.633 110 L 164.101 110 L 383.481 400.065 L 349.5 400.065 Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google が提唱する AI in SRE とは何か on linkedin"
+            href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fai-sre-google%2f&amp;title=Google%20%e3%81%8c%e6%8f%90%e5%94%b1%e3%81%99%e3%82%8b%20AI%20in%20SRE%20%e3%81%a8%e3%81%af%e4%bd%95%e3%81%8b&amp;summary=Google%20%e3%81%8c%e6%8f%90%e5%94%b1%e3%81%99%e3%82%8b%20AI%20in%20SRE%20%e3%81%a8%e3%81%af%e4%bd%95%e3%81%8b&amp;source=https%3a%2f%2fjedipunkz.rocks%2fpost%2fai-sre-google%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-288.985,423.278l0,-225.717l-75.04,0l0,225.717l75.04,0Zm270.539,0l0,-129.439c0,-69.333 -37.018,-101.586 -86.381,-101.586c-39.804,0 -57.634,21.891 -67.617,37.266l0,-31.958l-75.021,0c0.995,21.181 0,225.717 0,225.717l75.02,0l0,-126.056c0,-6.748 0.486,-13.492 2.474,-18.315c5.414,-13.475 17.767,-27.434 38.494,-27.434c27.135,0 38.007,20.707 38.007,51.037l0,120.768l75.024,0Zm-307.552,-334.556c-25.674,0 -42.448,16.879 -42.448,39.002c0,21.658 16.264,39.002 41.455,39.002l0.484,0c26.165,0 42.452,-17.344 42.452,-39.002c-0.485,-22.092 -16.241,-38.954 -41.943,-39.002Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google が提唱する AI in SRE とは何か on reddit"
+            href="https://reddit.com/submit?url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fai-sre-google%2f&title=Google%20%e3%81%8c%e6%8f%90%e5%94%b1%e3%81%99%e3%82%8b%20AI%20in%20SRE%20%e3%81%a8%e3%81%af%e4%bd%95%e3%81%8b">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-3.446,265.638c0,-22.964 -18.616,-41.58 -41.58,-41.58c-11.211,0 -21.361,4.457 -28.841,11.666c-28.424,-20.508 -67.586,-33.757 -111.204,-35.278l18.941,-89.121l61.884,13.157c0.756,15.734 13.642,28.29 29.56,28.29c16.407,0 29.706,-13.299 29.706,-29.701c0,-16.403 -13.299,-29.702 -29.706,-29.702c-11.666,0 -21.657,6.792 -26.515,16.578l-69.105,-14.69c-1.922,-0.418 -3.939,-0.042 -5.585,1.036c-1.658,1.073 -2.811,2.761 -3.224,4.686l-21.152,99.438c-44.258,1.228 -84.046,14.494 -112.837,35.232c-7.468,-7.164 -17.589,-11.591 -28.757,-11.591c-22.965,0 -41.585,18.616 -41.585,41.58c0,16.896 10.095,31.41 24.568,37.918c-0.639,4.135 -0.99,8.328 -0.99,12.576c0,63.977 74.469,115.836 166.33,115.836c91.861,0 166.334,-51.859 166.334,-115.836c0,-4.218 -0.347,-8.387 -0.977,-12.493c14.564,-6.47 24.735,-21.034 24.735,-38.001Zm-119.474,108.193c-20.27,20.241 -59.115,21.816 -70.534,21.816c-11.428,0 -50.277,-1.575 -70.522,-21.82c-3.007,-3.008 -3.007,-7.882 0,-10.889c3.003,-2.999 7.882,-3.003 10.885,0c12.777,12.781 40.11,17.317 59.637,17.317c19.522,0 46.86,-4.536 59.657,-17.321c3.016,-2.999 7.886,-2.995 10.885,0.008c3.008,3.011 3.003,7.882 -0.008,10.889Zm-5.23,-48.781c-16.373,0 -29.701,-13.324 -29.701,-29.698c0,-16.381 13.328,-29.714 29.701,-29.714c16.378,0 29.706,13.333 29.706,29.714c0,16.374 -13.328,29.698 -29.706,29.698Zm-160.386,-29.702c0,-16.381 13.328,-29.71 29.714,-29.71c16.369,0 29.689,13.329 29.689,29.71c0,16.373 -13.32,29.693 -29.689,29.693c-16.386,0 -29.714,-13.32 -29.714,-29.693Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google が提唱する AI in SRE とは何か on facebook"
+            href="https://facebook.com/sharer/sharer.php?u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fai-sre-google%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-106.468,0l0,-192.915l66.6,0l12.672,-82.621l-79.272,0l0,-53.617c0,-22.603 11.073,-44.636 46.58,-44.636l36.042,0l0,-70.34c0,0 -32.71,-5.582 -63.982,-5.582c-65.288,0 -107.96,39.569 -107.96,111.204l0,62.971l-72.573,0l0,82.621l72.573,0l0,192.915l-191.104,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google が提唱する AI in SRE とは何か on whatsapp"
+            href="https://api.whatsapp.com/send?text=Google%20%e3%81%8c%e6%8f%90%e5%94%b1%e3%81%99%e3%82%8b%20AI%20in%20SRE%20%e3%81%a8%e3%81%af%e4%bd%95%e3%81%8b%20-%20https%3a%2f%2fjedipunkz.rocks%2fpost%2fai-sre-google%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-58.673,127.703c-33.842,-33.881 -78.847,-52.548 -126.798,-52.568c-98.799,0 -179.21,80.405 -179.249,179.234c-0.013,31.593 8.241,62.428 23.927,89.612l-25.429,92.884l95.021,-24.925c26.181,14.28 55.659,21.807 85.658,21.816l0.074,0c98.789,0 179.206,-80.413 179.247,-179.243c0.018,-47.895 -18.61,-92.93 -52.451,-126.81Zm-126.797,275.782l-0.06,0c-26.734,-0.01 -52.954,-7.193 -75.828,-20.767l-5.441,-3.229l-56.386,14.792l15.05,-54.977l-3.542,-5.637c-14.913,-23.72 -22.791,-51.136 -22.779,-79.287c0.033,-82.142 66.867,-148.971 149.046,-148.971c39.793,0.014 77.199,15.531 105.329,43.692c28.128,28.16 43.609,65.592 43.594,105.4c-0.034,82.149 -66.866,148.983 -148.983,148.984Zm81.721,-111.581c-4.479,-2.242 -26.499,-13.075 -30.604,-14.571c-4.105,-1.495 -7.091,-2.241 -10.077,2.241c-2.986,4.483 -11.569,14.572 -14.182,17.562c-2.612,2.988 -5.225,3.364 -9.703,1.12c-4.479,-2.241 -18.91,-6.97 -36.017,-22.23c-13.314,-11.876 -22.304,-26.542 -24.916,-31.026c-2.612,-4.484 -0.279,-6.908 1.963,-9.14c2.016,-2.007 4.48,-5.232 6.719,-7.847c2.24,-2.615 2.986,-4.484 4.479,-7.472c1.493,-2.99 0.747,-5.604 -0.374,-7.846c-1.119,-2.241 -10.077,-24.288 -13.809,-33.256c-3.635,-8.733 -7.327,-7.55 -10.077,-7.688c-2.609,-0.13 -5.598,-0.158 -8.583,-0.158c-2.986,0 -7.839,1.121 -11.944,5.604c-4.105,4.484 -15.675,15.32 -15.675,37.364c0,22.046 16.048,43.342 18.287,46.332c2.24,2.99 31.582,48.227 76.511,67.627c10.685,4.615 19.028,7.371 25.533,9.434c10.728,3.41 20.492,2.929 28.209,1.775c8.605,-1.285 26.499,-10.833 30.231,-21.295c3.732,-10.464 3.732,-19.431 2.612,-21.298c-1.119,-1.869 -4.105,-2.99 -8.583,-5.232Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google が提唱する AI in SRE とは何か on telegram"
+            href="https://telegram.me/share/url?text=Google%20%e3%81%8c%e6%8f%90%e5%94%b1%e3%81%99%e3%82%8b%20AI%20in%20SRE%20%e3%81%a8%e3%81%af%e4%bd%95%e3%81%8b&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fai-sre-google%2f">
+            <svg version="1.1" xml:space="preserve" viewBox="2 2 28 28" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M26.49,29.86H5.5a3.37,3.37,0,0,1-2.47-1,3.35,3.35,0,0,1-1-2.47V5.48A3.36,3.36,0,0,1,3,3,3.37,3.37,0,0,1,5.5,2h21A3.38,3.38,0,0,1,29,3a3.36,3.36,0,0,1,1,2.46V26.37a3.35,3.35,0,0,1-1,2.47A3.38,3.38,0,0,1,26.49,29.86Zm-5.38-6.71a.79.79,0,0,0,.85-.66L24.73,9.24a.55.55,0,0,0-.18-.46.62.62,0,0,0-.41-.17q-.08,0-16.53,6.11a.59.59,0,0,0-.41.59.57.57,0,0,0,.43.52l4,1.24,1.61,4.83a.62.62,0,0,0,.63.43.56.56,0,0,0,.4-.17L16.54,20l4.09,3A.9.9,0,0,0,21.11,23.15ZM13.8,20.71l-1.21-4q8.72-5.55,8.78-5.55c.15,0,.23,0,.23.16a.18.18,0,0,1,0,.06s-2.51,2.3-7.52,6.8Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google が提唱する AI in SRE とは何か on ycombinator"
+            href="https://news.ycombinator.com/submitlink?t=Google%20%e3%81%8c%e6%8f%90%e5%94%b1%e3%81%99%e3%82%8b%20AI%20in%20SRE%20%e3%81%a8%e3%81%af%e4%bd%95%e3%81%8b&u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fai-sre-google%2f">
+            <svg version="1.1" xml:space="preserve" width="30px" height="30px" viewBox="0 0 512 512" fill="currentColor"
+                xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+                <path
+                    d="M449.446 0C483.971 0 512 28.03 512 62.554L512 449.446C512 483.97 483.97 512 449.446 512L62.554 512C28.03 512 0 483.97 0 449.446L0 62.554C0 28.03 28.029 0 62.554 0L449.446 0ZM183.8767 87.9921H121.8427L230.6673 292.4508V424.0079H281.3328V292.4508L390.1575 87.9921H328.1233L256 238.2489z" />
+            </svg>
+        </a>
+    </li>
+</ul>
+
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="https://jedipunkz.rocks/">jedipunkz 🚀 のブログ</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a><script type="module">
+  if (document.querySelector("pre.mermaid")) {
+    const { default: mermaid } = await import(
+      "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
+    );
+    
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        darkMode: true,
+        background: "#1a1b26",
+        mainBkg: "#24283b",
+        primaryColor: "#24283b",
+        primaryTextColor: "#c0caf5",
+        primaryBorderColor: "#7aa2f7",
+        secondaryColor: "#414868",
+        secondaryTextColor: "#c0caf5",
+        secondaryBorderColor: "#565f89",
+        tertiaryColor: "#1f2335",
+        tertiaryTextColor: "#c0caf5",
+        tertiaryBorderColor: "#565f89",
+        lineColor: "#7dcfff",
+        textColor: "#c0caf5",
+        nodeTextColor: "#c0caf5",
+        edgeLabelBackground: "#1a1b26",
+        clusterBkg: "#1f2335",
+        clusterBorder: "#565f89",
+        titleColor: "#c0caf5"
+      }
+    });
+    await mermaid.run();
+  }
+</script>
+
+
+<script>
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        if (document.body.className.includes("dark")) {
+            document.body.classList.remove('dark');
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            document.body.classList.add('dark');
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+<script>
+    document.querySelectorAll('pre > code').forEach((codeblock) => {
+        const container = codeblock.parentNode.parentNode;
+
+        const copybutton = document.createElement('button');
+        copybutton.classList.add('copy-code');
+        copybutton.innerHTML = 'コピー';
+
+        function copyingDone() {
+            copybutton.innerHTML = 'コピーされました!';
+            setTimeout(() => {
+                copybutton.innerHTML = 'コピー';
+            }, 2000);
+        }
+
+        copybutton.addEventListener('click', (cb) => {
+            if ('clipboard' in navigator) {
+                navigator.clipboard.writeText(codeblock.textContent);
+                copyingDone();
+                return;
+            }
+
+            const range = document.createRange();
+            range.selectNodeContents(codeblock);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            try {
+                document.execCommand('copy');
+                copyingDone();
+            } catch (e) { };
+            selection.removeRange(range);
+        });
+
+        if (container.classList.contains("highlight")) {
+            container.appendChild(copybutton);
+        } else if (container.parentNode.firstChild == container) {
+            
+        } else if (codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.nodeName == "TABLE") {
+            
+            codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.appendChild(copybutton);
+        } else {
+            
+            codeblock.parentNode.appendChild(copybutton);
+        }
+    });
+</script>
+</body>
+
+</html>
