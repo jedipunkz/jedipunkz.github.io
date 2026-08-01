@@ -266,7 +266,7 @@ START ─┬─> RenewableEnergyResearcher ─┐
        └─> CarbonCaptureResearcher ───┘   (Join)   (func)      (LLM)
 ```
 
-配線は `EdgeBuilder` の fluent API で書けます。
+エッジの定義は `EdgeBuilder` の fluent API で書けます。
 
 ```go
 eb := workflow.NewEdgeBuilder()
@@ -566,7 +566,7 @@ func decideAction(ctx agent.Context, diagnosis any, emit func(*session.Event) er
 
 `diagnosis`（LLM の出力）は引数で受け取っていますが、`switch` の条件には**一切登場しません**。人間に見せるためにイベントの `Content` に載せるだけです。「デプロイから30分以内でエラー率が5%を超えていたらロールバック」という判断は、LLM の気分ではなくコードが決めます。この関数は `agent.Context` のモックさえ用意すれば LLM 抜きで単体テストできますし、閾値を変えたときの影響もレビューできます。
 
-配線は `EdgeBuilder` で書きます。`AddRoutes` を使うとルート値と遷移先の対応がマップで一望できます。
+エッジの定義は `EdgeBuilder` で書きます。`AddRoutes` を使うとルート値と遷移先の対応がマップで一望できます。
 
 ```go
 eb := workflow.NewEdgeBuilder()
