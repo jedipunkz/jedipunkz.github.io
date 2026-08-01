@@ -469,7 +469,7 @@ logsNode := workflow.NewFunctionNode(nodeLogs, fetchLogs, fetchCfg)
 deploysNode := workflow.NewFunctionNode(nodeDeploys, fetchDeploys, fetchCfg)
 ```
 
-`fetchMetrics` などは普通の Go 関数です。実運用では Cloud Monitoring や Prometheus を叩く場所になります。
+`fetchMetrics` などは普通の Go 関数です。ここではログとメトリクスを Datadog から取る想定にしました。
 
 ```go
 type Metrics struct {
@@ -479,10 +479,13 @@ type Metrics struct {
 }
 
 func fetchMetrics(_ agent.Context, service string) (Metrics, error) {
-	// 実運用では Cloud Monitoring / Prometheus を叩く
+	// 実運用では datadog-api-client-go の MetricsApi.QueryTimeseriesData に
+	// sum:trace.http.request.errors{service:checkout-api}.as_rate() などを投げる
 	return Metrics{ErrorRate: 0.18, LatencyP99Ms: 2400, CPUSaturation: 0.42}, nil
 }
 ```
+
+`fetchLogs` も同じ形で、Logs API に `service:checkout-api status:error` を投げて上位のエラーと件数を `LogDigest` に詰めるだけです。ここで大事なのは、**どのクエリをどの窓で投げるかを Go のコードが決めている**ことです。Datadog の MCP サーバを LLM に渡して「調べて」とやる構成も組めますが、それだと取得範囲が実行ごとにぶれて、後段の `decideAction` が同じインシデントで同じ判断を返す保証がなくなります。LLM に渡すのは集め終えた証拠だけ、という分担はここでも変えません。
 
 3つの収集を並列に走らせて `JoinNode` で待ち合わせ、`build_evidence` で1つの構造体にまとめます。ここで **session state に生データを保存しておく**のが後で効きます。
 
@@ -651,7 +654,7 @@ fan-out での並列収集、Join での待ち合わせ、state 経由での証�
 
 いくつか、まだ自分の中で答えが出ていないところを正直に書いておきます。
 
-**閾値をどこで管理するか。** 上の `decideAction` は閾値がハードコードされています。実際には「サービスごとにエラー率の閾値が違う」「エラーバジェットの消費速度で判断したい」という話になるので、ポリシーは外部設定に出したくなります。ただし外部設定にすると今度は「レビューできる」という利点が薄れる可能性があり、どこで線を引くかは考えどころです。
+**閾値をどこで管理するか。** 上の `decideAction` は閾値がハードコードされています。実際には「サービスごとにエラー率の閾値が違う」「Datadog の SLO のエラーバジェット消費速度で判断したい」という話になるので、ポリシーは外部設定に出したくなります。ただし外部設定にすると今度は「レビューできる」という利点が薄れる可能性があり、どこで線を引くかは考えどころです。
 
 **LLM を判断に使いたくなる領域は必ずある。** 「デプロイ直後にエラー率が上がった」は決定的に書けますが、「複数サービスにまたがる連鎖障害の起点はどこか」は決定的に書けません。前者は Go、後者は LLM、という分割は理屈では分かるのですが、実際のインシデントはその中間にあるものが多いです。この場合、LLM に判断させたうえで**その判断を実行前にコードで検証する**（提案されたアクションがホワイトリストに入っているか、blast radius が閾値以下か）という二段構えになるのかもしれません。グラフで書くなら「LLM ノード → 検証ノード（Go）→ ルーティング」という形です。
 
@@ -677,4 +680,5 @@ ADK Go 2.0 のグラフワークフローエンジンを、公式サンプルを
 - [ADK Go v2.0.0 Release](https://github.com/google/adk-go/releases/tag/v2.0.0)
 - [ADK Go 2.0 migration guide (README-v2.md)](https://github.com/google/adk-go/blob/main/README-v2.md)
 - [ADK Documentation](https://google.github.io/adk-docs/)
+- [datadog-api-client-go](https://github.com/DataDog/datadog-api-client-go)
 - [Google が提唱する AI in SRE とは何か](/post/ai-sre-google/)
