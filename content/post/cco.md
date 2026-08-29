@@ -1,6 +1,6 @@
 ---
 title: "複数の Claude Code エージェントを1つのターミナルから起動・監視するツールを作った"
-description: "Go で実装した TUI ダッシュボード付きの Claude Code マルチエージェント管理ツール axの設計と実装について紹介します"
+description: "Go で実装した TUI ダッシュボード付きの Claude Code マルチエージェント管理ツール agxの設計と実装について紹介します"
 date: 2026-03-14T00:00:00+09:00
 Categories: ["AI", "tools", "development", "Go"]
 draft: false
@@ -21,18 +21,18 @@ Claude Code を日常的に使う中で、複数のエージェントを同時�
 - 複数のレポジトリの修正を行いたい
 - それぞれのエージェントのオーケストレーションよりも、それぞれの可視化と管理をしたい
 
-そこで Go で ax というツールを作りました。
+そこで Go で agx というツールを作りました。
 リポジトリはこちらです:
-https://github.com/jedipunkz/ax
+https://github.com/jedipunkz/agx
 
-## ax とは
+## agx とは
 
-ax は「1つのターミナルから複数の Claude Code エージェントを起動・監視する」ためのCLI ツールです。
+agx は「1つのターミナルから複数の Claude Code エージェントを起動・監視する」ためのCLI ツールです。
 
 主な機能は以下の通りです。
 
-- `ax agent` でエージェントを起動（git リポジトリ内では自動で git worktree を作成）
-- `ax dash` で TUI ダッシュボードを開き、全エージェントの状態をリアルタイムで確認
+- `agx agent` でエージェントを起動（git リポジトリ内では自動で git worktree を作成）
+- `agx dash` で TUI ダッシュボードを開き、全エージェントの状態をリアルタイムで確認
 - バックグラウンドのデーモンプロセスが Unix ドメインソケット経由でエージェントと TUI 間の状態を管理
 
 ## スクリーンショット
@@ -47,27 +47,27 @@ ax は「1つのターミナルから複数の Claude Code エージェントを
 システムは3つの層で構成されています。
 
 ```
-┌──────────────────────────────────────────────────┐
-│ TUI Dashboard (ax dash)                          │
-│  - list, detailed                                │
-│  - realtime display with socket                  │
-└────────────────────┬─────────────────────────────┘
+┌───────────────────────────────────────────────────┐
+│ TUI Dashboard (agx dash)                          │
+│  - list, detailed                                 │
+│  - realtime display with socket                   │
+└────────────────────┬──────────────────────────────┘
                      │ JSON-lines / Unix socket
-┌────────────────────▼─────────────────────────────┐
-│ Daemon  (~/.ax/ax.sock, ~/.ax/state.json)        │
-└────────────────────┬─────────────────────────────┘
+┌────────────────────▼──────────────────────────────┐
+│ Daemon  (~/.agx/agx.sock, ~/.agx/state.json)      │
+└────────────────────┬──────────────────────────────┘
                      │ state updates
-┌────────────────────▼─────────────────────────────┐
-│ Agent Process Layer (ax agent)                   │
-│  - Boot Sub Processes with PTY                   │
-│  - Detect Idle Status                            │
-│  - Output Logs into ~/.ax/agents/<id>/output.log │
-└──────────────────────────────────────────────────┘
+┌────────────────────▼──────────────────────────────┐
+│ Agent Process Layer (agx agent)                   │
+│  - Boot Sub Processes with PTY                    │
+│  - Detect Idle Status                             │
+│  - Output Logs into ~/.agx/agents/<id>/output.log │
+└───────────────────────────────────────────────────┘
 ```
 
-### エージェントプロセス (ax agent)
+### エージェントプロセス (agx agent)
 
-`ax agent` は PTY (Pseudo-Terminal) を使って Claude Code サブプロセスを起動します。PTY を経由することで双方向の I/O を実現しつつ、出力ストリームを監視して状態検出に使います。
+`agx agent` は PTY (Pseudo-Terminal) を使って Claude Code サブプロセスを起動します。PTY を経由することで双方向の I/O を実現しつつ、出力ストリームを監視して状態検出に使います。
 
 Claude Code は処理中（思考中・ツール実行中・出力ストリーミング中）は継続的に stdout にバイト列を流します。入力プロンプトを出して待機状態になると stdout が止まります。この特性を利用して **2秒間無出力** であれば「waiting you」状態として検出します。
 
@@ -75,22 +75,22 @@ Claude Code は処理中（思考中・ツール実行中・出力ストリー�
 
 デーモンは2つのメカニズムで状態を管理します。
 
-- `~/.ax/state.json`: アプリ再起動をまたいで状態を復元するための永続スナップショット
-- `~/.ax/ax.sock`: JSON-lines プロトコルによるリアルタイムなメッセージストリーミング
+- `~/.agx/state.json`: アプリ再起動をまたいで状態を復元するための永続スナップショット
+- `~/.agx/agx.sock`: JSON-lines プロトコルによるリアルタイムなメッセージストリーミング
 
 デーモンは自動起動する設計で、エージェントや TUI がソケットに到達できない場合、バックグラウンドプロセスとして自動でフォークして最大3秒間ソケットの利用可能を待ちます。
 
 ### git worktree との統合
 
-`ax agent` を git リポジトリ内で実行すると、自動的に専用の git worktree を `~/.ax/worktrees/<repo>-<id>/` に作成し、`ax/<id>` という名前のブランチを切ります。Claude Code はこの隔離された worktree 内で動作するため、各エージェントの変更がメインの作業ツリーに干渉しません。
+`agx agent` を git リポジトリ内で実行すると、自動的に専用の git worktree を `~/.agx/worktrees/<repo>-<id>/` に作成し、`agx/<id>` という名前のブランチを切ります。Claude Code はこの隔離された worktree 内で動作するため、各エージェントの変更がメインの作業ツリーに干渉しません。
 
 ## ディレクトリ構成
 
 下記のようにホームディレクトリ上にファイルが構成されます。
 
 ```
-~/.ax/
-├── ax.sock              # Unix ドメインソケット (デーモン IPC)
+~/.agx/
+├── agx.sock              # Unix ドメインソケット (デーモン IPC)
 ├── state.json            # エージェント状態スナップショット
 ├── agents/
 │   └── <id>/
@@ -105,13 +105,13 @@ Claude Code は処理中（思考中・ツール実行中・出力ストリー�
 Go がインストールされていれば以下でインストールできます。`claude` CLI が `$PATH` にある必要があります。
 
 ```bash
-go install github.com/jedipunkz/ax@latest
+go install github.com/jedipunkz/agx@latest
 ```
 
 ### TUI ダッシュボードの起動
 
 ```bash
-ax dash
+agx dash
 ```
 
 エージェントを起動すると下記のような TUI で状態を確認できます。
@@ -125,8 +125,8 @@ success   agent-3   ./other     "Refactor utils"         done
 ### エージェントの起動
 
 ```bash
-ax agent
-ax agent -n <NAME> # 明示的に名前をつけたい場合。ブランチ名を指定すると管理上良い
+agx agent new
+agx agent new -n <NAME> # 明示的に名前をつけたい場合。ブランチ名を指定すると管理上良い
 ```
 
 ### キーバインド
@@ -159,7 +159,7 @@ Claude Code の「処理中」と「入力待ち」の区別は PTY 出力のア
 
 ### デーモンの自動起動
 
-明示的な `ax daemon` コマンドを不要にするため、エージェントや TUI がソケットを見つけられない場合にデーモンを自動フォークする設計にしました。ユーザーが「デーモンを先に起動する」という手順を意識しなくてよいため、体験がシンプルになります。
+明示的な `agx daemon` コマンドを不要にするため、エージェントや TUI がソケットを見つけられない場合にデーモンを自動フォークする設計にしました。ユーザーが「デーモンを先に起動する」という手順を意識しなくてよいため、体験がシンプルになります。
 
 ### bubbletea による TUI
 
@@ -167,8 +167,8 @@ TUI は [bubbletea](https://github.com/charmbracelet/bubbletea) フレームワ�
 
 ## まとめ
 
-ax を使うと、複数の Claude Code エージェントの状態を1つのターミナルで把握しながら並列作業できます。git worktree との統合により各エージェントが独立した作業ツリーを持つため、変更が互いに干渉しない点も便利です。
+agx を使うと、複数の Claude Code エージェントの状態を1つのターミナルで把握しながら並列作業できます。git worktree との統合により各エージェントが独立した作業ツリーを持つため、変更が互いに干渉しない点も便利です。
 
-今、ax の開発自体もこの ax を使って行っています。それぞれのエージェントの操作完了時に PR 作成を指示して作業を完結する、という使い方です。複数の機能を1つに PR にまとめるなら Sub Agents や以前の自分の記事の Swarm SKILL が良いですが、実際の作業ではそれぞれ機能・修正ごとに PR を作るので、今はこの ax が自分に適していると感じています。
+今、agx の開発自体もこの agx を使って行っています。それぞれのエージェントの操作完了時に PR 作成を指示して作業を完結する、という使い方です。複数の機能を1つに PR にまとめるなら Sub Agents や以前の自分の記事の Swarm SKILL が良いですが、実際の作業ではそれぞれ機能・修正ごとに PR を作るので、今はこの agx が自分に適していると感じています。
 
 ぜひ使ってみてください。フィードバックや Issue も歓迎です。
