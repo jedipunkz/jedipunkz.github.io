@@ -1,12 +1,14 @@
 ---
-title: "複数の Claude Code エージェントを1つのターミナルから起動・監視するツールを作った"
-description: "Go で実装した TUI ダッシュボード付きの Claude Code マルチエージェント管理ツール agxの設計と実装について紹介します"
+title: "複数の AI コーディングエージェントを1つのターミナルから起動・監視するツールを作った"
+description: "Go で実装した TUI ダッシュボード付きのマルチエージェント管理ツール agx の設計と実装について紹介します"
 date: 2026-03-14T00:00:00+09:00
 Categories: ["AI", "tools", "development", "Go"]
 draft: false
 ---
 
 [jedipunkz](https://x.com/jedipunkz) です。
+
+なお公開当初は `ax` という名前でしたが、その後 `agx` (agent cross) にリネームしました。この記事も現在の `agx` に合わせて内容を更新しています。
 
 ## 背景
 
@@ -27,13 +29,18 @@ https://github.com/jedipunkz/agx
 
 ## agx とは
 
-agx は「1つのターミナルから複数の Claude Code エージェントを起動・監視する」ためのCLI ツールです。
+agx は「1つのターミナルから複数の AI コーディングエージェントを起動・監視する」ための CLI ツールです。
 
 主な機能は以下の通りです。
 
-- `agx agent` でエージェントを起動（git リポジトリ内では自動で git worktree を作成）
+- `agx agent new` でエージェントを起動（git リポジトリ内では自動で git worktree を作成）
+- Claude Code / Codex CLI / Gemini CLI / OpenCode に対応。`-a` で使い分ける
 - `agx dash` で TUI ダッシュボードを開き、全エージェントの状態をリアルタイムで確認
-- バックグラウンドのデーモンプロセスが Unix ドメインソケット経由でエージェントと TUI 間の状態を管理
+- ダッシュボードから各エージェントのログと worktree の差分をその場で参照
+- `agx agent logs` / `wait` / `input` で、実行中のエージェントを別ターミナルやシェルスクリプトから扱える
+- バックグラウンドのデーモンプロセスが Unix ドメインソケット経由でエージェントと各クライアント間の状態を仲介
+
+公開当初は Claude Code 専用で、起動と一覧表示だけのツールでしたが、そこから対応エージェントの追加、ログ配信、差分ビュー、待ち合わせ・入力送信といった機能が加わり、現在は v1.0.0 になっています。
 
 ## スクリーンショット
 
@@ -41,72 +48,102 @@ agx は「1つのターミナルから複数の Claude Code エージェント�
 
 ![list](/pix/ax.png)
 
+（スクリーンショットはリネーム前の `ax` 時代のものですが、画面構成は現在も同じです）
 
-## アーキテクチャ
+## インストール
 
-システムは3つの層で構成されています。
+Homebrew が使えます。
 
-```
-┌───────────────────────────────────────────────────┐
-│ TUI Dashboard (agx dash)                          │
-│  - list, detailed                                 │
-│  - realtime display with socket                   │
-└────────────────────┬──────────────────────────────┘
-                     │ JSON-lines / Unix socket
-┌────────────────────▼──────────────────────────────┐
-│ Daemon  (~/.agx/agx.sock, ~/.agx/state.json)      │
-└────────────────────┬──────────────────────────────┘
-                     │ state updates
-┌────────────────────▼──────────────────────────────┐
-│ Agent Process Layer (agx agent)                   │
-│  - Boot Sub Processes with PTY                    │
-│  - Detect Idle Status                             │
-│  - Output Logs into ~/.agx/agents/<id>/output.log │
-└───────────────────────────────────────────────────┘
+```bash
+brew tap jedipunkz/agx && brew install agx
 ```
 
-### エージェントプロセス (agx agent)
-
-`agx agent` は PTY (Pseudo-Terminal) を使って Claude Code サブプロセスを起動します。PTY を経由することで双方向の I/O を実現しつつ、出力ストリームを監視して状態検出に使います。
-
-Claude Code は処理中（思考中・ツール実行中・出力ストリーミング中）は継続的に stdout にバイト列を流します。入力プロンプトを出して待機状態になると stdout が止まります。この特性を利用して **2秒間無出力** であれば「waiting you」状態として検出します。
-
-### 状態管理と IPC
-
-デーモンは2つのメカニズムで状態を管理します。
-
-- `~/.agx/state.json`: アプリ再起動をまたいで状態を復元するための永続スナップショット
-- `~/.agx/agx.sock`: JSON-lines プロトコルによるリアルタイムなメッセージストリーミング
-
-デーモンは自動起動する設計で、エージェントや TUI がソケットに到達できない場合、バックグラウンドプロセスとして自動でフォークして最大3秒間ソケットの利用可能を待ちます。
-
-### git worktree との統合
-
-`agx agent` を git リポジトリ内で実行すると、自動的に専用の git worktree を `~/.agx/worktrees/<repo>-<id>/` に作成し、`agx/<id>` という名前のブランチを切ります。Claude Code はこの隔離された worktree 内で動作するため、各エージェントの変更がメインの作業ツリーに干渉しません。
-
-## ディレクトリ構成
-
-下記のようにホームディレクトリ上にファイルが構成されます。
-
-```
-~/.agx/
-├── agx.sock              # Unix ドメインソケット (デーモン IPC)
-├── state.json            # エージェント状態スナップショット
-├── agents/
-│   └── <id>/
-│       └── output.log    # エージェントごとの出力ログ
-└── worktrees/
-    └── <repo>-<id>/      # エージェントごとの git worktree
-```
-
-
-## インストールと使い方
-
-Go がインストールされていれば以下でインストールできます。`claude` CLI が `$PATH` にある必要があります。
+Go がインストールされていれば以下でも入ります。
 
 ```bash
 go install github.com/jedipunkz/agx@latest
 ```
+
+いずれの場合も、起動したいエージェントの CLI（`claude` / `codex` / `gemini` / `opencode` のいずれか）が `$PATH` にある必要があります。
+
+## 使い方
+
+### エージェントの起動
+
+git リポジトリの中で実行します。カレントディレクトリからリポジトリを検出して、専用の worktree を作ってからエージェントを起動します。
+
+```bash
+cd /path/to/your/repo
+agx agent new
+```
+
+デフォルトは Claude Code です。`-a` で他のエージェントを指定します。
+
+```bash
+agx agent new -a claude      # Claude Code (default)
+agx agent new -a codex       # OpenAI Codex CLI
+agx agent new -a gemini      # Gemini CLI
+agx agent new -a opencode    # OpenCode
+```
+
+`-n` で名前をつけられます。この名前がそのまま worktree のブランチ名になるので、ブランチ名を指定しておくと管理上良いです。`--` の後ろはエージェント自身のオプションとしてそのまま渡されます。
+
+```bash
+agx agent new -n feat/foo
+agx agent new -n feat/foo -- --model sonnet --dangerously-skip-permissions
+agx agent new -a codex -n feat/foo -- --sandbox workspace-write --ask-for-approval never
+```
+
+### セッションの再開
+
+ID または名前を指定して、前回のセッションを同じ worktree で再開します。エージェントごとの再開方法（`claude --continue`、`codex resume --last`、`gemini --resume latest`、`opencode --continue`）は agx 側が持っているので、利用者はどれを使っていても同じコマンドで再開できます。
+
+```bash
+agx agent resume -n feat/foo
+```
+
+### 一覧・移動・削除
+
+```bash
+agx agent list                  # ID, 名前, リポジトリ, 終了時刻, worktree のパス
+agx agent cd -n <name|id>       # そのエージェントの worktree で新しいシェルを開く
+agx agent remove -n <name|id>   # 終了済みエージェントの worktree・ログ・状態を削除
+```
+
+`remove` は worktree に未コミットの変更や未追跡ファイルが残っている場合、何も消さずに拒否します。ブランチはどちらにせよ残るので、コミットしてから消すか、`-f` で明示的に破棄します。
+
+### ログの参照
+
+```bash
+agx agent logs -n <name|id>      # ANSI エスケープを除去してログを出力
+agx agent logs -f -n <name|id>   # 新しい出力を追従表示 (Ctrl-C で終了)
+```
+
+`-f` はデーモン経由で配信されるため、エージェントを起動した端末とは別のターミナルからでも追えます。
+
+### 差分の確認
+
+そのエージェントがセッション中に積んだコミットの差分を、ページャ経由で色付き表示します。
+
+```bash
+agx agent diff -n <name|id>
+```
+
+### 待ち合わせと入力送信
+
+個人的に一番効いている機能です。エージェントが終了するか、プロンプトで入力待ちになるまでブロックします。終了時はエージェント自身の終了コード（シグナルで殺された場合は `130`）を、入力待ちで止まった場合は `0` を返すので、シェルのパイプラインにそのまま組み込めます。
+
+```bash
+agx agent wait -n <name|id> && ./deploy.sh
+```
+
+入力待ちのエージェントには、別のターミナルから回答を送れます。
+
+```bash
+agx agent input -n <name|id> "y\n"
+```
+
+入力の送信はエージェントが実際に入力待ちの間だけ受け付けられます。処理中に送るとデーモンが拒否するので、起動元の端末で打っているキーと混ざりません。
 
 ### TUI ダッシュボードの起動
 
@@ -114,19 +151,13 @@ go install github.com/jedipunkz/agx@latest
 agx dash
 ```
 
-エージェントを起動すると下記のような TUI で状態を確認できます。
+エージェントを起動すると下記のような TUI で状態を確認できます。上部に選択中エージェントの概要（名前・エージェント種別・PID・作業ディレクトリ・ブランチ・起動引数・経過時間やコミット数などの統計）が出て、その下が Running / Success / Killed のセクションに分かれた一覧になります。
 
 ```
-running   agent-1   ./my-repo   "Implement feature X"   00:42
-waiting  agent-2   ./my-repo   "Write tests"            01:15
-success   agent-3   ./other     "Refactor utils"         done
-```
-
-### エージェントの起動
-
-```bash
-agx agent new
-agx agent new -n <NAME> # 明示的に名前をつけたい場合。ブランチ名を指定すると管理上良い
+Name/Id                  Agent    Repo         Status    Ended       Last Output
+feat/foo                 claude   my-repo      running               Editing src/main.go
+fix/bar                  codex    my-repo      waiting               Do you want to proceed?
+chore/baz                claude   other-repo   success   04/03 21:42 /exit
 ```
 
 ### キーバインド
@@ -135,39 +166,136 @@ agx agent new -n <NAME> # 明示的に名前をつけたい場合。ブランチ
 |------|-----------|
 | `j` / `↓` | カーソルを下に移動 |
 | `k` / `↑` | カーソルを上に移動 |
-| `space` | 詳細ビューを開く |
-| `esc` / `q` | 一覧に戻る、または終了 |
+| `enter` | 詳細ビュー（ログ）を開く |
+| `d` | worktree の差分ビューを開く |
+| `o` | 終了済みエージェントの表示切り替え |
+| `/` | ID・名前で絞り込み |
+| `y` | `cd <worktree のパス>` をクリップボードにコピー |
 | `K` | 選択中のエージェントを強制終了 (SIGTERM) |
+| `r` | 選択中のエージェントを削除（確認あり） |
+| `q` / `ctrl+c` | 終了 |
+
+差分ビューは、記録済みのコミット・未コミットの変更・未追跡ファイルをまとめて色付きの unified diff として表示します。エージェントが実行中は2秒ごとに再読み込みされ、更新の新しいファイルほど上に並ぶので、変更が入ってくる様子をそのまま眺められます。再読み込みしてもスクロール位置は保たれます。
 
 ### ステータスインジケーター
 
 | シンボル | 意味 |
 |---------|------|
-| `⠋ running` | Claude が処理中 |
-| `waiting you` | 入力待ち (プロンプト表示中) |
+| `⠋ running` | エージェントが処理中 |
+| `waiting` | 入力待ち (プロンプト表示中) |
 | `success` | 終了コード 0 で正常終了 |
 | `failed` | 非ゼロ終了コードで異常終了 |
 | `killed` | シグナルによる強制終了 |
 
-終了済みのエージェントは終了後 5 分間表示され続けます。
+終了済みのエージェントはデフォルトで 7 日間表示され続けます（後述の設定で変更可能）。`o` で表示・非表示を切り替えられます。
+
+## アーキテクチャ
+
+システムは3つの層で構成されています。
+
+```
+┌───────────────────────────────────────────────────┐
+│ Clients                                           │
+│  - TUI Dashboard (agx dash): list / detail / diff │
+│  - CLI (agx agent logs -f | wait | input)         │
+│  - both usable from any terminal                  │
+└────────────────────┬──────────────────────────────┘
+                     │ JSON-lines / Unix socket
+┌────────────────────▼──────────────────────────────┐
+│ Daemon  (~/.agx/agx.sock, ~/.agx/state.json)      │
+│  - single instance guarded by ~/.agx/daemon.lock  │
+│  - broadcast state / relay output / forward input │
+└────────────────────┬──────────────────────────────┘
+                     │ state updates / output / input
+┌────────────────────▼──────────────────────────────┐
+│ Agent Process Layer (agx agent new | resume)      │
+│  - Boot claude|codex|gemini|opencode with PTY     │
+│  - Detect Idle (waiting) Status                   │
+│  - Track Commits Made in the Worktree             │
+│  - Output Logs into ~/.agx/agents/<id>/output.log │
+└───────────────────────────────────────────────────┘
+```
+
+### エージェントプロセス (agx agent)
+
+`agx agent new` は PTY (Pseudo-Terminal) を使ってエージェントのサブプロセスを起動します。PTY を経由することで双方向の I/O を実現しつつ、出力ストリームを監視して状態検出に使います。
+
+エージェントは処理中（思考中・ツール実行中・出力ストリーミング中）は継続的に stdout にバイト列を流します。入力プロンプトを出して待機状態になると stdout が止まります。この特性を利用して **2秒間無出力** であれば「waiting」状態として検出します。
+
+同時に、起動時の HEAD を覚えておいて worktree に積まれたコミットを追跡しています。`agx agent diff` とダッシュボードの差分ビューは、この記録を使って「このエージェントが何をしたか」を表示しています。
+
+### 状態管理と IPC
+
+デーモンは2つのメカニズムで状態を管理します。
+
+- `~/.agx/state.json`: アプリ再起動をまたいで状態を復元するための永続スナップショット
+- `~/.agx/agx.sock`: JSON-lines プロトコルによるリアルタイムなメッセージストリーミング
+
+デーモンは自動起動する設計で、エージェントや TUI がソケットに到達できない場合、バックグラウンドプロセスとして自動でフォークして最大5秒間ソケットの利用可能を待ちます。また agx のバイナリがデーモン起動時より新しい場合は、古いデーモンを落としてから新しいものを立ち上げます。バージョンアップ後に古いデーモンが残り続けるのを防ぐためです。
+
+デーモンは状態を配るだけでなく、ログ出力の中継（`attach`）と、入力待ちエージェントへの入力転送も担っています。`agx agent logs -f` や `agx agent input` が起動元と別のターミナルから使えるのはこのためです。
+
+### デーモンの単一インスタンス保証
+
+各デーモンは自分のメモリ上のエージェントマップから `state.json` を書き出します。そのため同じデータディレクトリを2つのデーモンが掴むと、互いのエージェントを静かに消し合います。これを防ぐため、デーモンは `~/.agx/daemon.lock` に対する排他 advisory ロック (`flock`) をプロセスの生存期間中ずっと保持します。ロックはファイルのオープン記述子に紐づくので、デーモンがクラッシュしてもカーネルが自動的に解放してくれます。ロックを取れなかった側は「既に誰かが動いている」と判断して静かに終了します。
+
+### git worktree との統合
+
+`agx agent new` を git リポジトリ内で実行すると、自動的に専用の git worktree を `~/.agx/worktrees/<repo>-<id>/` に作成し、HEAD からブランチを切ります。ブランチ名は `-n` で渡した名前がそのまま使われ、指定しなかった場合や同名ブランチが既にある場合は `agx/<id>` になります。エージェントはこの隔離された worktree 内で動作するため、各エージェントの変更がメインの作業ツリーに干渉しません。
+
+worktree の作成に失敗した場合、agx はリポジトリのルートにフォールバックせずエラーで終了します。隔離こそが agx 経由でエージェントを起動する理由なので、フォールバックしてしまうと利用者が今いるブランチに直接コミットが積まれることになるためです。この場面で警告を出してもエージェントの全画面 UI に即座に上書きされて気づけないので、そもそも起動しない方を選んでいます。
+
+## 設定ファイル
+
+`~/.agx/agx.yaml` で挙動を変えられます。任意なので、無ければデフォルトで動きます。
+
+```yaml
+theme: tokyonight          # tokyonight (default) / catppuccin / solarized-dark / kanagawa-wave
+duration_days: 7d          # 終了済みエージェントをダッシュボードに表示する期間
+remove_duration_days: 30d  # 終了後、worktree を自動削除するまでの期間
+```
+
+`agx dash` の実行中は、バックグラウンドで古い worktree を自動的に片付けます。起動時に1回、その後は24時間ごとに動き、`~/.agx/worktrees/` 配下にある終了済みエージェント（success / failed / killed）の worktree のうち、閾値より古いものだけを削除します。放っておくと worktree がどんどん溜まるので、これがないと結局手で消すことになります。
+
+## ディレクトリ構成
+
+下記のようにホームディレクトリ上にファイルが構成されます。
+
+```
+~/.agx/
+├── agx.yaml              # 設定ファイル (任意)
+├── agx.sock              # Unix ドメインソケット (デーモン IPC)
+├── daemon.pid            # デーモンの PID
+├── daemon.lock           # 単一インスタンスを保証する advisory ロック
+├── state.json            # エージェント状態スナップショット
+├── agents/
+│   └── <id>/
+│       └── output.log    # エージェントごとの出力ログ
+└── worktrees/
+    └── <repo>-<id>/      # エージェントごとの git worktree
+```
 
 ## 実装で工夫した点
 
 ### PTY によるアイドル検出
 
-Claude Code の「処理中」と「入力待ち」の区別は PTY 出力のアイドル時間で判定しています。2秒という閾値は実際に使いながら調整した値です。短すぎると誤検知が増え、長すぎると UI の応答が遅くなります。
+「処理中」と「入力待ち」の区別は PTY 出力のアイドル時間で判定しています。2秒という閾値は実際に使いながら調整した値です。短すぎると誤検知が増え、長すぎると UI の応答が遅くなります。この判定はエージェントごとのプロンプト文字列に一切依存せず「出力が止まる」という共通の性質だけを見ているので、対応エージェントを増やしてもここには手が入りません。
 
 ### デーモンの自動起動
 
 明示的な `agx daemon` コマンドを不要にするため、エージェントや TUI がソケットを見つけられない場合にデーモンを自動フォークする設計にしました。ユーザーが「デーモンを先に起動する」という手順を意識しなくてよいため、体験がシンプルになります。
 
+### エージェントの追加は1箇所
+
+対応エージェントは内部のレジストリに「再開時に渡す引数」だけを登録する形にしています。新しいエージェントに対応するのはこのテーブルへの1行追加で済み、起動・監視・worktree・ログまわりのコードには手が入りません。
+
 ### bubbletea による TUI
 
-TUI は [bubbletea](https://github.com/charmbracelet/bubbletea) フレームワークで実装しています。一覧ビューと詳細ビューの2画面構成で、詳細ビューではエージェントのメタデータ（経過時間・作業ディレクトリ・起動引数・起動タイムスタンプ）と最新の出力ログをスクロール表示できます。
+TUI は [bubbletea](https://github.com/charmbracelet/bubbletea) フレームワークで実装しています。一覧ビュー・詳細ビュー・差分ビューの3画面構成で、詳細ビューではエージェントのメタデータと最新の出力ログをスクロール表示できます。
 
 ## まとめ
 
-agx を使うと、複数の Claude Code エージェントの状態を1つのターミナルで把握しながら並列作業できます。git worktree との統合により各エージェントが独立した作業ツリーを持つため、変更が互いに干渉しない点も便利です。
+agx を使うと、複数の AI コーディングエージェントの状態を1つのターミナルで把握しながら並列作業できます。git worktree との統合により各エージェントが独立した作業ツリーを持つため、変更が互いに干渉しない点も便利です。
 
 今、agx の開発自体もこの agx を使って行っています。それぞれのエージェントの操作完了時に PR 作成を指示して作業を完結する、という使い方です。複数の機能を1つに PR にまとめるなら Sub Agents や以前の自分の記事の Swarm SKILL が良いですが、実際の作業ではそれぞれ機能・修正ごとに PR を作るので、今はこの agx が自分に適していると感じています。
 
