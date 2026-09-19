@@ -1,5 +1,5 @@
 ---
-title: "Claude Agent SDK の基本的な使い方と主要機能"
+title: "Claude Agent SDK の基本的な使い方を学ぶ"
 description: "Claude Code をライブラリとして使う Claude Agent SDK について、agent loop の仕組みから query() の使い方、カスタムツール・hooks・subagent・セッション・構造化出力まで、TypeScript の動くサンプルを並べて解説します"
 date: 2026-09-19T00:00:00+09:00
 Categories: ["AI", "Claude", "TypeScript"]
@@ -10,11 +10,11 @@ draft: false
 
 Claude Agent SDK を触ってみたので、基本的な使い方と主要な機能を整理しました。この SDK は Claude Code 本体をライブラリとして使えるようにしたもので、agent loop・組み込みツール・コンテキスト管理・権限制御が最初から入っています。自分でツール呼び出しのループを書く必要がありません。
 
-この記事で使ったコードは下記に置いてあります。番号順に実行できるサンプル 11 本です。
+この記事で使ったコードは下記に置いてあります。
 
 https://github.com/jedipunkz/claude-agent-sdk-playground
 
-検証に使ったバージョンは `@anthropic-ai/claude-agent-sdk` v0.3.278 です。この SDK は Claude Code のネイティブバイナリを同梱していて、バージョンは Claude Code 側に追従します。v0.3.278 が同梱しているのは Claude Code 2.1.278 でした。
+検証に使ったバージョンは `@anthropic-ai/claude-agent-sdk` v0.3.278 です。この SDK は Claude Code のネイティブバイナリを同梱していて、バージョンは Claude Code 側に追従します。
 
 ## どれを使うべきか
 
@@ -30,7 +30,7 @@ Claude 関連で「エージェントを作る」手段が複数あって最初�
 
 名前が紛らわしいのは Tool Runner と Agent SDK です。Tool Runner は Anthropic SDK 側の機能で、組み込みツールもファイルアクセスも持ちません。自分が定義したツールを呼ぶループを代わりに回してくれるだけのものです。対して Agent SDK は Read / Write / Edit / Bash / Grep / Glob / WebSearch といったツールを最初から持っていて、実体は Claude Code そのものです。
 
-SDK として提供されているのは TypeScript と Python のみです。他の言語から使いたい場合は CLI を `-p --output-format json` でサブプロセス実行することになります。
+SDK として提供されているのは TypeScript と Python のみです。
 
 ## セットアップ
 
@@ -39,11 +39,10 @@ npm install @anthropic-ai/claude-agent-sdk zod
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Node は 18 以上が必要です。サンプルは TypeScript を tsx で直接実行しています。
 
-## 最小の query()
+## 基本的なプロント指示と応
 
-`query()` は async generator を返します。`for await` で回すと、エージェントの進行がメッセージとして流れてきます。最後に必ず `type: "result"` が 1 回来ます。
+`query()` は async generator を返します。`for await` で回すと、エージェントの進行がメッセージとして流れてきます。
 
 ```typescript
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -80,15 +79,13 @@ duration_ms   : 1390
 total_cost_usd: 0.209266
 ```
 
-`message.message` は Anthropic API の Message オブジェクトそのものなので、content ブロックを自分で走査します。`result` メッセージには `num_turns` / `duration_ms` / `total_cost_usd` / `usage` / `permission_denials` などが入っていて、1 回の実行の収支がここで分かります。
-
-ここで `tools: []` と `settingSources: []` を渡しているのは、組み込みツールと設定ファイルの読み込みを両方止めて、素の LLM 呼び出しに近い状態にするためです。この 2 つは後述します。
+`message.message` は Anthropic API の Message オブジェクトそのものです。`result` メッセージには `num_turns` / `duration_ms` / `total_cost_usd` / `usage` / `permission_denials` などが入っていて、1回の実行の利用料・コスト等がここで分かります。
 
 ## Agent loop の中身
 
-ここが SDK の核です。`query()` を呼んでから結果が返るまで、中では下記のサイクルが回っています。
+自分が一番気になっていた機能です。`query()` を呼んでから結果が返るまで、中では下記のサイクルが回っています。
 
-1. プロンプトを受け取る。システムプロンプト・ツール定義・会話履歴と一緒にモデルへ渡され、`system` / `init` が流れる
+1. プロンプトを受け取る。システムプロンプト・ツール定義・会話履歴と一緒にモデルへ渡される
 2. モデルが評価して応答する。テキストを返すか、ツール呼び出しを要求するか、その両方
 3. SDK が要求されたツールを実行し、結果を集める
 4. 2 と 3 を繰り返す。この 1 往復が 1 ターン
@@ -129,21 +126,9 @@ for await (const message of response) {
 }
 ```
 
-`includePartialMessages: true` を渡すと `type: "stream_event"` が追加で流れてきて、トークン単位の差分が取れます。チャット UI を作るときはこれを使います。
-
-```typescript
-case "stream_event": {
-  const event = message.event;
-  if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-    process.stdout.write(event.delta.text);
-  }
-  break;
-}
-```
-
 ### ターンの数え方と上限
 
-`maxTurns` はツールを使ったターンだけを数えます。テキストだけを返す最後の応答は含まれません。上限に当たるとループが止まり、`result` の `subtype` がエラー側になります。
+`maxTurns` はツールを使ったターンを数え上限に当たるとループが止まり、`result` の `subtype` にエラーの型が帰ります。
 
 | subtype | 意味 | result フィールド |
 |---|---|---|
@@ -153,9 +138,7 @@ case "stream_event": {
 | `error_during_execution` | 実行中のエラーや中断 | なし |
 | `error_max_structured_output_retries` | 構造化出力の検証がリトライ上限まで失敗 | なし |
 
-最終テキストが入る `result` フィールドを持つのは `success` だけなので、読む前に必ず `subtype` を確認します。一方で `total_cost_usd` / `usage` / `num_turns` / `session_id` はどの subtype にも入っているので、エラーで終わってもコストの集計とセッションの再開は出来ます。
-
-もう一点、単発の `query()` はエラー result を流した後に throw します。続きの処理があるなら try / catch で囲む必要があります。ストリーミング入力のセッションはこの場合も生きたままです。
+最終テキストが入る `result` フィールドを持つのは `success` だけ。一方で `total_cost_usd` / `usage` / `num_turns` / `session_id` はどの subtype にも入っているので、エラーで終わってもコストの集計とセッションの再開は出来ます。
 
 ### 実際に上限へ当ててみる
 
@@ -244,9 +227,7 @@ if (message.type === "system" && message.subtype === "compact_boundary") {
 }
 ```
 
-圧縮は古いメッセージを要約で置き換えるので、会話の最初に書いた指示は残らないことがあります。守らせ続けたいルールは初回プロンプトではなく CLAUDE.md に置くべきだ、ということになります。CLAUDE.md は毎リクエスト再注入されるためです。この場合 `settingSources` に `'project'` を含める必要があります。
-
-長く回すエージェントでコンテキストを節約する方向は 3 つあります。出力の多い作業を subagent に逃がすこと、ツールを必要最小限に絞ること、単純な作業の `effort` を下げることです。
+圧縮は古いメッセージを要約で置き換えるので、会話の最初に書いた指示は残らないことがあります。守らせ続けたいルールは初回プロンプトではなく CLAUDE.md に置くべきです。
 
 ### ツールの並列実行
 
@@ -254,7 +235,7 @@ if (message.type === "system" && message.subtype === "compact_boundary") {
 
 カスタムツールは既定で逐次です。並列に走らせたい場合は annotations に `readOnlyHint: true` を付けます。前述のカスタムツールの節で付けていたのはこのためでもあります。
 
-## Options の主要どころ
+## Options について
 
 設定は全部 `options` に入ります。よく使うものだけ挙げます。
 
@@ -267,7 +248,7 @@ options: {
   systemPrompt: {
     type: "preset",
     preset: "claude_code",
-    append: "回答は必ず日本語で、3 行以内にまとめること。",
+    append: "回答は必ず日本語で、3行以内にまとめること。",
   },
 
   cwd: "/path/to/workdir",
@@ -280,9 +261,6 @@ options: {
 }
 ```
 
-`systemPrompt` は 3 通りの指定方法があります。省略するとシステムプロンプト無しになり、`{ type: "preset", preset: "claude_code" }` で Claude Code と同じプロンプトになり、`{ type: "custom", prompt: "..." }` で完全に自前のものに差し替わります。preset には `append` で追記出来ます。
-
-`maxBudgetUsd` は指定額に達したら打ち切るオプションです。エージェントを無人で回すときは `maxTurns` と合わせて付けておくと安心です。
 
 ### settingSources は既定で全部読む
 
@@ -305,8 +283,6 @@ env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "my-app/1.0" }
 1. `tools` — そもそも持たせるツールの集合
 2. `allowedTools` / `disallowedTools` — ルールによる静的な許可・拒否
 3. `canUseTool` — 呼び出しごとに動的に判断するコールバック
-
-`tools` と `allowedTools` は名前が似ていますが別物です。前者は「持たせるかどうか」、後者は「確認なしで通すかどうか」です。
 
 `canUseTool` は 1 回の呼び出しごとに呼ばれます。ここに人間へ問い合わせる UI を挟めます。
 
@@ -335,9 +311,7 @@ const canUseTool: CanUseTool = async (toolName, input) => {
 };
 ```
 
-`updatedInput` で引数を差し替えられるのが便利で、タイムアウトの強制やパスの正規化をここで挟めます。
-
-`permissionMode` は全体の既定動作で、`default` / `acceptEdits` / `bypassPermissions` / `plan` / `dontAsk` / `auto` から選びます。実行中に `Query` オブジェクトの `setPermissionMode()` で切り替えることも出来ます。
+`permissionMode` は全体の既定動作で、`default` / `acceptEdits` / `bypassPermissions` / `plan` / `dontAsk` / `auto` から選びます。
 
 ## カスタムツール
 
@@ -377,13 +351,12 @@ const response = query({
 });
 ```
 
-モデルからは `mcp__<サーバ名>__<ツール名>` という名前で見えるので、`allowedTools` に書くときもこの形式です。`annotations` の `readOnlyHint` を付けておくと、読み取り専用であることがモデルに伝わります。
 
 ## Hooks
 
 `canUseTool` が「許可するか」を決めるものなのに対し、hooks は「イベントが起きたときに任意のコードを走らせる」仕組みです。イベントは `PreToolUse` / `PostToolUse` / `UserPromptSubmit` / `SessionStart` / `SessionEnd` / `Stop` / `SubagentStart` / `PreCompact` など 30 種類以上あります。
 
-`PreToolUse` では `permissionDecision` を返して実行を止められます。
+例えば `PreToolUse` では `permissionDecision` を返して実行を止められます。
 
 ```typescript
 const preToolUse: HookCallback = async (input) => {
@@ -411,8 +384,6 @@ const response = query({
   },
 });
 ```
-
-`matcher` はツール名の正規表現で、省略すると全ツールにマッチします。
 
 拒否したときの挙動を実際に見ると、モデルは失敗を正しく認識して報告してきました。
 
@@ -452,7 +423,6 @@ const agents: Record<string, AgentDefinition> = {
 
 `model` には `inherit` を指定するとメインと同じモデルになります。探索のように安いモデルで足りる仕事には `haiku` を割り当てられます。`omitClaudeMd: true` でサブエージェント実行中に CLAUDE.md を読ませない指定も出来ます。
 
-サブエージェント由来のメッセージは `parent_tool_use_id` が非 null になるので、発話元を区別できます。
 
 ## セッション
 
@@ -481,8 +451,6 @@ for await (const message of query({
 ```
 
 `forkSession: true` は再開時に新しい session_id へ分岐します。同じ地点から複数の案を試したいときに使えます。保存したくない場合は `persistSession: false` です。
-
-`listSessions()` と `getSessionMessages()` で過去のセッションを読み出せるので、履歴一覧の UI もここから作れます。
 
 ## 構造化出力
 
@@ -516,7 +484,6 @@ for await (const message of response) {
 }
 ```
 
-`structured_output` の型は `unknown` なので、受け取った後に zod で検証してから使うのが安全です。
 
 ## 実行中の制御
 
@@ -538,6 +505,5 @@ conversation.close();
 
 一方で、既定値が Claude Code 寄りになっている点は注意が必要でした。特に `settingSources` を省略すると手元の設定を全部読むので、アプリに組み込むなら明示的に `[]` を渡して切り離すべきです。`tools` も既定では Claude Code の全ツールが入ります。
 
-用途で言えば、コードやファイルを触るエージェントを自前のインフラで動かしたいなら Agent SDK が素直です。自分で定義したツールだけ使う軽いものなら Tool Runner で十分ですし、サンドボックスの運用まで任せたいなら Managed Agents を見た方が良いです。
+用途で言えば、コードやファイルを触るエージェントを自前のインフラで動かしたいなら Agent SDK が素直です。自分で定義したツールだけ使う軽いものなら Tool Runner で十分かもしれません。
 
-サンプルは冒頭のリポジトリに置いてあります。`npm run 01` から順に動かせるようにしてあるので、手元で試してみてください。
