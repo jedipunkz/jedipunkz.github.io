@@ -16,6 +16,7 @@ https://github.com/jedipunkz/claude-agent-sdk-playground
 
 検証に使ったバージョンは `@anthropic-ai/claude-agent-sdk` v0.3.278 です。この SDK は Claude Code のネイティブバイナリを同梱していて、バージョンは Claude Code 側に追従します。
 
+
 ## どれを使うべきか
 
 Claude 関連で「エージェントを作る」手段が複数あって最初に混乱したので、先に整理しておきます。
@@ -32,6 +33,9 @@ Claude 関連で「エージェントを作る」手段が複数あって最初�
 
 SDK として提供されているのは TypeScript と Python のみです。
 
+----
+
+
 ## セットアップ
 
 ```bash
@@ -39,8 +43,10 @@ npm install @anthropic-ai/claude-agent-sdk zod
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
+----
 
-## 基本的なプロント指示と応
+
+## 基本的なプロント指示と応答
 
 `query()` は async generator を返します。`for await` で回すと、エージェントの進行がメッセージとして流れてきます。
 
@@ -81,7 +87,9 @@ total_cost_usd: 0.209266
 
 `message.message` は Anthropic API の Message オブジェクトそのものです。`result` メッセージには `num_turns` / `duration_ms` / `total_cost_usd` / `usage` / `permission_denials` などが入っていて、1回の実行の利用料・コスト等がここで分かります。
 
-## Agent loop の中身
+----
+
+## Agent loop
 
 自分が一番気になっていた機能です。`query()` を呼んでから結果が返るまで、中では下記のサイクルが回っています。
 
@@ -95,8 +103,6 @@ flowchart LR
   end
   C -->|no tool calls| F[Final answer]
 ```
-
-（[公式ドキュメントの図](https://code.claude.com/docs/ja/agent-sdk/agent-loop)を mermaid で描き直したものです）
 
 1. プロンプトを受け取る。システムプロンプト・ツール定義・会話履歴と一緒にモデルへ渡される
 2. モデルが評価して応答する。テキストを返すか、ツール呼び出しを要求するか、その両方
@@ -248,6 +254,8 @@ if (message.type === "system" && message.subtype === "compact_boundary") {
 
 カスタムツールは既定で逐次です。並列に走らせたい場合は annotations に `readOnlyHint: true` を付けます。前述のカスタムツールの節で付けていたのはこのためでもあります。
 
+----
+
 ## Options について
 
 設定は全部 `options` に入ります。よく使うものだけ挙げます。
@@ -289,6 +297,8 @@ options: {
 env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "my-app/1.0" }
 ```
 
+----
+
 ## 権限制御は 3 層
 
 何を実行させるかの制御は、役割の違う 3 つのレイヤで行います。
@@ -325,6 +335,8 @@ const canUseTool: CanUseTool = async (toolName, input) => {
 ```
 
 `permissionMode` は全体の既定動作で、`default` / `acceptEdits` / `bypassPermissions` / `plan` / `dontAsk` / `auto` から選びます。
+
+----
 
 ## カスタムツール
 
@@ -364,6 +376,7 @@ const response = query({
 });
 ```
 
+----
 
 ## Hooks
 
@@ -410,6 +423,8 @@ const response = query({
 
 `additionalContext` を返すとモデルへ追加情報を注入出来るので、ツール実行の直前に文脈を足す、といった使い方も出来ます。
 
+----
+
 ## Subagent
 
 `agents` で定義すると、メインのエージェントが Task ツール経由で呼び出します。サブエージェントは独立したコンテキストを持つので、出力の多い探索作業を分離してメインの文脈を汚さずに済みます。
@@ -436,6 +451,8 @@ const agents: Record<string, AgentDefinition> = {
 
 `model` には `inherit` を指定するとメインと同じモデルになります。探索のように安いモデルで足りる仕事には `haiku` を割り当てられます。`omitClaudeMd: true` でサブエージェント実行中に CLAUDE.md を読ませない指定も出来ます。
 
+
+----
 
 ## セッション
 
@@ -464,6 +481,8 @@ for await (const message of query({
 ```
 
 `forkSession: true` は再開時に新しい session_id へ分岐します。同じ地点から複数の案を試したいときに使えます。保存したくない場合は `persistSession: false` です。
+
+----
 
 ## 構造化出力
 
@@ -497,6 +516,7 @@ for await (const message of response) {
 }
 ```
 
+----
 
 ## 実行中の制御
 
@@ -511,6 +531,8 @@ conversation.close();
 ```
 
 `prompt` に `AsyncIterable<SDKUserMessage>` を渡すと 1 セッションで複数ターンを送れるので、チャット UI はこの形になります。
+
+----
 
 ## まとめ
 
