@@ -85,6 +85,19 @@ total_cost_usd: 0.209266
 
 自分が一番気になっていた機能です。`query()` を呼んでから結果が返るまで、中では下記のサイクルが回っています。
 
+```mermaid
+flowchart LR
+  P[Your prompt] --> C
+  subgraph loop [agentic loop]
+    direction LR
+    C[Claude evaluates] -->|tool calls| T["Tool call(s)"]
+    T -->|tool result| C
+  end
+  C -->|no tool calls| F[Final answer]
+```
+
+（[公式ドキュメントの図](https://code.claude.com/docs/ja/agent-sdk/agent-loop)を mermaid で描き直したものです）
+
 1. プロンプトを受け取る。システムプロンプト・ツール定義・会話履歴と一緒にモデルへ渡される
 2. モデルが評価して応答する。テキストを返すか、ツール呼び出しを要求するか、その両方
 3. SDK が要求されたツールを実行し、結果を集める
