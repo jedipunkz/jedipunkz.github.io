@@ -5,31 +5,31 @@ on:
     branches:
       - source
 
-# Allow one concurrent deployment
+# Never cancel a running deployment: master is published from it.
 concurrency:
   group: "deploy"
-  cancel-in-progress: true
+  cancel-in-progress: false
 
-# Default to bash
 defaults:
   run:
     shell: bash
 
-# Sets permissions of the GITHUB_TOKEN
 permissions:
   contents: write
   pull-requests: write
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_REPO: ${{ github.repository }}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source branch
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: source
           submodules: recursive
-          fetch-depth: 0
 
       - name: Setup Hugo
         uses: peaceiris/actions-hugo@v3
@@ -37,26 +37,36 @@ jobs:
           hugo-version: latest
           extended: true
 
-      - name: Update submodules
-        run: git submodule update --init --recursive
-
       - name: Build with Hugo
-        run: |
-          hugo --environment=production -t PaperMod
+        run: hugo --environment=production -t PaperMod
 
       - name: Deploy
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./public
           publish_branch: master
           force_orphan: true
 
-      - name: Comment on PR - Deploy Success
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Update PR status comment
         run: |
-          PR_NUMBER=$(gh pr list --state merged --base source --limit 10 --json number,mergeCommit --jq ".[] | select(.mergeCommit.oid == \"${{ github.sha }}\") | .number" | head -1)
-          if [ -n "$PR_NUMBER" ]; then
-            gh pr comment "$PR_NUMBER" --body "✅️ **デプロイ完了！**"
+          pr="$(gh pr list --state merged --base source --limit 10 \
+            --json number,mergeCommit \
+            --jq ".[] | select(.mergeCommit.oid == \"${{ github.sha }}\") | .number" | head -1)"
+          if [ -z "$pr" ]; then
+            echo "no merged PR for ${{ github.sha }}, skipping comment"
+            exit 0
           fi
+
+          {
+            echo "### 🚀 デプロイ完了"
+            echo
+            echo "| 項目 | 内容 |"
+            echo "|---|---|"
+            echo "| 公開 URL | https://jedipunkz.rocks/ |"
+            echo "| デプロイ | $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST') ([ログ](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})) |"
+            echo
+            echo "#### コミット履歴"
+            echo
+            .github/scripts/pr-commit-table.sh "$pr"
+          } | .github/scripts/pr-comment.sh "$pr"
