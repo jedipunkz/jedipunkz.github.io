@@ -1,0 +1,82 @@
+name: PR Build & Preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - source
+
+# One run per PR; a new push cancels the previous build.
+concurrency:
+  group: "pr-${{ github.event.number }}"
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_REPO: ${{ github.repository }}
+  PR_NUMBER: ${{ github.event.number }}
+  # Each PR gets its own directory so concurrent PRs do not overwrite each
+  # other's preview. Deploying to source wipes them all (force_orphan).
+  PREVIEW_PATH: preview/pr-${{ github.event.number }}
+
+jobs:
+  build-and-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: latest
+          extended: true
+
+      - name: Build with Hugo
+        run: hugo --baseURL "https://jedipunkz.rocks/${PREVIEW_PATH}/" -t PaperMod
+
+      - name: Check build output
+        run: test -f public/index.html
+
+      - name: Deploy preview
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          publish_branch: master
+          destination_dir: ${{ env.PREVIEW_PATH }}
+
+      - name: Update PR status comment
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            status="✅ 成功"
+            preview="https://jedipunkz.rocks/${PREVIEW_PATH}/"
+          else
+            status="❌ 失敗"
+            preview="(ビルド失敗のため未デプロイ)"
+          fi
+
+          {
+            echo "### 🔍 プレビュー"
+            echo
+            echo "| 項目 | 内容 |"
+            echo "|---|---|"
+            echo "| ビルド | ${status} |"
+            echo "| プレビュー | ${preview} |"
+            echo "| 更新 | $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST') ([ログ](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})) |"
+            echo
+            echo "#### コミット履歴"
+            echo
+            .github/scripts/pr-commit-table.sh "$PR_NUMBER"
+          } | .github/scripts/pr-comment.sh "$PR_NUMBER"
