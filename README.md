@@ -27,3 +27,20 @@ Files under `extended/` are numbered because that order *is* the cascade:
 
 Add a rule to the file that owns its concern; add a new file only for a new
 concern, and number it so the cascade stays readable.
+
+Colours follow [Tokyo Night](https://github.com/folke/tokyonight.nvim): the
+Night palette in dark mode, Tokyo Night Day in light mode. Link, metadata and
+code colours are darkened from the upstream Day values where the originals fell
+short of WCAG AA on these backgrounds. Code blocks stay on the Night palette in
+both themes; inline code follows the active theme.
+
+## Layout overrides
+
+| File | Why |
+| --- | --- |
+| `layouts/partials/extend_head.html` | loads Inter, JetBrains Mono and Noto Sans JP (the Japanese face is fetched so body weight 500 resolves to a real medium everywhere) |
+| `layouts/partials/extend_footer.html` | mermaid bootstrap, themed to match the code blocks |
+| `layouts/_default/_markup/render-table.html` | wraps markdown tables so they can scroll without `display: block` collapsing their columns |
+
+The header shows `params.label.text` (`jedipunkz`), not `title`, because the
+home page already prints the full site title as its `h1`.
