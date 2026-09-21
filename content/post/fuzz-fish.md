@@ -11,7 +11,7 @@ draft: false
 
 [jedipunkz](https://x.com/jedipunkz) です。
 
-今回は自作した Fish シェルの Plugin である [fuzz.fish](https://github.com/jedipunkz/fuzz.fish) を紹介します。この記事は 2026/01 に書いたものを 2026/09 時点の内容に全面的に書き直したものです。
+今回は自作した Fish シェルの Plugin である [fuzz.fish](https://github.com/jedipunkz/fuzz.fish) を紹介します。
 
 fuzz.fish は Fish Shell の コマンド履歴・ファイル・Git ブランチ・Git Worktree・Git コミット をインクリメンタルサーチできる Fish Plugin です。Go と Bubble Tea で TUI を実装していて、fzf や fd、ripgrep、bat といった外部ツールは一切不要です。プラグイン本体と単一の Go バイナリだけで動きます。
 
@@ -19,18 +19,6 @@ fuzz.fish は Fish Shell の コマンド履歴・ファイル・Git ブラン�
 
 - ソースコード: [https://github.com/jedipunkz/fuzz.fish](https://github.com/jedipunkz/fuzz.fish)
 - 公式サイト: [https://jedipunkz.rocks/fuzz.fish/](https://jedipunkz.rocks/fuzz.fish/)
-
-## 前回記事からの差分
-
-初出時から変わった点をまとめておきます。
-
-| 項目 | 2026/01 時点 | 現在 |
-|---|---|---|
-| 検索モード | 履歴・ブランチの 2 つ | 履歴・ファイル・ブランチ・Worktree・コミットの 5 つ |
-| インストール | Go が必須。ソースを clone してビルド | ビルド済みバイナリを Release から取得。Go は不要 |
-| 履歴の並び順 | 時刻ベースの recency 加点 | frecency (頻度 × 時間減衰) |
-| 検索方法 | ファジー検索のみ | `*` を含むと glob マッチに切り替わる |
-| プレビュー | 履歴の前後コンテキスト | 全モードにプレビュー。ファイルはシンタックスハイライト付き |
 
 ## スクリーンショット
 
@@ -129,15 +117,11 @@ frecency は zoxide の考え方を借りて、`log1p(頻度)` に時間係数 (
 
 ## 今後の改善点
 
-初出時に挙げた項目のうち、まだ手を付けられていないものです。
-
 - 設定ファイルによるキーバインド・配色のカスタマイズ
 - 検索アルゴリズムの改善
 - プレビュー機能の強化
 
 ## まとめ
-
-初出時の「今後の改善点」に挙げていた「事前に Go がインストールされていなくてもインストール出来るよう対応」は、GitHub Release にビルド済みバイナリを添付する形で解決しました。今は Fish さえあればインストールできます。
 
 自分が毎日使うツールなので、使っていて気になった点をそのまま直す流れができていて、結果的に一番メンテナンスが続いているツールになりました。
 
