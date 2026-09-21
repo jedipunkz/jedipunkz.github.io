@@ -1,5 +1,5 @@
 ---
-title: "ctrl+r ひとつで履歴・ファイル・Git ブランチ/Worktree/コミットを検索する Fish Plugin を Go で作った話"
+title: "Go によるコマンド履歴・ファイル・Git ブランチ/Worktree/コミットを検索する Fish Plugin 開発"
 description: "fzf 不要。コマンド履歴・ファイル・Git ブランチ/Worktree/コミットを 5 つのモードでファジー検索できる Fish プラグイン fuzz.fish を Go と Bubble Tea で作りました"
 date: 2026-01-17T12:00:00+09:00
 lastmod: 2026-09-21T12:00:00+09:00
