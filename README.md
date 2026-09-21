@@ -38,7 +38,7 @@ both themes; inline code follows the active theme.
 
 | File | Why |
 | --- | --- |
-| `layouts/partials/extend_head.html` | loads Inter and JetBrains Mono (Latin only; Japanese uses the system stack) |
+| `layouts/partials/extend_head.html` | loads Inter, JetBrains Mono and Noto Sans JP (the Japanese face is fetched so body weight 500 resolves to a real medium everywhere) |
 | `layouts/partials/extend_footer.html` | mermaid bootstrap, themed to match the code blocks |
 | `layouts/_default/_markup/render-table.html` | wraps markdown tables so they can scroll without `display: block` collapsing their columns |
 
