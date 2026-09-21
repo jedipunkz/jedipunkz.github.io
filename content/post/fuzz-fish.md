@@ -1,102 +1,144 @@
 ---
-title: "コマンド・ブランチ検索を行う Fish Plugin を Go で作った話"
-description: "Fish シェルのコマンド履歴や Git ブランチをファジー検索できるプラグイン fuzz.fish を開発しました。Go と Bubble Tea で構築した TUI ベースのツールです"
+title: "コマンド・ファイル・Git 検索を行う Fish Plugin を Go で作った話"
+description: "Fish シェルのコマンド履歴・ファイル・Git ブランチ/Worktree/コミットをファジー検索できるプラグイン fuzz.fish を開発しました。Go と Bubble Tea で構築した TUI ベースのツールです"
 date: 2026-01-17T12:00:00+09:00
+lastmod: 2026-09-21T12:00:00+09:00
 tags: ["Fish", "Go"]
 categories: ["Application", "go"]
 draft: false
 ---
+<img src="/pix/fuzz-logo.png" width="180" align="right" alt="fuzz.fish logo" />
+
 [jedipunkz](https://x.com/jedipunkz) です。
 
-今回は自作した Fish シェルの Plugin である [fuzz.fish](https://github.com/jedipunkz/fuzz.fish) を紹介します。
+今回は自作した Fish シェルの Plugin である [fuzz.fish](https://github.com/jedipunkz/fuzz.fish) を紹介します。この記事は 2026/01 に書いたものを 2026/09 時点の内容に全面的に書き直したものです。
 
-fuzz.fish は Fish Shell のコマンド履歴と Git ブランチをインクリメンタルサーチできる Fish Plugin [です。Go と charmbracelet/bubbletea を使って TUI を実装しており、Fisher でインストールすると自動的にバイナリがビルドされます。
+fuzz.fish は Fish Shell の コマンド履歴・ファイル・Git ブランチ・Git Worktree・Git コミット をインクリメンタルサーチできる Fish Plugin です。Go と Bubble Tea で TUI を実装していて、fzf や fd、ripgrep、bat といった外部ツールは一切不要です。プラグイン本体と単一の Go バイナリだけで動きます。
 
-## ソースコード
+## リンク
 
-[https://github.com/jedipunkz/fuzz.fish](https://github.com/jedipunkz/fuzz.fish)
+- ソースコード: [https://github.com/jedipunkz/fuzz.fish](https://github.com/jedipunkz/fuzz.fish)
+- 公式サイト: [https://jedipunkz.rocks/fuzz.fish/](https://jedipunkz.rocks/fuzz.fish/)
+
+## 前回記事からの差分
+
+初出時から変わった点をまとめておきます。
+
+| 項目 | 2026/01 時点 | 現在 |
+|---|---|---|
+| 検索モード | 履歴・ブランチの 2 つ | 履歴・ファイル・ブランチ・Worktree・コミットの 5 つ |
+| インストール | Go が必須。ソースを clone してビルド | ビルド済みバイナリを Release から取得。Go は不要 |
+| 履歴の並び順 | 時刻ベースの recency 加点 | frecency (頻度 × 時間減衰) |
+| 検索方法 | ファジー検索のみ | `*` を含むと glob マッチに切り替わる |
+| プレビュー | 履歴の前後コンテキスト | 全モードにプレビュー。ファイルはシンタックスハイライト付き |
 
 ## スクリーンショット
 
-ちょっと見た感じわかりにくいですがコマンド検索とブランチ検索に対応しています。
+コマンド履歴・ファイル・Git ブランチ検索を切り替えている様子です。
 
 ![fuzz.fish](/pix/fuzz.gif)
 
+コマンド履歴検索のプレビューです。左に履歴、右に実行時刻・実行ディレクトリ・その前後に実行したコマンドが出ます。
+
+![fuzz.fish preview](/pix/fuzz-preview.png)
+
 ## 開発動機
 
-幾つか小さなツールはこれまでも作ってきましたが利用する機会が減るとメンテナンスも怠りがちなことに気が付き、自分自身がよく使うツールを作ろうと思ったのがきっかけです。 そして普段から Fish をシェルとして使っていますがコマンド履歴検索や Git ブランチの切り替えをより効率的に出来れば何より自分にとって便利なツールになる予感がありました。。既存のツールもありますが、以下の点を満たすものを作りたいと考えました。
+幾つか小さなツールはこれまでも作ってきましたが、利用する機会が減るとメンテナンスも怠りがちなことに気が付き、自分自身がよく使うツールを作ろうと思ったのがきっかけです。そして普段から Fish をシェルとして使っていますが、コマンド履歴検索や Git ブランチの切り替えをより効率的に出来れば何より自分にとって便利なツールになる予感がありました。
 
 ## 主な機能
 
-fuzz.fish は以下の機能を持っています。今後も追加していく予定です。
-
-- コマンド履歴と Git ブランチ検索を1つのツールで切り替えられる
-- コマンド履歴検索時にそのコマンドを実行した前後のコマンドの表示・時間情報も付け加えて表示
-- Fisher でシンプルにインストールできる
-- Go で実装して高速に動作且つ Fish スクリプト単体では実現出来ない機能追加に備える
-
+- 外部ツールが不要。fzf / fd / ripgrep / bat をインストールしなくても、プラグインと Go バイナリだけで完結する
+- キーバインドは `ctrl+r` の 1 つ。起動後は `ctrl+s` `ctrl+w` `ctrl+g` `ctrl+x` で閉じずにモードを切り替えられる
+- 全モードにプレビューがある。履歴は実行時刻・ディレクトリ・前後のコマンド、ファイルはシンタックスハイライト付きの中身、Git 系はそれぞれの文脈を表示する
+- 履歴は frecency で並ぶ。マッチ品質を最優先にした上で、`log1p(頻度)` を最終実行時刻で減衰させるため、実際によく叩くコマンドが上に来る
+- Git はブランチだけでなく Worktree とコミットも扱える。コミット検索はハッシュと件名の両方にマッチし、`git show` / `git diff` / `git revert` / `git cherry-pick` をプロンプトに置く（実行はしない）
 
 ## インストール方法
 
-※ 事前に Go がローカルにインストールされている必要があります。
-※ インストール時に自動的に GitHub からソースをクローンし、Go でバイナリをビルドします。
-
-Fisher を使ってインストールします。
+必要なのは [Fish Shell](https://fishshell.com/) 3.0+ のみです。Fisher を使ってインストールします。
 
 ```fish
 fisher install jedipunkz/fuzz.fish
 ```
 
+インストール時に macOS / Linux (`amd64` / `arm64`) 向けのビルド済みバイナリを GitHub Release からダウンロードします。それ以外のプラットフォームではソースからのビルドにフォールバックするため、その場合のみ Go 1.25+ と Git が必要です。
+
+更新・アンインストールは Fisher の標準コマンドで行います。
+
+```fish
+fisher update jedipunkz/fuzz.fish
+fisher remove jedipunkz/fuzz.fish
+```
 
 ## 使い方
 
-### コマンド履歴検索 (Ctrl+R)
+Fish のプロンプトで `ctrl+r` を押すと起動します。あとは文字を入力してインクリメンタル検索するだけです。モードはキー 1 つで切り替わります。
 
-基本的な使い方です。Fish プロンプトで `Ctrl+R` を押すとコマンド履歴のファジー検索が起動します。
+| キー | モード | `enter` の動作 |
+|---|---|---|
+| `ctrl+r` | コマンド履歴検索 (デフォルト) | コマンドをプロンプトに挿入する |
+| `ctrl+s` | ファイル検索 | ファイルパスを挿入する / ディレクトリなら `cd` する |
+| `ctrl+w` | Git Worktree 検索 | その Worktree へ `cd` する |
+| `ctrl+g` | Git ブランチ検索 | そのブランチに切り替える |
+| `ctrl+x` | Git コミット検索 | コミットに対して実行するコマンドを選ぶ |
 
-- 文字を入力してインクリメンタル検索
-- 矢印キーまたは `Ctrl+N/P` で上下移動
-- `Enter` で選択したコマンドをコマンドラインに挿入
-- (`ESC` でキャンセル)
+全モード共通のキーです。
 
-またツール起動中に下記を行えます。
+| キー | 動作 |
+|---|---|
+| `↑` / `↓` または `ctrl+p` / `ctrl+n` | 選択行を移動する |
+| `tab` | 選択中の項目でクエリを補完する |
+| `ctrl+y` | 選択中の項目をクリップボードにコピーする |
+| `esc` または `ctrl+c` | キャンセルする |
 
-- `Ctrl+Y` でクリップボードにコピー
+細かい挙動です。
 
+- コマンドラインに入力済みの文字列がそのまま検索ボックスに入ります。`vim` と打ってから `ctrl+r` を押すと、最初から `vim` で絞り込まれた履歴が出ます
+- クエリに `*` を含めると全モードでファジー検索から glob マッチに切り替わります。`nvim *.go` は `nvim internal/app/filter.go` にマッチしますが、単に同じ文字を含むだけのコマンドにはマッチしません
+- Git ブランチ検索で、現在のブランチの上でもう一度 `ctrl+g` を押すと `git pull origin <branch>` が走ります
+- リモートブランチを選択してローカルに同名のブランチがない場合は、ローカルブランチを作成して切り替えます
+- Git コミット検索の `enter` は小さなアクションリスト (`git show`, `git diff`, `git revert`, `git cherry-pick`, `git rebase --onto`, ハッシュのみ) を開き、選んだコマンドを実行せずにプロンプトに置きます
+- ファイル検索は隠しファイルと `node_modules` や `vendor` などのビルド用ディレクトリをスキップします
+- Git リポジトリ外で `ctrl+x` を押すとモードを切り替えず警告を出します
 
-Git リポジトリ内ではツール起動中に更に `Ctrl+R` を再度押すと Git ブランチ検索モードに切り替わります。
+## 公式サイト
 
-- 文字を入力してインクリメンタル検索
-- 矢印キーまたは `Ctrl+N/P` で上下移動
-- `Enter` で選択しそのブランチに Git Switch する
-  - リモートブランチを選択しローカルにそのブランチがない場合はローカルブランチを作成して Git Switch する
-- (`ESC` でキャンセル)
+ドキュメント用に公式サイトも作りました。
 
+[https://jedipunkz.rocks/fuzz.fish/](https://jedipunkz.rocks/fuzz.fish/)
+
+Astro で構築し、GitHub Pages にデプロイしています。配色は TUI 側と揃えて Tokyo Night にしました。各モードの説明・キーバインド一覧・インストール手順をまとめてあるので、README を読むより手っ取り早く雰囲気が掴めると思います。
 
 ## 利用した Go パッケージ
 
+- [charm.land/bubbletea/v2](https://github.com/charmbracelet/bubbletea) — TUI フレームワーク
+- [charm.land/bubbles/v2](https://github.com/charmbracelet/bubbles) / [charm.land/lipgloss/v2](https://github.com/charmbracelet/lipgloss) — 入力コンポーネントとスタイリング
+- [github.com/sahilm/fuzzy](https://github.com/sahilm/fuzzy) — ファジーマッチ
+- [github.com/go-git/go-git](https://github.com/go-git/go-git) — Git 操作
+- [github.com/alecthomas/chroma](https://github.com/alecthomas/chroma) — ファイルプレビューのシンタックスハイライト
+- [github.com/atotto/clipboard](https://github.com/atotto/clipboard) — クリップボード連携
 
-- [https://github.com/sahilm/fuzzy](https://github.com/sahilm/fuzzy)
-- [github.com/charmbracelet/lipgloss](github.com/charmbracelet/lipgloss)
-- [https://github.com/charmbracelet/bubbles](https://github.com/charmbracelet/bubbles)
-- [https://github.com/muesli/termenv](https://github.com/muesli/termenv)
+Bubble Tea は v2 に移行しました。移行時にカーソルが二重に出る問題や Width/Height の計算がずれる問題があり、そこそこ手を入れています。
 
+## スコアリングについて
+
+検索結果の並び順は自前で実装しています。マッチ品質 (前方一致・単語境界・連続マッチのボーナスと、離れたマッチへのギャップペナルティ) を 10 倍に重み付けして主たる指標とし、その上に履歴なら frecency、それ以外のモードなら recency を加算しています。
+
+frecency は zoxide の考え方を借りて、`log1p(頻度)` に時間係数 (1 時間以内は ×4、1 日以内は ×2、1 週間以内は ×1、それ以上は ×0.5) を掛けています。`log1p` を挟んでいるのは、100 回使ったコマンドが 1 回のコマンドの 100 倍の重みを持たないようにするためです。
 
 ## 今後の改善点
 
-現時点で考えている改善点は以下の通りです。
+初出時に挙げた項目のうち、まだ手を付けられていないものです。
 
-- プレビュー機能の強化
-- カスタマイズ可能な設定ファイル
+- 設定ファイルによるキーバインド・配色のカスタマイズ
 - 検索アルゴリズムの改善
-- 事前に Go がインストールされていなくてもインストール出来るよう対応
+- プレビュー機能の強化
 
 ## まとめ
 
-今のところ自分自身が利用するようになって改善を続けられそうだなと感じています。
+初出時の「今後の改善点」に挙げていた「事前に Go がインストールされていなくてもインストール出来るよう対応」は、GitHub Release にビルド済みバイナリを添付する形で解決しました。今は Fish さえあればインストールできます。
 
-今後の改善点にも記しましたが、事前に Go がインストールされていないとセットアップが出来ないのでその点は改善したいなと思っています。GitHub Release からビルド済みバイナリをダウンロードするなど。
+自分が毎日使うツールなので、使っていて気になった点をそのまま直す流れができていて、結果的に一番メンテナンスが続いているツールになりました。
 
-また当初は [https://github.com/ktr0731/go-fuzzyfinder](https://github.com/ktr0731/go-fuzzyfinder) を使っていたのですが、要件を満たせなくなり利用をやめ、[https://github.com/sahilm/fuzzy](https://github.com/sahilm/fuzzy) を使いつつある程度自前で検索周りを実装しています。なので「マッチしにくい」等といった問題が出てくれば自ら対応出来るかなと考えています。
-
-またフィードバックやプルリクエストは歓迎なので是非一度利用してみてくれると嬉しいです。
+フィードバックやプルリクエストは歓迎なので是非一度利用してみてくれると嬉しいです。
