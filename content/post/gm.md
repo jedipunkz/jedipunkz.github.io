@@ -18,6 +18,14 @@ gm は [ghq](https://github.com/x-motemen/ghq) と同じくリポジトリを cl
 - ソースコード: [https://github.com/jedipunkz/gm](https://github.com/jedipunkz/gm)
 - 公式サイト: [https://jedipunkz.rocks/gm/](https://jedipunkz.rocks/gm/)
 
+## Finder の画面
+
+`Ctrl-G` で開いた直後の Finder です。上がリポジトリ一覧、下が選択中のリポジトリの詳細、一番下が入力欄です。最有力候補は入力欄のすぐ隣、一覧の一番下に出ます。
+
+![gm の Finder](/pix/gm.png)
+
+(公式サイトに置いてあるモックです)
+
 ## 開発動機
 
 普段の作業で ghq を頻繁に使っています。長く使っていて不満はほとんど無かったのですが、2点だけ引っかかるなと気が付きました。
