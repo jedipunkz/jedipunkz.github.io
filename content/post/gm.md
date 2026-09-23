@@ -22,7 +22,7 @@ gm は [ghq](https://github.com/x-motemen/ghq) と同じくリポジトリを cl
 
 `Ctrl-G` で開いた直後の Finder です。上がリポジトリ一覧、下が選択中のリポジトリの詳細、一番下が入力欄です。最有力候補は入力欄のすぐ隣、一覧の一番下に出ます。
 
-![gm の Finder](/pix/gm.png)
+<img src="/pix/gm.png" width="508" alt="gm の Finder" />
 
 (公式サイトに置いてあるモックです)
 
