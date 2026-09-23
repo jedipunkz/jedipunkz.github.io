@@ -1,17 +1,17 @@
 ---
-title: "Go による Fuzzy Finder 内蔵の ghq 風リポジトリマネージャ開発"
+title: "ghq の気になる点を改善した Go 製ツール開発"
 description: "ghq list | fzf | cd のパイプラインを組まずに済むリポジトリマネージャ gm を Go と Bubble Tea で作りました。Ctrl-G でリポジトリにも Git Worktree にも飛べます"
 date: 2026-09-23T12:00:00+09:00
-tags: ["Go", "CLI", "Git"]
+tags: ["Go", "TUI", "CLI", "Git"]
 categories: ["Application", "go"]
 draft: false
 ---
 
-[jedipunkz](https://x.com/jedipunkz) です。
+[jedipunkz🚀](https://x.com/jedipunkz) です。
 
-今回は自作した CLI ツール [gm](https://github.com/jedipunkz/gm) を紹介します。
+今回は自作した ツール [gm](https://github.com/jedipunkz/gm) を紹介します。
 
-gm は [ghq](https://github.com/x-motemen/ghq) と同じく `host/user/repo` の木にリポジトリを clone して管理するツールです。違うのは Fuzzy Finder を内蔵していることと、clone だけでなく Git Worktree も同じ画面から扱えることです。`Ctrl-G` を押すと Finder が開き、選んだリポジトリまたは Worktree に `cd` します。
+gm は [ghq](https://github.com/x-motemen/ghq) と同じくリポジトリを clone して管理するツールです。違うのは Fuzzy Finder を内蔵していることと、clone だけでなく Git Worktree も同じ画面から扱えることです。`Ctrl-G` を押すと Finder が開き、選んだリポジトリまたは Worktree に `cd` します。またランク機能を設けて頻繁にアクセスするレポジトリを優先的に選択するようにしています。
 
 ## リンク
 
@@ -20,22 +20,23 @@ gm は [ghq](https://github.com/x-motemen/ghq) と同じく `host/user/repo` の
 
 ## 開発動機
 
-ghq は長く使っていて不満はほとんど無かったのですが、2 点だけ引っかかっていました。
+普段の作業で ghq を頻繁に使っています。長く使っていて不満はほとんど無かったのですが、2点だけ引っかかるなと気が付きました。
 
-1 つは、移動するために毎回 `ghq list | fzf | cd` 相当のパイプラインを自分で組み立てる必要があることです。rc ファイルに書いてしまえば終わりの話ではあるのですが、リポジトリの詳細 (remote・ブランチ・作業ツリーの状態) を出そうとすると `--preview` に渡すシェルスクリプトが伸びていき、結局どこかで破綻します。
+1 つは頻繁にアクセスするレポジトリに似た名前のレポジトリがあるとそちらが起動直後に選択されて ctrl-n/p で移動して毎回アクセスしていました。毎日多用してるのでこの作業無駄では・・と考えるようになりました。
 
-もう 1 つは Git Worktree です。最近は 1 つのリポジトリに対して複数の Worktree を切って作業することが増えました。以前作った [agx](https://jedipunkz.rocks/post/cco/) も Worktree 前提のツールです。しかし ghq が知っているのは clone だけなので、Worktree への移動だけは別の手段を用意することになっていました。
+もう 1 つは Git Worktree です。最近は 1 つのリポジトリに対して複数の Worktree を切って作業することが増えました。以前作った [agx](https://jedipunkz.rocks/post/cco/) も Worktree 前提のツールです。しかし ghq は Worktree にはアクセスが出来ないので、Worktree への移動だけは別の手段を用意することになっていました。これも以前作った [fuzz.fish](https://jedipunkz.rocks/fuzz.fish/) で Worktree にアクセスしていたのですが、これはレポジトリに移動した後に利用できるツールです。なので ghq を起動してその流れで Worktree にアクセスしたい！という要望が出てきました。
 
-この 2 つはどちらも「リポジトリ一覧を持っている側が Finder も持てば解決する」話だったので、それなら作ってしまおうというのが gm です。
+これら 2 つはどちらも「リポジトリ一覧を持っている側が Worktree の Finder を持てば解決する」話だったので、それなら作ってしまおうと考えました。
 
 ## 主な機能
 
-- Finder が内蔵されている。パイプラインを組む必要がなく、最有力候補はプロンプトのすぐ隣、リストの一番下に出るので、カーソルを動かさずに `enter` を押せる
-- 並び順は自前で決めている。まずマッチ品質で並べ、同点になったときだけ frecency (どれだけ最近・どれだけ頻繁に開いたか) で決着をつける
+- Finder が内蔵されている。Sheel のパイプラインを組む必要がない
+- ランク機能を備えていて頻繁にアクセスするレポジトリ移動がキー操作少なく行える
+- Fuzzy Finder の並び順は自前で決めている。
 - 選択中のリポジトリの詳細が画面に出る。パス・remote・ブランチ・作業ツリーの状態・訪問回数・直近 3 コミット (ブランチと tag の装飾つき) が並ぶので、似た名前の clone を取り違えずに済む
-- Git Worktree が一級市民。`Ctrl-W` でカーソル下のリポジトリの Worktree 一覧に切り替わる
-- 設定は `gm.toml` に書く。ghq は `git config` 経由でしか設定できないが、`$GHQ_ROOT` と `ghq.root` も読むので既存の ghq の木をそのまま使える
-- `gm create` が `origin` まで設定する
+- Git Worktree にアクセス出来る。`Ctrl-W` でカーソル下のリポジトリの Worktree 一覧に切り替わる
+- 設定は `gm.toml` に書く。キー設定やルートディレクトリ、テーマ設定などが行える。
+- Sub Commands に加えて TUI 内で実行出来る Slash Commands を備えている。(ショートカットキー枯渇問題に対処)
 
 Mercurial / Subversion / Darcs の clone、bare clone、partial clone、並列 import は意図的に実装していません。
 
@@ -65,7 +66,7 @@ eval "$(gm shell bash)"   # ~/.bashrc
 
 ## 使い方
 
-`Ctrl-G` で Finder が開きます。あとは文字を打って絞り込むだけです。`Ctrl-W` でリポジトリ一覧と Worktree 一覧が入れ替わります。絞り込み・詳細ペイン・`enter` はどちらの一覧でも同じように動きます。
+`Ctrl-G` で Finder が開きます(キー設定可能)。あとは文字を打って絞り込むだけです。`Ctrl-W` でリポジトリ一覧と Worktree 一覧が入れ替わります。絞り込み・詳細ペイン・`enter` はどちらの一覧でも同じように動きます。
 
 | キー | リポジトリ一覧 | Worktree 一覧 |
 |---|---|---|
@@ -77,7 +78,7 @@ eval "$(gm shell bash)"   # ~/.bashrc
 | `ctrl-alt-b` | remote をブラウザで開く | remote をブラウザで開く |
 | `esc` | クエリ → 絞り込み → 終了、の順に 1 段ずつ戻す | リポジトリ一覧に戻る |
 
-入力の先頭が `/` のときは絞り込みではなくコマンドの入力になります。入力に従って補完が出るので `tab` で確定できます。
+入力の先頭が `/` のときは絞り込みではなく Slash Command の入力になります。入力に従って補完が出るので `tab` で確定できます。
 
 | コマンド | 動作 |
 |---|---|
@@ -94,9 +95,9 @@ eval "$(gm shell bash)"   # ~/.bashrc
 
 Worktree の置き場所は gm が決めるので、打つのはブランチ名だけです。
 
-```
-~/gm/github.com/jedipunkz/gm/                        リポジトリ本体
-~/gm/.worktrees/github.com/jedipunkz/gm/feat/login   その Worktree
+```bash
+~/gm/github.com/jedipunkz/gm/                        # リポジトリ本体
+~/gm/.worktrees/github.com/jedipunkz/gm/feat/login   # その Worktree
 ```
 
 先頭のドットは飾りではありません。Worktree には `.git` ファイルがあるため、そのままだと gm がそれをリポジトリとして一覧に載せてしまい、`gm migrate` も受け付けなくなります。走査がドット始まりのディレクトリに降りないようにすることで回避しています。
@@ -134,8 +135,6 @@ root は `$GM_ROOT` → `gm.toml` の `root` → `git config gm.root` → `$GHQ_
 
 テーマは `tokyonight` (デフォルト)・`solarized-dark`・`solarized-light`・`kanagawa-wave`・`catppuccin` 4 種・`rose-pine`・`dracula` の 10 種類です。
 
-キーバインドについては、どこまでターミナルに届くかが違う点に注意が必要です。`ctrl-<英字>` はどこでも届きます。`ctrl-alt-<英字>` は Alt が ESC プレフィクスとして送られるのでほぼどこでも届きます。`ctrl-shift-<英字>` は Kitty keyboard protocol 対応のターミナル (Ghostty・kitty・WezTerm・foot・最近の Alacritty) でしか区別されず、それ以外では `ctrl-<英字>` として届きます。
-
 ## 公式サイト
 
 ドキュメント用に公式サイトも作りました。
@@ -163,14 +162,8 @@ Git 操作は go-git ではなく `git` コマンドを叩いています。work
 
 frecency は zoxide の考え方を借りて、訪問回数に時間係数 (1 時間以内は ×4、1 日以内は ×2、1 週間以内は ×0.5、それ以上は ×0.25) を掛けています。これをマッチ品質と足し合わせていないのは、frecency が強すぎると「打った文字と関係ないリポジトリが上に来る」状態になり、Finder として信用できなくなるためです。訪問記録は `$XDG_STATE_HOME/gm/frecency.json` に置いてあり、消せばリセットされます。
 
-## 今後の改善点
-
-- Worktree 一覧でのブランチ絞り込みの強化
-- `gm status` の出力フォーマットのカスタマイズ
-- テーマの追加と、設定ファイルからの配色カスタマイズ
-
 ## まとめ
 
-ghq への不満は「Finder が別になっていること」と「Worktree を知らないこと」の 2 点だけだったので、その 2 点だけを埋めるつもりで作り始めました。結果として、リポジトリ一覧を持っている側が Finder を持つとリポジトリの作成・削除・clone まで同じ画面で完結してしまうことが分かり、思っていたより手放せないツールになっています。
+既に使い始めていますが、自らが多用するツールを開発することはモチベーションにも繋がるので開発の入口としてはとても良いと思っています。今後も不満や機能拡張アイデアに気がつけば改善を続けられます。
 
 フィードバックやプルリクエストは歓迎なので是非一度利用してみてくれると嬉しいです。
