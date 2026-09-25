@@ -1,9 +1,9 @@
 ---
-title: "ghq の気になる点を改善した Go 製ツール開発"
-description: "ghq list | fzf | cd のパイプラインを組まずに済むリポジトリマネージャ gm を Go と Bubble Tea で作りました。Ctrl-G でリポジトリにも Git Worktree にも飛べます"
+title: "ghq の気になる点を改善した Rust 製ツール開発"
+description: "ghq list | fzf | cd のパイプラインを組まずに済むリポジトリマネージャ gm を Rust と ratatui で作りました。Ctrl-G でリポジトリにも Git Worktree にも飛べます"
 date: 2026-09-23T12:00:00+09:00
-tags: ["Go", "TUI", "CLI", "Git"]
-categories: ["Application", "go"]
+tags: ["Rust", "TUI", "CLI", "Git"]
+categories: ["Application", "rust"]
 draft: false
 ---
 
@@ -12,6 +12,8 @@ draft: false
 今回は自作した ツール [gm](https://github.com/jedipunkz/gm) を紹介します。
 
 gm は [ghq](https://github.com/x-motemen/ghq) と同じくリポジトリを clone して管理するツールです。違うのは Fuzzy Finder を内蔵していることと、clone だけでなく Git Worktree も同じ画面から扱えることです。`Ctrl-G` を押すと Finder が開き、選んだリポジトリまたは Worktree に `cd` します。またランク機能を設けて頻繁にアクセスするレポジトリを優先的に選択するようにしています。
+
+最初は Go (Bubble Tea) で書いていましたが、[PR #83](https://github.com/jedipunkz/gm/pull/83) で挙動を変えずに Rust (ratatui) へ書き換えました。`gm.toml`・訪問記録・ディレクトリ構成は互換なので、Go 版から入れ替えてもそのまま動きます。
 
 ## リンク
 
@@ -50,16 +52,16 @@ Mercurial / Subversion / Darcs の clone、bare clone、partial clone、並列 i
 
 ## インストール方法
 
-必要なのは `$PATH` 上の `git` と、True Color 対応のターミナルだけです。Homebrew の場合は Go も不要で、tap からプラットフォームに合ったバイナリを取ってきます。
+必要なのは `$PATH` 上の `git` と、True Color 対応のターミナルだけです。Homebrew の場合は Rust も不要で、tap からプラットフォームに合ったバイナリを取ってきます。
 
 ```sh
 brew install jedipunkz/gm/gm
 ```
 
-ソースから入れる場合は Go 1.25+ が必要です。
+ソースから入れる場合は Rust 1.95+ が必要です。
 
 ```sh
-go install github.com/jedipunkz/gm@latest
+cargo install --locked --git https://github.com/jedipunkz/gm
 ```
 
 ## シェル統合
@@ -151,14 +153,16 @@ root は `$GM_ROOT` → `gm.toml` の `root` → `git config gm.root` → `$GHQ_
 
 Astro で構築し、GitHub Pages にデプロイしています。Finder の動作を再現したデモと 10 種類のテーマのギャラリーを置いてあるので、入れる前に雰囲気が掴めると思います。
 
-## 利用した Go パッケージ
+## 利用した Rust クレート
 
-- [charm.land/bubbletea/v2](https://github.com/charmbracelet/bubbletea) — TUI フレームワーク
-- [charm.land/bubbles/v2](https://github.com/charmbracelet/bubbles) / [charm.land/lipgloss/v2](https://github.com/charmbracelet/lipgloss) — 入力コンポーネントとスタイリング
-- [github.com/sahilm/fuzzy](https://github.com/sahilm/fuzzy) — ファジーマッチ
-- [github.com/BurntSushi/toml](https://github.com/BurntSushi/toml) — `gm.toml` のパース
+- [ratatui](https://ratatui.rs/) (crossterm backend) — TUI フレームワーク
+- [toml](https://crates.io/crates/toml) — `gm.toml` のパース
+- [serde_json](https://crates.io/crates/serde_json) — 訪問記録 (`frecency.json`) の読み書き
+- [libc](https://crates.io/crates/libc) — `SIGPIPE` の既定動作を戻す (`gm list | head` で panic させないため)
 
-Git 操作は go-git ではなく `git` コマンドを叩いています。worktree 周りの挙動を本家と完全に揃えたかったのと、`gm status` が大量のリポジトリを並列に問い合わせる用途では素の `git` で十分速かったためです。
+依存は最小限にしていて、URL の正規化・フラグのパース・ファジーマッチ (Go 版で使っていた [sahilm/fuzzy](https://github.com/sahilm/fuzzy) の移植) は自前で書いています。
+
+Git 操作は git ライブラリではなく `git` コマンドを叩いています。worktree 周りの挙動を本家と完全に揃えたかったのと、`gm status` が大量のリポジトリを並列に問い合わせる用途では素の `git` で十分速かったためです。
 
 ## スコアリングについて
 
