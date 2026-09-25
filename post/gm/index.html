@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="ja" dir="auto">
+
+<head><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>ghq の気になる点を改善した Rust 製ツール開発 | jedipunkz 🚀 のブログ</title>
+<meta name="keywords" content="Rust, TUI, CLI, Git">
+<meta name="description" content="ghq list | fzf | cd のパイプラインを組まずに済むリポジトリマネージャ gm を Rust と ratatui で作りました。Ctrl-G でリポジトリにも Git Worktree にも飛べ、ブランチや Pull Request からそのまま Worktree を作れます">
+<meta name="author" content="jedipunkz">
+<link rel="canonical" href="https://jedipunkz.rocks/post/gm/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.93fab3171fff6ba6152e8c67ba3e8cfcee77a1e7b231fd29570601c555d983ef.css" integrity="sha256-k/qzFx//a6YVLoxnuj6M/O53oeeyMf0pVwYBxVXZg&#43;8=" rel="preload stylesheet" as="style">
+<link rel="icon" href="https://jedipunkz.rocks/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.rocks/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.rocks/favicon-32x32.png">
+<link rel="apple-touch-icon" href="https://jedipunkz.rocks/apple-touch-icon.png">
+<link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/gm/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-track {
+                background: 0 0;
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-thumb {
+                border-color: var(--theme);
+            }
+        }
+
+    </style>
+</noscript>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&amp;family=JetBrains&#43;Mono:wght@400;500&amp;family=Noto&#43;Sans&#43;JP:wght@400..700&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&amp;family=JetBrains&#43;Mono:wght@400;500&amp;family=Noto&#43;Sans&#43;JP:wght@400..700&amp;display=swap">
+
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-2H91XCYVZ8"></script>
+      <script>
+        var doNotTrack = false;
+        if ( true ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-2H91XCYVZ8');
+        }
+      </script><meta property="og:url" content="https://jedipunkz.rocks/post/gm/">
+  <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
+  <meta property="og:title" content="ghq の気になる点を改善した Rust 製ツール開発">
+  <meta property="og:description" content="ghq list | fzf | cd のパイプラインを組まずに済むリポジトリマネージャ gm を Rust と ratatui で作りました。Ctrl-G でリポジトリにも Git Worktree にも飛べ、ブランチや Pull Request からそのまま Worktree を作れます">
+  <meta property="og:locale" content="ja">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="post">
+    <meta property="article:published_time" content="2026-09-23T12:00:00+09:00">
+    <meta property="article:modified_time" content="2026-09-23T12:00:00+09:00">
+    <meta property="article:tag" content="Rust">
+    <meta property="article:tag" content="TUI">
+    <meta property="article:tag" content="CLI">
+    <meta property="article:tag" content="Git">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_b55188053caa86ee.jpg">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_b55188053caa86ee.jpg">
+<meta name="twitter:image:alt" content="ghq の気になる点を改善した Rust 製ツール開発">
+<meta name="twitter:title" content="ghq の気になる点を改善した Rust 製ツール開発">
+<meta name="twitter:description" content="ghq list | fzf | cd のパイプラインを組まずに済むリポジトリマネージャ gm を Rust と ratatui で作りました。Ctrl-G でリポジトリにも Git Worktree にも飛べ、ブランチや Pull Request からそのまま Worktree を作れます">
+  <meta name="twitter:site" content="@jedipunkz">
+  <meta name="twitter:creator" content="@jedipunkz">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "ghq の気になる点を改善した Rust 製ツール開発",
+  "name": "ghq の気になる点を改善した Rust 製ツール開発",
+  "description": "ghq list | fzf | cd のパイプラインを組まずに済むリポジトリマネージャ gm を Rust と ratatui で作りました。Ctrl-G でリポジトリにも Git Worktree にも飛べ、ブランチや Pull Request からそのまま Worktree を作れます",
+  "keywords": [
+    "Rust", "TUI", "CLI", "Git"
+  ],
+  "articleBody": "jedipunkz🚀 です。\n今回は自作した ツール gm を紹介します。\ngm は ghq と同じくリポジトリを clone して管理するツールです。違うのは Fuzzy Finder を内蔵していることと、clone だけでなく Git Worktree も同じ画面から扱えることです。ブランチや Pull Request を選べば、その場で Worktree を作って移動します。Ctrl-G を押すと Finder が開き、選んだリポジトリまたは Worktree に cd します。またランク機能を設けて頻繁にアクセスするレポジトリを優先的に選択するようにしています。\n最初は Go (Bubble Tea) で書いていましたが、PR #83 で挙動を変えずに Rust (ratatui) へ書き換えました。gm.toml・訪問記録・ディレクトリ構成は互換なので、Go 版から入れ替えてもそのまま動きます。\nリンク ソースコード: https://github.com/jedipunkz/gm 公式サイト: https://jedipunkz.rocks/gm/ Finder の画面 左がリポジトリ一覧、右が選択中のリポジトリの詳細、下が入力欄とキーの案内です。詳細には path・remote・ブランチ・作業ツリーの状態・訪問回数・直近 3 コミットが出ます。最有力候補は入力欄のすぐ隣、一覧の一番下に置いています。\n(公式サイトに置いてあるモックです)\n開発動機 普段の作業で ghq を頻繁に使っています。長く使っていて不満はほとんど無かったのですが、2点だけ引っかかるなと気が付きました。\n1 つは頻繁にアクセスするレポジトリに似た名前のレポジトリがあるとそちらが起動直後に選択されて ctrl-n/p で移動して毎回アクセスしていました。毎日多用してるのでこの作業無駄では・・と考えるようになりました。\nもう 1 つは Git Worktree です。最近は 1 つのリポジトリに対して複数の Worktree を切って作業することが増えました。以前作った agx も Worktree 前提のツールです。しかし ghq は Worktree にはアクセスが出来ないので、Worktree への移動だけは別の手段を用意することになっていました。これも以前作った fuzz.fish で Worktree にアクセスしていたのですが、これはレポジトリに移動した後に利用できるツールです。なので ghq を起動してその流れで Worktree にアクセスしたい！という要望が出てきました。\nこれら 2 つはどちらも「リポジトリ一覧を持っている側が Worktree の Finder を持てば解決する」話だったので、それなら作ってしまおうと考えました。\n主な機能 Finder が内蔵されている。Sheel のパイプラインを組む必要がない ランク機能を備えていて頻繁にアクセスするレポジトリ移動がキー操作少なく行える Fuzzy Finder の並び順は自前で決めている。 選択中のリポジトリの詳細が画面に出る。パス・remote・ブランチ・作業ツリーの状態・訪問回数・直近 3 コミット (ブランチと tag の装飾つき) が並ぶので、似た名前の clone を取り違えずに済む Git Worktree にアクセス出来る。Ctrl-W でカーソル下のリポジトリの Worktree 一覧に切り替わる ブランチ一覧 (Ctrl-L) と Pull Request 一覧 (Ctrl-J) を持つ。enter で選んだものを Worktree として check out し、そこに移動する 設定は gm.toml に書く。キー設定やルートディレクトリ、テーマ設定などが行える。 Sub Commands に加えて TUI 内で実行出来る Slash Commands を備えている。(ショートカットキー枯渇問題に対処) Mercurial / Subversion / Darcs の clone、bare clone、partial clone、並列 import は意図的に実装していません。\nインストール方法 必要なのは $PATH 上の git と、True Color 対応のターミナルだけです。Homebrew の場合は Rust も不要で、tap からプラットフォームに合ったバイナリを取ってきます。\nbrew install jedipunkz/gm/gm ソースから入れる場合は Rust 1.95+ が必要です。\ncargo install --locked --git https://github.com/jedipunkz/gm シェル統合 引数無しの gm は Finder を開いて選ばれたパスを標準出力に出すだけなので、$(...) と組み合わせられます。rc ファイルに 1 行足すと、それが Ctrl-G での cd になります。\ngm shell fish | source # ~/.config/fish/config.fish eval \"$(gm shell zsh)\" # ~/.zshrc eval \"$(gm shell bash)\" # ~/.bashrc 使い方 Ctrl-G で Finder が開きます(キー設定可能)。あとは文字を打って絞り込むだけです。Finder にはリポジトリ・Worktree・ブランチ・Pull Request の 4 つの一覧があり、Ctrl-W / Ctrl-L / Ctrl-J でそれぞれに切り替わります。同じキーをもう一度押すとリポジトリ一覧に戻ります。絞り込みと詳細ペインはどの一覧でも同じように動きます。\nキー リポジトリ一覧 Worktree 一覧 ブランチ一覧 Pull Request 一覧 任意の文字 絞り込む 絞り込む 絞り込む 絞り込む ↑ / ctrl-p 上に移動する 上に移動する 上に移動する 上に移動する ↓ / ctrl-n 下に移動する 下に移動する 下に移動する 下に移動する enter リポジトリのパスを出力して終了する Worktree のパスを出力して終了する ブランチを Worktree として check out し、そのパスを出力して終了する Pull Request を Worktree として check out し、そのパスを出力して終了する ctrl-w 選択中のリポジトリの Worktree 一覧を出す リポジトリ一覧に戻る Worktree 一覧を出す Worktree 一覧を出す ctrl-l 選択中のリポジトリのブランチ一覧を出す ブランチ一覧を出す リポジトリ一覧に戻る ブランチ一覧を出す ctrl-j 選択中のリポジトリの Pull Request 一覧を出す Pull Request 一覧を出す Pull Request 一覧を出す リポジトリ一覧に戻る ctrl-alt-b remote をブラウザで開く remote をブラウザで開く remote をブラウザで開く remote をブラウザで開く ctrl-g — リポジトリ一覧に戻る リポジトリ一覧に戻る リポジトリ一覧に戻る esc クエリ → 絞り込み → 終了、の順に 1 段ずつ戻す リポジトリ一覧に戻る リポジトリ一覧に戻る リポジトリ一覧に戻る ctrl-c 何も出力せず終了する 何も出力せず終了する 何も出力せず終了する 何も出力せず終了する git や GitHub の応答を待つ間 (Pull Request の読み込み、check out、/dirty の走査) は、入力欄の下の行にスピナーと待っている対象、経過秒数が出ます。待っている間も Finder は操作できます。\nブランチ一覧 ローカルブランチと、同名のローカルブランチが無い remote ブランチ (origin/feat/login など) が並びます。最新のコミットを持つものが一番下です。直近の git fetch で取ってきていない remote 側のブランチも、裏で git ls-remote を叩いて応答があり次第、一覧の上に足されます。fetch は選んだ時にそのブランチだけ行います。gh は不要で、認証は git 自身のもの (ssh agent や credential helper) を使います。パスワードを求める remote はスキップし、入力欄の下の行にその名前を出します。\nenter を押すと、既に check out 済みのブランチならその Worktree に移動します。それ以外のブランチは確認無しで Worktree を作って移動します。remote ブランチはそれを追跡するローカルブランチになります。\nPull Request 一覧 GitHub CLI (gh) にログイン済みで、gh pr checkout --worktree を持つバージョンが必要です。open な Pull Request が新しいものほど下に並び、draft には [draft] が付きます。#42 のように番号を打って探すこともできます。\nenter を押すと Pull Request の Worktree に移動します。Worktree が無ければ gh pr checkout で先に作ります。Worktree 名は head ブランチ名で、fork の場合は owner 名を前に付けます (bob/main)。fork の main がリポジトリ自身の main とぶつからないようにするためです。\nSlash Commands 入力の先頭が / のときは絞り込みではなく Slash Command の入力になります。入力に従って補完が出るので tab で確定できます。\nコマンド 動作 /help コマンド一覧を出す /dirty commit していない変更があるリポジトリだけに絞り込む /create 確認の上でリポジトリを作り、一覧に追加する /create Worktree 一覧では、そのブランチを Worktree として check out する /get gm get と同じ clone をして、その clone に移動する /remove 確認の上で選択中のリポジトリまたは Worktree を消す /worktrees ctrl-w と同じ /branches ctrl-l と同じ /prs ctrl-j と同じ /remote ctrl-alt-b と同じ 絞り込んだリポジトリに対してコマンドを打ちたいときは、クエリの末尾に ; を付けてコマンドを続けます。gm;/remove と打つと gm を選んで消します。\n/create と /remove は Finder を抜けずに処理します。消えた行はリストから消え、作られた行は追加されて選択され、プロンプト下の行に結果が出ます。commit していない変更があるリポジトリは、同意する前に確認画面がその旨を伝えます。\nWorktree の置き場所 Worktree の置き場所は gm が決めるので、打つのはブランチ名だけです。\n~/gm/github.com/jedipunkz/gm/ # リポジトリ本体 ~/gm/.worktrees/github.com/jedipunkz/gm/feat/login # その Worktree 先頭のドットは飾りではありません。Worktree には .git ファイルがあるため、そのままだと gm がそれをリポジトリとして一覧に載せてしまい、gm migrate も受け付けなくなります。走査がドット始まりのディレクトリに降りないようにすることで回避しています。\nSub Commands Finder を経由しないサブコマンドも一通り揃えました。\nコマンド 動作 gm Finder を開いて、選ばれたパスを出力する gm get [-u] [-p] [--shallow] [-b ] [-s] [-l] ... 木の中に clone する。-u は既存の clone を更新する。-p は SSH で clone する。-s は出力を抑える。-l は clone したリポジトリの中でシェルを開く gm list [-p] [-e] [--unique] [] リポジトリを一覧する gm status [--dirty] [--unpushed] [-a] [-p] commit していない・push していない変更があるリポジトリと Worktree を一覧する。fetch しないのでオフラインでも速い gm remove [--dry-run] [-y] ... 確認の上でリポジトリとその Worktree を消し、空になった親を刈る (gm rm でも可) gm create [-p] origin を設定済みのリポジトリを作って git init する gm wt [-y] スクリプトから Worktree を足す / 消す gm migrate [--dry-run] [-y] [-r] ... 既存の clone を origin を見て木の中に移す gm root [--all] root ディレクトリを出力する gm shell Ctrl-G のキーバインドを出力する には完全な URL、git@host:user/repo.git、host/user/repo、user/repo、それに repo だけ (git config github.user で解決する) を渡せます。\n設定 ~/.config/gm/gm.toml は任意です。パースに失敗するファイルや、gm が知らないキーを含むファイルは、半分無視するのではなくエラーにしています。\nroot = \"~/ghq\" # [\"~/ghq\", \"~/src\"] と書けば順に探す theme = \"tokyonight\" launch_key = \"ctrl-g\" # gm を開くシェル側のキー worktree_key = \"ctrl-w\" # Worktree 一覧に切り替える Finder 側のキー branch_key = \"ctrl-l\" # ブランチ一覧に切り替える Finder 側のキー pr_key = \"ctrl-j\" # Pull Request 一覧に切り替える Finder 側のキー remote_key = \"ctrl-alt-b\" # remote を開く Finder 側のキー root は $GM_ROOT → gm.toml の root → git config gm.root → $GHQ_ROOT → git config ghq.root → ~/ghq の順に解決します。ghq からの移行で何もしなくて良いようにこの順にしました。\nテーマは tokyonight (デフォルト)・solarized-dark・solarized-light・kanagawa-wave・catppuccin 4 種・rose-pine・dracula の 10 種類です。\n公式サイト ドキュメント用に公式サイトも作りました。\nhttps://jedipunkz.rocks/gm/\nAstro で構築し、GitHub Pages にデプロイしています。Finder の動作を再現したデモと 10 種類のテーマのギャラリーを置いてあるので、入れる前に雰囲気が掴めると思います。\n利用した Rust クレート ratatui (crossterm backend) — TUI フレームワーク toml — gm.toml のパース serde_json — 訪問記録 (frecency.json) の読み書き libc — SIGPIPE の既定動作を戻す (gm list | head で panic させないため) 依存は最小限にしていて、URL の正規化・フラグのパース・ファジーマッチ (Go 版で使っていた sahilm/fuzzy の移植) は自前で書いています。\nGit 操作は git ライブラリではなく git コマンドを叩いています。worktree 周りの挙動を本家と完全に揃えたかったのと、gm status が大量のリポジトリを並列に問い合わせる用途では素の git で十分速かったためです。\nスコアリングについて 並び順は 2 段構えです。まずマッチ品質で並べ、同点のときだけ frecency で決着をつけます。\nマッチ品質の計算で一番気を使ったのは、リポジトリのパスが全て host/user/ という長い共通接頭辞を持っている点です。素直にファジーマッチのスコアを使うと、この接頭辞に散らばった部分列がリポジトリ名の中の連続したマッチに勝ってしまいます。そのため、マッチ位置がリポジトリ名の中なら加点 (+10)、user 名の中なら少しだけ加点 (+3)、host の中なら減点 (-4) としています。単語境界 (/ - _ . の直後) のボーナスも host の中では無効にしています。どのリポジトリでも同じ位置に同じ点が入る以上、それは情報ではないためです。\n加えて、クエリが文字列としてそのまま出現する場合は、ファジーマッチが別の場所から組み立てた部分列ではなくそちらの位置を採用します。打った文字列がそのまま並んでいるならそれが意図だ、という判断です。クエリ全体がリポジトリ名の中に収まっていれば更に +25 しています。\nfrecency は zoxide の考え方を借りて、訪問回数に時間係数 (1 時間以内は ×4、1 日以内は ×2、1 週間以内は ×0.5、それ以上は ×0.25) を掛けています。これをマッチ品質と足し合わせていないのは、frecency が強すぎると「打った文字と関係ないリポジトリが上に来る」状態になり、Finder として信用できなくなるためです。訪問記録は $XDG_STATE_HOME/gm/frecency.json に置いてあり、消せばリセットされます。\nまとめ 既に使い始めていますが、自らが多用するツールを開発することはモチベーションにも繋がるので開発の入口としてはとても良いと思っています。今後も不満や機能拡張アイデアに気がつけば改善を続けられます。\nフィードバックやプルリクエストは歓迎なので是非一度利用してみてくれると嬉しいです。\n",
+  "wordCount" : "807",
+  "inLanguage": "ja",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_b55188053caa86ee.jpg",
+  "datePublished": "2026-09-23T12:00:00+09:00",
+  "dateModified": "2026-09-23T12:00:00+09:00",
+  "author":{
+    "@type": "Person",
+    "name": "jedipunkz"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "https://jedipunkz.rocks/post/gm/"
+  },
+  "publisher": {
+    "@type": "Person",
+    "name": "jedipunkz 🚀 のブログ",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
+    }
+  }
+}
+</script>
+
+</head>
+
+<body class="" id="top">
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.body.classList.add('dark');
+    } else if (localStorage.getItem("pref-theme") === "light") {
+        document.body.classList.remove('dark')
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark');
+    }
+
+</script>
+
+<header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="https://jedipunkz.rocks/" accesskey="h" title="jedipunkz (Alt + H)">jedipunkz</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="https://jedipunkz.rocks/about" title="About Me">
+                    <span>About Me</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
+      ghq の気になる点を改善した Rust 製ツール開発
+    </h1>
+    <div class="post-description">
+      ghq list | fzf | cd のパイプラインを組まずに済むリポジトリマネージャ gm を Rust と ratatui で作りました。Ctrl-G でリポジトリにも Git Worktree にも飛べ、ブランチや Pull Request からそのまま Worktree を作れます
+    </div>
+    <div class="post-meta"><span title='2026-09-23 12:00:00 +0900 +0900'>2026-09-23</span>&nbsp;·&nbsp;4 分&nbsp;·&nbsp;jedipunkz
+
+</div>
+  </header> 
+  <div class="post-content"><p><a href="https://x.com/jedipunkz">jedipunkz🚀</a> です。</p>
+<p>今回は自作した ツール <a href="https://github.com/jedipunkz/gm">gm</a> を紹介します。</p>
+<p>gm は <a href="https://github.com/x-motemen/ghq">ghq</a> と同じくリポジトリを clone して管理するツールです。違うのは Fuzzy Finder を内蔵していることと、clone だけでなく Git Worktree も同じ画面から扱えることです。ブランチや Pull Request を選べば、その場で Worktree を作って移動します。<code>Ctrl-G</code> を押すと Finder が開き、選んだリポジトリまたは Worktree に <code>cd</code> します。またランク機能を設けて頻繁にアクセスするレポジトリを優先的に選択するようにしています。</p>
+<p>最初は Go (Bubble Tea) で書いていましたが、<a href="https://github.com/jedipunkz/gm/pull/83">PR #83</a> で挙動を変えずに Rust (ratatui) へ書き換えました。<code>gm.toml</code>・訪問記録・ディレクトリ構成は互換なので、Go 版から入れ替えてもそのまま動きます。</p>
+<h2 id="リンク">リンク<a hidden class="anchor" aria-hidden="true" href="#リンク">#</a></h2>
+<ul>
+<li>ソースコード: <a href="https://github.com/jedipunkz/gm">https://github.com/jedipunkz/gm</a></li>
+<li>公式サイト: <a href="https://jedipunkz.rocks/gm/">https://jedipunkz.rocks/gm/</a></li>
+</ul>
+<h2 id="finder-の画面">Finder の画面<a hidden class="anchor" aria-hidden="true" href="#finder-の画面">#</a></h2>
+<p>左がリポジトリ一覧、右が選択中のリポジトリの詳細、下が入力欄とキーの案内です。詳細には path・remote・ブランチ・作業ツリーの状態・訪問回数・直近 3 コミットが出ます。最有力候補は入力欄のすぐ隣、一覧の一番下に置いています。</p>
+<p><img alt="gm の Finder" loading="lazy" src="/pix/gm.png"></p>
+<p>(公式サイトに置いてあるモックです)</p>
+<h2 id="開発動機">開発動機<a hidden class="anchor" aria-hidden="true" href="#開発動機">#</a></h2>
+<p>普段の作業で ghq を頻繁に使っています。長く使っていて不満はほとんど無かったのですが、2点だけ引っかかるなと気が付きました。</p>
+<p>1 つは頻繁にアクセスするレポジトリに似た名前のレポジトリがあるとそちらが起動直後に選択されて ctrl-n/p で移動して毎回アクセスしていました。毎日多用してるのでこの作業無駄では・・と考えるようになりました。</p>
+<p>もう 1 つは Git Worktree です。最近は 1 つのリポジトリに対して複数の Worktree を切って作業することが増えました。以前作った <a href="https://jedipunkz.rocks/post/cco/">agx</a> も Worktree 前提のツールです。しかし ghq は Worktree にはアクセスが出来ないので、Worktree への移動だけは別の手段を用意することになっていました。これも以前作った <a href="https://jedipunkz.rocks/fuzz.fish/">fuzz.fish</a> で Worktree にアクセスしていたのですが、これはレポジトリに移動した後に利用できるツールです。なので ghq を起動してその流れで Worktree にアクセスしたい！という要望が出てきました。</p>
+<p>これら 2 つはどちらも「リポジトリ一覧を持っている側が Worktree の Finder を持てば解決する」話だったので、それなら作ってしまおうと考えました。</p>
+<h2 id="主な機能">主な機能<a hidden class="anchor" aria-hidden="true" href="#主な機能">#</a></h2>
+<ul>
+<li>Finder が内蔵されている。Sheel のパイプラインを組む必要がない</li>
+<li>ランク機能を備えていて頻繁にアクセスするレポジトリ移動がキー操作少なく行える</li>
+<li>Fuzzy Finder の並び順は自前で決めている。</li>
+<li>選択中のリポジトリの詳細が画面に出る。パス・remote・ブランチ・作業ツリーの状態・訪問回数・直近 3 コミット (ブランチと tag の装飾つき) が並ぶので、似た名前の clone を取り違えずに済む</li>
+<li>Git Worktree にアクセス出来る。<code>Ctrl-W</code> でカーソル下のリポジトリの Worktree 一覧に切り替わる</li>
+<li>ブランチ一覧 (<code>Ctrl-L</code>) と Pull Request 一覧 (<code>Ctrl-J</code>) を持つ。<code>enter</code> で選んだものを Worktree として check out し、そこに移動する</li>
+<li>設定は <code>gm.toml</code> に書く。キー設定やルートディレクトリ、テーマ設定などが行える。</li>
+<li>Sub Commands に加えて TUI 内で実行出来る Slash Commands を備えている。(ショートカットキー枯渇問題に対処)</li>
+</ul>
+<p>Mercurial / Subversion / Darcs の clone、bare clone、partial clone、並列 import は意図的に実装していません。</p>
+<h2 id="インストール方法">インストール方法<a hidden class="anchor" aria-hidden="true" href="#インストール方法">#</a></h2>
+<p>必要なのは <code>$PATH</code> 上の <code>git</code> と、True Color 対応のターミナルだけです。Homebrew の場合は Rust も不要で、tap からプラットフォームに合ったバイナリを取ってきます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">brew install jedipunkz/gm/gm
+</span></span></code></pre></div><p>ソースから入れる場合は Rust 1.95+ が必要です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">cargo install --locked --git https://github.com/jedipunkz/gm
+</span></span></code></pre></div><h2 id="シェル統合">シェル統合<a hidden class="anchor" aria-hidden="true" href="#シェル統合">#</a></h2>
+<p>引数無しの <code>gm</code> は Finder を開いて選ばれたパスを標準出力に出すだけなので、<code>$(...)</code> と組み合わせられます。rc ファイルに 1 行足すと、それが <code>Ctrl-G</code> での <code>cd</code> になります。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">gm shell fish <span class="p">|</span> <span class="nb">source</span>    <span class="c1"># ~/.config/fish/config.fish</span>
+</span></span><span class="line"><span class="cl"><span class="nb">eval</span> <span class="s2">&#34;</span><span class="k">$(</span>gm shell zsh<span class="k">)</span><span class="s2">&#34;</span>    <span class="c1"># ~/.zshrc</span>
+</span></span><span class="line"><span class="cl"><span class="nb">eval</span> <span class="s2">&#34;</span><span class="k">$(</span>gm shell bash<span class="k">)</span><span class="s2">&#34;</span>   <span class="c1"># ~/.bashrc</span>
+</span></span></code></pre></div><h2 id="使い方">使い方<a hidden class="anchor" aria-hidden="true" href="#使い方">#</a></h2>
+<p><code>Ctrl-G</code> で Finder が開きます(キー設定可能)。あとは文字を打って絞り込むだけです。Finder にはリポジトリ・Worktree・ブランチ・Pull Request の 4 つの一覧があり、<code>Ctrl-W</code> / <code>Ctrl-L</code> / <code>Ctrl-J</code> でそれぞれに切り替わります。同じキーをもう一度押すとリポジトリ一覧に戻ります。絞り込みと詳細ペインはどの一覧でも同じように動きます。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>キー</th>
+        <th>リポジトリ一覧</th>
+        <th>Worktree 一覧</th>
+        <th>ブランチ一覧</th>
+        <th>Pull Request 一覧</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>任意の文字</td>
+        <td>絞り込む</td>
+        <td>絞り込む</td>
+        <td>絞り込む</td>
+        <td>絞り込む</td>
+      </tr>
+      <tr>
+        <td><code>↑</code> / <code>ctrl-p</code></td>
+        <td>上に移動する</td>
+        <td>上に移動する</td>
+        <td>上に移動する</td>
+        <td>上に移動する</td>
+      </tr>
+      <tr>
+        <td><code>↓</code> / <code>ctrl-n</code></td>
+        <td>下に移動する</td>
+        <td>下に移動する</td>
+        <td>下に移動する</td>
+        <td>下に移動する</td>
+      </tr>
+      <tr>
+        <td><code>enter</code></td>
+        <td>リポジトリのパスを出力して終了する</td>
+        <td>Worktree のパスを出力して終了する</td>
+        <td>ブランチを Worktree として check out し、そのパスを出力して終了する</td>
+        <td>Pull Request を Worktree として check out し、そのパスを出力して終了する</td>
+      </tr>
+      <tr>
+        <td><code>ctrl-w</code></td>
+        <td>選択中のリポジトリの Worktree 一覧を出す</td>
+        <td>リポジトリ一覧に戻る</td>
+        <td>Worktree 一覧を出す</td>
+        <td>Worktree 一覧を出す</td>
+      </tr>
+      <tr>
+        <td><code>ctrl-l</code></td>
+        <td>選択中のリポジトリのブランチ一覧を出す</td>
+        <td>ブランチ一覧を出す</td>
+        <td>リポジトリ一覧に戻る</td>
+        <td>ブランチ一覧を出す</td>
+      </tr>
+      <tr>
+        <td><code>ctrl-j</code></td>
+        <td>選択中のリポジトリの Pull Request 一覧を出す</td>
+        <td>Pull Request 一覧を出す</td>
+        <td>Pull Request 一覧を出す</td>
+        <td>リポジトリ一覧に戻る</td>
+      </tr>
+      <tr>
+        <td><code>ctrl-alt-b</code></td>
+        <td>remote をブラウザで開く</td>
+        <td>remote をブラウザで開く</td>
+        <td>remote をブラウザで開く</td>
+        <td>remote をブラウザで開く</td>
+      </tr>
+      <tr>
+        <td><code>ctrl-g</code></td>
+        <td>—</td>
+        <td>リポジトリ一覧に戻る</td>
+        <td>リポジトリ一覧に戻る</td>
+        <td>リポジトリ一覧に戻る</td>
+      </tr>
+      <tr>
+        <td><code>esc</code></td>
+        <td>クエリ → 絞り込み → 終了、の順に 1 段ずつ戻す</td>
+        <td>リポジトリ一覧に戻る</td>
+        <td>リポジトリ一覧に戻る</td>
+        <td>リポジトリ一覧に戻る</td>
+      </tr>
+      <tr>
+        <td><code>ctrl-c</code></td>
+        <td>何も出力せず終了する</td>
+        <td>何も出力せず終了する</td>
+        <td>何も出力せず終了する</td>
+        <td>何も出力せず終了する</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>git や GitHub の応答を待つ間 (Pull Request の読み込み、check out、<code>/dirty</code> の走査) は、入力欄の下の行にスピナーと待っている対象、経過秒数が出ます。待っている間も Finder は操作できます。</p>
+<h3 id="ブランチ一覧">ブランチ一覧<a hidden class="anchor" aria-hidden="true" href="#ブランチ一覧">#</a></h3>
+<p>ローカルブランチと、同名のローカルブランチが無い remote ブランチ (<code>origin/feat/login</code> など) が並びます。最新のコミットを持つものが一番下です。直近の <code>git fetch</code> で取ってきていない remote 側のブランチも、裏で <code>git ls-remote</code> を叩いて応答があり次第、一覧の上に足されます。fetch は選んだ時にそのブランチだけ行います。<code>gh</code> は不要で、認証は git 自身のもの (ssh agent や credential helper) を使います。パスワードを求める remote はスキップし、入力欄の下の行にその名前を出します。</p>
+<p><code>enter</code> を押すと、既に check out 済みのブランチならその Worktree に移動します。それ以外のブランチは確認無しで Worktree を作って移動します。remote ブランチはそれを追跡するローカルブランチになります。</p>
+<h3 id="pull-request-一覧">Pull Request 一覧<a hidden class="anchor" aria-hidden="true" href="#pull-request-一覧">#</a></h3>
+<p><a href="https://cli.github.com/">GitHub CLI</a> (<code>gh</code>) にログイン済みで、<code>gh pr checkout --worktree</code> を持つバージョンが必要です。open な Pull Request が新しいものほど下に並び、draft には <code>[draft]</code> が付きます。<code>#42</code> のように番号を打って探すこともできます。</p>
+<p><code>enter</code> を押すと Pull Request の Worktree に移動します。Worktree が無ければ <code>gh pr checkout</code> で先に作ります。Worktree 名は head ブランチ名で、fork の場合は owner 名を前に付けます (<code>bob/main</code>)。fork の <code>main</code> がリポジトリ自身の <code>main</code> とぶつからないようにするためです。</p>
+<h3 id="slash-commands">Slash Commands<a hidden class="anchor" aria-hidden="true" href="#slash-commands">#</a></h3>
+<p>入力の先頭が <code>/</code> のときは絞り込みではなく Slash Command の入力になります。入力に従って補完が出るので <code>tab</code> で確定できます。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>コマンド</th>
+        <th>動作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>/help</code></td>
+        <td>コマンド一覧を出す</td>
+      </tr>
+      <tr>
+        <td><code>/dirty</code></td>
+        <td>commit していない変更があるリポジトリだけに絞り込む</td>
+      </tr>
+      <tr>
+        <td><code>/create &lt;repo&gt;</code></td>
+        <td>確認の上でリポジトリを作り、一覧に追加する</td>
+      </tr>
+      <tr>
+        <td><code>/create &lt;branch&gt;</code></td>
+        <td>Worktree 一覧では、そのブランチを Worktree として check out する</td>
+      </tr>
+      <tr>
+        <td><code>/get &lt;repo&gt;</code></td>
+        <td><code>gm get</code> と同じ clone をして、その clone に移動する</td>
+      </tr>
+      <tr>
+        <td><code>/remove</code></td>
+        <td>確認の上で選択中のリポジトリまたは Worktree を消す</td>
+      </tr>
+      <tr>
+        <td><code>/worktrees</code></td>
+        <td><code>ctrl-w</code> と同じ</td>
+      </tr>
+      <tr>
+        <td><code>/branches</code></td>
+        <td><code>ctrl-l</code> と同じ</td>
+      </tr>
+      <tr>
+        <td><code>/prs</code></td>
+        <td><code>ctrl-j</code> と同じ</td>
+      </tr>
+      <tr>
+        <td><code>/remote</code></td>
+        <td><code>ctrl-alt-b</code> と同じ</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>絞り込んだリポジトリに対してコマンドを打ちたいときは、クエリの末尾に <code>;</code> を付けてコマンドを続けます。<code>gm;/remove</code> と打つと <code>gm</code> を選んで消します。</p>
+<p><code>/create</code> と <code>/remove</code> は Finder を抜けずに処理します。消えた行はリストから消え、作られた行は追加されて選択され、プロンプト下の行に結果が出ます。commit していない変更があるリポジトリは、同意する前に確認画面がその旨を伝えます。</p>
+<h3 id="worktree-の置き場所">Worktree の置き場所<a hidden class="anchor" aria-hidden="true" href="#worktree-の置き場所">#</a></h3>
+<p>Worktree の置き場所は gm が決めるので、打つのはブランチ名だけです。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">~/gm/github.com/jedipunkz/gm/                        <span class="c1"># リポジトリ本体</span>
+</span></span><span class="line"><span class="cl">~/gm/.worktrees/github.com/jedipunkz/gm/feat/login   <span class="c1"># その Worktree</span>
+</span></span></code></pre></div><p>先頭のドットは飾りではありません。Worktree には <code>.git</code> ファイルがあるため、そのままだと gm がそれをリポジトリとして一覧に載せてしまい、<code>gm migrate</code> も受け付けなくなります。走査がドット始まりのディレクトリに降りないようにすることで回避しています。</p>
+<h3 id="sub-commands">Sub Commands<a hidden class="anchor" aria-hidden="true" href="#sub-commands">#</a></h3>
+<p>Finder を経由しないサブコマンドも一通り揃えました。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>コマンド</th>
+        <th>動作</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>gm</code></td>
+        <td>Finder を開いて、選ばれたパスを出力する</td>
+      </tr>
+      <tr>
+        <td><code>gm get [-u] [-p] [--shallow] [-b &lt;branch&gt;] [-s] [-l] &lt;repo&gt;...</code></td>
+        <td>木の中に clone する。<code>-u</code> は既存の clone を更新する。<code>-p</code> は SSH で clone する。<code>-s</code> は出力を抑える。<code>-l</code> は clone したリポジトリの中でシェルを開く</td>
+      </tr>
+      <tr>
+        <td><code>gm list [-p] [-e] [--unique] [&lt;query&gt;]</code></td>
+        <td>リポジトリを一覧する</td>
+      </tr>
+      <tr>
+        <td><code>gm status [--dirty] [--unpushed] [-a] [-p]</code></td>
+        <td>commit していない・push していない変更があるリポジトリと Worktree を一覧する。fetch しないのでオフラインでも速い</td>
+      </tr>
+      <tr>
+        <td><code>gm remove [--dry-run] [-y] &lt;repo&gt;...</code></td>
+        <td>確認の上でリポジトリとその Worktree を消し、空になった親を刈る (<code>gm rm</code> でも可)</td>
+      </tr>
+      <tr>
+        <td><code>gm create [-p] &lt;repo&gt;</code></td>
+        <td><code>origin</code> を設定済みのリポジトリを作って <code>git init</code> する</td>
+      </tr>
+      <tr>
+        <td><code>gm wt &lt;create|remove&gt; [-y] &lt;repo&gt; &lt;branch&gt;</code></td>
+        <td>スクリプトから Worktree を足す / 消す</td>
+      </tr>
+      <tr>
+        <td><code>gm migrate [--dry-run] [-y] [-r] &lt;dir&gt;...</code></td>
+        <td>既存の clone を <code>origin</code> を見て木の中に移す</td>
+      </tr>
+      <tr>
+        <td><code>gm root [--all]</code></td>
+        <td>root ディレクトリを出力する</td>
+      </tr>
+      <tr>
+        <td><code>gm shell &lt;fish|zsh|bash&gt;</code></td>
+        <td><code>Ctrl-G</code> のキーバインドを出力する</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p><code>&lt;repo&gt;</code> には完全な URL、<code>git@host:user/repo.git</code>、<code>host/user/repo</code>、<code>user/repo</code>、それに <code>repo</code> だけ (<code>git config github.user</code> で解決する) を渡せます。</p>
+<h2 id="設定">設定<a hidden class="anchor" aria-hidden="true" href="#設定">#</a></h2>
+<p><code>~/.config/gm/gm.toml</code> は任意です。パースに失敗するファイルや、gm が知らないキーを含むファイルは、半分無視するのではなくエラーにしています。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-toml" data-lang="toml"><span class="line"><span class="cl"><span class="nx">root</span>         <span class="p">=</span> <span class="s2">&#34;~/ghq&#34;</span>         <span class="c"># [&#34;~/ghq&#34;, &#34;~/src&#34;] と書けば順に探す</span>
+</span></span><span class="line"><span class="cl"><span class="nx">theme</span>        <span class="p">=</span> <span class="s2">&#34;tokyonight&#34;</span>
+</span></span><span class="line"><span class="cl"><span class="nx">launch_key</span>   <span class="p">=</span> <span class="s2">&#34;ctrl-g&#34;</span>        <span class="c"># gm を開くシェル側のキー</span>
+</span></span><span class="line"><span class="cl"><span class="nx">worktree_key</span> <span class="p">=</span> <span class="s2">&#34;ctrl-w&#34;</span>        <span class="c"># Worktree 一覧に切り替える Finder 側のキー</span>
+</span></span><span class="line"><span class="cl"><span class="nx">branch_key</span>   <span class="p">=</span> <span class="s2">&#34;ctrl-l&#34;</span>        <span class="c"># ブランチ一覧に切り替える Finder 側のキー</span>
+</span></span><span class="line"><span class="cl"><span class="nx">pr_key</span>       <span class="p">=</span> <span class="s2">&#34;ctrl-j&#34;</span>        <span class="c"># Pull Request 一覧に切り替える Finder 側のキー</span>
+</span></span><span class="line"><span class="cl"><span class="nx">remote_key</span>   <span class="p">=</span> <span class="s2">&#34;ctrl-alt-b&#34;</span>    <span class="c"># remote を開く Finder 側のキー</span>
+</span></span></code></pre></div><p>root は <code>$GM_ROOT</code> → <code>gm.toml</code> の <code>root</code> → <code>git config gm.root</code> → <code>$GHQ_ROOT</code> → <code>git config ghq.root</code> → <code>~/ghq</code> の順に解決します。ghq からの移行で何もしなくて良いようにこの順にしました。</p>
+<p>テーマは <code>tokyonight</code> (デフォルト)・<code>solarized-dark</code>・<code>solarized-light</code>・<code>kanagawa-wave</code>・<code>catppuccin</code> 4 種・<code>rose-pine</code>・<code>dracula</code> の 10 種類です。</p>
+<h2 id="公式サイト">公式サイト<a hidden class="anchor" aria-hidden="true" href="#公式サイト">#</a></h2>
+<p>ドキュメント用に公式サイトも作りました。</p>
+<p><a href="https://jedipunkz.rocks/gm/">https://jedipunkz.rocks/gm/</a></p>
+<p>Astro で構築し、GitHub Pages にデプロイしています。Finder の動作を再現したデモと 10 種類のテーマのギャラリーを置いてあるので、入れる前に雰囲気が掴めると思います。</p>
+<h2 id="利用した-rust-クレート">利用した Rust クレート<a hidden class="anchor" aria-hidden="true" href="#利用した-rust-クレート">#</a></h2>
+<ul>
+<li><a href="https://ratatui.rs/">ratatui</a> (crossterm backend) — TUI フレームワーク</li>
+<li><a href="https://crates.io/crates/toml">toml</a> — <code>gm.toml</code> のパース</li>
+<li><a href="https://crates.io/crates/serde_json">serde_json</a> — 訪問記録 (<code>frecency.json</code>) の読み書き</li>
+<li><a href="https://crates.io/crates/libc">libc</a> — <code>SIGPIPE</code> の既定動作を戻す (<code>gm list | head</code> で panic させないため)</li>
+</ul>
+<p>依存は最小限にしていて、URL の正規化・フラグのパース・ファジーマッチ (Go 版で使っていた <a href="https://github.com/sahilm/fuzzy">sahilm/fuzzy</a> の移植) は自前で書いています。</p>
+<p>Git 操作は git ライブラリではなく <code>git</code> コマンドを叩いています。worktree 周りの挙動を本家と完全に揃えたかったのと、<code>gm status</code> が大量のリポジトリを並列に問い合わせる用途では素の <code>git</code> で十分速かったためです。</p>
+<h2 id="スコアリングについて">スコアリングについて<a hidden class="anchor" aria-hidden="true" href="#スコアリングについて">#</a></h2>
+<p>並び順は 2 段構えです。まずマッチ品質で並べ、同点のときだけ frecency で決着をつけます。</p>
+<p>マッチ品質の計算で一番気を使ったのは、リポジトリのパスが全て <code>host/user/</code> という長い共通接頭辞を持っている点です。素直にファジーマッチのスコアを使うと、この接頭辞に散らばった部分列がリポジトリ名の中の連続したマッチに勝ってしまいます。そのため、マッチ位置がリポジトリ名の中なら加点 (+10)、user 名の中なら少しだけ加点 (+3)、host の中なら減点 (-4) としています。単語境界 (<code>/</code> <code>-</code> <code>_</code> <code>.</code> の直後) のボーナスも host の中では無効にしています。どのリポジトリでも同じ位置に同じ点が入る以上、それは情報ではないためです。</p>
+<p>加えて、クエリが文字列としてそのまま出現する場合は、ファジーマッチが別の場所から組み立てた部分列ではなくそちらの位置を採用します。打った文字列がそのまま並んでいるならそれが意図だ、という判断です。クエリ全体がリポジトリ名の中に収まっていれば更に +25 しています。</p>
+<p>frecency は zoxide の考え方を借りて、訪問回数に時間係数 (1 時間以内は ×4、1 日以内は ×2、1 週間以内は ×0.5、それ以上は ×0.25) を掛けています。これをマッチ品質と足し合わせていないのは、frecency が強すぎると「打った文字と関係ないリポジトリが上に来る」状態になり、Finder として信用できなくなるためです。訪問記録は <code>$XDG_STATE_HOME/gm/frecency.json</code> に置いてあり、消せばリセットされます。</p>
+<h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
+<p>既に使い始めていますが、自らが多用するツールを開発することはモチベーションにも繋がるので開発の入口としてはとても良いと思っています。今後も不満や機能拡張アイデアに気がつけば改善を続けられます。</p>
+<p>フィードバックやプルリクエストは歓迎なので是非一度利用してみてくれると嬉しいです。</p>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+      <li><a href="https://jedipunkz.rocks/tags/rust/">Rust</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/tui/">TUI</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/cli/">CLI</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/git/">Git</a></li>
+    </ul>
+<nav class="paginav">
+  <a class="prev" href="https://jedipunkz.rocks/post/rust-learning/">
+    <span class="title">« 前へ</span>
+    <br>
+    <span>Rust 入門: 構文集</span>
+  </a>
+  <a class="next" href="https://jedipunkz.rocks/post/claude-agent-sdk/">
+    <span class="title">次へ »</span>
+    <br>
+    <span>Claude Agent SDK の基本的な使い方を学ぶ</span>
+  </a>
+</nav>
+
+
+<ul class="share-buttons">
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ghq の気になる点を改善した Rust 製ツール開発 on x"
+            href="https://x.com/intent/tweet/?text=ghq%20%e3%81%ae%e6%b0%97%e3%81%ab%e3%81%aa%e3%82%8b%e7%82%b9%e3%82%92%e6%94%b9%e5%96%84%e3%81%97%e3%81%9f%20Rust%20%e8%a3%bd%e3%83%84%e3%83%bc%e3%83%ab%e9%96%8b%e7%99%ba&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgm%2f&amp;hashtags=Rust%2cTUI%2cCLI%2cGit">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M512 62.554 L 512 449.446 C 512 483.97 483.97 512 449.446 512 L 62.554 512 C 28.03 512 0 483.97 0 449.446 L 0 62.554 C 0 28.03 28.029 0 62.554 0 L 449.446 0 C 483.971 0 512 28.03 512 62.554 Z M 269.951 190.75 L 182.567 75.216 L 56 75.216 L 207.216 272.95 L 63.9 436.783 L 125.266 436.783 L 235.9 310.383 L 332.567 436.783 L 456 436.783 L 298.367 228.367 L 432.367 75.216 L 371.033 75.216 Z M 127.633 110 L 164.101 110 L 383.481 400.065 L 349.5 400.065 Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ghq の気になる点を改善した Rust 製ツール開発 on linkedin"
+            href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgm%2f&amp;title=ghq%20%e3%81%ae%e6%b0%97%e3%81%ab%e3%81%aa%e3%82%8b%e7%82%b9%e3%82%92%e6%94%b9%e5%96%84%e3%81%97%e3%81%9f%20Rust%20%e8%a3%bd%e3%83%84%e3%83%bc%e3%83%ab%e9%96%8b%e7%99%ba&amp;summary=ghq%20%e3%81%ae%e6%b0%97%e3%81%ab%e3%81%aa%e3%82%8b%e7%82%b9%e3%82%92%e6%94%b9%e5%96%84%e3%81%97%e3%81%9f%20Rust%20%e8%a3%bd%e3%83%84%e3%83%bc%e3%83%ab%e9%96%8b%e7%99%ba&amp;source=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgm%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-288.985,423.278l0,-225.717l-75.04,0l0,225.717l75.04,0Zm270.539,0l0,-129.439c0,-69.333 -37.018,-101.586 -86.381,-101.586c-39.804,0 -57.634,21.891 -67.617,37.266l0,-31.958l-75.021,0c0.995,21.181 0,225.717 0,225.717l75.02,0l0,-126.056c0,-6.748 0.486,-13.492 2.474,-18.315c5.414,-13.475 17.767,-27.434 38.494,-27.434c27.135,0 38.007,20.707 38.007,51.037l0,120.768l75.024,0Zm-307.552,-334.556c-25.674,0 -42.448,16.879 -42.448,39.002c0,21.658 16.264,39.002 41.455,39.002l0.484,0c26.165,0 42.452,-17.344 42.452,-39.002c-0.485,-22.092 -16.241,-38.954 -41.943,-39.002Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ghq の気になる点を改善した Rust 製ツール開発 on reddit"
+            href="https://reddit.com/submit?url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgm%2f&title=ghq%20%e3%81%ae%e6%b0%97%e3%81%ab%e3%81%aa%e3%82%8b%e7%82%b9%e3%82%92%e6%94%b9%e5%96%84%e3%81%97%e3%81%9f%20Rust%20%e8%a3%bd%e3%83%84%e3%83%bc%e3%83%ab%e9%96%8b%e7%99%ba">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-3.446,265.638c0,-22.964 -18.616,-41.58 -41.58,-41.58c-11.211,0 -21.361,4.457 -28.841,11.666c-28.424,-20.508 -67.586,-33.757 -111.204,-35.278l18.941,-89.121l61.884,13.157c0.756,15.734 13.642,28.29 29.56,28.29c16.407,0 29.706,-13.299 29.706,-29.701c0,-16.403 -13.299,-29.702 -29.706,-29.702c-11.666,0 -21.657,6.792 -26.515,16.578l-69.105,-14.69c-1.922,-0.418 -3.939,-0.042 -5.585,1.036c-1.658,1.073 -2.811,2.761 -3.224,4.686l-21.152,99.438c-44.258,1.228 -84.046,14.494 -112.837,35.232c-7.468,-7.164 -17.589,-11.591 -28.757,-11.591c-22.965,0 -41.585,18.616 -41.585,41.58c0,16.896 10.095,31.41 24.568,37.918c-0.639,4.135 -0.99,8.328 -0.99,12.576c0,63.977 74.469,115.836 166.33,115.836c91.861,0 166.334,-51.859 166.334,-115.836c0,-4.218 -0.347,-8.387 -0.977,-12.493c14.564,-6.47 24.735,-21.034 24.735,-38.001Zm-119.474,108.193c-20.27,20.241 -59.115,21.816 -70.534,21.816c-11.428,0 -50.277,-1.575 -70.522,-21.82c-3.007,-3.008 -3.007,-7.882 0,-10.889c3.003,-2.999 7.882,-3.003 10.885,0c12.777,12.781 40.11,17.317 59.637,17.317c19.522,0 46.86,-4.536 59.657,-17.321c3.016,-2.999 7.886,-2.995 10.885,0.008c3.008,3.011 3.003,7.882 -0.008,10.889Zm-5.23,-48.781c-16.373,0 -29.701,-13.324 -29.701,-29.698c0,-16.381 13.328,-29.714 29.701,-29.714c16.378,0 29.706,13.333 29.706,29.714c0,16.374 -13.328,29.698 -29.706,29.698Zm-160.386,-29.702c0,-16.381 13.328,-29.71 29.714,-29.71c16.369,0 29.689,13.329 29.689,29.71c0,16.373 -13.32,29.693 -29.689,29.693c-16.386,0 -29.714,-13.32 -29.714,-29.693Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ghq の気になる点を改善した Rust 製ツール開発 on facebook"
+            href="https://facebook.com/sharer/sharer.php?u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgm%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-106.468,0l0,-192.915l66.6,0l12.672,-82.621l-79.272,0l0,-53.617c0,-22.603 11.073,-44.636 46.58,-44.636l36.042,0l0,-70.34c0,0 -32.71,-5.582 -63.982,-5.582c-65.288,0 -107.96,39.569 -107.96,111.204l0,62.971l-72.573,0l0,82.621l72.573,0l0,192.915l-191.104,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ghq の気になる点を改善した Rust 製ツール開発 on whatsapp"
+            href="https://api.whatsapp.com/send?text=ghq%20%e3%81%ae%e6%b0%97%e3%81%ab%e3%81%aa%e3%82%8b%e7%82%b9%e3%82%92%e6%94%b9%e5%96%84%e3%81%97%e3%81%9f%20Rust%20%e8%a3%bd%e3%83%84%e3%83%bc%e3%83%ab%e9%96%8b%e7%99%ba%20-%20https%3a%2f%2fjedipunkz.rocks%2fpost%2fgm%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-58.673,127.703c-33.842,-33.881 -78.847,-52.548 -126.798,-52.568c-98.799,0 -179.21,80.405 -179.249,179.234c-0.013,31.593 8.241,62.428 23.927,89.612l-25.429,92.884l95.021,-24.925c26.181,14.28 55.659,21.807 85.658,21.816l0.074,0c98.789,0 179.206,-80.413 179.247,-179.243c0.018,-47.895 -18.61,-92.93 -52.451,-126.81Zm-126.797,275.782l-0.06,0c-26.734,-0.01 -52.954,-7.193 -75.828,-20.767l-5.441,-3.229l-56.386,14.792l15.05,-54.977l-3.542,-5.637c-14.913,-23.72 -22.791,-51.136 -22.779,-79.287c0.033,-82.142 66.867,-148.971 149.046,-148.971c39.793,0.014 77.199,15.531 105.329,43.692c28.128,28.16 43.609,65.592 43.594,105.4c-0.034,82.149 -66.866,148.983 -148.983,148.984Zm81.721,-111.581c-4.479,-2.242 -26.499,-13.075 -30.604,-14.571c-4.105,-1.495 -7.091,-2.241 -10.077,2.241c-2.986,4.483 -11.569,14.572 -14.182,17.562c-2.612,2.988 -5.225,3.364 -9.703,1.12c-4.479,-2.241 -18.91,-6.97 -36.017,-22.23c-13.314,-11.876 -22.304,-26.542 -24.916,-31.026c-2.612,-4.484 -0.279,-6.908 1.963,-9.14c2.016,-2.007 4.48,-5.232 6.719,-7.847c2.24,-2.615 2.986,-4.484 4.479,-7.472c1.493,-2.99 0.747,-5.604 -0.374,-7.846c-1.119,-2.241 -10.077,-24.288 -13.809,-33.256c-3.635,-8.733 -7.327,-7.55 -10.077,-7.688c-2.609,-0.13 -5.598,-0.158 -8.583,-0.158c-2.986,0 -7.839,1.121 -11.944,5.604c-4.105,4.484 -15.675,15.32 -15.675,37.364c0,22.046 16.048,43.342 18.287,46.332c2.24,2.99 31.582,48.227 76.511,67.627c10.685,4.615 19.028,7.371 25.533,9.434c10.728,3.41 20.492,2.929 28.209,1.775c8.605,-1.285 26.499,-10.833 30.231,-21.295c3.732,-10.464 3.732,-19.431 2.612,-21.298c-1.119,-1.869 -4.105,-2.99 -8.583,-5.232Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ghq の気になる点を改善した Rust 製ツール開発 on telegram"
+            href="https://telegram.me/share/url?text=ghq%20%e3%81%ae%e6%b0%97%e3%81%ab%e3%81%aa%e3%82%8b%e7%82%b9%e3%82%92%e6%94%b9%e5%96%84%e3%81%97%e3%81%9f%20Rust%20%e8%a3%bd%e3%83%84%e3%83%bc%e3%83%ab%e9%96%8b%e7%99%ba&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgm%2f">
+            <svg version="1.1" xml:space="preserve" viewBox="2 2 28 28" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M26.49,29.86H5.5a3.37,3.37,0,0,1-2.47-1,3.35,3.35,0,0,1-1-2.47V5.48A3.36,3.36,0,0,1,3,3,3.37,3.37,0,0,1,5.5,2h21A3.38,3.38,0,0,1,29,3a3.36,3.36,0,0,1,1,2.46V26.37a3.35,3.35,0,0,1-1,2.47A3.38,3.38,0,0,1,26.49,29.86Zm-5.38-6.71a.79.79,0,0,0,.85-.66L24.73,9.24a.55.55,0,0,0-.18-.46.62.62,0,0,0-.41-.17q-.08,0-16.53,6.11a.59.59,0,0,0-.41.59.57.57,0,0,0,.43.52l4,1.24,1.61,4.83a.62.62,0,0,0,.63.43.56.56,0,0,0,.4-.17L16.54,20l4.09,3A.9.9,0,0,0,21.11,23.15ZM13.8,20.71l-1.21-4q8.72-5.55,8.78-5.55c.15,0,.23,0,.23.16a.18.18,0,0,1,0,.06s-2.51,2.3-7.52,6.8Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share ghq の気になる点を改善した Rust 製ツール開発 on ycombinator"
+            href="https://news.ycombinator.com/submitlink?t=ghq%20%e3%81%ae%e6%b0%97%e3%81%ab%e3%81%aa%e3%82%8b%e7%82%b9%e3%82%92%e6%94%b9%e5%96%84%e3%81%97%e3%81%9f%20Rust%20%e8%a3%bd%e3%83%84%e3%83%bc%e3%83%ab%e9%96%8b%e7%99%ba&u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgm%2f">
+            <svg version="1.1" xml:space="preserve" width="30px" height="30px" viewBox="0 0 512 512" fill="currentColor"
+                xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+                <path
+                    d="M449.446 0C483.971 0 512 28.03 512 62.554L512 449.446C512 483.97 483.97 512 449.446 512L62.554 512C28.03 512 0 483.97 0 449.446L0 62.554C0 28.03 28.029 0 62.554 0L449.446 0ZM183.8767 87.9921H121.8427L230.6673 292.4508V424.0079H281.3328V292.4508L390.1575 87.9921H328.1233L256 238.2489z" />
+            </svg>
+        </a>
+    </li>
+</ul>
+
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="https://jedipunkz.rocks/">jedipunkz 🚀 のブログ</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a><script type="module">
+  if (document.querySelector("pre.mermaid")) {
+    const { default: mermaid } = await import(
+      "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
+    );
+    
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        darkMode: true,
+        background: "#1a1b26",
+        mainBkg: "#24283b",
+        primaryColor: "#24283b",
+        primaryTextColor: "#c0caf5",
+        primaryBorderColor: "#7aa2f7",
+        secondaryColor: "#414868",
+        secondaryTextColor: "#c0caf5",
+        secondaryBorderColor: "#565f89",
+        tertiaryColor: "#1f2335",
+        tertiaryTextColor: "#c0caf5",
+        tertiaryBorderColor: "#565f89",
+        lineColor: "#7dcfff",
+        textColor: "#c0caf5",
+        nodeTextColor: "#c0caf5",
+        edgeLabelBackground: "#1a1b26",
+        clusterBkg: "#1f2335",
+        clusterBorder: "#565f89",
+        titleColor: "#c0caf5"
+      }
+    });
+    await mermaid.run();
+  }
+</script>
+
+
+<script>
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        if (document.body.className.includes("dark")) {
+            document.body.classList.remove('dark');
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            document.body.classList.add('dark');
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+<script>
+    document.querySelectorAll('pre > code').forEach((codeblock) => {
+        const container = codeblock.parentNode.parentNode;
+
+        const copybutton = document.createElement('button');
+        copybutton.classList.add('copy-code');
+        copybutton.innerHTML = 'コピー';
+
+        function copyingDone() {
+            copybutton.innerHTML = 'コピーされました!';
+            setTimeout(() => {
+                copybutton.innerHTML = 'コピー';
+            }, 2000);
+        }
+
+        copybutton.addEventListener('click', (cb) => {
+            if ('clipboard' in navigator) {
+                navigator.clipboard.writeText(codeblock.textContent);
+                copyingDone();
+                return;
+            }
+
+            const range = document.createRange();
+            range.selectNodeContents(codeblock);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            try {
+                document.execCommand('copy');
+                copyingDone();
+            } catch (e) { };
+            selection.removeRange(range);
+        });
+
+        if (container.classList.contains("highlight")) {
+            container.appendChild(copybutton);
+        } else if (container.parentNode.firstChild == container) {
+            
+        } else if (codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.nodeName == "TABLE") {
+            
+            codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.appendChild(copybutton);
+        } else {
+            
+            codeblock.parentNode.appendChild(copybutton);
+        }
+    });
+</script>
+</body>
+
+</html>
