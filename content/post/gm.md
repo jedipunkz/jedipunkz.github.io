@@ -1,6 +1,6 @@
 ---
 title: "ghq の気になる点を改善した Rust 製ツール開発"
-description: "ghq list | fzf | cd のパイプラインを組まずに済むリポジトリマネージャ gm を Rust と ratatui で作りました。Ctrl-G でリポジトリにも Git Worktree にも飛べます"
+description: "ghq list | fzf | cd のパイプラインを組まずに済むリポジトリマネージャ gm を Rust と ratatui で作りました。Ctrl-G でリポジトリにも Git Worktree にも飛べ、ブランチや Pull Request からそのまま Worktree を作れます"
 date: 2026-09-23T12:00:00+09:00
 tags: ["Rust", "TUI", "CLI", "Git"]
 categories: ["Application", "rust"]
@@ -11,7 +11,7 @@ draft: false
 
 今回は自作した ツール [gm](https://github.com/jedipunkz/gm) を紹介します。
 
-gm は [ghq](https://github.com/x-motemen/ghq) と同じくリポジトリを clone して管理するツールです。違うのは Fuzzy Finder を内蔵していることと、clone だけでなく Git Worktree も同じ画面から扱えることです。`Ctrl-G` を押すと Finder が開き、選んだリポジトリまたは Worktree に `cd` します。またランク機能を設けて頻繁にアクセスするレポジトリを優先的に選択するようにしています。
+gm は [ghq](https://github.com/x-motemen/ghq) と同じくリポジトリを clone して管理するツールです。違うのは Fuzzy Finder を内蔵していることと、clone だけでなく Git Worktree も同じ画面から扱えることです。ブランチや Pull Request を選べば、その場で Worktree を作って移動します。`Ctrl-G` を押すと Finder が開き、選んだリポジトリまたは Worktree に `cd` します。またランク機能を設けて頻繁にアクセスするレポジトリを優先的に選択するようにしています。
 
 最初は Go (Bubble Tea) で書いていましたが、[PR #83](https://github.com/jedipunkz/gm/pull/83) で挙動を変えずに Rust (ratatui) へ書き換えました。`gm.toml`・訪問記録・ディレクトリ構成は互換なので、Go 版から入れ替えてもそのまま動きます。
 
@@ -45,6 +45,7 @@ gm は [ghq](https://github.com/x-motemen/ghq) と同じくリポジトリを cl
 - Fuzzy Finder の並び順は自前で決めている。
 - 選択中のリポジトリの詳細が画面に出る。パス・remote・ブランチ・作業ツリーの状態・訪問回数・直近 3 コミット (ブランチと tag の装飾つき) が並ぶので、似た名前の clone を取り違えずに済む
 - Git Worktree にアクセス出来る。`Ctrl-W` でカーソル下のリポジトリの Worktree 一覧に切り替わる
+- ブランチ一覧 (`Ctrl-L`) と Pull Request 一覧 (`Ctrl-J`) を持つ。`enter` で選んだものを Worktree として check out し、そこに移動する
 - 設定は `gm.toml` に書く。キー設定やルートディレクトリ、テーマ設定などが行える。
 - Sub Commands に加えて TUI 内で実行出来る Slash Commands を備えている。(ショートカットキー枯渇問題に対処)
 
@@ -76,17 +77,37 @@ eval "$(gm shell bash)"   # ~/.bashrc
 
 ## 使い方
 
-`Ctrl-G` で Finder が開きます(キー設定可能)。あとは文字を打って絞り込むだけです。`Ctrl-W` でリポジトリ一覧と Worktree 一覧が入れ替わります。絞り込み・詳細ペイン・`enter` はどちらの一覧でも同じように動きます。
+`Ctrl-G` で Finder が開きます(キー設定可能)。あとは文字を打って絞り込むだけです。Finder にはリポジトリ・Worktree・ブランチ・Pull Request の 4 つの一覧があり、`Ctrl-W` / `Ctrl-L` / `Ctrl-J` でそれぞれに切り替わります。同じキーをもう一度押すとリポジトリ一覧に戻ります。絞り込みと詳細ペインはどの一覧でも同じように動きます。
 
-| キー | リポジトリ一覧 | Worktree 一覧 |
-|---|---|---|
-| 任意の文字 | 絞り込む | 絞り込む |
-| `↑` / `ctrl-p` | 上に移動する | 上に移動する |
-| `↓` / `ctrl-n` | 下に移動する | 下に移動する |
-| `enter` | リポジトリのパスを出力して終了する | Worktree のパスを出力して終了する |
-| `ctrl-w` | 選択中のリポジトリの Worktree 一覧を出す | リポジトリ一覧に戻る |
-| `ctrl-alt-b` | remote をブラウザで開く | remote をブラウザで開く |
-| `esc` | クエリ → 絞り込み → 終了、の順に 1 段ずつ戻す | リポジトリ一覧に戻る |
+| キー | リポジトリ一覧 | Worktree 一覧 | ブランチ一覧 | Pull Request 一覧 |
+|---|---|---|---|---|
+| 任意の文字 | 絞り込む | 絞り込む | 絞り込む | 絞り込む |
+| `↑` / `ctrl-p` | 上に移動する | 上に移動する | 上に移動する | 上に移動する |
+| `↓` / `ctrl-n` | 下に移動する | 下に移動する | 下に移動する | 下に移動する |
+| `enter` | リポジトリのパスを出力して終了する | Worktree のパスを出力して終了する | ブランチを Worktree として check out し、そのパスを出力して終了する | Pull Request を Worktree として check out し、そのパスを出力して終了する |
+| `ctrl-w` | 選択中のリポジトリの Worktree 一覧を出す | リポジトリ一覧に戻る | Worktree 一覧を出す | Worktree 一覧を出す |
+| `ctrl-l` | 選択中のリポジトリのブランチ一覧を出す | ブランチ一覧を出す | リポジトリ一覧に戻る | ブランチ一覧を出す |
+| `ctrl-j` | 選択中のリポジトリの Pull Request 一覧を出す | Pull Request 一覧を出す | Pull Request 一覧を出す | リポジトリ一覧に戻る |
+| `ctrl-alt-b` | remote をブラウザで開く | remote をブラウザで開く | remote をブラウザで開く | remote をブラウザで開く |
+| `ctrl-g` | — | リポジトリ一覧に戻る | リポジトリ一覧に戻る | リポジトリ一覧に戻る |
+| `esc` | クエリ → 絞り込み → 終了、の順に 1 段ずつ戻す | リポジトリ一覧に戻る | リポジトリ一覧に戻る | リポジトリ一覧に戻る |
+| `ctrl-c` | 何も出力せず終了する | 何も出力せず終了する | 何も出力せず終了する | 何も出力せず終了する |
+
+git や GitHub の応答を待つ間 (Pull Request の読み込み、check out、`/dirty` の走査) は、入力欄の下の行にスピナーと待っている対象、経過秒数が出ます。待っている間も Finder は操作できます。
+
+### ブランチ一覧
+
+ローカルブランチと、同名のローカルブランチが無い remote ブランチ (`origin/feat/login` など) が並びます。最新のコミットを持つものが一番下です。直近の `git fetch` で取ってきていない remote 側のブランチも、裏で `git ls-remote` を叩いて応答があり次第、一覧の上に足されます。fetch は選んだ時にそのブランチだけ行います。`gh` は不要で、認証は git 自身のもの (ssh agent や credential helper) を使います。パスワードを求める remote はスキップし、入力欄の下の行にその名前を出します。
+
+`enter` を押すと、既に check out 済みのブランチならその Worktree に移動します。それ以外のブランチは確認無しで Worktree を作って移動します。remote ブランチはそれを追跡するローカルブランチになります。
+
+### Pull Request 一覧
+
+[GitHub CLI](https://cli.github.com/) (`gh`) にログイン済みで、`gh pr checkout --worktree` を持つバージョンが必要です。open な Pull Request が新しいものほど下に並び、draft には `[draft]` が付きます。`#42` のように番号を打って探すこともできます。
+
+`enter` を押すと Pull Request の Worktree に移動します。Worktree が無ければ `gh pr checkout` で先に作ります。Worktree 名は head ブランチ名で、fork の場合は owner 名を前に付けます (`bob/main`)。fork の `main` がリポジトリ自身の `main` とぶつからないようにするためです。
+
+### Slash Commands
 
 入力の先頭が `/` のときは絞り込みではなく Slash Command の入力になります。入力に従って補完が出るので `tab` で確定できます。
 
@@ -99,9 +120,15 @@ eval "$(gm shell bash)"   # ~/.bashrc
 | `/get <repo>` | `gm get` と同じ clone をして、その clone に移動する |
 | `/remove` | 確認の上で選択中のリポジトリまたは Worktree を消す |
 | `/worktrees` | `ctrl-w` と同じ |
+| `/branches` | `ctrl-l` と同じ |
+| `/prs` | `ctrl-j` と同じ |
 | `/remote` | `ctrl-alt-b` と同じ |
 
+絞り込んだリポジトリに対してコマンドを打ちたいときは、クエリの末尾に `;` を付けてコマンドを続けます。`gm;/remove` と打つと `gm` を選んで消します。
+
 `/create` と `/remove` は Finder を抜けずに処理します。消えた行はリストから消え、作られた行は追加されて選択され、プロンプト下の行に結果が出ます。commit していない変更があるリポジトリは、同意する前に確認画面がその旨を伝えます。
+
+### Worktree の置き場所
 
 Worktree の置き場所は gm が決めるので、打つのはブランチ名だけです。
 
@@ -112,15 +139,17 @@ Worktree の置き場所は gm が決めるので、打つのはブランチ名�
 
 先頭のドットは飾りではありません。Worktree には `.git` ファイルがあるため、そのままだと gm がそれをリポジトリとして一覧に載せてしまい、`gm migrate` も受け付けなくなります。走査がドット始まりのディレクトリに降りないようにすることで回避しています。
 
+### Sub Commands
+
 Finder を経由しないサブコマンドも一通り揃えました。
 
 | コマンド | 動作 |
 |---|---|
 | `gm` | Finder を開いて、選ばれたパスを出力する |
-| `gm get [-u] [--shallow] [-b <branch>] <repo>...` | 木の中に clone する。`-u` は既存の clone を更新する |
+| `gm get [-u] [-p] [--shallow] [-b <branch>] [-s] [-l] <repo>...` | 木の中に clone する。`-u` は既存の clone を更新する。`-p` は SSH で clone する。`-s` は出力を抑える。`-l` は clone したリポジトリの中でシェルを開く |
 | `gm list [-p] [-e] [--unique] [<query>]` | リポジトリを一覧する |
 | `gm status [--dirty] [--unpushed] [-a] [-p]` | commit していない・push していない変更があるリポジトリと Worktree を一覧する。fetch しないのでオフラインでも速い |
-| `gm remove [--dry-run] [-y] <repo>...` | 確認の上でリポジトリとその Worktree を消し、空になった親を刈る |
+| `gm remove [--dry-run] [-y] <repo>...` | 確認の上でリポジトリとその Worktree を消し、空になった親を刈る (`gm rm` でも可) |
 | `gm create [-p] <repo>` | `origin` を設定済みのリポジトリを作って `git init` する |
 | `gm wt <create\|remove> [-y] <repo> <branch>` | スクリプトから Worktree を足す / 消す |
 | `gm migrate [--dry-run] [-y] [-r] <dir>...` | 既存の clone を `origin` を見て木の中に移す |
@@ -138,6 +167,8 @@ root         = "~/ghq"         # ["~/ghq", "~/src"] と書けば順に探す
 theme        = "tokyonight"
 launch_key   = "ctrl-g"        # gm を開くシェル側のキー
 worktree_key = "ctrl-w"        # Worktree 一覧に切り替える Finder 側のキー
+branch_key   = "ctrl-l"        # ブランチ一覧に切り替える Finder 側のキー
+pr_key       = "ctrl-j"        # Pull Request 一覧に切り替える Finder 側のキー
 remote_key   = "ctrl-alt-b"    # remote を開く Finder 側のキー
 ```
 
