@@ -25,7 +25,7 @@ description: "Argo Rollouts、Istio、Prometheus を使った Progressive Delive
 Kubernetes で Progressive Delivery を実現するには下記のソフトウェアを用いる事が可能です。
 また今回の手順は MacOS を前提に記します。
 
-- [Argo Rollouts](https://argo-rollouts.readthedocs.io/en/stable/b)
+- [Argo Rollouts](https://argo-rollouts.readthedocs.io/en/stable/)
 - [Prometheus](https://prometheus.io/)
 - [Istio](https://istio.io/)
 - Kubernetes (今回は Minikube を使いました)

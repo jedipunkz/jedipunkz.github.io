@@ -36,7 +36,7 @@ OpenStack 環境の用意
 
 予め OpenStack 環境は揃っているものとしますです。お持ちでなければ
 
-<http://jedipunkz.github.com/blog/2012/11/10/openstack-folsom-install/>
+<https://jedipunkz.rocks/post/openstack-folsom-install/>
 
 この記事を参考に環境を作ってみて下さい。あ、devstack でも大丈夫です。
 
@@ -227,7 +227,7 @@ Summit で常に話題になっていたらしいですが、最近は API で�
 書いたのですが OpenFlow といった技術を使うとネットワークをコードを書くことで設
 計出来る、かもしれない。
 
-<http://jedipunkz.github.com/blog/2012/11/21/openflow-trema-handson-report/>
+<https://jedipunkz.rocks/post/openflow-trema-handson-report/>
 
 つまり、コードを書くことで
 

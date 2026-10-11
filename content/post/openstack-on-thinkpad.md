@@ -22,7 +22,7 @@ aliases = [
 
 に書いておきました。
 
-<img src="http://jedipunkz.github.com/pix/openstack_folsom_thinkpad.jpg">
+<img src="/pix/openstack_folsom_thinkpad.jpg">
 
 手持ちの Thinkpad に OpenStack folsom 入れた写真。この写真の OpenStack Folsom
 を構築した時の手順を書いておくよ。

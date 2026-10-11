@@ -9,7 +9,7 @@ aliases = [
 ]
 +++
 chef-server の構築は少し面倒だと前回の記事
-<http://jedipunkz.github.com/blog/2012/08/18/chef-solo/> に書いたのですが、
+<https://jedipunkz.rocks/post/chef-solo/> に書いたのですが、
 opscode が提供している bootstrap を用いると、構築作業がほぼ自動化出来ます。
 今回はこの手順を書いていきます。
 

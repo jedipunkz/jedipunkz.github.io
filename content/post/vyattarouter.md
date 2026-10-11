@@ -129,4 +129,4 @@ set service nat rule 3 destinationset service nat rule 3 destination    # commit
 
 ちなみに、私の自宅ルータはこんなモノを使いました。
 
-<img src="http://jedipunkz.github.com/pix/vyatta.jpg" width="200">
+<img src="/pix/vyatta.jpg" width="200">

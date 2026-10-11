@@ -306,18 +306,9 @@ host3 上の a3 コンテナが既存の weave ネットワークに参加し通
 'weave net' と呼ばれるモノですが他にも 'weave scope', 'weave run' といったモノ
 があります。
 
-http://weave.works/product/
-
 また Docker Swarm, Compose と組み合わせる構成も組めるようです。試してみたい方
 がいましたら是非。
-
-http://weave.works/guides/weave-and-docker-platform/compose-scalable-swarm-cluster-with-weave.html
 
 ですが結果、まだ weave をどう自分たちのサービスに組み込めるかは検討が付いてい
 ません。'出来る' と '運用できる' が別物であることと、コンテナまわりのネットワー
 ク機能全般に理解して選定する必要がありそうです。
-
-参考サイト
-+++
-
-http://weave.works/docs/
