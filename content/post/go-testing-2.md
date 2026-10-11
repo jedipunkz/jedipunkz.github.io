@@ -13,6 +13,10 @@ description: "Go 1.27 を前提に、b.Loop を使ったベンチマーク、サ
 
 前編と同じく Go 1.27 を前提にしていて、実行結果は Go 1.27.1 で実行したものです。ベンチマークの数値は実行環境によって変わります。
 
+コードは以下のレポジトリにあります。
+
+https://github.com/jedipunkz/go-playground/tree/main/testing
+
 ## パターン9: ベンチマーク
 
 `func BenchmarkXxx(b *testing.B)` という関数を書き、`go test -bench` で処理時間とメモリ割り当てを計測するパターンです。
@@ -95,12 +99,12 @@ func BenchmarkBuilder(b *testing.B) {
 $ go test -bench='^Benchmark(Plus|Builder)$' -run='^$' ./concat/
 goos: darwin
 goarch: arm64
-pkg: example.com/gotest/concat
+pkg: github.com/jedipunkz/go-playground/testing/concat
 cpu: Apple M3
 BenchmarkPlus-8      	  473866	      2335 ns/op
 BenchmarkBuilder-8   	 3261914	       367.2 ns/op	     504 B/op	       6 allocs/op
 PASS
-ok  	example.com/gotest/concat	2.528s
+ok  	github.com/jedipunkz/go-playground/testing/concat	2.528s
 ```
 
 各列の意味は以下です。
@@ -119,12 +123,12 @@ ok  	example.com/gotest/concat	2.528s
 $ go test -bench='^Benchmark(Plus|Builder)$' -benchmem -run='^$' ./concat/
 goos: darwin
 goarch: arm64
-pkg: example.com/gotest/concat
+pkg: github.com/jedipunkz/go-playground/testing/concat
 cpu: Apple M3
 BenchmarkPlus-8      	  484014	      2258 ns/op	   10736 B/op	      99 allocs/op
 BenchmarkBuilder-8   	 3260055	       367.4 ns/op	     504 B/op	       6 allocs/op
 PASS
-ok  	example.com/gotest/concat	2.355s
+ok  	github.com/jedipunkz/go-playground/testing/concat	2.355s
 ```
 
 100 個の文字列を連結する場合、`+` は `strings.Builder` の約 6 倍遅く、メモリ割り当ても 99 回対 6 回です。`+` は連結のたびに新しい文字列を作るので、要素数とほぼ同じ回数の割り当てが発生しています。
@@ -165,7 +169,7 @@ func BenchmarkConcat(b *testing.B) {
 $ go test -bench=BenchmarkConcat -benchmem -run='^$' ./concat/
 goos: darwin
 goarch: arm64
-pkg: example.com/gotest/concat
+pkg: github.com/jedipunkz/go-playground/testing/concat
 cpu: Apple M3
 BenchmarkConcat/impl=Plus/n=10-8         	 7697257	       152.2 ns/op	     128 B/op	       9 allocs/op
 BenchmarkConcat/impl=Builder/n=10-8      	19721880	        62.06 ns/op	      56 B/op	       3 allocs/op
@@ -174,7 +178,7 @@ BenchmarkConcat/impl=Builder/n=100-8     	 2803192	       438.0 ns/op	     504 B
 BenchmarkConcat/impl=Plus/n=1000-8       	   13396	     88106 ns/op	 1063866 B/op	     999 allocs/op
 BenchmarkConcat/impl=Builder/n=1000-8    	  305379	      3934 ns/op	    5368 B/op	      10 allocs/op
 PASS
-ok  	example.com/gotest/concat	7.254s
+ok  	github.com/jedipunkz/go-playground/testing/concat	7.254s
 ```
 
 要素数が 10 倍になるごとに、`+` の処理時間は約 15 倍、約 38 倍と増えていますが、`strings.Builder` はほぼ要素数に比例して増えています。
@@ -188,7 +192,7 @@ $ go test -bench=BenchmarkConcat -benchmem -run='^$' -count=6 ./concat/ > bench.
 $ go run golang.org/x/perf/cmd/benchstat@latest -col /impl bench.txt
 goos: darwin
 goarch: arm64
-pkg: example.com/gotest/concat
+pkg: github.com/jedipunkz/go-playground/testing/concat
 cpu: Apple M3
                 │     Plus     │              Builder               │
                 │    sec/op    │   sec/op     vs base               │
@@ -280,7 +284,7 @@ $ go test -run FuzzReverse -v ./strutil/
     --- PASS: FuzzReverse/seed#2 (0.00s)
     --- PASS: FuzzReverse/seed#3 (0.00s)
 PASS
-ok  	example.com/gotest/strutil	0.265s
+ok  	github.com/jedipunkz/go-playground/testing/strutil	0.265s
 ```
 
 `-fuzz` を付けると、入力を生成しながら実行し続けます。`-fuzztime` で実行時間を指定できます (指定しないと失敗が見つかるか Ctrl+C で止めるまで続きます)。
@@ -300,7 +304,7 @@ fuzz: elapsed: 0s, minimizing
     go test -run=FuzzReverse/9783172430fa24ae
 FAIL
 exit status 1
-FAIL	example.com/gotest/strutil	0.292s
+FAIL	github.com/jedipunkz/go-playground/testing/strutil	0.292s
 ```
 
 一瞬で失敗する入力が見つかりました。最初に見つかったのは 45 バイトの入力でしたが、Fuzzing のエンジンが失敗を再現できる最小の入力 (minimizing) まで縮めて、`"\xbf"` という 1 バイトを報告しています。
@@ -323,7 +327,7 @@ $ go test ./strutil/
     --- FAIL: FuzzReverse/9783172430fa24ae (0.00s)
         fuzz_test.go:18: Reverse(Reverse("\xbf")) = "�"
 FAIL
-FAIL	example.com/gotest/strutil	0.078s
+FAIL	github.com/jedipunkz/go-playground/testing/strutil	0.078s
 FAIL
 ```
 
@@ -361,7 +365,7 @@ $ go test -run FuzzReverse -v ./strutil/
     --- PASS: FuzzReverse/seed#3 (0.00s)
     --- PASS: FuzzReverse/9783172430fa24ae (0.00s)
 PASS
-ok  	example.com/gotest/strutil	0.220s
+ok  	github.com/jedipunkz/go-playground/testing/strutil	0.220s
 
 $ go test -fuzz=FuzzReverse -fuzztime=20s ./strutil/
 ...
@@ -369,7 +373,7 @@ fuzz: elapsed: 18s, execs: 2984458 (714817/sec), new interesting: 37 (total: 42)
 fuzz: elapsed: 21s, execs: 3089971 (35181/sec), new interesting: 40 (total: 45)
 fuzz: elapsed: 21s, execs: 3089971 (0/sec), new interesting: 40 (total: 45)
 PASS
-ok  	example.com/gotest/strutil	21.283s
+ok  	github.com/jedipunkz/go-playground/testing/strutil	21.283s
 ```
 
 `execs` は実行した入力の数、`new interesting` はコードの新しい経路を通った (カバレッジを広げた) 入力の数です。Fuzzing のエンジンはこうした入力を優先して変化させることで、効率よく未知の経路を探します。
@@ -533,7 +537,7 @@ $ go test -run TestCache -v ./cache/
 === RUN   TestCacheCleanup
 --- PASS: TestCacheCleanup (0.00s)
 PASS
-ok  	example.com/gotest/cache	0.244s
+ok  	github.com/jedipunkz/go-playground/testing/cache	0.244s
 ```
 
 テストの中では 6 分経過していますが、実際の実行時間は 0.00s です。偽の時計が 2000-01-01 00:00 UTC (JST で 09:00) から始まっていることも確認できます。
@@ -589,7 +593,7 @@ $ go test -run TestClientTimeout -v ./weather/
     timeout_test.go:32: err = Get "http://example.com/forecast?city=tokyo": context deadline exceeded, elapsed (fake clock) = 3s
 --- PASS: TestClientTimeout (0.00s)
 PASS
-ok  	example.com/gotest/weather	0.255s
+ok  	github.com/jedipunkz/go-playground/testing/weather	0.255s
 ```
 
 偽の時計でちょうど 3 秒後にタイムアウトしています。偽ネットワーク上のサーバの URL は `http://example.com` になっていて、実際のネットワークには一切出ていません。

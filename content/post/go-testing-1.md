@@ -12,6 +12,10 @@ Go の再学習を続けています。今回はテストです。テーブル�
 
 Go 1.27 を前提にしていて、古いバージョンとの違いには触れません。実行結果は Go 1.27.1 で実行したものです。
 
+コードは以下のレポジトリにあります。
+
+https://github.com/jedipunkz/go-playground/tree/main/testing
+
 ## Go のテストの基本
 
 Go のテストは標準の `testing` パッケージと `go test` コマンドだけで書けます。ルールは次の 3 つです。
@@ -100,7 +104,7 @@ $ go test -run 'TestDiv$' -v ./calc/
 === RUN   TestDiv
 --- PASS: TestDiv (0.00s)
 PASS
-ok  	example.com/gotest/calc	0.219s
+ok  	github.com/jedipunkz/go-playground/testing/calc	0.219s
 ```
 
 全ケースが通っていますが、出力からはどのケースを実行したのかが分かりません。これもパターン 2 で解決します。
@@ -156,7 +160,7 @@ $ go test -run TestReverseLoop -v ./strutil/
     loop_test.go:18: Reverse("あいう") = "\x86\x81㄁め\xe3", want "ういあ"
 --- FAIL: TestReverseLoop (0.00s)
 FAIL
-FAIL	example.com/gotest/strutil	0.237s
+FAIL	github.com/jedipunkz/go-playground/testing/strutil	0.237s
 FAIL
 ```
 
@@ -203,7 +207,7 @@ $ go test -run TestReverseSubtest -v ./strutil/
     --- PASS: TestReverseSubtest/empty (0.00s)
     --- FAIL: TestReverseSubtest/accent (0.00s)
 FAIL
-FAIL	example.com/gotest/strutil	0.076s
+FAIL	github.com/jedipunkz/go-playground/testing/strutil	0.076s
 FAIL
 ```
 
@@ -219,7 +223,7 @@ $ go test -run 'TestReverseSubtest/japanese' -v ./strutil/
 --- FAIL: TestReverseSubtest (0.00s)
     --- FAIL: TestReverseSubtest/japanese (0.00s)
 FAIL
-FAIL	example.com/gotest/strutil	0.072s
+FAIL	github.com/jedipunkz/go-playground/testing/strutil	0.072s
 FAIL
 ```
 
@@ -300,7 +304,7 @@ $ go test -run TestDivParallel -v ./calc/
     --- PASS: TestDivParallel/ゼロ除算 (0.00s)
     --- PASS: TestDivParallel/負の数 (0.00s)
 PASS
-ok  	example.com/gotest/calc	0.080s
+ok  	github.com/jedipunkz/go-playground/testing/calc	0.080s
 ```
 
 `PAUSE` は `t.Parallel()` を呼んだサブテストが一時停止したこと、`CONT` は並列実行が再開されたことを表しています。親のテスト関数 (ここではループ) が終わってから、一時停止していたサブテストがまとめて並列に実行されます。同時に実行する数の上限は `-parallel` フラグで指定でき、デフォルトは GOMAXPROCS の値です。
@@ -453,7 +457,7 @@ $ go test -v ./config/
     config_test.go:61: cleanup: テスト終了後に実行される
 --- PASS: TestLoadRelativePath (0.00s)
 PASS
-ok  	example.com/gotest/config	0.251s
+ok  	github.com/jedipunkz/go-playground/testing/config	0.251s
 ```
 
 `t.Helper()` の効果は、テストが失敗したときに分かります。`t.Helper()` を呼ぶヘルパーと呼ばないヘルパーで、同じ失敗を起こしてみました。
@@ -488,7 +492,7 @@ $ go test ./helperdemo/
 --- FAIL: TestWithoutHelper (0.00s)
     h_test.go:14: got 2, want 3
 FAIL
-FAIL	example.com/gotest/helperdemo	0.222s
+FAIL	github.com/jedipunkz/go-playground/testing/helperdemo	0.222s
 FAIL
 ```
 
@@ -632,7 +636,7 @@ $ go test -v ./user/
     --- PASS: TestGreeting/存在しないユーザー (0.00s)
     --- PASS: TestGreeting/DB_エラー (0.00s)
 PASS
-ok  	example.com/gotest/user	0.240s
+ok  	github.com/jedipunkz/go-playground/testing/user	0.240s
 ```
 
 ## パターン6: net/http/httptest
@@ -776,7 +780,7 @@ $ go test -run 'TestHandler|TestClientGet' -v ./weather/
 === RUN   TestClientGet
 --- PASS: TestClientGet (0.00s)
 PASS
-ok  	example.com/gotest/weather	0.293s
+ok  	github.com/jedipunkz/go-playground/testing/weather	0.293s
 ```
 
 ## パターン7: Example テスト
@@ -795,7 +799,7 @@ package strutil_test
 import (
 	"fmt"
 
-	"example.com/gotest/strutil"
+	"github.com/jedipunkz/go-playground/testing/strutil"
 )
 
 func ExampleReverse() {
@@ -836,7 +840,7 @@ $ go test -run Example -v ./strutil/
 === RUN   ExampleReverse_unordered
 --- PASS: ExampleReverse_unordered (0.00s)
 PASS
-ok  	example.com/gotest/strutil	0.246s
+ok  	github.com/jedipunkz/go-playground/testing/strutil	0.246s
 ```
 
 出力が一致しないと、実際の出力 (`got`) と期待値 (`want`) が表示されて失敗します。カンマの有無だけ違う例です。
@@ -857,7 +861,7 @@ hello, world
 want:
 hello world
 FAIL
-FAIL	example.com/gotest/exdemo	0.221s
+FAIL	github.com/jedipunkz/go-playground/testing/exdemo	0.221s
 FAIL
 ```
 
@@ -865,10 +869,10 @@ FAIL
 
 ```
 $ go test ./exdemo/
-# example.com/gotest/exdemo
-# [example.com/gotest/exdemo]
+# github.com/jedipunkz/go-playground/testing/exdemo
+# [github.com/jedipunkz/go-playground/testing/exdemo]
 exdemo/e_test.go:5:1: ExampleHello refers to unknown identifier: Hello
-FAIL	example.com/gotest/exdemo [build failed]
+FAIL	github.com/jedipunkz/go-playground/testing/exdemo [build failed]
 FAIL
 ```
 
@@ -886,11 +890,11 @@ FAIL
 
 ```
 $ go test -cover ./...
-ok  	example.com/gotest/calc	0.239s	coverage: 100.0% of statements
-ok  	example.com/gotest/config	0.240s	coverage: 81.2% of statements
-ok  	example.com/gotest/strutil	0.240s	coverage: 100.0% of statements
-ok  	example.com/gotest/user	0.236s	coverage: 100.0% of statements
-ok  	example.com/gotest/weather	0.252s	coverage: 78.9% of statements
+ok  	github.com/jedipunkz/go-playground/testing/calc	0.239s	coverage: 100.0% of statements
+ok  	github.com/jedipunkz/go-playground/testing/config	0.240s	coverage: 81.2% of statements
+ok  	github.com/jedipunkz/go-playground/testing/strutil	0.240s	coverage: 100.0% of statements
+ok  	github.com/jedipunkz/go-playground/testing/user	0.236s	coverage: 100.0% of statements
+ok  	github.com/jedipunkz/go-playground/testing/weather	0.252s	coverage: 78.9% of statements
 ```
 
 関数単位で見るには、`-coverprofile` で計測結果をファイルに保存し、`go tool cover -func` で集計します。
@@ -898,13 +902,13 @@ ok  	example.com/gotest/weather	0.252s	coverage: 78.9% of statements
 ```
 $ go test -coverprofile=cover.out ./...
 $ go tool cover -func=cover.out
-example.com/gotest/calc/calc.go:8:		Div		100.0%
-example.com/gotest/config/config.go:16:		Load		81.2%
-example.com/gotest/strutil/strutil.go:4:	Reverse		100.0%
-example.com/gotest/user/user.go:25:		NewService	100.0%
-example.com/gotest/user/user.go:30:		Greeting	100.0%
-example.com/gotest/weather/weather.go:11:	Handler		100.0%
-example.com/gotest/weather/weather.go:32:	Get		69.2%
+github.com/jedipunkz/go-playground/testing/calc/calc.go:8:		Div		100.0%
+github.com/jedipunkz/go-playground/testing/config/config.go:16:		Load		81.2%
+github.com/jedipunkz/go-playground/testing/strutil/strutil.go:4:	Reverse		100.0%
+github.com/jedipunkz/go-playground/testing/user/user.go:25:		NewService	100.0%
+github.com/jedipunkz/go-playground/testing/user/user.go:30:		Greeting	100.0%
+github.com/jedipunkz/go-playground/testing/weather/weather.go:11:	Handler		100.0%
+github.com/jedipunkz/go-playground/testing/weather/weather.go:32:	Get		69.2%
 total:						(statements)	85.7%
 ```
 
@@ -932,10 +936,10 @@ $ go tool cover -html=cover.out
 ```
 $ head -5 cover.out
 mode: set
-example.com/gotest/calc/calc.go:9.2,9.12 1 1
-example.com/gotest/calc/calc.go:10.3,11.1 1 1
-example.com/gotest/calc/calc.go:12.2,12.19 1 1
-example.com/gotest/config/config.go:17.2,17.34 1 1
+github.com/jedipunkz/go-playground/testing/calc/calc.go:9.2,9.12 1 1
+github.com/jedipunkz/go-playground/testing/calc/calc.go:10.3,11.1 1 1
+github.com/jedipunkz/go-playground/testing/calc/calc.go:12.2,12.19 1 1
+github.com/jedipunkz/go-playground/testing/config/config.go:17.2,17.34 1 1
 ```
 
 ## まとめ
