@@ -43,11 +43,11 @@ $ aws ecs execute --cluster <クラスタ名> \
 
 下記のライブラリを使って開発しました。CLI のフレームワークは `spf13/conbra`。コンフィギュレーションローダの `spf13/viper`。ログ出力は `sirupsen/logrus`。Fuzzy Finder は `ktr0731/go-fuzzyfinder` を使った感じです。
 
-- [github.com/aws/aws-sdk-go](github.com/aws/aws-sdk-go)
-- [github.com/ktr0731/go-fuzzyfinder](github.com/ktr0731/go-fuzzyfinder)
-- [github.com/sirupsen/logrus](github.com/sirupsen/logrus)
-- [github.com/spf13/cobra](github.com/spf13/cobra)
-- [github.com/spf13/viper](github.com/spf13/viper)
+- [github.com/aws/aws-sdk-go](https://github.com/aws/aws-sdk-go)
+- [github.com/ktr0731/go-fuzzyfinder](https://github.com/ktr0731/go-fuzzyfinder)
+- [github.com/sirupsen/logrus](https://github.com/sirupsen/logrus)
+- [github.com/spf13/cobra](https://github.com/spf13/cobra)
+- [github.com/spf13/viper](https://github.com/spf13/viper)
 
 ### コード
 
