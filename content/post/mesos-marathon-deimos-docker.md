@@ -135,7 +135,7 @@ Marathon の WebUI にアクセス
 
 Marathon の WebUI にアクセスしてみましょう。
 
-<img src="http://jedipunkz.github.com/pix/deimos_01.png">
+<img src="/pix/deimos_01.png">
 
 まだ何も Tasks が実行されていないので一覧には何も表示されないと思います。
 
@@ -176,11 +176,11 @@ Task が稼働していることが確認出来ます。
 
 ここで WebUI 側も見てみましょう。
 
-<img src="http://jedipunkz.github.com/pix/deimos_05.png">
+<img src="/pix/deimos_05.png">
 
 一つ Task が稼働していることが確認出来ると思います。
 
-<img src="http://jedipunkz.github.com/pix/deimos_04.png">
+<img src="/pix/deimos_04.png">
 
 その Task をクリックすると詳細が表示されます。
 

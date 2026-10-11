@@ -19,7 +19,7 @@ vim の powerline に似たモードを emacs で実現できる powerline.el �
 
 インストールすると見た目はこんな感じになる。
 
-<img src="http://jedipunkz.github.com/pix/powerline.png">
+<img src="/pix/powerline.png">
 
 うん、かわいい。
 

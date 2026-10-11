@@ -28,7 +28,7 @@ Hacker News で取り上げられていた emacs-nav を使ってみた。
 
 見た目はこんな感じ。
 
-<img src="http://jedipunkz.github.com/pix/emacs-nav.png">
+<img src="/pix/emacs-nav.png">
 
 起動は M-x nav と入力。ウィンドウの左にファイルブラウザが開いてファイルを選択
 出来る。これだけだと、使うメリットを感じないが、面白いのがマウスで選択出来ると

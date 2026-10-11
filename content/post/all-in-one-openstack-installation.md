@@ -20,7 +20,7 @@ OpenStack のインストールってしんどいなぁ、って感じて devsta
 提なのですが、環境作るのがしんどいので、オールインワンな構築がしたい！サーバ1台で OpenStack ESSEX を
 インストールしたい！で、シェルスクリプトを作ったのでそれを使ったインストール方法を紹介します。
 
-<img src="http://jedipunkz.github.com/pix/openstack_thinkpad.jpg">
+<img src="/pix/openstack_thinkpad.jpg">
 
 ぼくの Thinkpad に OpenStack ESSEX をインストールしてブラウザで localhost に接続して
 いる画面です。ちゃんと KVM VM が起動して noVNC で接続できています。自己満足やぁ。
