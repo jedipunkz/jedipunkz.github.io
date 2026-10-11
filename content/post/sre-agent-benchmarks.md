@@ -1,5 +1,5 @@
 ---
-title: "AI SRE エージェントの評価ベンチマーク 4 本を読んで、エージェントがどこで間違えるのかを整理した"
+title: "AI SRE Agent 評価ベンチマークを読んでみた"
 description: "OpenRCA 2.0 / ORCA-bench / Cloud-OpsBench / SREGym という 2026 年に出た AI SRE エージェントの評価ベンチマーク 4 本を読み、各論文が挙げる課題と解決策、そして自分で SRE エージェントを作るときに持ち帰れることを整理します"
 date: 2026-10-11T12:00:00+09:00
 Categories: ["SRE", "AI", "Agent", "Observability"]
