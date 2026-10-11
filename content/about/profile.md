@@ -2,6 +2,7 @@
 title: "自己紹介"
 date: 2025-08-02T11:30:51+09:00
 Categories: ["profile"]
+weight: 1
 draft: false
 ---
 
