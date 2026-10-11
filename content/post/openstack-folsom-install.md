@@ -18,7 +18,7 @@ OpenStack の Folsom リリースからメインコンポーネントの仲間�
 
 OpenStack Folsom の構築に四苦八苦している方に使ってもらえたらと思ってます。
 
-<http://jedipunkz.github.com/openstack_folsom_deploy/>
+<https://github.com/jedipunkz/openstack_folsom_deploy>
 
 chef や puppet, juju などデプロイのフレームワークは今流行です。ただどれも環境
 を予め構築しなくてはいけないので、誰でもすぐに使える環境ってことで bash スクリ
