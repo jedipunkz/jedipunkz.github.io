@@ -14,8 +14,8 @@ Claude Code を日常的に使う中で、大きなタスクを複数の独立�
 
 そこで、Zellij の Pane 管理と git worktree を組み合わせて、親 Claude Code が複数の子エージェントを Zellij Pane として起動しタスクを並列・直列実行させる SKILL「zellij-swarm」を作りました。この記事ではその仕組みと使い方を紹介します。
 
-SKILL は以下に置いています:
-https://github.com/jedipunkz/dotfiles/tree/main/.claude/skills/zellij-swarm
+SKILL は以下に置いていました (現在は dotfiles から削除済みのため、削除前のコミットを指しています):
+https://github.com/jedipunkz/dotfiles/tree/a3ed0fbb08f96806182a58950c4e395ae7cd31f0/.claude/skills/zellij-swarm
 
 ## 概要
 
