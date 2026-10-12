@@ -3,7 +3,7 @@ title: "ADK Go 2.x の dynamic workflow で「分かるまで調べる」エー�
 description: "Claude Agent SDK の agent loop や Claude Code の dynamic workflows と同じことを ADK Go 2.x でやるとどうなるか。上限を持たない llmagent のループに、ラウンド上限・進捗なし停止・トークン予算・ツール allowlist を自分で組み込みます"
 date: 2026-10-12T12:00:00+09:00
 Categories: ["AI", "Go", "SRE", "Agent"]
-draft: true
+draft: false
 ---
 
 こんにちは。[ジェダイパンくず☁️](https://x.com/jedipunkz) です。
