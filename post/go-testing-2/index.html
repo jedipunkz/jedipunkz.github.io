@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="ja" dir="auto">
+
+<head><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>[Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる | jedipunkz 🚀 のブログ</title>
+<meta name="keywords" content="">
+<meta name="description" content="Go 1.27 を前提に、b.Loop を使ったベンチマーク、サブベンチマークと benchstat、Fuzzing、testing/synctest による時間の絡むテストをサンプルコードと実行結果で解説する">
+<meta name="author" content="jedipunkz">
+<link rel="canonical" href="https://jedipunkz.rocks/post/go-testing-2/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.93fab3171fff6ba6152e8c67ba3e8cfcee77a1e7b231fd29570601c555d983ef.css" integrity="sha256-k/qzFx//a6YVLoxnuj6M/O53oeeyMf0pVwYBxVXZg&#43;8=" rel="preload stylesheet" as="style">
+<link rel="icon" href="https://jedipunkz.rocks/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.rocks/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.rocks/favicon-32x32.png">
+<link rel="apple-touch-icon" href="https://jedipunkz.rocks/apple-touch-icon.png">
+<link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/go-testing-2/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-track {
+                background: 0 0;
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-thumb {
+                border-color: var(--theme);
+            }
+        }
+
+    </style>
+</noscript>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&amp;family=JetBrains&#43;Mono:wght@400;500&amp;family=Noto&#43;Sans&#43;JP:wght@400..700&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&amp;family=JetBrains&#43;Mono:wght@400;500&amp;family=Noto&#43;Sans&#43;JP:wght@400..700&amp;display=swap">
+
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-2H91XCYVZ8"></script>
+      <script>
+        var doNotTrack = false;
+        if ( true ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-2H91XCYVZ8');
+        }
+      </script><meta property="og:url" content="https://jedipunkz.rocks/post/go-testing-2/">
+  <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
+  <meta property="og:title" content="[Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる">
+  <meta property="og:description" content="Go 1.27 を前提に、b.Loop を使ったベンチマーク、サブベンチマークと benchstat、Fuzzing、testing/synctest による時間の絡むテストをサンプルコードと実行結果で解説する">
+  <meta property="og:locale" content="ja">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="post">
+    <meta property="article:published_time" content="2026-10-11T12:30:00+09:00">
+    <meta property="article:modified_time" content="2026-10-11T12:30:00+09:00">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_cf538626f022e026.jpg">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_cf538626f022e026.jpg">
+<meta name="twitter:image:alt" content="[Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる">
+<meta name="twitter:title" content="[Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる">
+<meta name="twitter:description" content="Go 1.27 を前提に、b.Loop を使ったベンチマーク、サブベンチマークと benchstat、Fuzzing、testing/synctest による時間の絡むテストをサンプルコードと実行結果で解説する">
+  <meta name="twitter:site" content="@jedipunkz">
+  <meta name="twitter:creator" content="@jedipunkz">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "[Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる",
+  "name": "[Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる",
+  "description": "Go 1.27 を前提に、b.Loop を使ったベンチマーク、サブベンチマークと benchstat、Fuzzing、testing/synctest による時間の絡むテストをサンプルコードと実行結果で解説する",
+  "keywords": [
+    
+  ],
+  "articleBody": "前編 では、テーブル駆動テストからカバレッジまで、コードが正しく動くことを確かめるテストの書き方を整理しました。後編では、正しさ以外のことを確かめるテストを扱います。\n性能: ベンチマーク、サブベンチマーク 堅牢性: Fuzzing 時間: testing/synctest 前編と同じく Go 1.27 を前提にしていて、実行結果は Go 1.27.1 で実行したものです。ベンチマークの数値は実行環境によって変わります。\nコードは以下のレポジトリにあります。\nhttps://github.com/jedipunkz/go-playground/tree/main/testing\nパターン9: ベンチマーク func BenchmarkXxx(b *testing.B) という関数を書き、go test -bench で処理時間とメモリ割り当てを計測するパターンです。\n使い所 「+ で文字列を連結するより strings.Builder の方が速い」とよく言われますが、自分のユースケースでどれくらい差があるのかは、測ってみないと分かりません。ベンチマークを書いておけば、実装を選ぶときや性能改善をしたときに、効果を数値で確認できます。\nテスト対象として、文字列を連結する 2 つの実装を用意しました。\npackage concat import \"strings\" // Plus は + 演算子で文字列を連結する func Plus(words []string) string { s := \"\" for _, w := range words { s += w } return s } // Builder は strings.Builder で文字列を連結する func Builder(words []string) string { var sb strings.Builder for _, w := range words { sb.WriteString(w) } return sb.String() } ベンチマークは for b.Loop() { ... } の中に計測したい処理を書きます。\npackage concat import ( \"fmt\" \"testing\" ) func makeWords(n int) []string { words := make([]string, n) for i := range words { words[i] = \"go\" } return words } func BenchmarkPlus(b *testing.B) { words := makeWords(100) // ループの外で準備する for b.Loop() { Plus(words) } } func BenchmarkBuilder(b *testing.B) { words := makeWords(100) b.ReportAllocs() // -benchmem なしでもメモリ割り当てを出力する for b.Loop() { Builder(words) } } b.Loop() には次の性質があります。\n最初に呼ばれたときにタイマーをリセットするので、ループの前に書いた準備 (makeWords) は計測に含まれない 十分な計測ができるまで true を返し続ける。繰り返し回数は testing パッケージが決める ループ内の関数呼び出しの引数と戻り値は保持されるので、結果を使っていない Plus(words) がコンパイラの最適化で消されることがない 実行結果 -bench にはベンチマーク名にマッチする正規表現を指定します。-run='^$' は、通常のテストを実行しないための指定です。\n$ go test -bench='^Benchmark(Plus|Builder)$' -run='^$' ./concat/ goos: darwin goarch: arm64 pkg: github.com/jedipunkz/go-playground/testing/concat cpu: Apple M3 BenchmarkPlus-8 473866\t2335 ns/op BenchmarkBuilder-8 3261914\t367.2 ns/op\t504 B/op\t6 allocs/op PASS ok github.com/jedipunkz/go-playground/testing/concat\t2.528s 各列の意味は以下です。\n列 意味 BenchmarkPlus-8 ベンチマーク名。-8 は実行時の GOMAXPROCS 473866 計測に使った繰り返し回数 2335 ns/op 1 回あたりの処理時間 504 B/op 1 回あたりに割り当てたメモリのバイト数 6 allocs/op 1 回あたりのメモリ割り当て回数 b.ReportAllocs() を呼んだ BenchmarkBuilder だけ、メモリ割り当ての列が出ています。全ベンチマークで出すには -benchmem を付けます。\n$ go test -bench='^Benchmark(Plus|Builder)$' -benchmem -run='^$' ./concat/ goos: darwin goarch: arm64 pkg: github.com/jedipunkz/go-playground/testing/concat cpu: Apple M3 BenchmarkPlus-8 484014\t2258 ns/op\t10736 B/op\t99 allocs/op BenchmarkBuilder-8 3260055\t367.4 ns/op\t504 B/op\t6 allocs/op PASS ok github.com/jedipunkz/go-playground/testing/concat\t2.355s 100 個の文字列を連結する場合、+ は strings.Builder の約 6 倍遅く、メモリ割り当ても 99 回対 6 回です。+ は連結のたびに新しい文字列を作るので、要素数とほぼ同じ回数の割り当てが発生しています。\n計測時間はデフォルトで 1 ベンチマークあたり 1 秒です。-benchtime=3s で時間を、-benchtime=100x で繰り返し回数を指定できます。\nパターン10: サブベンチマーク b.Run を使って、1 つのベンチマーク関数の中で条件を変えた複数のベンチマークを実行するパターンです。\n使い所 パターン 9 では要素数を 100 に固定していましたが、実装の差は入力のサイズによって変わることがあります。サイズごとにベンチマーク関数を書くと同じコードが並ぶので、テストのサブテストと同じように、条件をループで回して b.Run で実行します。\nfunc BenchmarkConcat(b *testing.B) { for _, n := range []int{10, 100, 1000} { words := makeWords(n) b.Run(fmt.Sprintf(\"impl=Plus/n=%d\", n), func(b *testing.B) { for b.Loop() { Plus(words) } }) b.Run(fmt.Sprintf(\"impl=Builder/n=%d\", n), func(b *testing.B) { for b.Loop() { Builder(words) } }) } } サブベンチマークの名前を impl=Plus/n=10 のように キー=値 の形にしているのは、後で benchstat で集計しやすくするためです。\n実行結果 $ go test -bench=BenchmarkConcat -benchmem -run='^$' ./concat/ goos: darwin goarch: arm64 pkg: github.com/jedipunkz/go-playground/testing/concat cpu: Apple M3 BenchmarkConcat/impl=Plus/n=10-8 7697257\t152.2 ns/op\t128 B/op\t9 allocs/op BenchmarkConcat/impl=Builder/n=10-8 19721880\t62.06 ns/op\t56 B/op\t3 allocs/op BenchmarkConcat/impl=Plus/n=100-8 509649\t2336 ns/op\t10736 B/op\t99 allocs/op BenchmarkConcat/impl=Builder/n=100-8 2803192\t438.0 ns/op\t504 B/op\t6 allocs/op BenchmarkConcat/impl=Plus/n=1000-8 13396\t88106 ns/op\t1063866 B/op\t999 allocs/op BenchmarkConcat/impl=Builder/n=1000-8 305379\t3934 ns/op\t5368 B/op\t10 allocs/op PASS ok github.com/jedipunkz/go-playground/testing/concat\t7.254s 要素数が 10 倍になるごとに、+ の処理時間は約 15 倍、約 38 倍と増えていますが、strings.Builder はほぼ要素数に比例して増えています。\nbenchstat で比較する ベンチマークの結果は実行ごとにばらつくので、1 回の結果だけで「速くなった」と判断するのは危険です。-count で複数回実行し、benchstat で統計的に比較します。\n$ go test -bench=BenchmarkConcat -benchmem -run='^$' -count=6 ./concat/ \u003e bench.txt $ go run golang.org/x/perf/cmd/benchstat@latest -col /impl bench.txt goos: darwin goarch: arm64 pkg: github.com/jedipunkz/go-playground/testing/concat cpu: Apple M3 │ Plus │ Builder │ │ sec/op │ sec/op vs base │ Concat/n=10-8 151.60n ± 0% 60.85n ± 1% -59.86% (p=0.002 n=6) Concat/n=100-8 2257.5n ± 4% 420.0n ± 1% -81.39% (p=0.002 n=6) Concat/n=1000-8 84.252µ ± 3% 3.925µ ± 6% -95.34% (p=0.002 n=6) geomean 3.066µ 464.7n -84.85% │ Plus │ Builder │ │ B/op │ B/op vs base │ Concat/n=10-8 128.00 ± 0% 56.00 ± 0% -56.25% (p=0.002 n=6) Concat/n=100-8 10736.0 ± 0% 504.0 ± 0% -95.31% (p=0.002 n=6) Concat/n=1000-8 1038.933Ki ± 0% 5.242Ki ± 0% -99.50% (p=0.002 n=6) geomean 11.08Ki 533.1 -95.30% │ Plus │ Builder │ │ allocs/op │ allocs/op vs base │ Concat/n=10-8 9.000 ± 0% 3.000 ± 0% -66.67% (p=0.002 n=6) Concat/n=100-8 99.000 ± 0% 6.000 ± 0% -93.94% (p=0.002 n=6) Concat/n=1000-8 999.00 ± 0% 10.00 ± 0% -99.00% (p=0.002 n=6) geomean 96.19 5.646 -94.13% -col /impl は、サブベンチマーク名の impl= の値 (Plus と Builder) を列にして比較する指定です。Plus を基準 (base) に、Builder がどれだけ変化したかが表示されています。\n± 0% は 6 回の計測のばらつき p=0.002 は差が偶然である確率の目安。小さいほど、差が統計的に有意と言える n=6 は比較に使った計測回数 改修前後の比較では、改修前の結果を old.txt、改修後の結果を new.txt に保存し、benchstat old.txt new.txt と 2 つのファイルを渡すのが一般的な使い方です。\nパターン11: Fuzzing func FuzzXxx(f *testing.F) という関数を書き、ランダムに生成した入力でテスト対象を呼び出して、想定外の入力で壊れないかを確かめるパターンです。\n使い所 テーブル駆動テストでは、テストを書く人が思いついた入力しか検証できません。Fuzzing は、seed (起点となる入力) を少しずつ変化させた入力を大量に生成し、コードを壊す入力を探してくれます。特に、文字列やバイト列をパースする処理のように入力の組み合わせが膨大なコードで効果を発揮します。\nFuzzing では「この入力ならこの出力」という期待値を書けないので、代わりに「どんな入力でも成り立つべき性質」を検証します。前編のパターン 2 で直した Reverse (rune 単位で反転する版) を対象に、次の 2 つの性質を検証します。\n2 回反転すると元の文字列に戻る 正しい UTF-8 の文字列を反転した結果も、正しい UTF-8 である package strutil import ( \"testing\" \"unicode/utf8\" ) func FuzzReverse(f *testing.F) { // seed corpus: 入力を生成するときの起点になる値 for _, s := range []string{\"abc\", \"あいう\", \"\", \"héllo\"} { f.Add(s) } f.Fuzz(func(t *testing.T, s string) { rev := Reverse(s) // 性質 1: 2 回反転すると元に戻る if got := Reverse(rev); got != s { t.Errorf(\"Reverse(Reverse(%q)) = %q\", s, got) } // 性質 2: 正しい UTF-8 を反転しても正しい UTF-8 のまま if utf8.ValidString(s) \u0026\u0026 !utf8.ValidString(rev) { t.Errorf(\"Reverse(%q) = %q is not valid UTF-8\", s, rev) } }) } f.Add で登録した値と f.Fuzz に渡す関数の引数 (*testing.T の後ろ) は、型を一致させる必要があります。\n実行結果 -fuzz を付けずに実行すると、seed だけを入力にした通常のテストとして動きます。\n$ go test -run FuzzReverse -v ./strutil/ === RUN FuzzReverse === RUN FuzzReverse/seed#0 === RUN FuzzReverse/seed#1 === RUN FuzzReverse/seed#2 === RUN FuzzReverse/seed#3 --- PASS: FuzzReverse (0.00s) --- PASS: FuzzReverse/seed#0 (0.00s) --- PASS: FuzzReverse/seed#1 (0.00s) --- PASS: FuzzReverse/seed#2 (0.00s) --- PASS: FuzzReverse/seed#3 (0.00s) PASS ok github.com/jedipunkz/go-playground/testing/strutil\t0.265s -fuzz を付けると、入力を生成しながら実行し続けます。-fuzztime で実行時間を指定できます (指定しないと失敗が見つかるか Ctrl+C で止めるまで続きます)。\n$ go test -fuzz=FuzzReverse -fuzztime=30s ./strutil/ fuzz: elapsed: 0s, gathering baseline coverage: 0/4 completed fuzz: elapsed: 0s, gathering baseline coverage: 4/4 completed, now fuzzing with 8 workers fuzz: minimizing 45-byte failing input file fuzz: elapsed: 0s, minimizing --- FAIL: FuzzReverse (0.02s) --- FAIL: FuzzReverse (0.00s) fuzz_test.go:18: Reverse(Reverse(\"\\xbf\")) = \"�\" Failing input written to testdata/fuzz/FuzzReverse/9783172430fa24ae To re-run: go test -run=FuzzReverse/9783172430fa24ae FAIL exit status 1 FAIL\tgithub.com/jedipunkz/go-playground/testing/strutil\t0.292s 一瞬で失敗する入力が見つかりました。最初に見つかったのは 45 バイトの入力でしたが、Fuzzing のエンジンが失敗を再現できる最小の入力 (minimizing) まで縮めて、\"\\xbf\" という 1 バイトを報告しています。\n\\xbf は UTF-8 として不正なバイトです。[]rune(s) で rune のスライスに変換すると、不正なバイトは置換文字 U+FFFD (�) に置き換えられます。そのため、反転して元に戻すと \"\\xbf\" ではなく \"�\" になり、性質 1 が崩れていました。前編のテーブル駆動テストでは思いつかなかった入力です。\n失敗した入力は testdata/fuzz/FuzzReverse/ に保存されています。\n$ cat testdata/fuzz/FuzzReverse/9783172430fa24ae go test fuzz v1 string(\"\\xbf\") このファイルは以後 seed として扱われるので、-fuzz を付けない通常の go test でも実行されます。つまり、見つかったバグは自動で回帰テストになります。\n$ go test ./strutil/ --- FAIL: FuzzReverse (0.00s) --- FAIL: FuzzReverse/9783172430fa24ae (0.00s) fuzz_test.go:18: Reverse(Reverse(\"\\xbf\")) = \"�\" FAIL FAIL\tgithub.com/jedipunkz/go-playground/testing/strutil\t0.078s FAIL Reverse の仕様を「不正な UTF-8 を含む場合は反転せずにそのまま返す」と決めて修正します。\npackage strutil import \"unicode/utf8\" // Reverse は文字列を rune 単位で反転する // 不正な UTF-8 を含む場合は反転せずにそのまま返す func Reverse(s string) string { if !utf8.ValidString(s) { return s } r := []rune(s) for i, j := 0, len(r)-1; i \u003c j; i, j = i+1, j-1 { r[i], r[j] = r[j], r[i] } return string(r) } 保存された入力を含めてテストが通るようになり、再度 Fuzzing しても失敗は見つからなくなりました。\n$ go test -run FuzzReverse -v ./strutil/ === RUN FuzzReverse ... --- PASS: FuzzReverse (0.00s) --- PASS: FuzzReverse/seed#0 (0.00s) --- PASS: FuzzReverse/seed#1 (0.00s) --- PASS: FuzzReverse/seed#2 (0.00s) --- PASS: FuzzReverse/seed#3 (0.00s) --- PASS: FuzzReverse/9783172430fa24ae (0.00s) PASS ok github.com/jedipunkz/go-playground/testing/strutil\t0.220s $ go test -fuzz=FuzzReverse -fuzztime=20s ./strutil/ ... fuzz: elapsed: 18s, execs: 2984458 (714817/sec), new interesting: 37 (total: 42) fuzz: elapsed: 21s, execs: 3089971 (35181/sec), new interesting: 40 (total: 45) fuzz: elapsed: 21s, execs: 3089971 (0/sec), new interesting: 40 (total: 45) PASS ok github.com/jedipunkz/go-playground/testing/strutil\t21.283s execs は実行した入力の数、new interesting はコードの新しい経路を通った (カバレッジを広げた) 入力の数です。Fuzzing のエンジンはこうした入力を優先して変化させることで、効率よく未知の経路を探します。\n-fuzz には 1 つの Fuzz テストにだけマッチする正規表現を指定し、パッケージも 1 つだけ指定する必要があります。\nパターン12: testing/synctest testing/synctest パッケージを使って、時間や goroutine が絡むコードを、偽の時計の上で決定的にテストするパターンです。\n使い所 TTL 付きのキャッシュや、一定間隔で動くバックグラウンド処理、タイムアウト処理をテストしようとすると、困ることが 2 つあります。\n実際に時間が経つのを待つと、テストが遅くなる (TTL が 5 分なら 5 分以上かかる) 待ち時間を短くすると、goroutine のスケジューリング次第で成功したり失敗したりする (flaky になる) synctest.Test の中 (bubble と呼ばれます) では、time パッケージが偽の時計を使います。偽の時計は、bubble 内のすべての goroutine がブロックしたときにだけ進みます。そのため、何分待つテストでも実時間では一瞬で終わり、しかも毎回同じ順序で実行されます。\nAPI 内容 synctest.Test(t, f) f を bubble の中で実行する。偽の時計は 2000-01-01 00:00 UTC から始まる synctest.Wait() bubble 内の他の goroutine がすべてブロックするまで待つ synctest.Sleep(d) time.Sleep(d) と synctest.Wait() を続けて呼ぶのと同じ TTL のテスト TTL 付きのキャッシュと、期限切れのエントリを定期的に削除する goroutine を用意しました。\npackage cache import ( \"context\" \"sync\" \"time\" ) type entry struct { value string expiresAt time.Time } // Cache は TTL 付きのインメモリキャッシュ type Cache struct { mu sync.Mutex ttl time.Duration items map[string]entry } func New(ttl time.Duration) *Cache { return \u0026Cache{ttl: ttl, items: map[string]entry{}} } func (c *Cache) Set(key, value string) { c.mu.Lock() defer c.mu.Unlock() c.items[key] = entry{value: value, expiresAt: time.Now().Add(c.ttl)} } func (c *Cache) Get(key string) (string, bool) { c.mu.Lock() defer c.mu.Unlock() e, ok := c.items[key] if !ok || time.Now().After(e.expiresAt) { return \"\", false } return e.value, true } func (c *Cache) Len() int { c.mu.Lock() defer c.mu.Unlock() return len(c.items) } // StartCleanup は interval ごとに期限切れのエントリを削除する goroutine を起動する func (c *Cache) StartCleanup(ctx context.Context, interval time.Duration) { go func() { ticker := time.NewTicker(interval) defer ticker.Stop() for { select { case \u003c-ctx.Done(): return case now := \u003c-ticker.C: c.mu.Lock() for k, e := range c.items { if now.After(e.expiresAt) { delete(c.items, k) } } c.mu.Unlock() } } }() } テストコードです。キャッシュ側のコードには、テストのための仕掛け (時計の差し替えなど) を何も入れていない点に注目してください。\npackage cache import ( \"context\" \"testing\" \"testing/synctest\" \"time\" ) func TestCacheTTL(t *testing.T) { synctest.Test(t, func(t *testing.T) { c := New(5 * time.Minute) c.Set(\"user:1\", \"jedi\") start := time.Now() // bubble 内では偽の時計が使われるので、実時間では一瞬で終わる time.Sleep(4 * time.Minute) if _, ok := c.Get(\"user:1\"); !ok { t.Fatal(\"期限切れ前にエントリが消えている\") } time.Sleep(2 * time.Minute) if _, ok := c.Get(\"user:1\"); ok { t.Fatal(\"期限切れ後もエントリが残っている\") } t.Logf(\"start = %v, elapsed = %v\", start, time.Since(start)) }) } func TestCacheCleanup(t *testing.T) { synctest.Test(t, func(t *testing.T) { ctx, cancel := context.WithCancel(t.Context()) defer cancel() c := New(time.Minute) c.StartCleanup(ctx, 10*time.Second) c.Set(\"user:1\", \"jedi\") // 時間を進め、cleanup goroutine が処理を終えて待機状態になるまで待つ synctest.Sleep(time.Minute + 10*time.Second) if n := c.Len(); n != 0 { t.Fatalf(\"Len() = %d, want 0\", n) } }) } TestCacheCleanup で time.Sleep ではなく synctest.Sleep を使っているのには理由があります。70 秒後の時点で、テストの goroutine と cleanup の goroutine (ticker が発火) が同時に動き出せる状態になるので、time.Sleep だけだとどちらが先に動くかは決まりません。synctest.Sleep は時間を進めた後、cleanup の goroutine が削除を終えて再び ticker を待つ状態になるまで待ってくれるので、結果が決定的になります。\n待つ時間が TTL ちょうどの 1 分ではなく 1 分 10 秒なのは、1 分の時点では now.After(e.expiresAt) が false (同時刻) なので削除されず、次の ticker (70 秒) で削除されるためです。偽の時計は完全に決定的なので、こうした境界の挙動も正確にテストできます。\n実行結果 $ go test -run TestCache -v ./cache/ === RUN TestCacheTTL cache_test.go:27: start = 2000-01-01 09:00:00 +0900 JST, elapsed = 6m0s --- PASS: TestCacheTTL (0.00s) === RUN TestCacheCleanup --- PASS: TestCacheCleanup (0.00s) PASS ok github.com/jedipunkz/go-playground/testing/cache\t0.244s テストの中では 6 分経過していますが、実際の実行時間は 0.00s です。偽の時計が 2000-01-01 00:00 UTC (JST で 09:00) から始まっていることも確認できます。\nタイムアウトのテスト 前編のパターン 6 で作った天気 API のクライアントについて、API の応答が遅いときにタイムアウトすることをテストします。httptest.NewTestServer は、インメモリの偽ネットワーク上でテスト用サーバを立てる関数で、synctest の bubble の中で使えます。\npackage weather import ( \"encoding/json\" \"net/http\" \"net/http/httptest\" \"testing\" \"testing/synctest\" \"time\" ) func TestClientTimeout(t *testing.T) { synctest.Test(t, func(t *testing.T) { // 応答に 10 秒かかる外部 API を、インメモリの偽ネットワーク上に立てる srv := httptest.NewTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { select { case \u003c-time.After(10 * time.Second): json.NewEncoder(w).Encode(Forecast{City: \"tokyo\", Weather: \"sunny\"}) case \u003c-r.Context().Done(): // クライアントが諦めたら終了する } })) hc := srv.Client() hc.Timeout = 3 * time.Second c := \u0026Client{BaseURL: srv.URL, HTTPClient: hc} start := time.Now() _, err := c.Get(t.Context(), \"tokyo\") if err == nil { t.Fatal(\"Get() error = nil, want timeout\") } t.Logf(\"err = %v, elapsed (fake clock) = %v\", err, time.Since(start)) }) } NewTestServer はテストの終了時に自動でサーバを閉じるので、defer srv.Close() は不要です。\n実行結果 $ go test -run TestClientTimeout -v ./weather/ === RUN TestClientTimeout timeout_test.go:32: err = Get \"http://example.com/forecast?city=tokyo\": context deadline exceeded, elapsed (fake clock) = 3s --- PASS: TestClientTimeout (0.00s) PASS ok github.com/jedipunkz/go-playground/testing/weather\t0.255s 偽の時計でちょうど 3 秒後にタイムアウトしています。偽ネットワーク上のサーバの URL は http://example.com になっていて、実際のネットワークには一切出ていません。\n最初に書いたハンドラは time.Sleep(10 * time.Second) で単純に待つだけでしたが、そうするとクライアントがタイムアウトした後もハンドラが動き続け、サーバを閉じるときに「接続が残っている」という警告が出ました。ハンドラ側も r.Context() でキャンセルを受け取るようにしておくのは、本番のコードでも大事なことです。\nまとめ 後編では、性能・堅牢性・時間を確かめるテストを整理しました。\nベンチマークは for b.Loop() で書く。ループ前の準備は計測されず、ループ内の処理が最適化で消されることもない -benchmem か b.ReportAllocs() でメモリ割り当ても計測する サブベンチマークで入力サイズごとに比較し、-count で複数回実行した結果を benchstat で統計的に比較する Fuzzing では期待値の代わりに「どんな入力でも成り立つ性質」を書く。見つかった失敗入力は testdata/fuzz に保存され、そのまま回帰テストになる testing/synctest の bubble の中では偽の時計が使われ、時間の絡むテストが一瞬で、しかも決定的に終わる。httptest.NewTestServer と組み合わせれば、タイムアウトのテストもネットワークなしで書ける 前編と合わせて、標準の testing パッケージだけでかなりのことができると分かりました。特に Fuzzing と synctest は、自分では書いたことがなかったのですが、実際に動かしてみると Fuzzing は数十秒でテーブル駆動テストの見落としを見つけてくれましたし、synctest はテスト対象のコードに手を入れずに TTL やタイムアウトをテストできました。どちらも今後は積極的に使っていきたいと思います。\n参考 [Go 再学習] Go のテストを理解する 前編: 正しさを確かめる testing package testing/synctest package net/http/httptest package Go Fuzzing benchstat Go 1.27 Release Notes ",
+  "wordCount" : "1709",
+  "inLanguage": "ja",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_cf538626f022e026.jpg",
+  "datePublished": "2026-10-11T12:30:00+09:00",
+  "dateModified": "2026-10-11T12:30:00+09:00",
+  "author":{
+    "@type": "Person",
+    "name": "jedipunkz"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "https://jedipunkz.rocks/post/go-testing-2/"
+  },
+  "publisher": {
+    "@type": "Person",
+    "name": "jedipunkz 🚀 のブログ",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
+    }
+  }
+}
+</script>
+
+</head>
+
+<body class="" id="top">
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.body.classList.add('dark');
+    } else if (localStorage.getItem("pref-theme") === "light") {
+        document.body.classList.remove('dark')
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark');
+    }
+
+</script>
+
+<header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="https://jedipunkz.rocks/" accesskey="h" title="jedipunkz (Alt + H)">jedipunkz</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="https://jedipunkz.rocks/about" title="About Me">
+                    <span>About Me</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
+      [Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる
+    </h1>
+    <div class="post-description">
+      Go 1.27 を前提に、b.Loop を使ったベンチマーク、サブベンチマークと benchstat、Fuzzing、testing/synctest による時間の絡むテストをサンプルコードと実行結果で解説する
+    </div>
+    <div class="post-meta"><span title='2026-10-11 12:30:00 +0900 +0900'>2026-10-11</span>&nbsp;·&nbsp;9 分&nbsp;·&nbsp;jedipunkz
+
+</div>
+  </header> 
+  <div class="post-content"><p><a href="/post/go-testing-1/">前編</a> では、テーブル駆動テストからカバレッジまで、コードが正しく動くことを確かめるテストの書き方を整理しました。後編では、正しさ以外のことを確かめるテストを扱います。</p>
+<ul>
+<li>性能: ベンチマーク、サブベンチマーク</li>
+<li>堅牢性: Fuzzing</li>
+<li>時間: testing/synctest</li>
+</ul>
+<p>前編と同じく Go 1.27 を前提にしていて、実行結果は Go 1.27.1 で実行したものです。ベンチマークの数値は実行環境によって変わります。</p>
+<p>コードは以下のレポジトリにあります。</p>
+<p><a href="https://github.com/jedipunkz/go-playground/tree/main/testing">https://github.com/jedipunkz/go-playground/tree/main/testing</a></p>
+<h2 id="パターン9-ベンチマーク">パターン9: ベンチマーク<a hidden class="anchor" aria-hidden="true" href="#パターン9-ベンチマーク">#</a></h2>
+<p><code>func BenchmarkXxx(b *testing.B)</code> という関数を書き、<code>go test -bench</code> で処理時間とメモリ割り当てを計測するパターンです。</p>
+<h3 id="使い所">使い所<a hidden class="anchor" aria-hidden="true" href="#使い所">#</a></h3>
+<p>「<code>+</code> で文字列を連結するより <code>strings.Builder</code> の方が速い」とよく言われますが、自分のユースケースでどれくらい差があるのかは、測ってみないと分かりません。ベンチマークを書いておけば、実装を選ぶときや性能改善をしたときに、効果を数値で確認できます。</p>
+<p>テスト対象として、文字列を連結する 2 つの実装を用意しました。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">concat</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">import</span><span class="w"> </span><span class="s">&#34;strings&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// Plus は + 演算子で文字列を連結する</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">Plus</span><span class="p">(</span><span class="nx">words</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">s</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="s">&#34;&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">w</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">words</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">s</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="nx">w</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">s</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// Builder は strings.Builder で文字列を連結する</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">Builder</span><span class="p">(</span><span class="nx">words</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="kd">var</span><span class="w"> </span><span class="nx">sb</span><span class="w"> </span><span class="nx">strings</span><span class="p">.</span><span class="nx">Builder</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">w</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">words</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">sb</span><span class="p">.</span><span class="nf">WriteString</span><span class="p">(</span><span class="nx">w</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">sb</span><span class="p">.</span><span class="nf">String</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>ベンチマークは <code>for b.Loop() { ... }</code> の中に計測したい処理を書きます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">concat</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">import</span><span class="w"> </span><span class="p">(</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;fmt&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;testing&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">makeWords</span><span class="p">(</span><span class="nx">n</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">words</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">make</span><span class="p">([]</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">n</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">for</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">words</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">words</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">&#34;go&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">words</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">BenchmarkPlus</span><span class="p">(</span><span class="nx">b</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">B</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">words</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nf">makeWords</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span><span class="w"> </span><span class="c1">// ループの外で準備する</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">for</span><span class="w"> </span><span class="nx">b</span><span class="p">.</span><span class="nf">Loop</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nf">Plus</span><span class="p">(</span><span class="nx">words</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">BenchmarkBuilder</span><span class="p">(</span><span class="nx">b</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">B</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">words</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nf">makeWords</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">b</span><span class="p">.</span><span class="nf">ReportAllocs</span><span class="p">()</span><span class="w"> </span><span class="c1">// -benchmem なしでもメモリ割り当てを出力する</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">for</span><span class="w"> </span><span class="nx">b</span><span class="p">.</span><span class="nf">Loop</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nf">Builder</span><span class="p">(</span><span class="nx">words</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p><code>b.Loop()</code> には次の性質があります。</p>
+<ul>
+<li>最初に呼ばれたときにタイマーをリセットするので、ループの前に書いた準備 (<code>makeWords</code>) は計測に含まれない</li>
+<li>十分な計測ができるまで <code>true</code> を返し続ける。繰り返し回数は <code>testing</code> パッケージが決める</li>
+<li>ループ内の関数呼び出しの引数と戻り値は保持されるので、結果を使っていない <code>Plus(words)</code> がコンパイラの最適化で消されることがない</li>
+</ul>
+<h3 id="実行結果">実行結果<a hidden class="anchor" aria-hidden="true" href="#実行結果">#</a></h3>
+<p><code>-bench</code> にはベンチマーク名にマッチする正規表現を指定します。<code>-run='^$'</code> は、通常のテストを実行しないための指定です。</p>
+<pre tabindex="0"><code>$ go test -bench=&#39;^Benchmark(Plus|Builder)$&#39; -run=&#39;^$&#39; ./concat/
+goos: darwin
+goarch: arm64
+pkg: github.com/jedipunkz/go-playground/testing/concat
+cpu: Apple M3
+BenchmarkPlus-8      	  473866	      2335 ns/op
+BenchmarkBuilder-8   	 3261914	       367.2 ns/op	     504 B/op	       6 allocs/op
+PASS
+ok  	github.com/jedipunkz/go-playground/testing/concat	2.528s
+</code></pre><p>各列の意味は以下です。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>列</th>
+        <th>意味</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>BenchmarkPlus-8</code></td>
+        <td>ベンチマーク名。<code>-8</code> は実行時の GOMAXPROCS</td>
+      </tr>
+      <tr>
+        <td><code>473866</code></td>
+        <td>計測に使った繰り返し回数</td>
+      </tr>
+      <tr>
+        <td><code>2335 ns/op</code></td>
+        <td>1 回あたりの処理時間</td>
+      </tr>
+      <tr>
+        <td><code>504 B/op</code></td>
+        <td>1 回あたりに割り当てたメモリのバイト数</td>
+      </tr>
+      <tr>
+        <td><code>6 allocs/op</code></td>
+        <td>1 回あたりのメモリ割り当て回数</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p><code>b.ReportAllocs()</code> を呼んだ <code>BenchmarkBuilder</code> だけ、メモリ割り当ての列が出ています。全ベンチマークで出すには <code>-benchmem</code> を付けます。</p>
+<pre tabindex="0"><code>$ go test -bench=&#39;^Benchmark(Plus|Builder)$&#39; -benchmem -run=&#39;^$&#39; ./concat/
+goos: darwin
+goarch: arm64
+pkg: github.com/jedipunkz/go-playground/testing/concat
+cpu: Apple M3
+BenchmarkPlus-8      	  484014	      2258 ns/op	   10736 B/op	      99 allocs/op
+BenchmarkBuilder-8   	 3260055	       367.4 ns/op	     504 B/op	       6 allocs/op
+PASS
+ok  	github.com/jedipunkz/go-playground/testing/concat	2.355s
+</code></pre><p>100 個の文字列を連結する場合、<code>+</code> は <code>strings.Builder</code> の約 6 倍遅く、メモリ割り当ても 99 回対 6 回です。<code>+</code> は連結のたびに新しい文字列を作るので、要素数とほぼ同じ回数の割り当てが発生しています。</p>
+<p>計測時間はデフォルトで 1 ベンチマークあたり 1 秒です。<code>-benchtime=3s</code> で時間を、<code>-benchtime=100x</code> で繰り返し回数を指定できます。</p>
+<h2 id="パターン10-サブベンチマーク">パターン10: サブベンチマーク<a hidden class="anchor" aria-hidden="true" href="#パターン10-サブベンチマーク">#</a></h2>
+<p><code>b.Run</code> を使って、1 つのベンチマーク関数の中で条件を変えた複数のベンチマークを実行するパターンです。</p>
+<h3 id="使い所-1">使い所<a hidden class="anchor" aria-hidden="true" href="#使い所-1">#</a></h3>
+<p>パターン 9 では要素数を 100 に固定していましたが、実装の差は入力のサイズによって変わることがあります。サイズごとにベンチマーク関数を書くと同じコードが並ぶので、テストのサブテストと同じように、条件をループで回して <code>b.Run</code> で実行します。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">BenchmarkConcat</span><span class="p">(</span><span class="nx">b</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">B</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">n</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="p">[]</span><span class="kt">int</span><span class="p">{</span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w"> </span><span class="mi">1000</span><span class="p">}</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">words</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nf">makeWords</span><span class="p">(</span><span class="nx">n</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">b</span><span class="p">.</span><span class="nf">Run</span><span class="p">(</span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">&#34;impl=Plus/n=%d&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">n</span><span class="p">),</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">b</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">B</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">for</span><span class="w"> </span><span class="nx">b</span><span class="p">.</span><span class="nf">Loop</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nf">Plus</span><span class="p">(</span><span class="nx">words</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">})</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">b</span><span class="p">.</span><span class="nf">Run</span><span class="p">(</span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">&#34;impl=Builder/n=%d&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">n</span><span class="p">),</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">b</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">B</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">for</span><span class="w"> </span><span class="nx">b</span><span class="p">.</span><span class="nf">Loop</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nf">Builder</span><span class="p">(</span><span class="nx">words</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">})</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>サブベンチマークの名前を <code>impl=Plus/n=10</code> のように <code>キー=値</code> の形にしているのは、後で benchstat で集計しやすくするためです。</p>
+<h3 id="実行結果-1">実行結果<a hidden class="anchor" aria-hidden="true" href="#実行結果-1">#</a></h3>
+<pre tabindex="0"><code>$ go test -bench=BenchmarkConcat -benchmem -run=&#39;^$&#39; ./concat/
+goos: darwin
+goarch: arm64
+pkg: github.com/jedipunkz/go-playground/testing/concat
+cpu: Apple M3
+BenchmarkConcat/impl=Plus/n=10-8         	 7697257	       152.2 ns/op	     128 B/op	       9 allocs/op
+BenchmarkConcat/impl=Builder/n=10-8      	19721880	        62.06 ns/op	      56 B/op	       3 allocs/op
+BenchmarkConcat/impl=Plus/n=100-8        	  509649	      2336 ns/op	   10736 B/op	      99 allocs/op
+BenchmarkConcat/impl=Builder/n=100-8     	 2803192	       438.0 ns/op	     504 B/op	       6 allocs/op
+BenchmarkConcat/impl=Plus/n=1000-8       	   13396	     88106 ns/op	 1063866 B/op	     999 allocs/op
+BenchmarkConcat/impl=Builder/n=1000-8    	  305379	      3934 ns/op	    5368 B/op	      10 allocs/op
+PASS
+ok  	github.com/jedipunkz/go-playground/testing/concat	7.254s
+</code></pre><p>要素数が 10 倍になるごとに、<code>+</code> の処理時間は約 15 倍、約 38 倍と増えていますが、<code>strings.Builder</code> はほぼ要素数に比例して増えています。</p>
+<h3 id="benchstat-で比較する">benchstat で比較する<a hidden class="anchor" aria-hidden="true" href="#benchstat-で比較する">#</a></h3>
+<p>ベンチマークの結果は実行ごとにばらつくので、1 回の結果だけで「速くなった」と判断するのは危険です。<code>-count</code> で複数回実行し、<a href="https://pkg.go.dev/golang.org/x/perf/cmd/benchstat">benchstat</a> で統計的に比較します。</p>
+<pre tabindex="0"><code>$ go test -bench=BenchmarkConcat -benchmem -run=&#39;^$&#39; -count=6 ./concat/ &gt; bench.txt
+$ go run golang.org/x/perf/cmd/benchstat@latest -col /impl bench.txt
+goos: darwin
+goarch: arm64
+pkg: github.com/jedipunkz/go-playground/testing/concat
+cpu: Apple M3
+                │     Plus     │              Builder               │
+                │    sec/op    │   sec/op     vs base               │
+Concat/n=10-8     151.60n ± 0%   60.85n ± 1%  -59.86% (p=0.002 n=6)
+Concat/n=100-8    2257.5n ± 4%   420.0n ± 1%  -81.39% (p=0.002 n=6)
+Concat/n=1000-8   84.252µ ± 3%   3.925µ ± 6%  -95.34% (p=0.002 n=6)
+geomean            3.066µ        464.7n       -84.85%
+
+                │      Plus       │               Builder               │
+                │      B/op       │     B/op      vs base               │
+Concat/n=10-8         128.00 ± 0%     56.00 ± 0%  -56.25% (p=0.002 n=6)
+Concat/n=100-8       10736.0 ± 0%     504.0 ± 0%  -95.31% (p=0.002 n=6)
+Concat/n=1000-8   1038.933Ki ± 0%   5.242Ki ± 0%  -99.50% (p=0.002 n=6)
+geomean              11.08Ki          533.1       -95.30%
+
+                │    Plus     │              Builder              │
+                │  allocs/op  │ allocs/op   vs base               │
+Concat/n=10-8      9.000 ± 0%   3.000 ± 0%  -66.67% (p=0.002 n=6)
+Concat/n=100-8    99.000 ± 0%   6.000 ± 0%  -93.94% (p=0.002 n=6)
+Concat/n=1000-8   999.00 ± 0%   10.00 ± 0%  -99.00% (p=0.002 n=6)
+geomean            96.19        5.646       -94.13%
+</code></pre><p><code>-col /impl</code> は、サブベンチマーク名の <code>impl=</code> の値 (<code>Plus</code> と <code>Builder</code>) を列にして比較する指定です。<code>Plus</code> を基準 (base) に、<code>Builder</code> がどれだけ変化したかが表示されています。</p>
+<ul>
+<li><code>± 0%</code> は 6 回の計測のばらつき</li>
+<li><code>p=0.002</code> は差が偶然である確率の目安。小さいほど、差が統計的に有意と言える</li>
+<li><code>n=6</code> は比較に使った計測回数</li>
+</ul>
+<p>改修前後の比較では、改修前の結果を <code>old.txt</code>、改修後の結果を <code>new.txt</code> に保存し、<code>benchstat old.txt new.txt</code> と 2 つのファイルを渡すのが一般的な使い方です。</p>
+<h2 id="パターン11-fuzzing">パターン11: Fuzzing<a hidden class="anchor" aria-hidden="true" href="#パターン11-fuzzing">#</a></h2>
+<p><code>func FuzzXxx(f *testing.F)</code> という関数を書き、ランダムに生成した入力でテスト対象を呼び出して、想定外の入力で壊れないかを確かめるパターンです。</p>
+<h3 id="使い所-2">使い所<a hidden class="anchor" aria-hidden="true" href="#使い所-2">#</a></h3>
+<p>テーブル駆動テストでは、テストを書く人が思いついた入力しか検証できません。Fuzzing は、seed (起点となる入力) を少しずつ変化させた入力を大量に生成し、コードを壊す入力を探してくれます。特に、文字列やバイト列をパースする処理のように入力の組み合わせが膨大なコードで効果を発揮します。</p>
+<p>Fuzzing では「この入力ならこの出力」という期待値を書けないので、代わりに「どんな入力でも成り立つべき性質」を検証します。前編のパターン 2 で直した <code>Reverse</code> (rune 単位で反転する版) を対象に、次の 2 つの性質を検証します。</p>
+<ol>
+<li>2 回反転すると元の文字列に戻る</li>
+<li>正しい UTF-8 の文字列を反転した結果も、正しい UTF-8 である</li>
+</ol>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">strutil</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">import</span><span class="w"> </span><span class="p">(</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;testing&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;unicode/utf8&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">FuzzReverse</span><span class="p">(</span><span class="nx">f</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">F</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="c1">// seed corpus: 入力を生成するときの起点になる値</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">s</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">{</span><span class="s">&#34;abc&#34;</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;あいう&#34;</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;&#34;</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;héllo&#34;</span><span class="p">}</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">f</span><span class="p">.</span><span class="nf">Add</span><span class="p">(</span><span class="nx">s</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">f</span><span class="p">.</span><span class="nf">Fuzz</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">,</span><span class="w"> </span><span class="nx">s</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">rev</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nf">Reverse</span><span class="p">(</span><span class="nx">s</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="c1">// 性質 1: 2 回反転すると元に戻る</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">got</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nf">Reverse</span><span class="p">(</span><span class="nx">rev</span><span class="p">);</span><span class="w"> </span><span class="nx">got</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nx">s</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">t</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;Reverse(Reverse(%q)) = %q&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">s</span><span class="p">,</span><span class="w"> </span><span class="nx">got</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="c1">// 性質 2: 正しい UTF-8 を反転しても正しい UTF-8 のまま</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">utf8</span><span class="p">.</span><span class="nf">ValidString</span><span class="p">(</span><span class="nx">s</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="p">!</span><span class="nx">utf8</span><span class="p">.</span><span class="nf">ValidString</span><span class="p">(</span><span class="nx">rev</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">t</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;Reverse(%q) = %q is not valid UTF-8&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">s</span><span class="p">,</span><span class="w"> </span><span class="nx">rev</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">})</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p><code>f.Add</code> で登録した値と <code>f.Fuzz</code> に渡す関数の引数 (<code>*testing.T</code> の後ろ) は、型を一致させる必要があります。</p>
+<h3 id="実行結果-2">実行結果<a hidden class="anchor" aria-hidden="true" href="#実行結果-2">#</a></h3>
+<p><code>-fuzz</code> を付けずに実行すると、seed だけを入力にした通常のテストとして動きます。</p>
+<pre tabindex="0"><code>$ go test -run FuzzReverse -v ./strutil/
+=== RUN   FuzzReverse
+=== RUN   FuzzReverse/seed#0
+=== RUN   FuzzReverse/seed#1
+=== RUN   FuzzReverse/seed#2
+=== RUN   FuzzReverse/seed#3
+--- PASS: FuzzReverse (0.00s)
+    --- PASS: FuzzReverse/seed#0 (0.00s)
+    --- PASS: FuzzReverse/seed#1 (0.00s)
+    --- PASS: FuzzReverse/seed#2 (0.00s)
+    --- PASS: FuzzReverse/seed#3 (0.00s)
+PASS
+ok  	github.com/jedipunkz/go-playground/testing/strutil	0.265s
+</code></pre><p><code>-fuzz</code> を付けると、入力を生成しながら実行し続けます。<code>-fuzztime</code> で実行時間を指定できます (指定しないと失敗が見つかるか Ctrl+C で止めるまで続きます)。</p>
+<pre tabindex="0"><code>$ go test -fuzz=FuzzReverse -fuzztime=30s ./strutil/
+fuzz: elapsed: 0s, gathering baseline coverage: 0/4 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 4/4 completed, now fuzzing with 8 workers
+fuzz: minimizing 45-byte failing input file
+fuzz: elapsed: 0s, minimizing
+--- FAIL: FuzzReverse (0.02s)
+    --- FAIL: FuzzReverse (0.00s)
+        fuzz_test.go:18: Reverse(Reverse(&#34;\xbf&#34;)) = &#34;�&#34;
+    
+    Failing input written to testdata/fuzz/FuzzReverse/9783172430fa24ae
+    To re-run:
+    go test -run=FuzzReverse/9783172430fa24ae
+FAIL
+exit status 1
+FAIL	github.com/jedipunkz/go-playground/testing/strutil	0.292s
+</code></pre><p>一瞬で失敗する入力が見つかりました。最初に見つかったのは 45 バイトの入力でしたが、Fuzzing のエンジンが失敗を再現できる最小の入力 (minimizing) まで縮めて、<code>&quot;\xbf&quot;</code> という 1 バイトを報告しています。</p>
+<p><code>\xbf</code> は UTF-8 として不正なバイトです。<code>[]rune(s)</code> で rune のスライスに変換すると、不正なバイトは置換文字 <code>U+FFFD</code> (<code>�</code>) に置き換えられます。そのため、反転して元に戻すと <code>&quot;\xbf&quot;</code> ではなく <code>&quot;�&quot;</code> になり、性質 1 が崩れていました。前編のテーブル駆動テストでは思いつかなかった入力です。</p>
+<p>失敗した入力は <code>testdata/fuzz/FuzzReverse/</code> に保存されています。</p>
+<pre tabindex="0"><code>$ cat testdata/fuzz/FuzzReverse/9783172430fa24ae
+go test fuzz v1
+string(&#34;\xbf&#34;)
+</code></pre><p>このファイルは以後 seed として扱われるので、<code>-fuzz</code> を付けない通常の <code>go test</code> でも実行されます。つまり、見つかったバグは自動で回帰テストになります。</p>
+<pre tabindex="0"><code>$ go test ./strutil/
+--- FAIL: FuzzReverse (0.00s)
+    --- FAIL: FuzzReverse/9783172430fa24ae (0.00s)
+        fuzz_test.go:18: Reverse(Reverse(&#34;\xbf&#34;)) = &#34;�&#34;
+FAIL
+FAIL	github.com/jedipunkz/go-playground/testing/strutil	0.078s
+FAIL
+</code></pre><p><code>Reverse</code> の仕様を「不正な UTF-8 を含む場合は反転せずにそのまま返す」と決めて修正します。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">strutil</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">import</span><span class="w"> </span><span class="s">&#34;unicode/utf8&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// Reverse は文字列を rune 単位で反転する</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// 不正な UTF-8 を含む場合は反転せずにそのまま返す</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">Reverse</span><span class="p">(</span><span class="nx">s</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="p">!</span><span class="nx">utf8</span><span class="p">.</span><span class="nf">ValidString</span><span class="p">(</span><span class="nx">s</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="nx">s</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">r</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="p">[]</span><span class="nb">rune</span><span class="p">(</span><span class="nx">s</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">for</span><span class="w"> </span><span class="nx">i</span><span class="p">,</span><span class="w"> </span><span class="nx">j</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="nx">j</span><span class="p">;</span><span class="w"> </span><span class="nx">i</span><span class="p">,</span><span class="w"> </span><span class="nx">j</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">i</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nx">j</span><span class="o">-</span><span class="mi">1</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">r</span><span class="p">[</span><span class="nx">i</span><span class="p">],</span><span class="w"> </span><span class="nx">r</span><span class="p">[</span><span class="nx">j</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">r</span><span class="p">[</span><span class="nx">j</span><span class="p">],</span><span class="w"> </span><span class="nx">r</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nb">string</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>保存された入力を含めてテストが通るようになり、再度 Fuzzing しても失敗は見つからなくなりました。</p>
+<pre tabindex="0"><code>$ go test -run FuzzReverse -v ./strutil/
+=== RUN   FuzzReverse
+...
+--- PASS: FuzzReverse (0.00s)
+    --- PASS: FuzzReverse/seed#0 (0.00s)
+    --- PASS: FuzzReverse/seed#1 (0.00s)
+    --- PASS: FuzzReverse/seed#2 (0.00s)
+    --- PASS: FuzzReverse/seed#3 (0.00s)
+    --- PASS: FuzzReverse/9783172430fa24ae (0.00s)
+PASS
+ok  	github.com/jedipunkz/go-playground/testing/strutil	0.220s
+
+$ go test -fuzz=FuzzReverse -fuzztime=20s ./strutil/
+...
+fuzz: elapsed: 18s, execs: 2984458 (714817/sec), new interesting: 37 (total: 42)
+fuzz: elapsed: 21s, execs: 3089971 (35181/sec), new interesting: 40 (total: 45)
+fuzz: elapsed: 21s, execs: 3089971 (0/sec), new interesting: 40 (total: 45)
+PASS
+ok  	github.com/jedipunkz/go-playground/testing/strutil	21.283s
+</code></pre><p><code>execs</code> は実行した入力の数、<code>new interesting</code> はコードの新しい経路を通った (カバレッジを広げた) 入力の数です。Fuzzing のエンジンはこうした入力を優先して変化させることで、効率よく未知の経路を探します。</p>
+<p><code>-fuzz</code> には 1 つの Fuzz テストにだけマッチする正規表現を指定し、パッケージも 1 つだけ指定する必要があります。</p>
+<h2 id="パターン12-testingsynctest">パターン12: testing/synctest<a hidden class="anchor" aria-hidden="true" href="#パターン12-testingsynctest">#</a></h2>
+<p><code>testing/synctest</code> パッケージを使って、時間や goroutine が絡むコードを、偽の時計の上で決定的にテストするパターンです。</p>
+<h3 id="使い所-3">使い所<a hidden class="anchor" aria-hidden="true" href="#使い所-3">#</a></h3>
+<p>TTL 付きのキャッシュや、一定間隔で動くバックグラウンド処理、タイムアウト処理をテストしようとすると、困ることが 2 つあります。</p>
+<ul>
+<li>実際に時間が経つのを待つと、テストが遅くなる (TTL が 5 分なら 5 分以上かかる)</li>
+<li>待ち時間を短くすると、goroutine のスケジューリング次第で成功したり失敗したりする (flaky になる)</li>
+</ul>
+<p><code>synctest.Test</code> の中 (bubble と呼ばれます) では、<code>time</code> パッケージが偽の時計を使います。偽の時計は、bubble 内のすべての goroutine がブロックしたときにだけ進みます。そのため、何分待つテストでも実時間では一瞬で終わり、しかも毎回同じ順序で実行されます。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>API</th>
+        <th>内容</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>synctest.Test(t, f)</code></td>
+        <td><code>f</code> を bubble の中で実行する。偽の時計は 2000-01-01 00:00 UTC から始まる</td>
+      </tr>
+      <tr>
+        <td><code>synctest.Wait()</code></td>
+        <td>bubble 内の他の goroutine がすべてブロックするまで待つ</td>
+      </tr>
+      <tr>
+        <td><code>synctest.Sleep(d)</code></td>
+        <td><code>time.Sleep(d)</code> と <code>synctest.Wait()</code> を続けて呼ぶのと同じ</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<h3 id="ttl-のテスト">TTL のテスト<a hidden class="anchor" aria-hidden="true" href="#ttl-のテスト">#</a></h3>
+<p>TTL 付きのキャッシュと、期限切れのエントリを定期的に削除する goroutine を用意しました。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">cache</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">import</span><span class="w"> </span><span class="p">(</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;context&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;sync&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;time&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">type</span><span class="w"> </span><span class="nx">entry</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">value</span><span class="w">     </span><span class="kt">string</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">expiresAt</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nx">Time</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// Cache は TTL 付きのインメモリキャッシュ</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">type</span><span class="w"> </span><span class="nx">Cache</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">mu</span><span class="w">    </span><span class="nx">sync</span><span class="p">.</span><span class="nx">Mutex</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">ttl</span><span class="w">   </span><span class="nx">time</span><span class="p">.</span><span class="nx">Duration</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">items</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="nx">entry</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">New</span><span class="p">(</span><span class="nx">ttl</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nx">Duration</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="nx">Cache</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">Cache</span><span class="p">{</span><span class="nx">ttl</span><span class="p">:</span><span class="w"> </span><span class="nx">ttl</span><span class="p">,</span><span class="w"> </span><span class="nx">items</span><span class="p">:</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="nx">entry</span><span class="p">{}}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Cache</span><span class="p">)</span><span class="w"> </span><span class="nf">Set</span><span class="p">(</span><span class="nx">key</span><span class="p">,</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">c</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Lock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">defer</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Unlock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">c</span><span class="p">.</span><span class="nx">items</span><span class="p">[</span><span class="nx">key</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">entry</span><span class="p">{</span><span class="nx">value</span><span class="p">:</span><span class="w"> </span><span class="nx">value</span><span class="p">,</span><span class="w"> </span><span class="nx">expiresAt</span><span class="p">:</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nf">Now</span><span class="p">().</span><span class="nf">Add</span><span class="p">(</span><span class="nx">c</span><span class="p">.</span><span class="nx">ttl</span><span class="p">)}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Cache</span><span class="p">)</span><span class="w"> </span><span class="nf">Get</span><span class="p">(</span><span class="nx">key</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="kt">bool</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">c</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Lock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">defer</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Unlock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">e</span><span class="p">,</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">items</span><span class="p">[</span><span class="nx">key</span><span class="p">]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="p">!</span><span class="nx">ok</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nf">Now</span><span class="p">().</span><span class="nf">After</span><span class="p">(</span><span class="nx">e</span><span class="p">.</span><span class="nx">expiresAt</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="s">&#34;&#34;</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">e</span><span class="p">.</span><span class="nx">value</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Cache</span><span class="p">)</span><span class="w"> </span><span class="nf">Len</span><span class="p">()</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">c</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Lock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">defer</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Unlock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">c</span><span class="p">.</span><span class="nx">items</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// StartCleanup は interval ごとに期限切れのエントリを削除する goroutine を起動する</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="o">*</span><span class="nx">Cache</span><span class="p">)</span><span class="w"> </span><span class="nf">StartCleanup</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">interval</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nx">Duration</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">go</span><span class="w"> </span><span class="kd">func</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">ticker</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nf">NewTicker</span><span class="p">(</span><span class="nx">interval</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">defer</span><span class="w"> </span><span class="nx">ticker</span><span class="p">.</span><span class="nf">Stop</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">for</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">select</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">case</span><span class="w"> </span><span class="o">&lt;-</span><span class="nx">ctx</span><span class="p">.</span><span class="nf">Done</span><span class="p">():</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="k">return</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">case</span><span class="w"> </span><span class="nx">now</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&lt;-</span><span class="nx">ticker</span><span class="p">.</span><span class="nx">C</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nx">c</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Lock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="k">for</span><span class="w"> </span><span class="nx">k</span><span class="p">,</span><span class="w"> </span><span class="nx">e</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nx">items</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">					</span><span class="k">if</span><span class="w"> </span><span class="nx">now</span><span class="p">.</span><span class="nf">After</span><span class="p">(</span><span class="nx">e</span><span class="p">.</span><span class="nx">expiresAt</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">						</span><span class="nb">delete</span><span class="p">(</span><span class="nx">c</span><span class="p">.</span><span class="nx">items</span><span class="p">,</span><span class="w"> </span><span class="nx">k</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">					</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nx">c</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Unlock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>テストコードです。キャッシュ側のコードには、テストのための仕掛け (時計の差し替えなど) を何も入れていない点に注目してください。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">cache</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">import</span><span class="w"> </span><span class="p">(</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;context&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;testing&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;testing/synctest&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;time&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">TestCacheTTL</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">synctest</span><span class="p">.</span><span class="nf">Test</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">c</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nf">New</span><span class="p">(</span><span class="mi">5</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nx">Minute</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">c</span><span class="p">.</span><span class="nf">Set</span><span class="p">(</span><span class="s">&#34;user:1&#34;</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;jedi&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">start</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nf">Now</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="c1">// bubble 内では偽の時計が使われるので、実時間では一瞬で終わる</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">time</span><span class="p">.</span><span class="nf">Sleep</span><span class="p">(</span><span class="mi">4</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nx">Minute</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nf">Get</span><span class="p">(</span><span class="s">&#34;user:1&#34;</span><span class="p">);</span><span class="w"> </span><span class="p">!</span><span class="nx">ok</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">t</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="s">&#34;期限切れ前にエントリが消えている&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">time</span><span class="p">.</span><span class="nf">Sleep</span><span class="p">(</span><span class="mi">2</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nx">Minute</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nf">Get</span><span class="p">(</span><span class="s">&#34;user:1&#34;</span><span class="p">);</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">t</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="s">&#34;期限切れ後もエントリが残っている&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">t</span><span class="p">.</span><span class="nf">Logf</span><span class="p">(</span><span class="s">&#34;start = %v, elapsed = %v&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">start</span><span class="p">,</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nf">Since</span><span class="p">(</span><span class="nx">start</span><span class="p">))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">})</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">TestCacheCleanup</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">synctest</span><span class="p">.</span><span class="nf">Test</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">cancel</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nf">WithCancel</span><span class="p">(</span><span class="nx">t</span><span class="p">.</span><span class="nf">Context</span><span class="p">())</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">defer</span><span class="w"> </span><span class="nf">cancel</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">c</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nf">New</span><span class="p">(</span><span class="nx">time</span><span class="p">.</span><span class="nx">Minute</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">c</span><span class="p">.</span><span class="nf">StartCleanup</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="mi">10</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">c</span><span class="p">.</span><span class="nf">Set</span><span class="p">(</span><span class="s">&#34;user:1&#34;</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;jedi&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="c1">// 時間を進め、cleanup goroutine が処理を終えて待機状態になるまで待つ</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">synctest</span><span class="p">.</span><span class="nf">Sleep</span><span class="p">(</span><span class="nx">time</span><span class="p">.</span><span class="nx">Minute</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">10</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">n</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nf">Len</span><span class="p">();</span><span class="w"> </span><span class="nx">n</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">t</span><span class="p">.</span><span class="nf">Fatalf</span><span class="p">(</span><span class="s">&#34;Len() = %d, want 0&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">n</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">})</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p><code>TestCacheCleanup</code> で <code>time.Sleep</code> ではなく <code>synctest.Sleep</code> を使っているのには理由があります。70 秒後の時点で、テストの goroutine と cleanup の goroutine (ticker が発火) が同時に動き出せる状態になるので、<code>time.Sleep</code> だけだとどちらが先に動くかは決まりません。<code>synctest.Sleep</code> は時間を進めた後、cleanup の goroutine が削除を終えて再び ticker を待つ状態になるまで待ってくれるので、結果が決定的になります。</p>
+<p>待つ時間が TTL ちょうどの 1 分ではなく 1 分 10 秒なのは、1 分の時点では <code>now.After(e.expiresAt)</code> が false (同時刻) なので削除されず、次の ticker (70 秒) で削除されるためです。偽の時計は完全に決定的なので、こうした境界の挙動も正確にテストできます。</p>
+<h3 id="実行結果-3">実行結果<a hidden class="anchor" aria-hidden="true" href="#実行結果-3">#</a></h3>
+<pre tabindex="0"><code>$ go test -run TestCache -v ./cache/
+=== RUN   TestCacheTTL
+    cache_test.go:27: start = 2000-01-01 09:00:00 +0900 JST, elapsed = 6m0s
+--- PASS: TestCacheTTL (0.00s)
+=== RUN   TestCacheCleanup
+--- PASS: TestCacheCleanup (0.00s)
+PASS
+ok  	github.com/jedipunkz/go-playground/testing/cache	0.244s
+</code></pre><p>テストの中では 6 分経過していますが、実際の実行時間は 0.00s です。偽の時計が 2000-01-01 00:00 UTC (JST で 09:00) から始まっていることも確認できます。</p>
+<h3 id="タイムアウトのテスト">タイムアウトのテスト<a hidden class="anchor" aria-hidden="true" href="#タイムアウトのテスト">#</a></h3>
+<p>前編のパターン 6 で作った天気 API のクライアントについて、API の応答が遅いときにタイムアウトすることをテストします。<code>httptest.NewTestServer</code> は、インメモリの偽ネットワーク上でテスト用サーバを立てる関数で、synctest の bubble の中で使えます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kn">package</span><span class="w"> </span><span class="nx">weather</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kn">import</span><span class="w"> </span><span class="p">(</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;encoding/json&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;net/http&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;net/http/httptest&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;testing&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;testing/synctest&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="s">&#34;time&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">TestClientTimeout</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">synctest</span><span class="p">.</span><span class="nf">Test</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="c1">// 応答に 10 秒かかる外部 API を、インメモリの偽ネットワーク上に立てる</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">srv</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">httptest</span><span class="p">.</span><span class="nf">NewTestServer</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">w</span><span class="w"> </span><span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span><span class="w"> </span><span class="nx">r</span><span class="w"> </span><span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">select</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">case</span><span class="w"> </span><span class="o">&lt;-</span><span class="nx">time</span><span class="p">.</span><span class="nf">After</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">):</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nx">json</span><span class="p">.</span><span class="nf">NewEncoder</span><span class="p">(</span><span class="nx">w</span><span class="p">).</span><span class="nf">Encode</span><span class="p">(</span><span class="nx">Forecast</span><span class="p">{</span><span class="nx">City</span><span class="p">:</span><span class="w"> </span><span class="s">&#34;tokyo&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">Weather</span><span class="p">:</span><span class="w"> </span><span class="s">&#34;sunny&#34;</span><span class="p">})</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">case</span><span class="w"> </span><span class="o">&lt;-</span><span class="nx">r</span><span class="p">.</span><span class="nf">Context</span><span class="p">().</span><span class="nf">Done</span><span class="p">():</span><span class="w"> </span><span class="c1">// クライアントが諦めたら終了する</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">hc</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">srv</span><span class="p">.</span><span class="nf">Client</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">hc</span><span class="p">.</span><span class="nx">Timeout</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">c</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">Client</span><span class="p">{</span><span class="nx">BaseURL</span><span class="p">:</span><span class="w"> </span><span class="nx">srv</span><span class="p">.</span><span class="nx">URL</span><span class="p">,</span><span class="w"> </span><span class="nx">HTTPClient</span><span class="p">:</span><span class="w"> </span><span class="nx">hc</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">start</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nf">Now</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">c</span><span class="p">.</span><span class="nf">Get</span><span class="p">(</span><span class="nx">t</span><span class="p">.</span><span class="nf">Context</span><span class="p">(),</span><span class="w"> </span><span class="s">&#34;tokyo&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">t</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="s">&#34;Get() error = nil, want timeout&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">t</span><span class="p">.</span><span class="nf">Logf</span><span class="p">(</span><span class="s">&#34;err = %v, elapsed (fake clock) = %v&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">,</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nf">Since</span><span class="p">(</span><span class="nx">start</span><span class="p">))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">})</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p><code>NewTestServer</code> はテストの終了時に自動でサーバを閉じるので、<code>defer srv.Close()</code> は不要です。</p>
+<h3 id="実行結果-4">実行結果<a hidden class="anchor" aria-hidden="true" href="#実行結果-4">#</a></h3>
+<pre tabindex="0"><code>$ go test -run TestClientTimeout -v ./weather/
+=== RUN   TestClientTimeout
+    timeout_test.go:32: err = Get &#34;http://example.com/forecast?city=tokyo&#34;: context deadline exceeded, elapsed (fake clock) = 3s
+--- PASS: TestClientTimeout (0.00s)
+PASS
+ok  	github.com/jedipunkz/go-playground/testing/weather	0.255s
+</code></pre><p>偽の時計でちょうど 3 秒後にタイムアウトしています。偽ネットワーク上のサーバの URL は <code>http://example.com</code> になっていて、実際のネットワークには一切出ていません。</p>
+<p>最初に書いたハンドラは <code>time.Sleep(10 * time.Second)</code> で単純に待つだけでしたが、そうするとクライアントがタイムアウトした後もハンドラが動き続け、サーバを閉じるときに「接続が残っている」という警告が出ました。ハンドラ側も <code>r.Context()</code> でキャンセルを受け取るようにしておくのは、本番のコードでも大事なことです。</p>
+<h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
+<p>後編では、性能・堅牢性・時間を確かめるテストを整理しました。</p>
+<ul>
+<li>ベンチマークは <code>for b.Loop()</code> で書く。ループ前の準備は計測されず、ループ内の処理が最適化で消されることもない</li>
+<li><code>-benchmem</code> か <code>b.ReportAllocs()</code> でメモリ割り当ても計測する</li>
+<li>サブベンチマークで入力サイズごとに比較し、<code>-count</code> で複数回実行した結果を benchstat で統計的に比較する</li>
+<li>Fuzzing では期待値の代わりに「どんな入力でも成り立つ性質」を書く。見つかった失敗入力は <code>testdata/fuzz</code> に保存され、そのまま回帰テストになる</li>
+<li><code>testing/synctest</code> の bubble の中では偽の時計が使われ、時間の絡むテストが一瞬で、しかも決定的に終わる。<code>httptest.NewTestServer</code> と組み合わせれば、タイムアウトのテストもネットワークなしで書ける</li>
+</ul>
+<p>前編と合わせて、標準の <code>testing</code> パッケージだけでかなりのことができると分かりました。特に Fuzzing と synctest は、自分では書いたことがなかったのですが、実際に動かしてみると Fuzzing は数十秒でテーブル駆動テストの見落としを見つけてくれましたし、synctest はテスト対象のコードに手を入れずに TTL やタイムアウトをテストできました。どちらも今後は積極的に使っていきたいと思います。</p>
+<h2 id="参考">参考<a hidden class="anchor" aria-hidden="true" href="#参考">#</a></h2>
+<ul>
+<li><a href="/post/go-testing-1/">[Go 再学習] Go のテストを理解する 前編: 正しさを確かめる</a></li>
+<li><a href="https://pkg.go.dev/testing">testing package</a></li>
+<li><a href="https://pkg.go.dev/testing/synctest">testing/synctest package</a></li>
+<li><a href="https://pkg.go.dev/net/http/httptest">net/http/httptest package</a></li>
+<li><a href="https://go.dev/doc/security/fuzz/">Go Fuzzing</a></li>
+<li><a href="https://pkg.go.dev/golang.org/x/perf/cmd/benchstat">benchstat</a></li>
+<li><a href="https://go.dev/doc/go1.27">Go 1.27 Release Notes</a></li>
+</ul>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
+<nav class="paginav">
+  <a class="prev" href="https://jedipunkz.rocks/post/adk-go-dynamic-loop/">
+    <span class="title">« 前へ</span>
+    <br>
+    <span>Google ADK Go 2.x の Dynamic Workflow とその為のガードレール</span>
+  </a>
+  <a class="next" href="https://jedipunkz.rocks/post/go-testing-1/">
+    <span class="title">次へ »</span>
+    <br>
+    <span>[Go 再学習] Go のテストを理解する 前編: 正しさを確かめる</span>
+  </a>
+</nav>
+
+
+<ul class="share-buttons">
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share [Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる on x"
+            href="https://x.com/intent/tweet/?text=%5bGo%20%e5%86%8d%e5%ad%a6%e7%bf%92%5d%20Go%20%e3%81%ae%e3%83%86%e3%82%b9%e3%83%88%e3%82%92%e7%90%86%e8%a7%a3%e3%81%99%e3%82%8b%20%e5%be%8c%e7%b7%a8%3a%20%e6%80%a7%e8%83%bd%e3%83%bb%e5%a0%85%e7%89%a2%e6%80%a7%e3%82%92%e7%a2%ba%e3%81%8b%e3%82%81%e3%82%8b&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgo-testing-2%2f&amp;hashtags=">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M512 62.554 L 512 449.446 C 512 483.97 483.97 512 449.446 512 L 62.554 512 C 28.03 512 0 483.97 0 449.446 L 0 62.554 C 0 28.03 28.029 0 62.554 0 L 449.446 0 C 483.971 0 512 28.03 512 62.554 Z M 269.951 190.75 L 182.567 75.216 L 56 75.216 L 207.216 272.95 L 63.9 436.783 L 125.266 436.783 L 235.9 310.383 L 332.567 436.783 L 456 436.783 L 298.367 228.367 L 432.367 75.216 L 371.033 75.216 Z M 127.633 110 L 164.101 110 L 383.481 400.065 L 349.5 400.065 Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share [Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる on linkedin"
+            href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgo-testing-2%2f&amp;title=%5bGo%20%e5%86%8d%e5%ad%a6%e7%bf%92%5d%20Go%20%e3%81%ae%e3%83%86%e3%82%b9%e3%83%88%e3%82%92%e7%90%86%e8%a7%a3%e3%81%99%e3%82%8b%20%e5%be%8c%e7%b7%a8%3a%20%e6%80%a7%e8%83%bd%e3%83%bb%e5%a0%85%e7%89%a2%e6%80%a7%e3%82%92%e7%a2%ba%e3%81%8b%e3%82%81%e3%82%8b&amp;summary=%5bGo%20%e5%86%8d%e5%ad%a6%e7%bf%92%5d%20Go%20%e3%81%ae%e3%83%86%e3%82%b9%e3%83%88%e3%82%92%e7%90%86%e8%a7%a3%e3%81%99%e3%82%8b%20%e5%be%8c%e7%b7%a8%3a%20%e6%80%a7%e8%83%bd%e3%83%bb%e5%a0%85%e7%89%a2%e6%80%a7%e3%82%92%e7%a2%ba%e3%81%8b%e3%82%81%e3%82%8b&amp;source=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgo-testing-2%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-288.985,423.278l0,-225.717l-75.04,0l0,225.717l75.04,0Zm270.539,0l0,-129.439c0,-69.333 -37.018,-101.586 -86.381,-101.586c-39.804,0 -57.634,21.891 -67.617,37.266l0,-31.958l-75.021,0c0.995,21.181 0,225.717 0,225.717l75.02,0l0,-126.056c0,-6.748 0.486,-13.492 2.474,-18.315c5.414,-13.475 17.767,-27.434 38.494,-27.434c27.135,0 38.007,20.707 38.007,51.037l0,120.768l75.024,0Zm-307.552,-334.556c-25.674,0 -42.448,16.879 -42.448,39.002c0,21.658 16.264,39.002 41.455,39.002l0.484,0c26.165,0 42.452,-17.344 42.452,-39.002c-0.485,-22.092 -16.241,-38.954 -41.943,-39.002Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share [Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる on reddit"
+            href="https://reddit.com/submit?url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgo-testing-2%2f&title=%5bGo%20%e5%86%8d%e5%ad%a6%e7%bf%92%5d%20Go%20%e3%81%ae%e3%83%86%e3%82%b9%e3%83%88%e3%82%92%e7%90%86%e8%a7%a3%e3%81%99%e3%82%8b%20%e5%be%8c%e7%b7%a8%3a%20%e6%80%a7%e8%83%bd%e3%83%bb%e5%a0%85%e7%89%a2%e6%80%a7%e3%82%92%e7%a2%ba%e3%81%8b%e3%82%81%e3%82%8b">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-3.446,265.638c0,-22.964 -18.616,-41.58 -41.58,-41.58c-11.211,0 -21.361,4.457 -28.841,11.666c-28.424,-20.508 -67.586,-33.757 -111.204,-35.278l18.941,-89.121l61.884,13.157c0.756,15.734 13.642,28.29 29.56,28.29c16.407,0 29.706,-13.299 29.706,-29.701c0,-16.403 -13.299,-29.702 -29.706,-29.702c-11.666,0 -21.657,6.792 -26.515,16.578l-69.105,-14.69c-1.922,-0.418 -3.939,-0.042 -5.585,1.036c-1.658,1.073 -2.811,2.761 -3.224,4.686l-21.152,99.438c-44.258,1.228 -84.046,14.494 -112.837,35.232c-7.468,-7.164 -17.589,-11.591 -28.757,-11.591c-22.965,0 -41.585,18.616 -41.585,41.58c0,16.896 10.095,31.41 24.568,37.918c-0.639,4.135 -0.99,8.328 -0.99,12.576c0,63.977 74.469,115.836 166.33,115.836c91.861,0 166.334,-51.859 166.334,-115.836c0,-4.218 -0.347,-8.387 -0.977,-12.493c14.564,-6.47 24.735,-21.034 24.735,-38.001Zm-119.474,108.193c-20.27,20.241 -59.115,21.816 -70.534,21.816c-11.428,0 -50.277,-1.575 -70.522,-21.82c-3.007,-3.008 -3.007,-7.882 0,-10.889c3.003,-2.999 7.882,-3.003 10.885,0c12.777,12.781 40.11,17.317 59.637,17.317c19.522,0 46.86,-4.536 59.657,-17.321c3.016,-2.999 7.886,-2.995 10.885,0.008c3.008,3.011 3.003,7.882 -0.008,10.889Zm-5.23,-48.781c-16.373,0 -29.701,-13.324 -29.701,-29.698c0,-16.381 13.328,-29.714 29.701,-29.714c16.378,0 29.706,13.333 29.706,29.714c0,16.374 -13.328,29.698 -29.706,29.698Zm-160.386,-29.702c0,-16.381 13.328,-29.71 29.714,-29.71c16.369,0 29.689,13.329 29.689,29.71c0,16.373 -13.32,29.693 -29.689,29.693c-16.386,0 -29.714,-13.32 -29.714,-29.693Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share [Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる on facebook"
+            href="https://facebook.com/sharer/sharer.php?u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgo-testing-2%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-106.468,0l0,-192.915l66.6,0l12.672,-82.621l-79.272,0l0,-53.617c0,-22.603 11.073,-44.636 46.58,-44.636l36.042,0l0,-70.34c0,0 -32.71,-5.582 -63.982,-5.582c-65.288,0 -107.96,39.569 -107.96,111.204l0,62.971l-72.573,0l0,82.621l72.573,0l0,192.915l-191.104,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share [Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる on whatsapp"
+            href="https://api.whatsapp.com/send?text=%5bGo%20%e5%86%8d%e5%ad%a6%e7%bf%92%5d%20Go%20%e3%81%ae%e3%83%86%e3%82%b9%e3%83%88%e3%82%92%e7%90%86%e8%a7%a3%e3%81%99%e3%82%8b%20%e5%be%8c%e7%b7%a8%3a%20%e6%80%a7%e8%83%bd%e3%83%bb%e5%a0%85%e7%89%a2%e6%80%a7%e3%82%92%e7%a2%ba%e3%81%8b%e3%82%81%e3%82%8b%20-%20https%3a%2f%2fjedipunkz.rocks%2fpost%2fgo-testing-2%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-58.673,127.703c-33.842,-33.881 -78.847,-52.548 -126.798,-52.568c-98.799,0 -179.21,80.405 -179.249,179.234c-0.013,31.593 8.241,62.428 23.927,89.612l-25.429,92.884l95.021,-24.925c26.181,14.28 55.659,21.807 85.658,21.816l0.074,0c98.789,0 179.206,-80.413 179.247,-179.243c0.018,-47.895 -18.61,-92.93 -52.451,-126.81Zm-126.797,275.782l-0.06,0c-26.734,-0.01 -52.954,-7.193 -75.828,-20.767l-5.441,-3.229l-56.386,14.792l15.05,-54.977l-3.542,-5.637c-14.913,-23.72 -22.791,-51.136 -22.779,-79.287c0.033,-82.142 66.867,-148.971 149.046,-148.971c39.793,0.014 77.199,15.531 105.329,43.692c28.128,28.16 43.609,65.592 43.594,105.4c-0.034,82.149 -66.866,148.983 -148.983,148.984Zm81.721,-111.581c-4.479,-2.242 -26.499,-13.075 -30.604,-14.571c-4.105,-1.495 -7.091,-2.241 -10.077,2.241c-2.986,4.483 -11.569,14.572 -14.182,17.562c-2.612,2.988 -5.225,3.364 -9.703,1.12c-4.479,-2.241 -18.91,-6.97 -36.017,-22.23c-13.314,-11.876 -22.304,-26.542 -24.916,-31.026c-2.612,-4.484 -0.279,-6.908 1.963,-9.14c2.016,-2.007 4.48,-5.232 6.719,-7.847c2.24,-2.615 2.986,-4.484 4.479,-7.472c1.493,-2.99 0.747,-5.604 -0.374,-7.846c-1.119,-2.241 -10.077,-24.288 -13.809,-33.256c-3.635,-8.733 -7.327,-7.55 -10.077,-7.688c-2.609,-0.13 -5.598,-0.158 -8.583,-0.158c-2.986,0 -7.839,1.121 -11.944,5.604c-4.105,4.484 -15.675,15.32 -15.675,37.364c0,22.046 16.048,43.342 18.287,46.332c2.24,2.99 31.582,48.227 76.511,67.627c10.685,4.615 19.028,7.371 25.533,9.434c10.728,3.41 20.492,2.929 28.209,1.775c8.605,-1.285 26.499,-10.833 30.231,-21.295c3.732,-10.464 3.732,-19.431 2.612,-21.298c-1.119,-1.869 -4.105,-2.99 -8.583,-5.232Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share [Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる on telegram"
+            href="https://telegram.me/share/url?text=%5bGo%20%e5%86%8d%e5%ad%a6%e7%bf%92%5d%20Go%20%e3%81%ae%e3%83%86%e3%82%b9%e3%83%88%e3%82%92%e7%90%86%e8%a7%a3%e3%81%99%e3%82%8b%20%e5%be%8c%e7%b7%a8%3a%20%e6%80%a7%e8%83%bd%e3%83%bb%e5%a0%85%e7%89%a2%e6%80%a7%e3%82%92%e7%a2%ba%e3%81%8b%e3%82%81%e3%82%8b&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgo-testing-2%2f">
+            <svg version="1.1" xml:space="preserve" viewBox="2 2 28 28" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M26.49,29.86H5.5a3.37,3.37,0,0,1-2.47-1,3.35,3.35,0,0,1-1-2.47V5.48A3.36,3.36,0,0,1,3,3,3.37,3.37,0,0,1,5.5,2h21A3.38,3.38,0,0,1,29,3a3.36,3.36,0,0,1,1,2.46V26.37a3.35,3.35,0,0,1-1,2.47A3.38,3.38,0,0,1,26.49,29.86Zm-5.38-6.71a.79.79,0,0,0,.85-.66L24.73,9.24a.55.55,0,0,0-.18-.46.62.62,0,0,0-.41-.17q-.08,0-16.53,6.11a.59.59,0,0,0-.41.59.57.57,0,0,0,.43.52l4,1.24,1.61,4.83a.62.62,0,0,0,.63.43.56.56,0,0,0,.4-.17L16.54,20l4.09,3A.9.9,0,0,0,21.11,23.15ZM13.8,20.71l-1.21-4q8.72-5.55,8.78-5.55c.15,0,.23,0,.23.16a.18.18,0,0,1,0,.06s-2.51,2.3-7.52,6.8Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share [Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる on ycombinator"
+            href="https://news.ycombinator.com/submitlink?t=%5bGo%20%e5%86%8d%e5%ad%a6%e7%bf%92%5d%20Go%20%e3%81%ae%e3%83%86%e3%82%b9%e3%83%88%e3%82%92%e7%90%86%e8%a7%a3%e3%81%99%e3%82%8b%20%e5%be%8c%e7%b7%a8%3a%20%e6%80%a7%e8%83%bd%e3%83%bb%e5%a0%85%e7%89%a2%e6%80%a7%e3%82%92%e7%a2%ba%e3%81%8b%e3%82%81%e3%82%8b&u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fgo-testing-2%2f">
+            <svg version="1.1" xml:space="preserve" width="30px" height="30px" viewBox="0 0 512 512" fill="currentColor"
+                xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+                <path
+                    d="M449.446 0C483.971 0 512 28.03 512 62.554L512 449.446C512 483.97 483.97 512 449.446 512L62.554 512C28.03 512 0 483.97 0 449.446L0 62.554C0 28.03 28.029 0 62.554 0L449.446 0ZM183.8767 87.9921H121.8427L230.6673 292.4508V424.0079H281.3328V292.4508L390.1575 87.9921H328.1233L256 238.2489z" />
+            </svg>
+        </a>
+    </li>
+</ul>
+
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="https://jedipunkz.rocks/">jedipunkz 🚀 のブログ</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a><script type="module">
+  if (document.querySelector("pre.mermaid")) {
+    const { default: mermaid } = await import(
+      "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
+    );
+    
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        darkMode: true,
+        background: "#1a1b26",
+        mainBkg: "#24283b",
+        primaryColor: "#24283b",
+        primaryTextColor: "#c0caf5",
+        primaryBorderColor: "#7aa2f7",
+        secondaryColor: "#414868",
+        secondaryTextColor: "#c0caf5",
+        secondaryBorderColor: "#565f89",
+        tertiaryColor: "#1f2335",
+        tertiaryTextColor: "#c0caf5",
+        tertiaryBorderColor: "#565f89",
+        lineColor: "#7dcfff",
+        textColor: "#c0caf5",
+        nodeTextColor: "#c0caf5",
+        edgeLabelBackground: "#1a1b26",
+        clusterBkg: "#1f2335",
+        clusterBorder: "#565f89",
+        titleColor: "#c0caf5"
+      }
+    });
+    await mermaid.run();
+  }
+</script>
+
+
+<script>
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        if (document.body.className.includes("dark")) {
+            document.body.classList.remove('dark');
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            document.body.classList.add('dark');
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+<script>
+    document.querySelectorAll('pre > code').forEach((codeblock) => {
+        const container = codeblock.parentNode.parentNode;
+
+        const copybutton = document.createElement('button');
+        copybutton.classList.add('copy-code');
+        copybutton.innerHTML = 'コピー';
+
+        function copyingDone() {
+            copybutton.innerHTML = 'コピーされました!';
+            setTimeout(() => {
+                copybutton.innerHTML = 'コピー';
+            }, 2000);
+        }
+
+        copybutton.addEventListener('click', (cb) => {
+            if ('clipboard' in navigator) {
+                navigator.clipboard.writeText(codeblock.textContent);
+                copyingDone();
+                return;
+            }
+
+            const range = document.createRange();
+            range.selectNodeContents(codeblock);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            try {
+                document.execCommand('copy');
+                copyingDone();
+            } catch (e) { };
+            selection.removeRange(range);
+        });
+
+        if (container.classList.contains("highlight")) {
+            container.appendChild(copybutton);
+        } else if (container.parentNode.firstChild == container) {
+            
+        } else if (codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.nodeName == "TABLE") {
+            
+            codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.appendChild(copybutton);
+        } else {
+            
+            codeblock.parentNode.appendChild(copybutton);
+        }
+    });
+</script>
+</body>
+
+</html>
