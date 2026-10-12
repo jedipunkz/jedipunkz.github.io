@@ -1,6 +1,6 @@
 ---
-title: "ADK Go 2.x の Dynamic Workflow とその為のガードレール"
-description: "Claude Agent SDK の agent loop や Claude Code の dynamic workflows と同じことを ADK Go 2.x でやるとどうなるか。上限を持たない llmagent のループに、ラウンド上限・進捗なし停止・トークン予算・ツール allowlist を自分で組み込みます"
+title: "Google ADK Go 2.x の Dynamic Workflow とその為のガードレール"
+description: "Claude Agent SDK の agent loop や Claude Code の dynamic workflows と同じことを Google ADK Go 2.x でやるとどうなるか。上限を持たない llmagent のループに、ラウンド上限・進捗なし停止・トークン予算・ツール allowlist を自分で組み込みます"
 date: 2026-10-12T12:00:00+09:00
 Categories: ["AI", "Go", "SRE", "Agent"]
 draft: false
@@ -12,7 +12,7 @@ draft: false
 
 > インシデント対応は「調べて、分からなかったらもう少し調べる」という反復が本質なので、完全に静的なグラフでは表現しきれない部分があります。`NewDynamicNode` で調査ループを書き、確定した対処だけを静的グラフに戻す、というハイブリッドが現実解な気がしていますが、そうすると動的ノードの中身が結局ブラックボックスになるジレンマがあります。
 
-その後、Claude の [Agent SDK](https://code.claude.com/docs/ja/agent-sdk/overview) の agent loop や、Claude Code の [dynamic workflows](https://code.claude.com/docs/en/workflows) を眺めていて、「自律的に、動的に回るループ」を ADK でやるとどうなるのかが気になりました。結論を先に書くと、**ループそのものは ADK でも回せます。ただし止める仕組みは自分で書く必要があります**。この記事はその「止める仕組み」、つまりガードレールの話です。
+その後、[Claude Agent SDK](https://code.claude.com/docs/ja/agent-sdk/overview) の agent loop や、Claude Code の [dynamic workflows](https://code.claude.com/docs/en/workflows) を眺めていて、「自律的に、動的に回るループ」を Google の Agent Development Kit（ADK）でやるとどうなるのかが気になりました。結論を先に書くと、**ループそのものは ADK でも回せます。ただし止める仕組みは自分で書く必要があります**。この記事はその「止める仕組み」、つまりガードレールの話です。
 
 記事中のコードは [jedipunkz/adk-playground の investigation-loop](https://github.com/jedipunkz/adk-playground/tree/main/investigation-loop) にあり、ADK Go v2.5.0（2026-09-30 リリース）で `go vet` とテストを通しています。
 
@@ -22,7 +22,7 @@ draft: false
 
 | | Claude 側 | ADK Go 側 |
 |---|---|---|
-| agent loop（1 エージェントの中で、モデル → ツール → モデルを繰り返す） | Agent SDK の `query()` | `llmagent` |
+| agent loop（1 エージェントの中で、モデル → ツール → モデルを繰り返す） | Claude Agent SDK の `query()` | `llmagent` |
 | オーケストレーションのループ（エージェントを何度も呼び、結果を見て次を決める） | Claude Code の dynamic workflows（loop until done パターン） | `workflow.NewDynamicNode` |
 
 Claude Code の dynamic workflows は、**Claude 自身が JavaScript のオーケストレーション用スクリプトを書き**、ランタイムがそれをバックグラウンドで実行する機能です。スクリプトの中では `agent()` でサブエージェントを起動し、`parallel()` / `pipeline()` で fan-out します。ループ・分岐・途中結果はスクリプトの変数が持つので、Claude のコンテキストには最終結果しか入りません。
@@ -67,7 +67,7 @@ func (f *Flow) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error]
 
 Claude Agent SDK と並べるとこうなります。
 
-| Agent SDK | ADK Go v2.5.0 |
+| Claude Agent SDK | ADK Go v2.5.0 |
 |---|---|
 | `max_turns` / `maxTurns` | なし |
 | `max_budget_usd` / `maxBudgetUsd` | なし |
@@ -75,7 +75,7 @@ Claude Agent SDK と並べるとこうなります。
 | 読み取り系ツールだけ並列実行し、書き込み系は順番に実行 | 1 応答内の複数のツール呼び出しを、既定で goroutine で並列実行（読み書きを区別しない） |
 | 自動 compaction | `runner.Config.Compaction`（既定は無効） |
 
-ADK が劣っているという話ではありません。Agent SDK は Claude Code という完成した harness をライブラリとして使うもので、ADK は harness を組み立てるための framework です。ただ、上限がない状態で外側にさらにループを重ねると、暴走の上に暴走を重ねることになります。なので今回は**ガードレールを先に設計しました**。
+ADK が劣っているという話ではありません。Claude Agent SDK は Claude Code という完成した harness をライブラリとして使うもので、ADK は harness を組み立てるための framework です。ただ、上限がない状態で外側にさらにループを重ねると、暴走の上に暴走を重ねることになります。なので今回は**ガードレールを先に設計しました**。
 
 ## 設計
 
@@ -292,7 +292,7 @@ func (g *guard) beforeTool(ctx agent.Context, t tool.Tool, args map[string]any) 
 
 拒否は Go の error ではなく**ツールの結果**として返しています。こうするとモデルは「このツールは使えない」と知った上で、許可されたツールで調査を続けられます。
 
-サンプルではわざと `restart_pod`（全 Pod を再起動する書き込み系ツール）をツール一覧に入れています。「危険なツールは最初から渡さなければいい」と思うかもしれません。しかし MCP toolset を使うと、サーバが公開しているツールは書き込み系も含めてそのまま入ってきます。**渡していないつもりで渡っている**状況を前提に、allowlist で止める形にしました。Agent SDK の `allowed_tools` / `disallowed_tools` に相当するものです。
+サンプルではわざと `restart_pod`（全 Pod を再起動する書き込み系ツール）をツール一覧に入れています。「危険なツールは最初から渡さなければいい」と思うかもしれません。しかし MCP toolset を使うと、サーバが公開しているツールは書き込み系も含めてそのまま入ってきます。**渡していないつもりで渡っている**状況を前提に、allowlist で止める形にしました。Claude Agent SDK の `allowed_tools` / `disallowed_tools` に相当するものです。
 
 ### スケジューラ層: タイムアウト
 
@@ -400,7 +400,7 @@ Claude Code の dynamic workflows も、スクリプトの中で `Date.now()` �
 
 ### ツールの並列実行は読み書きを区別しない
 
-前述のとおり、ADK は 1 応答内の複数のツール呼び出しを並列に実行します。Agent SDK のように「書き込み系は順番に実行する」区別はありません。今回は書き込み系を allowlist で全部止めたので問題になりませんでしたが、書き込み系を許可するなら直列化を自分で考える必要があります。
+前述のとおり、ADK は 1 応答内の複数のツール呼び出しを並列に実行します。Claude Agent SDK のように「書き込み系は順番に実行する」区別はありません。今回は書き込み系を allowlist で全部止めたので問題になりませんでしたが、書き込み系を許可するなら直列化を自分で考える必要があります。
 
 ## Claude Code の dynamic workflows と比べて
 
@@ -424,7 +424,7 @@ ADK では人間が書きます。柔軟性では劣りますが、停止条件�
 
 ## 参考
 
-- [Agent SDK の概要](https://code.claude.com/docs/ja/agent-sdk/overview)
+- [Claude Agent SDK の概要](https://code.claude.com/docs/ja/agent-sdk/overview)
 - [エージェントループの仕組み](https://code.claude.com/docs/ja/agent-sdk/agent-loop)
 - [Orchestrate subagents at scale with dynamic workflows](https://code.claude.com/docs/en/workflows)
 - [A harness for every task: dynamic workflows in Claude Code](https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code)
