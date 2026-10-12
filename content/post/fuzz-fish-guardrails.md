@@ -20,7 +20,7 @@ draft: false
 
 これらは `CLAUDE.md` に書いてあります。ただ、プロンプトに書いたルールは守られる保証がありませんし、一度守られても次の変更では忘れられます。チームであれば他のメンバーのレビューで拾えることも、一人だと自分が見落とした時点で main に入ってしまいます。
 
-そこで「**ルールは CLAUDE.md で宣言し、違反は linter と CI で機械的に落とす**」という方針でガードレールを 17 件 issue 化し（#204〜#220）、PR #222〜#238 で実装しました。この記事はその記録です。
+そこで「**ルールは CLAUDE.md で宣言し、違反は linter と CI で機械的に落とす**」という方針でガードレールを 17 件 issue 化して実装しました。この記事はその記録です。
 
 ## 方針: 宣言 → 可視化 → gate 化
 
@@ -95,7 +95,7 @@ zizmor の指摘のうちすぐに直せないものは `.github/zizmor.yml` で
 ```yaml
   # dependabot-auto-merge.yml is under parallel maintenance; the spoofable
   # github.actor check should become github.event.pull_request.user.login,
-  # tracked in #215.
+  # tracked in a separate issue.
   bot-conditions:
     ignore:
       - dependabot-auto-merge.yml
@@ -134,7 +134,7 @@ CI の Build and Test と Makefile の `test` を `go test -race ./...` にし�
 
 ### coverage 低下で fail
 
-もともと #199 で PR に coverage をコメントしていたものを、低下したら fail する gate に昇格させました。ポイントは **base と head を同じ runner 上で測る**ことです。
+もともと PR に coverage をコメントしていたものを、低下したら fail する gate に昇格させました。ポイントは **base と head を同じ runner 上で測る**ことです。
 
 ```yaml
       - name: Run tests with coverage (base)
@@ -347,7 +347,7 @@ ruleset が最後の gate になることで、ここまでのガードレール
 
 ### 変化検知の範囲は workflow 自体も含める
 
-以前 #203 で、CI を Go 関連のファイル（`**.go`、`go.mod`、`Makefile` など）が変わったときだけ動くようにしていました。ところが今回のように **workflow 自体を変更する PR** では、Go のファイルが変わっていないため CI が動かず、変更した workflow が正しく動くかを確認できません。#229 で `.github/workflows/ci.yml` を paths filter に追加して解消しました。ガードレールを増やす作業そのものが、ガードレールの外側で行われる点には注意が必要です。
+以前、CI を Go 関連のファイル（`**.go`、`go.mod`、`Makefile` など）が変わったときだけ動くようにしていました。ところが今回のように **workflow 自体を変更する PR** では、Go のファイルが変わっていないため CI が動かず、変更した workflow が正しく動くかを確認できません。`.github/workflows/ci.yml` を paths filter に追加して解消しました。ガードレールを増やす作業そのものが、ガードレールの外側で行われる点には注意が必要です。
 
 ### 同じ環境で比べる
 
@@ -355,7 +355,7 @@ coverage とベンチマークの両方で、base と head を同じ runner で�
 
 ### 1 PR が通るまでの流れ
 
-ガードレールを入れる直前の機能追加（#221、F5 で読み込み済みのデータソースを再読み込みする refresh key）は「PR → CI（build / vet / test / lint）→ squash merge」という流れでした。今は同じ流れの中に、次の順で関門が並んでいます。
+ガードレールを入れる直前の機能追加（F5 で読み込み済みのデータソースを再読み込みする refresh key）は「PR → CI（build / vet / test / lint）→ squash merge」という流れでした。今は同じ流れの中に、次の順で関門が並んでいます。
 
 1. agent が実装し、`make check` と pre-push hook を通して push する
 2. PR テンプレートの design checklist を埋める
@@ -370,7 +370,7 @@ coverage とベンチマークの両方で、base と head を同じ runner で�
 
 - AI review は `ANTHROPIC_API_KEY` を repo の Secrets に登録するまで skip する作りにしているため、まだ実際には動いていません
 - provenance attestation は次回の release（`workflow_dispatch` による手動実行）で初めて動くので、まだ検証できていません
-- zizmor で理由付き ignore にしている項目（Dependabot auto-merge の `github.actor` 判定を `github.event.pull_request.user.login` に変える、など）が #215 で残っています
+- zizmor で理由付き ignore にしている項目（Dependabot auto-merge の `github.actor` 判定を `github.event.pull_request.user.login` に変える、など）が残っています
 - fuzz test は CI でシードコーパスを回しているだけなので、定期的に fuzzing そのものを回す仕組みはまだありません
 
 ## まとめ
