@@ -1,12 +1,12 @@
 ---
-title: "ADK Go 2.x の dynamic workflow で「分かるまで調べる」エージェントを書き、ガードレールで縛る"
+title: "ADK Go 2.x の Dynamic Workflow とその為のガードレール"
 description: "Claude Agent SDK の agent loop や Claude Code の dynamic workflows と同じことを ADK Go 2.x でやるとどうなるか。上限を持たない llmagent のループに、ラウンド上限・進捗なし停止・トークン予算・ツール allowlist を自分で組み込みます"
 date: 2026-10-12T12:00:00+09:00
 Categories: ["AI", "Go", "SRE", "Agent"]
 draft: false
 ---
 
-こんにちは。[ジェダイパンくず☁️](https://x.com/jedipunkz) です。
+こんにちは。[ジェダイパンくず🚀](https://x.com/jedipunkz) です。
 
 前回の記事 [ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える](/post/adk-go-2/) の最後に、こんな宿題を残していました。
 
