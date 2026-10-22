@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="ja" dir="auto">
+
+<head><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>自作 Go ツールに導入したガードレール策 | jedipunkz 🚀 のブログ</title>
+<meta name="keywords" content="Go, Fish, GitHub Actions">
+<meta name="description" content="一人で開発・運用している Go 製の Fish プラグイン fuzz.fish に、LLM が書くコードのセキュリティ・バグ混入・パフォーマンス・設計思想を機械的に守らせるためのガードレールを 17 件導入しました。CLAUDE.md に書いたルールを linter と CI と ruleset に落とした記録です">
+<meta name="author" content="jedipunkz">
+<link rel="canonical" href="https://jedipunkz.rocks/post/fuzz-fish-guardrails/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.93fab3171fff6ba6152e8c67ba3e8cfcee77a1e7b231fd29570601c555d983ef.css" integrity="sha256-k/qzFx//a6YVLoxnuj6M/O53oeeyMf0pVwYBxVXZg&#43;8=" rel="preload stylesheet" as="style">
+<link rel="icon" href="https://jedipunkz.rocks/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.rocks/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.rocks/favicon-32x32.png">
+<link rel="apple-touch-icon" href="https://jedipunkz.rocks/apple-touch-icon.png">
+<link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/fuzz-fish-guardrails/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-track {
+                background: 0 0;
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-thumb {
+                border-color: var(--theme);
+            }
+        }
+
+    </style>
+</noscript>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&amp;family=JetBrains&#43;Mono:wght@400;500&amp;family=Noto&#43;Sans&#43;JP:wght@400..700&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&amp;family=JetBrains&#43;Mono:wght@400;500&amp;family=Noto&#43;Sans&#43;JP:wght@400..700&amp;display=swap">
+
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-2H91XCYVZ8"></script>
+      <script>
+        var doNotTrack = false;
+        if ( true ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-2H91XCYVZ8');
+        }
+      </script><meta property="og:url" content="https://jedipunkz.rocks/post/fuzz-fish-guardrails/">
+  <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
+  <meta property="og:title" content="自作 Go ツールに導入したガードレール策">
+  <meta property="og:description" content="一人で開発・運用している Go 製の Fish プラグイン fuzz.fish に、LLM が書くコードのセキュリティ・バグ混入・パフォーマンス・設計思想を機械的に守らせるためのガードレールを 17 件導入しました。CLAUDE.md に書いたルールを linter と CI と ruleset に落とした記録です">
+  <meta property="og:locale" content="ja">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="post">
+    <meta property="article:published_time" content="2026-10-12T18:00:00+09:00">
+    <meta property="article:modified_time" content="2026-10-12T18:00:00+09:00">
+    <meta property="article:tag" content="Go">
+    <meta property="article:tag" content="Fish">
+    <meta property="article:tag" content="GitHub Actions">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_e327286714a77b0e.jpg">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_e327286714a77b0e.jpg">
+<meta name="twitter:image:alt" content="自作 Go ツールに導入したガードレール策">
+<meta name="twitter:title" content="自作 Go ツールに導入したガードレール策">
+<meta name="twitter:description" content="一人で開発・運用している Go 製の Fish プラグイン fuzz.fish に、LLM が書くコードのセキュリティ・バグ混入・パフォーマンス・設計思想を機械的に守らせるためのガードレールを 17 件導入しました。CLAUDE.md に書いたルールを linter と CI と ruleset に落とした記録です">
+  <meta name="twitter:site" content="@jedipunkz">
+  <meta name="twitter:creator" content="@jedipunkz">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "自作 Go ツールに導入したガードレール策",
+  "name": "自作 Go ツールに導入したガードレール策",
+  "description": "一人で開発・運用している Go 製の Fish プラグイン fuzz.fish に、LLM が書くコードのセキュリティ・バグ混入・パフォーマンス・設計思想を機械的に守らせるためのガードレールを 17 件導入しました。CLAUDE.md に書いたルールを linter と CI と ruleset に落とした記録です",
+  "keywords": [
+    "Go", "Fish", "GitHub Actions"
+  ],
+  "articleBody": "こんにちは。ジェダイパンくず🚀 です。\n以前の記事 Go によるコマンド履歴・ファイル・Git ブランチ/Worktree/コミットを検索する Fish Plugin 開発 で紹介した fuzz.fish は、Fish shell のコマンド履歴・ファイル・Git ブランチなどをファジー検索する Fish plugin です。plugin ですが、検索と TUI の本体は Go で実装していて、Fish 側のスクリプト（conf.d/fuzz.fish）はキーバインドの登録と Go バイナリの呼び出しだけを担っています。このツールを自分で毎日使いながら一人で開発・運用しています。最近はコードの大半を Claude Code や opencode といった AI agent に書いてもらっていて、自分はレビューとマージが中心です。\nこの開発スタイルで一番気になっていたのは、LLM に何を意識させ続けられるかでした。具体的には次の 4 つです。\nセキュリティ: シェルに文字列を渡して実行する箇所や、サプライチェーンに穴を開けないこと バグ混入: 既存の挙動を壊さないこと、テストを減らさないこと パフォーマンス: キー入力のたびに走るフィルタ処理を遅くしないこと 設計思想: パッケージの依存方向や Bubble Tea の Model / Update / View の分担を崩さないこと これらは CLAUDE.md に書いてあります。ただ、プロンプトに書いたルールは守られる保証がありませんし、一度守られても次の変更では忘れられます。チームであれば他のメンバーのレビューで拾えることも、一人だと自分が見落とした時点で main に入ってしまいます。\nそこで「ルールは CLAUDE.md で宣言し、違反は linter と CI で機械的に落とす」という方針でガードレールを 17 件 issue 化して実装しました。この記事はその記録です。\n方針: 宣言 → 可視化 → gate 化 ガードレールは次の 3 段階で考えました。\n宣言: CLAUDE.md や SECURITY.md にルールを書く 可視化: 守れているかを PR 上で見えるようにする（coverage のコメント、ベンチマークの実行など） gate 化: 守れていなければ CI を fail させ、ruleset でマージをブロックする 実は今回の 17 件より前に、PR への test coverage レポートのコメント、ベンチマークの追加、SECURITY.md の作成など、1 と 2 の一部はすでにありました。\n順番が大事だと感じたのは、見えていないものは gate にできないという点です。coverage レポートを毎回眺めていたから、「何 pp 下がったら落とすか」を決められました。ベンチマークを回していたから、どのクエリでどれだけ allocation が起きているかの実測値を持っていました。\nもう 1 つは、gate には許容値（tolerance）が必要だという点です。coverage は 0.5pp、alloc 数は実測値の約 10% 増しを上限にしています。許容値なしで gate にすると、誤差で落ちる CI が続き、最終的に CI 自体が無視されるようになります。\n全体像 17 件を 4 つの関心ごとに分けると次のようになります（1 つの施策が複数に効くものは主なものに入れています）。\n関心ごと 施策 セキュリティ golangci-lint に gosec / errorlint を追加 govulncheck workflow actionlint + zizmor で workflow 自体を lint 全 GitHub Actions を commit SHA に pin release binary に build provenance attestation Dependabot auto-merge を patch / minor に限定 バグ混入 テストを -race 付きで実行 coverage 低下で CI を fail history parser と glob matcher の fuzz test conf.d/fuzz.fish の fish 構文チェック Build and Test に macOS を追加 パフォーマンス filter ホットパスの alloc 数を assert PR ごとに base と head のベンチ差分をコメント 設計思想 depguard でパッケージの依存方向を固定 design checklist 付きの PR テンプレート CLAUDE.md を基準にした AI review 全体の gate make check と pre-push hook main の ruleset（直 push 禁止、必須 check） 以下、関心ごとごとに中身と実測値を書きます。\nセキュリティ gosec と「信用しない False Positive」 .golangci.yml で gosec を有効にしました。初回の実行で出た指摘のうち、G301 / G306（ディレクトリ・ファイルのパーミッション）はテストフィクスチャを作る箇所でした。こちらは 0750 / 0600 に直して解消しています。\n一方で G204（変数を使った subprocess 実行）と G304（変数を使ったファイル読み込み）は exclude にしました。\ngosec: excludes: - G204 - G304 fuzz.fish は git / gh を exec.Command で呼び出すのが本業で、読むファイルもアプリ自身が決めたパスだけです。G204 は exec.Command(\"git\", \"switch\", branch) のような引数リスト渡しでも変数が入れば指摘します。ここを残すと、毎回 //nolint を付けるか、指摘を読み飛ばす習慣がつきます。どちらも linter を信用しなくなる方向なので、除外の理由を PR に書いた上で丸ごと外しました。\n代わりに「exec.Command は引数リストで渡し、sh -c に外部入力を渡さない」というルールは CLAUDE.md の Security セクションと、後述する PR テンプレートと AI review の 3 か所で扱っています。linter が見ない部分を人と LLM のレビューで拾う分担です。\ngovulncheck govulncheck を週次（月曜）のスケジュールで実行しています。初回の結果は、呼び出し経路上に到達する（reachable な）脆弱性は 0 件でした。到達しない脆弱性は import 単位で 3 件、モジュール単位で 6 件ありましたが、govulncheck は実際に呼んでいる関数まで解析するので、アラートの大半を「関係ない」と判断する手間が省けます。\nworkflow 自体を lint する（actionlint + zizmor） ガードレールを CI に寄せると、今度は CI の定義そのものが攻撃面になります。そこで actionlint と zizmor で workflow を lint するようにしました。\nzizmor の指摘のうちすぐに直せないものは .github/zizmor.yml で ignore していますが、ignore には必ず理由と追跡 issue を書くルールにしています。\n# dependabot-auto-merge.yml is under parallel maintenance; the spoofable # github.actor check should become github.event.pull_request.user.login, # tracked in a separate issue. bot-conditions: ignore: - dependabot-auto-merge.yml 理由なしの ignore は、LLM が「エラーが消えるから」という理由で追加しがちな変更です。理由を書く欄があるだけで、レビュー時に「この ignore は妥当か」を判断する材料が残ります。\nGitHub Actions を commit SHA に pin 全 9 workflow、30 個の uses: を commit SHA に pin しました。\n- name: Checkout code uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 SHA は git ls-remote と gh api /repos/.../git/tags の 2 通りで取得して一致を確認しています。agent が書いた SHA を目視で正しいと判断するのは難しいので、取得経路を 2 つにして機械的に照合しました。あわせて zizmor の unpinned-uses ポリシーを hash-pin に強化し、新しく追加した workflow が tag 参照に戻ったら lint で落ちるようにしました。\nrelease の provenance と Dependabot release job に actions/attest-build-provenance を追加し、配布する *.tar.gz に build provenance を付けました。id-token: write と attestations: write は release job にだけ付けています。利用者は次のコマンドで、バイナリがこのリポジトリの workflow でビルドされたことを確認できます。\ngh attestation verify fuzz_linux_amd64.tar.gz --repo jedipunkz/fuzz.fish Dependabot の auto-merge は、dependabot/fetch-metadata が返す update-type を見て patch / minor のときだけ有効にしました。major update は破壊的変更を含む前提なので、手動でマージします。\nバグ混入 -race と macOS matrix CI の Build and Test と Makefile の test を go test -race ./... にしました。fuzz.fish は Bubble Tea の tea.Cmd で履歴・ファイル・Git の読み込みを非同期に行うので、goroutine をまたぐ変更が入りやすい構造です。導入時点では全 8 パッケージで race は検出されませんでしたが、今後の変更で入ったときに落とすのが目的です。\nあわせて Build and Test を ubuntu と macOS の matrix にしました。自分の手元は macOS なので、Linux だけの CI では「CI は通るが手元で壊れる」が起こりえます。導入時点で macOS 固有の失敗はありませんでした。\ncoverage 低下で fail もともと PR に coverage をコメントしていたものを、低下したら fail する gate に昇格させました。ポイントは base と head を同じ runner 上で測ることです。\n- name: Run tests with coverage (base) run: | set -o pipefail git worktree add \"$RUNNER_TEMP/base\" \"${{ github.event.pull_request.base.sha }}\" cd \"$RUNNER_TEMP/base\" go test -coverprofile=\"$RUNNER_TEMP/coverage-base.out\" ./... main の coverage を artifact に保存して PR から参照する方法も考えましたが、artifact の保持期限や、main の最新 commit と PR の base がずれる問題があります。git worktree add で base の commit をその場に展開して測るほうが、仕組みが単純で比較も正確です。\n判定は 0.5pp の許容値付きです。\n- name: Fail when total coverage drops run: | if awk -v h=\"${{ steps.totals.outputs.head }}\" -v b=\"${{ steps.totals.outputs.base }}\" \\ 'BEGIN { exit (h + 0.5 \u003c b) ? 0 : 1 }'; then echo \"::error::Total coverage dropped from ${{ steps.totals.outputs.base }}% to ${{ steps.totals.outputs.head }}% (tolerance 0.5 pp)\" exit 1 fi 導入した PR では base 73.2%、head 73.2%、delta 0.0pp でした。LLM はテストが落ちるとテスト側を消して通そうとすることがあるので、「テストを減らすと CI が落ちる」状態は効果が大きいと考えています。\nfuzz test 任意の入力を受ける 2 つの関数に Go 標準の fuzz test を追加しました。fish の履歴ファイルをパースする parseReader と、*.go のような glob でマッチさせる globMatch です。\nf.Fuzz(func(t *testing.T, data []byte) { entries := parseReader(bytes.NewReader(data)) if entries == nil { t.Fatal(\"parseReader returned nil, want an empty slice\") } for _, e := range entries { if e.Count \u003c 1 { t.Fatalf(\"entry %q has Count %d, want \u003e= 1\", e.Cmd, e.Count) } } }) panic しないことだけでなく、不変条件を確認しています。parser は「結果が nil でない」「重複排除後の各エントリの Count が 1 以上」、glob matcher は「マッチ位置が文字列の範囲内で、単調増加している」です。\nローカルで各 30 秒実行し、FuzzParseReader は約 10.6 万回、FuzzGlobMatch は約 250 万回の入力で crash はありませんでした。実際のバグも見つかっていません。CI ではシードコーパス（既存のユニットテストの入力から取ったもの）が通常の go test の一部として実行されるだけで、fuzzing そのものは回していません。\nfish スクリプトの構文チェック fuzz.fish は Go のバイナリだけでなく、conf.d/fuzz.fish という fish スクリプトも配布しています。Go の CI はここを一切見ないので、fish --no-execute conf.d/fuzz.fish で構文だけ確認する workflow を追加しました。conf.d/** と workflow の変更時にだけ動きます。\nパフォーマンス fuzz.fish は 1 キー入力ごとに数千〜数万件の履歴をフィルタし直します。ここで allocation が増えると GC が走り、入力の体感が悪くなります。CLAUDE.md には「filter.go のホットパスで per-keystroke の allocation を増やさない」と書いていますが、LLM はこの手のルールを一番忘れやすいと感じています。append で新しいスライスを作るのは、普通の Go のコードとしては自然な書き方だからです。\nalloc 数を assert する ベンチマークの実行時間は CI の runner によってぶれるので、gate にするには向きません。一方で allocation の回数は決定的です。そこで testing.AllocsPerRun で updateFilter の alloc 数を測り、上限を超えたら通常の go test が fail するようにしました。\n// TestUpdateFilter_AllocCount asserts the allocation count of the filter hot // path: CLAUDE.md requires updateFilter to avoid per-keystroke allocations on // a warmed-up model, so a regression must fail go test. Unlike benchmark // timings, allocation counts are deterministic and CI-safe. Thresholds are the // measured values plus ~10% headroom; counts scale with the match set, so each // query/size pair carries its own cap. func TestUpdateFilter_AllocCount(t *testing.T) { queries := []struct { name string query string maxAllocs [2]float64 }{ {name: \"empty\", query: \"\", maxAllocs: [2]float64{2, 2}}, {name: \"single\", query: \"gpl\", maxAllocs: [2]float64{310, 2800}}, {name: \"multi\", query: \"git pull\", maxAllocs: [2]float64{1300, 12500}}, {name: \"glob\", query: \"nvim *.go\", maxAllocs: [2]float64{155, 1400}}, } sizes := []int{1000, 10000} // ... } 履歴 1,000 件での実測値は次のとおりで、上限はそれぞれ約 10% の余裕を持たせています。\nクエリ 実測 alloc 数（n=1000） 上限 空 1 2 単一 token（gpl） 275 310 複数 token（git pull） 1173 1300 glob（nvim *.go） 138 155 テストのコメントに「なぜこのテストがあるか」と「なぜ実行時間ではなく alloc 数なのか」を書いているのは、LLM がこのテストを読んだときに、上限を引き上げて通すのではなく実装側を直す判断をしてほしいからです。\nベンチマーク差分を PR にコメントする 実行時間は gate にはしませんが、見えるようにはしておきたいので、PR ごとに base と head を同じ runner でベンチマークし、benchstat の結果を sticky comment で投稿するようにしました。\n- name: Run benchmarks on PR head run: | (cd head \u0026\u0026 go test -run '^$' -bench . -benchmem -count 10 -benchtime=100x ./internal/app/ ./internal/history/) \u003e bench-head.txt - name: Run benchmarks on base branch run: | (cd base \u0026\u0026 go test -run '^$' -bench . -benchmem -count 10 -benchtime=100x ./internal/app/ ./internal/history/) \u003e bench-base.txt coverage と同じく、別の runner で測った値と比べると環境差がそのまま差分に出るので、同じ runner で両方を測っています。初回のコメントでは geomean +1.17% で、誤差の範囲でした。\nつまりパフォーマンスについては、決定的な指標（alloc 数）は gate、ぶれる指標（実行時間）は可視化と使い分けています。\n設計思想 depguard で依存方向を固定する fuzz.fish のパッケージ構成は次のとおりです。\ncmd/fuzz/main.go # エントリポイント internal/app/ # TUI（Bubble Tea の Model / Update / View） internal/git/ # Git ブランチ等の取得 internal/history/ # fish 履歴のパース internal/files/ # ディレクトリの走査 internal/config/ # 設定ファイルの読み込み internal/scoring/ # frecency スコア internal/ui/ # スタイル・色・整形 意図している依存方向は「cmd/fuzz → app → データ層（git / history / files） → ui」で、config / scoring / ui は他の internal パッケージに依存しない葉です。LLM は「ここで app の型を使えば早い」という理由で逆向きの import を平気で足すので、depguard のルール 3 本で固定しました。\nルール 内容 internal-leaf-no-internal-imports config / scoring / ui は他の internal パッケージを import しない data-layer-imports-ui-only files / git / history は internal のうち ui だけを import できる app-only-from-cmd-fuzz internal/app を import できるのは cmd/fuzz だけ app-only-from-cmd-fuzz: files: - \"!**/cmd/fuzz/**\" deny: - pkg: github.com/jedipunkz/fuzz.fish/internal/app desc: only cmd/fuzz may import internal/app desc に書いた文言は lint のエラーメッセージとしてそのまま出ます。LLM はこのメッセージを読んで修正するので、何が禁止されているかだけでなく、どこからなら良いのかを書くようにしています。\nPR テンプレートの design checklist PR テンプレートに、この記事で扱っている論点を 4 行のチェックリストとして入れました。\n## Design Checklist - [ ] No new per-keystroke allocations in `internal/app/filter.go`. - [ ] `exec.Command` uses argument lists, never `sh -c` with external input. - [ ] Package dependency direction is preserved. - [ ] Tests added or updated. 1 行目は alloc assert、2 行目は gosec と CLAUDE.md の Security、3 行目は depguard に対応しています。機械で落とせる部分は CI が担い、チェックリストは「この PR でそれを意識したか」を LLM 自身に PR 本文で確認させるためのものです。\nCLAUDE.md を基準にした AI review 最後に、anthropics/claude-code-action で PR を CLAUDE.md に照らしてレビューする workflow を追加しました。linter では表現しにくい「Bubble Tea の Model / Update / View をファイルごとに分ける」「推測で抽象化を足さない」といった規約を読ませるためです。\nprompt: | ... 3. Report ONLY concrete violations of the `Code Conventions` and `Security` sections of CLAUDE.md. Do not report style preferences, generic advice, or anything covered by other sections of CLAUDE.md. 4. For each violation, cite the exact file and line number and quote the CLAUDE.md rule it violates. 5. Post each finding as an inline PR review comment. If there are no violations, do not post any comments. claude_args: | --max-turns 20 --allowedTools \"Read,Grep,Glob,Bash(gh pr diff:*),Bash(gh pr view:*),mcp__github_inline_comment__create_inline_comment\" 気をつけたのは次の 3 点です。\n指摘の範囲を CLAUDE.md の Code Conventions と Security に限定し、根拠となるルールの引用を必須にした。一般論のレビューコメントが並ぶと、本当の違反が埋もれるため allowedTools を読み取り系と gh pr diff / gh pr view、インラインコメントの投稿だけに絞った。PR の差分は外部から入る入力なので、そこに書かれた指示に従ってコードを書き換えたり任意のコマンドを実行したりできないようにするため action 自体も SHA で pin し、fork からの PR では secrets が渡らないので自動的に skip される gate をすり抜けさせない make check と pre-push hook CI で落ちてから直すと、LLM とのやりとりが 1 往復増えます。そこで CI と同じ内容（build + vet + golangci-lint + go test -race）をローカルで実行する make check を用意し、CLAUDE.md に「PR を出す前に make check を実行する」と書きました。\n# Same checks as CI: build, vet, golangci-lint (v2.14.0), tests with -race. check: build lint test さらに .githooks/pre-push で push のたびに make check を実行します。git config core.hooksPath .githooks で有効になります。CLAUDE.md には --no-verify で hook を飛ばすことも禁止と書いています。\nruleset で main を守る ここまでの CI は、main に直接 push されたら意味がありません。一人で開発していると、自分で「ちょっとだけ」と直 push しがちですし、権限を持った agent も同じことができます。そこで main の ruleset を作り直しました。\nmain への直接 push を禁止し、PR を必須にする ブランチが base に追従している（up-to-date）ことを必須にする 必須 check を 5 件にする: Build and Test（ubuntu / macOS）、Lint、CodeQL、govulncheck admin の bypass は PR 経由に限定する ruleset が最後の gate になることで、ここまでのガードレールが「実行されているが無視できる」状態から「通らないとマージできない」状態になります。\n導入して分かったこと 変化検知の範囲は workflow 自体も含める 以前、CI を Go 関連のファイル（**.go、go.mod、Makefile など）が変わったときだけ動くようにしていました。ところが今回のように workflow 自体を変更する PR では、Go のファイルが変わっていないため CI が動かず、変更した workflow が正しく動くかを確認できません。.github/workflows/ci.yml を paths filter に追加して解消しました。ガードレールを増やす作業そのものが、ガードレールの外側で行われる点には注意が必要です。\n同じ環境で比べる coverage とベンチマークの両方で、base と head を同じ runner で測る形にしました。別々の環境で測った値の差には、コードの変化と環境の差が混ざります。少し CI の実行時間は伸びますが、gate や判断の根拠にする値は同じ条件で取るべきだと考えています。\n1 PR が通るまでの流れ ガードレールを入れる直前の機能追加（F5 で読み込み済みのデータソースを再読み込みする refresh key）は「PR → CI（build / vet / test / lint）→ squash merge」という流れでした。今は同じ流れの中に、次の順で関門が並んでいます。\nagent が実装し、make check と pre-push hook を通して push する PR テンプレートの design checklist を埋める CI が build / vet / lint（depguard・gosec）/ -race 付きテスト（alloc assert・fuzz のシードを含む）を ubuntu と macOS で実行する coverage の差分とベンチマークの差分が PR にコメントされる AI review が CLAUDE.md に照らして違反があればインラインでコメントする ruleset の必須 check がすべて通ったら squash merge する 自分がレビューで見るのは、この結果と差分そのものです。「依存方向は崩れていないか」「alloc を増やしていないか」を目で追う必要がなくなったので、仕様として正しいかどうかに集中できるようになりました。\n残っている課題 AI review は ANTHROPIC_API_KEY を repo の Secrets に登録するまで skip する作りにしているため、まだ実際には動いていません provenance attestation は次回の release（workflow_dispatch による手動実行）で初めて動くので、まだ検証できていません zizmor で理由付き ignore にしている項目（Dependabot auto-merge の github.actor 判定を github.event.pull_request.user.login に変える、など）が残っています fuzz test は CI でシードコーパスを回しているだけなので、定期的に fuzzing そのものを回す仕組みはまだありません まとめ 一人で LLM と開発していると、CLAUDE.md に書いたルールが守られているかを確認する人がいない。そこでルールを linter・テスト・CI・ruleset に落とし、違反を機械的に落とすようにした 進め方は「宣言 → 可視化 → gate 化」。coverage やベンチマークが先に見えていたから、許容値を決めて gate にできた セキュリティは gosec・govulncheck・zizmor・SHA pin・provenance、バグ混入は -race・coverage gate・fuzz・macOS matrix、パフォーマンスは alloc 数の assert とベンチ差分、設計思想は depguard・PR テンプレート・AI review で担っている ぶれる指標は gate にせず可視化に留め、決定的な指標だけを gate にする。比較は同じ runner で行う 最後の gate は ruleset。main への直 push を禁止して、全部の check を通らないとマージできないようにした LLM に「気をつけて」とお願いするのではなく、気をつけなくても違反できない状態にしておく、というのが今回の結論です。次は AI review を実際に動かし、どのくらいの頻度で CLAUDE.md 違反を拾えるのかを見てみたいと思っています。\n",
+  "wordCount" : "1656",
+  "inLanguage": "ja",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_e327286714a77b0e.jpg",
+  "datePublished": "2026-10-12T18:00:00+09:00",
+  "dateModified": "2026-10-12T18:00:00+09:00",
+  "author":{
+    "@type": "Person",
+    "name": "jedipunkz"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "https://jedipunkz.rocks/post/fuzz-fish-guardrails/"
+  },
+  "publisher": {
+    "@type": "Person",
+    "name": "jedipunkz 🚀 のブログ",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
+    }
+  }
+}
+</script>
+
+</head>
+
+<body class="" id="top">
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.body.classList.add('dark');
+    } else if (localStorage.getItem("pref-theme") === "light") {
+        document.body.classList.remove('dark')
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark');
+    }
+
+</script>
+
+<header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="https://jedipunkz.rocks/" accesskey="h" title="jedipunkz (Alt + H)">jedipunkz</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="https://jedipunkz.rocks/about" title="About Me">
+                    <span>About Me</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
+      自作 Go ツールに導入したガードレール策
+    </h1>
+    <div class="post-description">
+      一人で開発・運用している Go 製の Fish プラグイン fuzz.fish に、LLM が書くコードのセキュリティ・バグ混入・パフォーマンス・設計思想を機械的に守らせるためのガードレールを 17 件導入しました。CLAUDE.md に書いたルールを linter と CI と ruleset に落とした記録です
+    </div>
+    <div class="post-meta"><span title='2026-10-12 18:00:00 +0900 +0900'>2026-10-12</span>&nbsp;·&nbsp;8 分&nbsp;·&nbsp;jedipunkz
+
+</div>
+  </header> 
+  <div class="post-content"><p>こんにちは。<a href="https://x.com/jedipunkz">ジェダイパンくず🚀</a> です。</p>
+<p>以前の記事 <a href="/post/fuzz-fish/">Go によるコマンド履歴・ファイル・Git ブランチ/Worktree/コミットを検索する Fish Plugin 開発</a> で紹介した <a href="https://github.com/jedipunkz/fuzz.fish">fuzz.fish</a> は、Fish shell のコマンド履歴・ファイル・Git ブランチなどをファジー検索する Fish plugin です。plugin ですが、検索と TUI の本体は Go で実装していて、Fish 側のスクリプト（<code>conf.d/fuzz.fish</code>）はキーバインドの登録と Go バイナリの呼び出しだけを担っています。このツールを自分で毎日使いながら一人で開発・運用しています。最近はコードの大半を Claude Code や opencode といった AI agent に書いてもらっていて、自分はレビューとマージが中心です。</p>
+<p>この開発スタイルで一番気になっていたのは、<strong>LLM に何を意識させ続けられるか</strong>でした。具体的には次の 4 つです。</p>
+<ul>
+<li>セキュリティ: シェルに文字列を渡して実行する箇所や、サプライチェーンに穴を開けないこと</li>
+<li>バグ混入: 既存の挙動を壊さないこと、テストを減らさないこと</li>
+<li>パフォーマンス: キー入力のたびに走るフィルタ処理を遅くしないこと</li>
+<li>設計思想: パッケージの依存方向や Bubble Tea の Model / Update / View の分担を崩さないこと</li>
+</ul>
+<p>これらは <code>CLAUDE.md</code> に書いてあります。ただ、プロンプトに書いたルールは守られる保証がありませんし、一度守られても次の変更では忘れられます。チームであれば他のメンバーのレビューで拾えることも、一人だと自分が見落とした時点で main に入ってしまいます。</p>
+<p>そこで「<strong>ルールは CLAUDE.md で宣言し、違反は linter と CI で機械的に落とす</strong>」という方針でガードレールを 17 件 issue 化して実装しました。この記事はその記録です。</p>
+<h2 id="方針-宣言--可視化--gate-化">方針: 宣言 → 可視化 → gate 化<a hidden class="anchor" aria-hidden="true" href="#方針-宣言--可視化--gate-化">#</a></h2>
+<p>ガードレールは次の 3 段階で考えました。</p>
+<ol>
+<li>宣言: <code>CLAUDE.md</code> や <code>SECURITY.md</code> にルールを書く</li>
+<li>可視化: 守れているかを PR 上で見えるようにする（coverage のコメント、ベンチマークの実行など）</li>
+<li>gate 化: 守れていなければ CI を fail させ、ruleset でマージをブロックする</li>
+</ol>
+<p>実は今回の 17 件より前に、PR への test coverage レポートのコメント、ベンチマークの追加、<code>SECURITY.md</code> の作成など、1 と 2 の一部はすでにありました。</p>
+<p>順番が大事だと感じたのは、<strong>見えていないものは gate にできない</strong>という点です。coverage レポートを毎回眺めていたから、「何 pp 下がったら落とすか」を決められました。ベンチマークを回していたから、どのクエリでどれだけ allocation が起きているかの実測値を持っていました。</p>
+<p>もう 1 つは、gate には<strong>許容値（tolerance）が必要</strong>だという点です。coverage は 0.5pp、alloc 数は実測値の約 10% 増しを上限にしています。許容値なしで gate にすると、誤差で落ちる CI が続き、最終的に CI 自体が無視されるようになります。</p>
+<h2 id="全体像">全体像<a hidden class="anchor" aria-hidden="true" href="#全体像">#</a></h2>
+<p>17 件を 4 つの関心ごとに分けると次のようになります（1 つの施策が複数に効くものは主なものに入れています）。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>関心ごと</th>
+        <th>施策</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>セキュリティ</td>
+        <td>golangci-lint に gosec / errorlint を追加</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>govulncheck workflow</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>actionlint + zizmor で workflow 自体を lint</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>全 GitHub Actions を commit SHA に pin</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>release binary に build provenance attestation</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>Dependabot auto-merge を patch / minor に限定</td>
+      </tr>
+      <tr>
+        <td>バグ混入</td>
+        <td>テストを <code>-race</code> 付きで実行</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>coverage 低下で CI を fail</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>history parser と glob matcher の fuzz test</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><code>conf.d/fuzz.fish</code> の fish 構文チェック</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>Build and Test に macOS を追加</td>
+      </tr>
+      <tr>
+        <td>パフォーマンス</td>
+        <td>filter ホットパスの alloc 数を assert</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>PR ごとに base と head のベンチ差分をコメント</td>
+      </tr>
+      <tr>
+        <td>設計思想</td>
+        <td>depguard でパッケージの依存方向を固定</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>design checklist 付きの PR テンプレート</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>CLAUDE.md を基準にした AI review</td>
+      </tr>
+      <tr>
+        <td>全体の gate</td>
+        <td><code>make check</code> と pre-push hook</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td>main の ruleset（直 push 禁止、必須 check）</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>以下、関心ごとごとに中身と実測値を書きます。</p>
+<h2 id="セキュリティ">セキュリティ<a hidden class="anchor" aria-hidden="true" href="#セキュリティ">#</a></h2>
+<h3 id="gosec-と信用しない-false-positive">gosec と「信用しない False Positive」<a hidden class="anchor" aria-hidden="true" href="#gosec-と信用しない-false-positive">#</a></h3>
+<p><code>.golangci.yml</code> で gosec を有効にしました。初回の実行で出た指摘のうち、G301 / G306（ディレクトリ・ファイルのパーミッション）はテストフィクスチャを作る箇所でした。こちらは 0750 / 0600 に直して解消しています。</p>
+<p>一方で G204（変数を使った subprocess 実行）と G304（変数を使ったファイル読み込み）は exclude にしました。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="w">    </span><span class="nt">gosec</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">excludes</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="l">G204</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="l">G304</span><span class="w">
+</span></span></span></code></pre></div><p>fuzz.fish は git / gh を <code>exec.Command</code> で呼び出すのが本業で、読むファイルもアプリ自身が決めたパスだけです。G204 は <code>exec.Command(&quot;git&quot;, &quot;switch&quot;, branch)</code> のような<strong>引数リスト渡しでも</strong>変数が入れば指摘します。ここを残すと、毎回 <code>//nolint</code> を付けるか、指摘を読み飛ばす習慣がつきます。どちらも linter を信用しなくなる方向なので、除外の理由を PR に書いた上で丸ごと外しました。</p>
+<p>代わりに「<code>exec.Command</code> は引数リストで渡し、<code>sh -c</code> に外部入力を渡さない」というルールは CLAUDE.md の Security セクションと、後述する PR テンプレートと AI review の 3 か所で扱っています。linter が見ない部分を人と LLM のレビューで拾う分担です。</p>
+<h3 id="govulncheck">govulncheck<a hidden class="anchor" aria-hidden="true" href="#govulncheck">#</a></h3>
+<p><a href="https://go.dev/doc/security/vuln/">govulncheck</a> を週次（月曜）のスケジュールで実行しています。初回の結果は、<strong>呼び出し経路上に到達する（reachable な）脆弱性は 0 件</strong>でした。到達しない脆弱性は import 単位で 3 件、モジュール単位で 6 件ありましたが、govulncheck は実際に呼んでいる関数まで解析するので、アラートの大半を「関係ない」と判断する手間が省けます。</p>
+<h3 id="workflow-自体を-lint-するactionlint--zizmor">workflow 自体を lint する（actionlint + zizmor）<a hidden class="anchor" aria-hidden="true" href="#workflow-自体を-lint-するactionlint--zizmor">#</a></h3>
+<p>ガードレールを CI に寄せると、今度は <strong>CI の定義そのものが攻撃面</strong>になります。そこで <a href="https://github.com/rhysd/actionlint">actionlint</a> と <a href="https://docs.zizmor.sh/">zizmor</a> で workflow を lint するようにしました。</p>
+<p>zizmor の指摘のうちすぐに直せないものは <code>.github/zizmor.yml</code> で ignore していますが、<strong>ignore には必ず理由と追跡 issue を書く</strong>ルールにしています。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="w">  </span><span class="c"># dependabot-auto-merge.yml is under parallel maintenance; the spoofable</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="c"># github.actor check should become github.event.pull_request.user.login,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="c"># tracked in a separate issue.</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">bot-conditions</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">ignore</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="l">dependabot-auto-merge.yml</span><span class="w">
+</span></span></span></code></pre></div><p>理由なしの ignore は、LLM が「エラーが消えるから」という理由で追加しがちな変更です。理由を書く欄があるだけで、レビュー時に「この ignore は妥当か」を判断する材料が残ります。</p>
+<h3 id="github-actions-を-commit-sha-に-pin">GitHub Actions を commit SHA に pin<a hidden class="anchor" aria-hidden="true" href="#github-actions-を-commit-sha-に-pin">#</a></h3>
+<p>全 9 workflow、30 個の <code>uses:</code> を commit SHA に pin しました。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">Checkout code</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l">actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1</span><span class="w"> </span><span class="c"># v7.0.1</span><span class="w">
+</span></span></span></code></pre></div><p>SHA は <code>git ls-remote</code> と <code>gh api /repos/.../git/tags</code> の 2 通りで取得して一致を確認しています。agent が書いた SHA を目視で正しいと判断するのは難しいので、取得経路を 2 つにして機械的に照合しました。あわせて zizmor の <code>unpinned-uses</code> ポリシーを <code>hash-pin</code> に強化し、<strong>新しく追加した workflow が tag 参照に戻ったら lint で落ちる</strong>ようにしました。</p>
+<h3 id="release-の-provenance-と-dependabot">release の provenance と Dependabot<a hidden class="anchor" aria-hidden="true" href="#release-の-provenance-と-dependabot">#</a></h3>
+<p>release job に <code>actions/attest-build-provenance</code> を追加し、配布する <code>*.tar.gz</code> に build provenance を付けました。<code>id-token: write</code> と <code>attestations: write</code> は release job にだけ付けています。利用者は次のコマンドで、バイナリがこのリポジトリの workflow でビルドされたことを確認できます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">gh attestation verify fuzz_linux_amd64.tar.gz --repo jedipunkz/fuzz.fish
+</span></span></code></pre></div><p>Dependabot の auto-merge は、<code>dependabot/fetch-metadata</code> が返す <code>update-type</code> を見て patch / minor のときだけ有効にしました。major update は破壊的変更を含む前提なので、手動でマージします。</p>
+<h2 id="バグ混入">バグ混入<a hidden class="anchor" aria-hidden="true" href="#バグ混入">#</a></h2>
+<h3 id="-race-と-macos-matrix"><code>-race</code> と macOS matrix<a hidden class="anchor" aria-hidden="true" href="#-race-と-macos-matrix">#</a></h3>
+<p>CI の Build and Test と Makefile の <code>test</code> を <code>go test -race ./...</code> にしました。fuzz.fish は Bubble Tea の <code>tea.Cmd</code> で履歴・ファイル・Git の読み込みを非同期に行うので、goroutine をまたぐ変更が入りやすい構造です。導入時点では全 8 パッケージで race は検出されませんでしたが、今後の変更で入ったときに落とすのが目的です。</p>
+<p>あわせて Build and Test を ubuntu と macOS の matrix にしました。自分の手元は macOS なので、Linux だけの CI では「CI は通るが手元で壊れる」が起こりえます。導入時点で macOS 固有の失敗はありませんでした。</p>
+<h3 id="coverage-低下で-fail">coverage 低下で fail<a hidden class="anchor" aria-hidden="true" href="#coverage-低下で-fail">#</a></h3>
+<p>もともと PR に coverage をコメントしていたものを、低下したら fail する gate に昇格させました。ポイントは <strong>base と head を同じ runner 上で測る</strong>ことです。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">Run tests with coverage (base)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p">|</span><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">          set -o pipefail
+</span></span></span><span class="line"><span class="cl"><span class="sd">          git worktree add &#34;$RUNNER_TEMP/base&#34; &#34;${{ github.event.pull_request.base.sha }}&#34;
+</span></span></span><span class="line"><span class="cl"><span class="sd">          cd &#34;$RUNNER_TEMP/base&#34;
+</span></span></span><span class="line"><span class="cl"><span class="sd">          go test -coverprofile=&#34;$RUNNER_TEMP/coverage-base.out&#34; ./...</span><span class="w">
+</span></span></span></code></pre></div><p>main の coverage を artifact に保存して PR から参照する方法も考えましたが、artifact の保持期限や、main の最新 commit と PR の base がずれる問題があります。<code>git worktree add</code> で base の commit をその場に展開して測るほうが、仕組みが単純で比較も正確です。</p>
+<p>判定は 0.5pp の許容値付きです。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">Fail when total coverage drops</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p">|</span><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">          if awk -v h=&#34;${{ steps.totals.outputs.head }}&#34; -v b=&#34;${{ steps.totals.outputs.base }}&#34; \
+</span></span></span><span class="line"><span class="cl"><span class="sd">            &#39;BEGIN { exit (h + 0.5 &lt; b) ? 0 : 1 }&#39;; then
+</span></span></span><span class="line"><span class="cl"><span class="sd">            echo &#34;::error::Total coverage dropped from ${{ steps.totals.outputs.base }}% to ${{ steps.totals.outputs.head }}% (tolerance 0.5 pp)&#34;
+</span></span></span><span class="line"><span class="cl"><span class="sd">            exit 1
+</span></span></span><span class="line"><span class="cl"><span class="sd">          fi</span><span class="w">
+</span></span></span></code></pre></div><p>導入した PR では base 73.2%、head 73.2%、delta 0.0pp でした。LLM はテストが落ちるとテスト側を消して通そうとすることがあるので、「テストを減らすと CI が落ちる」状態は効果が大きいと考えています。</p>
+<h3 id="fuzz-test">fuzz test<a hidden class="anchor" aria-hidden="true" href="#fuzz-test">#</a></h3>
+<p>任意の入力を受ける 2 つの関数に Go 標準の fuzz test を追加しました。fish の履歴ファイルをパースする <code>parseReader</code> と、<code>*.go</code> のような glob でマッチさせる <code>globMatch</code> です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="w">	</span><span class="nx">f</span><span class="p">.</span><span class="nf">Fuzz</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">,</span><span class="w"> </span><span class="nx">data</span><span class="w"> </span><span class="p">[]</span><span class="kt">byte</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">entries</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nf">parseReader</span><span class="p">(</span><span class="nx">bytes</span><span class="p">.</span><span class="nf">NewReader</span><span class="p">(</span><span class="nx">data</span><span class="p">))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">entries</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">t</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="s">&#34;parseReader returned nil, want an empty slice&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">e</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">entries</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">if</span><span class="w"> </span><span class="nx">e</span><span class="p">.</span><span class="nx">Count</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nx">t</span><span class="p">.</span><span class="nf">Fatalf</span><span class="p">(</span><span class="s">&#34;entry %q has Count %d, want &gt;= 1&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">e</span><span class="p">.</span><span class="nx">Cmd</span><span class="p">,</span><span class="w"> </span><span class="nx">e</span><span class="p">.</span><span class="nx">Count</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">})</span><span class="w">
+</span></span></span></code></pre></div><p>panic しないことだけでなく、<strong>不変条件</strong>を確認しています。parser は「結果が nil でない」「重複排除後の各エントリの Count が 1 以上」、glob matcher は「マッチ位置が文字列の範囲内で、単調増加している」です。</p>
+<p>ローカルで各 30 秒実行し、<code>FuzzParseReader</code> は約 10.6 万回、<code>FuzzGlobMatch</code> は約 250 万回の入力で crash はありませんでした。実際のバグも見つかっていません。CI ではシードコーパス（既存のユニットテストの入力から取ったもの）が通常の <code>go test</code> の一部として実行されるだけで、fuzzing そのものは回していません。</p>
+<h3 id="fish-スクリプトの構文チェック">fish スクリプトの構文チェック<a hidden class="anchor" aria-hidden="true" href="#fish-スクリプトの構文チェック">#</a></h3>
+<p>fuzz.fish は Go のバイナリだけでなく、<code>conf.d/fuzz.fish</code> という fish スクリプトも配布しています。Go の CI はここを一切見ないので、<code>fish --no-execute conf.d/fuzz.fish</code> で構文だけ確認する workflow を追加しました。<code>conf.d/**</code> と workflow の変更時にだけ動きます。</p>
+<h2 id="パフォーマンス">パフォーマンス<a hidden class="anchor" aria-hidden="true" href="#パフォーマンス">#</a></h2>
+<p>fuzz.fish は 1 キー入力ごとに数千〜数万件の履歴をフィルタし直します。ここで allocation が増えると GC が走り、入力の体感が悪くなります。CLAUDE.md には「filter.go のホットパスで per-keystroke の allocation を増やさない」と書いていますが、LLM はこの手のルールを一番忘れやすいと感じています。<code>append</code> で新しいスライスを作るのは、普通の Go のコードとしては自然な書き方だからです。</p>
+<h3 id="alloc-数を-assert-する">alloc 数を assert する<a hidden class="anchor" aria-hidden="true" href="#alloc-数を-assert-する">#</a></h3>
+<p>ベンチマークの実行時間は CI の runner によってぶれるので、gate にするには向きません。一方で <strong>allocation の回数は決定的</strong>です。そこで <code>testing.AllocsPerRun</code> で <code>updateFilter</code> の alloc 数を測り、上限を超えたら通常の <code>go test</code> が fail するようにしました。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="c1">// TestUpdateFilter_AllocCount asserts the allocation count of the filter hot</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// path: CLAUDE.md requires updateFilter to avoid per-keystroke allocations on</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// a warmed-up model, so a regression must fail go test. Unlike benchmark</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// timings, allocation counts are deterministic and CI-safe. Thresholds are the</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// measured values plus ~10% headroom; counts scale with the match set, so each</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// query/size pair carries its own cap.</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">TestUpdateFilter_AllocCount</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">queries</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="p">[]</span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">name</span><span class="w">  </span><span class="kt">string</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">query</span><span class="w"> </span><span class="kt">string</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">maxAllocs</span><span class="w"> </span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="kt">float64</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">{</span><span class="nx">name</span><span class="p">:</span><span class="w"> </span><span class="s">&#34;empty&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">query</span><span class="p">:</span><span class="w"> </span><span class="s">&#34;&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">maxAllocs</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="kt">float64</span><span class="p">{</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">}},</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">{</span><span class="nx">name</span><span class="p">:</span><span class="w"> </span><span class="s">&#34;single&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">query</span><span class="p">:</span><span class="w"> </span><span class="s">&#34;gpl&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">maxAllocs</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="kt">float64</span><span class="p">{</span><span class="mi">310</span><span class="p">,</span><span class="w"> </span><span class="mi">2800</span><span class="p">}},</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">{</span><span class="nx">name</span><span class="p">:</span><span class="w"> </span><span class="s">&#34;multi&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">query</span><span class="p">:</span><span class="w"> </span><span class="s">&#34;git pull&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">maxAllocs</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="kt">float64</span><span class="p">{</span><span class="mi">1300</span><span class="p">,</span><span class="w"> </span><span class="mi">12500</span><span class="p">}},</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">{</span><span class="nx">name</span><span class="p">:</span><span class="w"> </span><span class="s">&#34;glob&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">query</span><span class="p">:</span><span class="w"> </span><span class="s">&#34;nvim *.go&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">maxAllocs</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="kt">float64</span><span class="p">{</span><span class="mi">155</span><span class="p">,</span><span class="w"> </span><span class="mi">1400</span><span class="p">}},</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">sizes</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="p">[]</span><span class="kt">int</span><span class="p">{</span><span class="mi">1000</span><span class="p">,</span><span class="w"> </span><span class="mi">10000</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="c1">// ...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>履歴 1,000 件での実測値は次のとおりで、上限はそれぞれ約 10% の余裕を持たせています。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>クエリ</th>
+        <th>実測 alloc 数（n=1000）</th>
+        <th>上限</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>空</td>
+        <td>1</td>
+        <td>2</td>
+      </tr>
+      <tr>
+        <td>単一 token（<code>gpl</code>）</td>
+        <td>275</td>
+        <td>310</td>
+      </tr>
+      <tr>
+        <td>複数 token（<code>git pull</code>）</td>
+        <td>1173</td>
+        <td>1300</td>
+      </tr>
+      <tr>
+        <td>glob（<code>nvim *.go</code>）</td>
+        <td>138</td>
+        <td>155</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>テストのコメントに「なぜこのテストがあるか」と「なぜ実行時間ではなく alloc 数なのか」を書いているのは、LLM がこのテストを読んだときに、上限を引き上げて通すのではなく実装側を直す判断をしてほしいからです。</p>
+<h3 id="ベンチマーク差分を-pr-にコメントする">ベンチマーク差分を PR にコメントする<a hidden class="anchor" aria-hidden="true" href="#ベンチマーク差分を-pr-にコメントする">#</a></h3>
+<p>実行時間は gate にはしませんが、見えるようにはしておきたいので、PR ごとに base と head を同じ runner でベンチマークし、<a href="https://pkg.go.dev/golang.org/x/perf/cmd/benchstat">benchstat</a> の結果を sticky comment で投稿するようにしました。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">Run benchmarks on PR head</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p">|</span><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">          (cd head &amp;&amp; go test -run &#39;^$&#39; -bench . -benchmem -count 10 -benchtime=100x ./internal/app/ ./internal/history/) &gt; bench-head.txt</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">Run benchmarks on base branch</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p">|</span><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">          (cd base &amp;&amp; go test -run &#39;^$&#39; -bench . -benchmem -count 10 -benchtime=100x ./internal/app/ ./internal/history/) &gt; bench-base.txt</span><span class="w">
+</span></span></span></code></pre></div><p>coverage と同じく、別の runner で測った値と比べると環境差がそのまま差分に出るので、同じ runner で両方を測っています。初回のコメントでは geomean +1.17% で、誤差の範囲でした。</p>
+<p>つまりパフォーマンスについては、<strong>決定的な指標（alloc 数）は gate、ぶれる指標（実行時間）は可視化</strong>と使い分けています。</p>
+<h2 id="設計思想">設計思想<a hidden class="anchor" aria-hidden="true" href="#設計思想">#</a></h2>
+<h3 id="depguard-で依存方向を固定する">depguard で依存方向を固定する<a hidden class="anchor" aria-hidden="true" href="#depguard-で依存方向を固定する">#</a></h3>
+<p>fuzz.fish のパッケージ構成は次のとおりです。</p>
+<pre tabindex="0"><code>cmd/fuzz/main.go     # エントリポイント
+internal/app/        # TUI（Bubble Tea の Model / Update / View）
+internal/git/        # Git ブランチ等の取得
+internal/history/    # fish 履歴のパース
+internal/files/      # ディレクトリの走査
+internal/config/     # 設定ファイルの読み込み
+internal/scoring/    # frecency スコア
+internal/ui/         # スタイル・色・整形
+</code></pre><p>意図している依存方向は「<code>cmd/fuzz</code> → <code>app</code> → データ層（<code>git</code> / <code>history</code> / <code>files</code>） → <code>ui</code>」で、<code>config</code> / <code>scoring</code> / <code>ui</code> は他の internal パッケージに依存しない葉です。LLM は「ここで <code>app</code> の型を使えば早い」という理由で逆向きの import を平気で足すので、<a href="https://github.com/OpenPeeDeeP/depguard">depguard</a> のルール 3 本で固定しました。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>ルール</th>
+        <th>内容</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>internal-leaf-no-internal-imports</td>
+        <td><code>config</code> / <code>scoring</code> / <code>ui</code> は他の internal パッケージを import しない</td>
+      </tr>
+      <tr>
+        <td>data-layer-imports-ui-only</td>
+        <td><code>files</code> / <code>git</code> / <code>history</code> は internal のうち <code>ui</code> だけを import できる</td>
+      </tr>
+      <tr>
+        <td>app-only-from-cmd-fuzz</td>
+        <td><code>internal/app</code> を import できるのは <code>cmd/fuzz</code> だけ</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="w">        </span><span class="nt">app-only-from-cmd-fuzz</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">files</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span>- <span class="s2">&#34;!**/cmd/fuzz/**&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">deny</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">            </span>- <span class="nt">pkg</span><span class="p">:</span><span class="w"> </span><span class="l">github.com/jedipunkz/fuzz.fish/internal/app</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">              </span><span class="nt">desc</span><span class="p">:</span><span class="w"> </span><span class="l">only cmd/fuzz may import internal/app</span><span class="w">
+</span></span></span></code></pre></div><p><code>desc</code> に書いた文言は lint のエラーメッセージとしてそのまま出ます。LLM はこのメッセージを読んで修正するので、<strong>何が禁止されているかだけでなく、どこからなら良いのかを書く</strong>ようにしています。</p>
+<h3 id="pr-テンプレートの-design-checklist">PR テンプレートの design checklist<a hidden class="anchor" aria-hidden="true" href="#pr-テンプレートの-design-checklist">#</a></h3>
+<p>PR テンプレートに、この記事で扱っている論点を 4 行のチェックリストとして入れました。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-markdown" data-lang="markdown"><span class="line"><span class="cl"><span class="gu">## Design Checklist
+</span></span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="k">- [ ]</span> No new per-keystroke allocations in <span class="sb">`internal/app/filter.go`</span>.
+</span></span><span class="line"><span class="cl"><span class="k">- [ ]</span> <span class="sb">`exec.Command`</span> uses argument lists, never <span class="sb">`sh -c`</span> with external input.
+</span></span><span class="line"><span class="cl"><span class="k">- [ ]</span> Package dependency direction is preserved.
+</span></span><span class="line"><span class="cl"><span class="k">- [ ]</span> Tests added or updated.
+</span></span></code></pre></div><p>1 行目は alloc assert、2 行目は gosec と CLAUDE.md の Security、3 行目は depguard に対応しています。機械で落とせる部分は CI が担い、チェックリストは「この PR でそれを意識したか」を LLM 自身に PR 本文で確認させるためのものです。</p>
+<h3 id="claudemd-を基準にした-ai-review">CLAUDE.md を基準にした AI review<a hidden class="anchor" aria-hidden="true" href="#claudemd-を基準にした-ai-review">#</a></h3>
+<p>最後に、<a href="https://github.com/anthropics/claude-code-action">anthropics/claude-code-action</a> で PR を CLAUDE.md に照らしてレビューする workflow を追加しました。linter では表現しにくい「Bubble Tea の Model / Update / View をファイルごとに分ける」「推測で抽象化を足さない」といった規約を読ませるためです。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="w">          </span><span class="nt">prompt</span><span class="p">:</span><span class="w"> </span><span class="p">|</span><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">            ...
+</span></span></span><span class="line"><span class="cl"><span class="sd">            3. Report ONLY concrete violations of the `Code Conventions` and `Security` sections of CLAUDE.md. Do not report style preferences, generic advice, or anything covered by other sections of CLAUDE.md.
+</span></span></span><span class="line"><span class="cl"><span class="sd">            4. For each violation, cite the exact file and line number and quote the CLAUDE.md rule it violates.
+</span></span></span><span class="line"><span class="cl"><span class="sd">            5. Post each finding as an inline PR review comment. If there are no violations, do not post any comments.</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">claude_args</span><span class="p">:</span><span class="w"> </span><span class="p">|</span><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">            --max-turns 20
+</span></span></span><span class="line"><span class="cl"><span class="sd">            --allowedTools &#34;Read,Grep,Glob,Bash(gh pr diff:*),Bash(gh pr view:*),mcp__github_inline_comment__create_inline_comment&#34;</span><span class="w">
+</span></span></span></code></pre></div><p>気をつけたのは次の 3 点です。</p>
+<ul>
+<li>指摘の範囲を CLAUDE.md の <code>Code Conventions</code> と <code>Security</code> に限定し、根拠となるルールの引用を必須にした。一般論のレビューコメントが並ぶと、本当の違反が埋もれるため</li>
+<li><code>allowedTools</code> を読み取り系と <code>gh pr diff</code> / <code>gh pr view</code>、インラインコメントの投稿だけに絞った。PR の差分は外部から入る入力なので、そこに書かれた指示に従ってコードを書き換えたり任意のコマンドを実行したりできないようにするため</li>
+<li>action 自体も SHA で pin し、fork からの PR では secrets が渡らないので自動的に skip される</li>
+</ul>
+<h2 id="gate-をすり抜けさせない">gate をすり抜けさせない<a hidden class="anchor" aria-hidden="true" href="#gate-をすり抜けさせない">#</a></h2>
+<h3 id="make-check-と-pre-push-hook"><code>make check</code> と pre-push hook<a hidden class="anchor" aria-hidden="true" href="#make-check-と-pre-push-hook">#</a></h3>
+<p>CI で落ちてから直すと、LLM とのやりとりが 1 往復増えます。そこで CI と同じ内容（build + vet + golangci-lint + <code>go test -race</code>）をローカルで実行する <code>make check</code> を用意し、CLAUDE.md に「PR を出す前に <code>make check</code> を実行する」と書きました。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-makefile" data-lang="makefile"><span class="line"><span class="cl"><span class="c"># Same checks as CI: build, vet, golangci-lint (v2.14.0), tests with -race.
+</span></span></span><span class="line"><span class="cl"><span class="nf">check</span><span class="o">:</span> <span class="n">build</span> <span class="n">lint</span> <span class="n">test</span>
+</span></span></code></pre></div><p>さらに <code>.githooks/pre-push</code> で push のたびに <code>make check</code> を実行します。<code>git config core.hooksPath .githooks</code> で有効になります。CLAUDE.md には <code>--no-verify</code> で hook を飛ばすことも禁止と書いています。</p>
+<h3 id="ruleset-で-main-を守る">ruleset で main を守る<a hidden class="anchor" aria-hidden="true" href="#ruleset-で-main-を守る">#</a></h3>
+<p>ここまでの CI は、main に直接 push されたら意味がありません。一人で開発していると、自分で「ちょっとだけ」と直 push しがちですし、権限を持った agent も同じことができます。そこで main の ruleset を作り直しました。</p>
+<ul>
+<li>main への直接 push を禁止し、PR を必須にする</li>
+<li>ブランチが base に追従している（up-to-date）ことを必須にする</li>
+<li>必須 check を 5 件にする: Build and Test（ubuntu / macOS）、Lint、CodeQL、govulncheck</li>
+<li>admin の bypass は PR 経由に限定する</li>
+</ul>
+<p>ruleset が最後の gate になることで、ここまでのガードレールが「実行されているが無視できる」状態から「通らないとマージできない」状態になります。</p>
+<h2 id="導入して分かったこと">導入して分かったこと<a hidden class="anchor" aria-hidden="true" href="#導入して分かったこと">#</a></h2>
+<h3 id="変化検知の範囲は-workflow-自体も含める">変化検知の範囲は workflow 自体も含める<a hidden class="anchor" aria-hidden="true" href="#変化検知の範囲は-workflow-自体も含める">#</a></h3>
+<p>以前、CI を Go 関連のファイル（<code>**.go</code>、<code>go.mod</code>、<code>Makefile</code> など）が変わったときだけ動くようにしていました。ところが今回のように <strong>workflow 自体を変更する PR</strong> では、Go のファイルが変わっていないため CI が動かず、変更した workflow が正しく動くかを確認できません。<code>.github/workflows/ci.yml</code> を paths filter に追加して解消しました。ガードレールを増やす作業そのものが、ガードレールの外側で行われる点には注意が必要です。</p>
+<h3 id="同じ環境で比べる">同じ環境で比べる<a hidden class="anchor" aria-hidden="true" href="#同じ環境で比べる">#</a></h3>
+<p>coverage とベンチマークの両方で、base と head を同じ runner で測る形にしました。別々の環境で測った値の差には、コードの変化と環境の差が混ざります。少し CI の実行時間は伸びますが、gate や判断の根拠にする値は同じ条件で取るべきだと考えています。</p>
+<h3 id="1-pr-が通るまでの流れ">1 PR が通るまでの流れ<a hidden class="anchor" aria-hidden="true" href="#1-pr-が通るまでの流れ">#</a></h3>
+<p>ガードレールを入れる直前の機能追加（F5 で読み込み済みのデータソースを再読み込みする refresh key）は「PR → CI（build / vet / test / lint）→ squash merge」という流れでした。今は同じ流れの中に、次の順で関門が並んでいます。</p>
+<ol>
+<li>agent が実装し、<code>make check</code> と pre-push hook を通して push する</li>
+<li>PR テンプレートの design checklist を埋める</li>
+<li>CI が build / vet / lint（depguard・gosec）/ <code>-race</code> 付きテスト（alloc assert・fuzz のシードを含む）を ubuntu と macOS で実行する</li>
+<li>coverage の差分とベンチマークの差分が PR にコメントされる</li>
+<li>AI review が CLAUDE.md に照らして違反があればインラインでコメントする</li>
+<li>ruleset の必須 check がすべて通ったら squash merge する</li>
+</ol>
+<p>自分がレビューで見るのは、この結果と差分そのものです。「依存方向は崩れていないか」「alloc を増やしていないか」を目で追う必要がなくなったので、仕様として正しいかどうかに集中できるようになりました。</p>
+<h2 id="残っている課題">残っている課題<a hidden class="anchor" aria-hidden="true" href="#残っている課題">#</a></h2>
+<ul>
+<li>AI review は <code>ANTHROPIC_API_KEY</code> を repo の Secrets に登録するまで skip する作りにしているため、まだ実際には動いていません</li>
+<li>provenance attestation は次回の release（<code>workflow_dispatch</code> による手動実行）で初めて動くので、まだ検証できていません</li>
+<li>zizmor で理由付き ignore にしている項目（Dependabot auto-merge の <code>github.actor</code> 判定を <code>github.event.pull_request.user.login</code> に変える、など）が残っています</li>
+<li>fuzz test は CI でシードコーパスを回しているだけなので、定期的に fuzzing そのものを回す仕組みはまだありません</li>
+</ul>
+<h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
+<ul>
+<li>一人で LLM と開発していると、CLAUDE.md に書いたルールが守られているかを確認する人がいない。そこでルールを linter・テスト・CI・ruleset に落とし、違反を機械的に落とすようにした</li>
+<li>進め方は「宣言 → 可視化 → gate 化」。coverage やベンチマークが先に見えていたから、許容値を決めて gate にできた</li>
+<li>セキュリティは gosec・govulncheck・zizmor・SHA pin・provenance、バグ混入は <code>-race</code>・coverage gate・fuzz・macOS matrix、パフォーマンスは alloc 数の assert とベンチ差分、設計思想は depguard・PR テンプレート・AI review で担っている</li>
+<li>ぶれる指標は gate にせず可視化に留め、決定的な指標だけを gate にする。比較は同じ runner で行う</li>
+<li>最後の gate は ruleset。main への直 push を禁止して、全部の check を通らないとマージできないようにした</li>
+</ul>
+<p>LLM に「気をつけて」とお願いするのではなく、気をつけなくても違反できない状態にしておく、というのが今回の結論です。次は AI review を実際に動かし、どのくらいの頻度で CLAUDE.md 違反を拾えるのかを見てみたいと思っています。</p>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+      <li><a href="https://jedipunkz.rocks/tags/go/">Go</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/fish/">Fish</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/github-actions/">GitHub Actions</a></li>
+    </ul>
+<nav class="paginav">
+  <a class="prev" href="https://jedipunkz.rocks/post/alloy-playground/">
+    <span class="title">« 前へ</span>
+    <br>
+    <span>Grafana Alloy で独自メトリクスを扱う2つのパターンを Go で書く</span>
+  </a>
+  <a class="next" href="https://jedipunkz.rocks/post/adk-go-dynamic-loop/">
+    <span class="title">次へ »</span>
+    <br>
+    <span>Google ADK Go 2.x の Dynamic Workflow とその為のガードレール</span>
+  </a>
+</nav>
+
+
+<ul class="share-buttons">
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share 自作 Go ツールに導入したガードレール策 on x"
+            href="https://x.com/intent/tweet/?text=%e8%87%aa%e4%bd%9c%20Go%20%e3%83%84%e3%83%bc%e3%83%ab%e3%81%ab%e5%b0%8e%e5%85%a5%e3%81%97%e3%81%9f%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab%e7%ad%96&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2ffuzz-fish-guardrails%2f&amp;hashtags=Go%2cFish%2cGitHubActions">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M512 62.554 L 512 449.446 C 512 483.97 483.97 512 449.446 512 L 62.554 512 C 28.03 512 0 483.97 0 449.446 L 0 62.554 C 0 28.03 28.029 0 62.554 0 L 449.446 0 C 483.971 0 512 28.03 512 62.554 Z M 269.951 190.75 L 182.567 75.216 L 56 75.216 L 207.216 272.95 L 63.9 436.783 L 125.266 436.783 L 235.9 310.383 L 332.567 436.783 L 456 436.783 L 298.367 228.367 L 432.367 75.216 L 371.033 75.216 Z M 127.633 110 L 164.101 110 L 383.481 400.065 L 349.5 400.065 Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share 自作 Go ツールに導入したガードレール策 on linkedin"
+            href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2ffuzz-fish-guardrails%2f&amp;title=%e8%87%aa%e4%bd%9c%20Go%20%e3%83%84%e3%83%bc%e3%83%ab%e3%81%ab%e5%b0%8e%e5%85%a5%e3%81%97%e3%81%9f%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab%e7%ad%96&amp;summary=%e8%87%aa%e4%bd%9c%20Go%20%e3%83%84%e3%83%bc%e3%83%ab%e3%81%ab%e5%b0%8e%e5%85%a5%e3%81%97%e3%81%9f%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab%e7%ad%96&amp;source=https%3a%2f%2fjedipunkz.rocks%2fpost%2ffuzz-fish-guardrails%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-288.985,423.278l0,-225.717l-75.04,0l0,225.717l75.04,0Zm270.539,0l0,-129.439c0,-69.333 -37.018,-101.586 -86.381,-101.586c-39.804,0 -57.634,21.891 -67.617,37.266l0,-31.958l-75.021,0c0.995,21.181 0,225.717 0,225.717l75.02,0l0,-126.056c0,-6.748 0.486,-13.492 2.474,-18.315c5.414,-13.475 17.767,-27.434 38.494,-27.434c27.135,0 38.007,20.707 38.007,51.037l0,120.768l75.024,0Zm-307.552,-334.556c-25.674,0 -42.448,16.879 -42.448,39.002c0,21.658 16.264,39.002 41.455,39.002l0.484,0c26.165,0 42.452,-17.344 42.452,-39.002c-0.485,-22.092 -16.241,-38.954 -41.943,-39.002Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share 自作 Go ツールに導入したガードレール策 on reddit"
+            href="https://reddit.com/submit?url=https%3a%2f%2fjedipunkz.rocks%2fpost%2ffuzz-fish-guardrails%2f&title=%e8%87%aa%e4%bd%9c%20Go%20%e3%83%84%e3%83%bc%e3%83%ab%e3%81%ab%e5%b0%8e%e5%85%a5%e3%81%97%e3%81%9f%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab%e7%ad%96">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-3.446,265.638c0,-22.964 -18.616,-41.58 -41.58,-41.58c-11.211,0 -21.361,4.457 -28.841,11.666c-28.424,-20.508 -67.586,-33.757 -111.204,-35.278l18.941,-89.121l61.884,13.157c0.756,15.734 13.642,28.29 29.56,28.29c16.407,0 29.706,-13.299 29.706,-29.701c0,-16.403 -13.299,-29.702 -29.706,-29.702c-11.666,0 -21.657,6.792 -26.515,16.578l-69.105,-14.69c-1.922,-0.418 -3.939,-0.042 -5.585,1.036c-1.658,1.073 -2.811,2.761 -3.224,4.686l-21.152,99.438c-44.258,1.228 -84.046,14.494 -112.837,35.232c-7.468,-7.164 -17.589,-11.591 -28.757,-11.591c-22.965,0 -41.585,18.616 -41.585,41.58c0,16.896 10.095,31.41 24.568,37.918c-0.639,4.135 -0.99,8.328 -0.99,12.576c0,63.977 74.469,115.836 166.33,115.836c91.861,0 166.334,-51.859 166.334,-115.836c0,-4.218 -0.347,-8.387 -0.977,-12.493c14.564,-6.47 24.735,-21.034 24.735,-38.001Zm-119.474,108.193c-20.27,20.241 -59.115,21.816 -70.534,21.816c-11.428,0 -50.277,-1.575 -70.522,-21.82c-3.007,-3.008 -3.007,-7.882 0,-10.889c3.003,-2.999 7.882,-3.003 10.885,0c12.777,12.781 40.11,17.317 59.637,17.317c19.522,0 46.86,-4.536 59.657,-17.321c3.016,-2.999 7.886,-2.995 10.885,0.008c3.008,3.011 3.003,7.882 -0.008,10.889Zm-5.23,-48.781c-16.373,0 -29.701,-13.324 -29.701,-29.698c0,-16.381 13.328,-29.714 29.701,-29.714c16.378,0 29.706,13.333 29.706,29.714c0,16.374 -13.328,29.698 -29.706,29.698Zm-160.386,-29.702c0,-16.381 13.328,-29.71 29.714,-29.71c16.369,0 29.689,13.329 29.689,29.71c0,16.373 -13.32,29.693 -29.689,29.693c-16.386,0 -29.714,-13.32 -29.714,-29.693Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share 自作 Go ツールに導入したガードレール策 on facebook"
+            href="https://facebook.com/sharer/sharer.php?u=https%3a%2f%2fjedipunkz.rocks%2fpost%2ffuzz-fish-guardrails%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-106.468,0l0,-192.915l66.6,0l12.672,-82.621l-79.272,0l0,-53.617c0,-22.603 11.073,-44.636 46.58,-44.636l36.042,0l0,-70.34c0,0 -32.71,-5.582 -63.982,-5.582c-65.288,0 -107.96,39.569 -107.96,111.204l0,62.971l-72.573,0l0,82.621l72.573,0l0,192.915l-191.104,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share 自作 Go ツールに導入したガードレール策 on whatsapp"
+            href="https://api.whatsapp.com/send?text=%e8%87%aa%e4%bd%9c%20Go%20%e3%83%84%e3%83%bc%e3%83%ab%e3%81%ab%e5%b0%8e%e5%85%a5%e3%81%97%e3%81%9f%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab%e7%ad%96%20-%20https%3a%2f%2fjedipunkz.rocks%2fpost%2ffuzz-fish-guardrails%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-58.673,127.703c-33.842,-33.881 -78.847,-52.548 -126.798,-52.568c-98.799,0 -179.21,80.405 -179.249,179.234c-0.013,31.593 8.241,62.428 23.927,89.612l-25.429,92.884l95.021,-24.925c26.181,14.28 55.659,21.807 85.658,21.816l0.074,0c98.789,0 179.206,-80.413 179.247,-179.243c0.018,-47.895 -18.61,-92.93 -52.451,-126.81Zm-126.797,275.782l-0.06,0c-26.734,-0.01 -52.954,-7.193 -75.828,-20.767l-5.441,-3.229l-56.386,14.792l15.05,-54.977l-3.542,-5.637c-14.913,-23.72 -22.791,-51.136 -22.779,-79.287c0.033,-82.142 66.867,-148.971 149.046,-148.971c39.793,0.014 77.199,15.531 105.329,43.692c28.128,28.16 43.609,65.592 43.594,105.4c-0.034,82.149 -66.866,148.983 -148.983,148.984Zm81.721,-111.581c-4.479,-2.242 -26.499,-13.075 -30.604,-14.571c-4.105,-1.495 -7.091,-2.241 -10.077,2.241c-2.986,4.483 -11.569,14.572 -14.182,17.562c-2.612,2.988 -5.225,3.364 -9.703,1.12c-4.479,-2.241 -18.91,-6.97 -36.017,-22.23c-13.314,-11.876 -22.304,-26.542 -24.916,-31.026c-2.612,-4.484 -0.279,-6.908 1.963,-9.14c2.016,-2.007 4.48,-5.232 6.719,-7.847c2.24,-2.615 2.986,-4.484 4.479,-7.472c1.493,-2.99 0.747,-5.604 -0.374,-7.846c-1.119,-2.241 -10.077,-24.288 -13.809,-33.256c-3.635,-8.733 -7.327,-7.55 -10.077,-7.688c-2.609,-0.13 -5.598,-0.158 -8.583,-0.158c-2.986,0 -7.839,1.121 -11.944,5.604c-4.105,4.484 -15.675,15.32 -15.675,37.364c0,22.046 16.048,43.342 18.287,46.332c2.24,2.99 31.582,48.227 76.511,67.627c10.685,4.615 19.028,7.371 25.533,9.434c10.728,3.41 20.492,2.929 28.209,1.775c8.605,-1.285 26.499,-10.833 30.231,-21.295c3.732,-10.464 3.732,-19.431 2.612,-21.298c-1.119,-1.869 -4.105,-2.99 -8.583,-5.232Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share 自作 Go ツールに導入したガードレール策 on telegram"
+            href="https://telegram.me/share/url?text=%e8%87%aa%e4%bd%9c%20Go%20%e3%83%84%e3%83%bc%e3%83%ab%e3%81%ab%e5%b0%8e%e5%85%a5%e3%81%97%e3%81%9f%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab%e7%ad%96&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2ffuzz-fish-guardrails%2f">
+            <svg version="1.1" xml:space="preserve" viewBox="2 2 28 28" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M26.49,29.86H5.5a3.37,3.37,0,0,1-2.47-1,3.35,3.35,0,0,1-1-2.47V5.48A3.36,3.36,0,0,1,3,3,3.37,3.37,0,0,1,5.5,2h21A3.38,3.38,0,0,1,29,3a3.36,3.36,0,0,1,1,2.46V26.37a3.35,3.35,0,0,1-1,2.47A3.38,3.38,0,0,1,26.49,29.86Zm-5.38-6.71a.79.79,0,0,0,.85-.66L24.73,9.24a.55.55,0,0,0-.18-.46.62.62,0,0,0-.41-.17q-.08,0-16.53,6.11a.59.59,0,0,0-.41.59.57.57,0,0,0,.43.52l4,1.24,1.61,4.83a.62.62,0,0,0,.63.43.56.56,0,0,0,.4-.17L16.54,20l4.09,3A.9.9,0,0,0,21.11,23.15ZM13.8,20.71l-1.21-4q8.72-5.55,8.78-5.55c.15,0,.23,0,.23.16a.18.18,0,0,1,0,.06s-2.51,2.3-7.52,6.8Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share 自作 Go ツールに導入したガードレール策 on ycombinator"
+            href="https://news.ycombinator.com/submitlink?t=%e8%87%aa%e4%bd%9c%20Go%20%e3%83%84%e3%83%bc%e3%83%ab%e3%81%ab%e5%b0%8e%e5%85%a5%e3%81%97%e3%81%9f%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab%e7%ad%96&u=https%3a%2f%2fjedipunkz.rocks%2fpost%2ffuzz-fish-guardrails%2f">
+            <svg version="1.1" xml:space="preserve" width="30px" height="30px" viewBox="0 0 512 512" fill="currentColor"
+                xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+                <path
+                    d="M449.446 0C483.971 0 512 28.03 512 62.554L512 449.446C512 483.97 483.97 512 449.446 512L62.554 512C28.03 512 0 483.97 0 449.446L0 62.554C0 28.03 28.029 0 62.554 0L449.446 0ZM183.8767 87.9921H121.8427L230.6673 292.4508V424.0079H281.3328V292.4508L390.1575 87.9921H328.1233L256 238.2489z" />
+            </svg>
+        </a>
+    </li>
+</ul>
+
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="https://jedipunkz.rocks/">jedipunkz 🚀 のブログ</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a><script type="module">
+  if (document.querySelector("pre.mermaid")) {
+    const { default: mermaid } = await import(
+      "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
+    );
+    
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        darkMode: true,
+        background: "#1a1b26",
+        mainBkg: "#24283b",
+        primaryColor: "#24283b",
+        primaryTextColor: "#c0caf5",
+        primaryBorderColor: "#7aa2f7",
+        secondaryColor: "#414868",
+        secondaryTextColor: "#c0caf5",
+        secondaryBorderColor: "#565f89",
+        tertiaryColor: "#1f2335",
+        tertiaryTextColor: "#c0caf5",
+        tertiaryBorderColor: "#565f89",
+        lineColor: "#7dcfff",
+        textColor: "#c0caf5",
+        nodeTextColor: "#c0caf5",
+        edgeLabelBackground: "#1a1b26",
+        clusterBkg: "#1f2335",
+        clusterBorder: "#565f89",
+        titleColor: "#c0caf5"
+      }
+    });
+    await mermaid.run();
+  }
+</script>
+
+
+<script>
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        if (document.body.className.includes("dark")) {
+            document.body.classList.remove('dark');
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            document.body.classList.add('dark');
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+<script>
+    document.querySelectorAll('pre > code').forEach((codeblock) => {
+        const container = codeblock.parentNode.parentNode;
+
+        const copybutton = document.createElement('button');
+        copybutton.classList.add('copy-code');
+        copybutton.innerHTML = 'コピー';
+
+        function copyingDone() {
+            copybutton.innerHTML = 'コピーされました!';
+            setTimeout(() => {
+                copybutton.innerHTML = 'コピー';
+            }, 2000);
+        }
+
+        copybutton.addEventListener('click', (cb) => {
+            if ('clipboard' in navigator) {
+                navigator.clipboard.writeText(codeblock.textContent);
+                copyingDone();
+                return;
+            }
+
+            const range = document.createRange();
+            range.selectNodeContents(codeblock);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            try {
+                document.execCommand('copy');
+                copyingDone();
+            } catch (e) { };
+            selection.removeRange(range);
+        });
+
+        if (container.classList.contains("highlight")) {
+            container.appendChild(copybutton);
+        } else if (container.parentNode.firstChild == container) {
+            
+        } else if (codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.nodeName == "TABLE") {
+            
+            codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.appendChild(copybutton);
+        } else {
+            
+            codeblock.parentNode.appendChild(copybutton);
+        }
+    });
+</script>
+</body>
+
+</html>
