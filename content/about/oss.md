@@ -76,6 +76,21 @@ brew install jedipunkz/miniecs/miniecs
 
 Related post (in Japanese): [ECS コンテナにログインする CLI を Go 言語で作った話](/post/ecs-login-cli/)
 
+## scomp
+
+https://github.com/jedipunkz/scomp
+
+Lists known vulnerabilities in the dependencies of a Git repository and lets you browse and filter them in a TUI. Written in Go.
+
+- Reads the repository's lockfiles with an embedded [osv-scanner](https://github.com/google/osv-scanner) and shows one row per package and vulnerability, with OSV and CVE IDs.
+- Filter with a query such as `severity:>=high`, `ecosystem:go`, `fixed:true` or free text, or cycle severity and ecosystem filters with a single key.
+- `alt+o` opens the vulnerability on osv.dev, and `alt+i` creates a GitHub issue for it through `gh`.
+- Results are cached for 24 hours. `--json` prints the findings as JSON instead of starting the TUI, and `--offline` scans without sending package names to osv.dev.
+
+```sh
+go install github.com/jedipunkz/scomp@latest
+```
+
 ## rebind
 
 https://github.com/jedipunkz/rebind
