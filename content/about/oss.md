@@ -1,7 +1,10 @@
 ---
-title: "Open Source Tools"
+title: "Open Source Tools by jedipunkz"
+description: "Open source CLI, TUI and desktop tools by jedipunkz: gm (ghq-style repository manager), fuzz.fish (Fish shell fuzzy finder), agx (parallel AI coding agents), miniecs, scomp, rebind and UnNatural."
 date: 2026-10-11T12:00:00+09:00
+lastmod: 2026-10-25T12:00:00+09:00
 Categories: ["profile"]
+tags: ["OSS", "CLI", "TUI", "Go", "Rust", "Git", "Fish", "AI Agent", "AWS", "Security"]
 draft: false
 ---
 
