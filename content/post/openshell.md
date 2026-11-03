@@ -130,9 +130,16 @@ create_sandbox() {
 
 ## シナリオ 01: default deny
 
-このシナリオでは policies ファイルを使わず、ポリシーを指定せずに sandbox を作ります。このとき実際に適用されたポリシーを `openshell sandbox get <name> --policy-only` で取得すると、次の内容でした。
+このシナリオでは policies ファイルを使わず、ポリシーを指定せずに sandbox を作ります。このとき実際に適用されるポリシーは、`openshell sandbox get <sandbox 名> --policy-only` で確認できます。`<sandbox 名>` には `openshell sandbox create --name` で付けた名前を指定します。
 
-出力: `openshell sandbox get <name> --policy-only` の実行結果
+`scenarios/01-default-deny.sh` は終了時に sandbox を削除するので、確認用に `policy-check` という名前で同じ条件の sandbox を別に作りました。
+
+```shell
+openshell sandbox create --name policy-check --from openshell-playground:local --no-auto-providers --no-tty --detach -- sleep infinity
+openshell sandbox get policy-check --policy-only
+```
+
+`openshell sandbox get policy-check --policy-only` の実行結果
 
 ```yaml
 version: 1
@@ -155,7 +162,7 @@ landlock:
 
 `filesystem_policy` は読み取り専用のパスと読み書き可能なパスの一覧で、`include_workdir: true` によって作業ディレクトリ (`/sandbox`) も読み書き可能になります。`landlock.compatibility: best_effort` は、Landlock でファイルシステムのルールを適用できなかった場合でも、ルールなしで sandbox を起動し、重大度の高い警告をログに残す設定です。`hard_requirement` にすると、その場合は起動に失敗します。`network_policies` のセクションはありません。OpenShell は `network_policies` で許可されていない通信をすべて拒否するので、このポリシーでは外への通信が 1 つも通りません。
 
-出力: `scenarios/01-default-deny.sh` の実行結果 (抜粋)
+`scenarios/01-default-deny.sh` の実行結果 (抜粋)
 
 ```text
 ▸ curl https://api.github.com/zen (expect: denied)
@@ -166,14 +173,14 @@ curl: (7) Failed to connect to api.github.com port 443 after 1 ms: Couldn't conn
 
 curl は接続できずに失敗します。面白いのは DNS で、`getent` は `198.18.0.3` というベンチマーク用アドレス帯 (198.18.0.0/15) のアドレスを返しました。DNS の問い合わせには supervisor が代わりに応答し、本物のアドレスは返していないようです。ログには判定結果がすべて残ります。
 
-出力: `scenarios/01-default-deny.sh` の実行結果のうちポリシー判定のログ (抜粋)
+`scenarios/01-default-deny.sh` の実行結果のうちポリシー判定のログ (抜粋)
 
 ```text
 NET:REFUSE [MED] DENIED api.github.com [reason:policy_dns_ineligible]
 NET:OPEN [MED] DENIED /usr/bin/curl(0) -> api.github.com:443 [reason:transparent_tcp_policy_denied]
 ```
 
-ログは OCSF (Open Cybersecurity Schema Framework) 形式で、どのバイナリがどこへ接続しようとして、なぜ拒否されたかが分かります。なお公式 example (`examples/sandbox-policy-quickstart`) の README では、拒否時に `Received HTTP code 403 from proxy after CONNECT` が返ると書かれています。今回の環境では sandbox 内に `HTTPS_PROXY` などの proxy 環境変数は無く、curl は proxy を経由せずに直接接続しようとし、それが透過的に横取りされて拒否されました (`transparent_tcp_policy_denied`)。docs の Observability ページに載っているログ例もこの形式なので、example の README の方が古いのだと思います。
+ログは OCSF (Open Cybersecurity Schema Framework) 形式で、どのバイナリがどこへ接続しようとして、なぜ拒否されたかが分かります。
 
 ## シナリオ 02: L7 で GET だけを許可する
 
@@ -215,7 +222,7 @@ network_policies:
 | `enforcement: enforce` | 違反したリクエストを拒否する。省略時の既定値は `audit` で、ログに残すだけで通してしまう |
 | `binaries[].path` | このルールを使えるバイナリ。ここでは `/usr/bin/curl` だけ |
 
-出力: `scenarios/02-l7-readonly.sh` の実行結果 (抜粋)
+`scenarios/02-l7-readonly.sh` の実行結果 (抜粋)
 
 ```text
 ▸ GET https://api.github.com/zen (expect: allowed)
@@ -238,7 +245,7 @@ openshell policy update "$SANDBOX" \
   --wait
 ```
 
-出力: `scenarios/02-l7-readonly.sh` の実行結果 (抜粋)
+`scenarios/02-l7-readonly.sh` の実行結果 (抜粋)
 
 ```text
 ✓ Policy version 2 submitted (hash: 146a3829ebec)
@@ -314,7 +321,7 @@ openshell profile import -f profiles/echo.yaml
 openshell provider create --name echo --type echo --credential ECHO_TOKEN=dummy-not-a-real-secret
 ```
 
-出力: `scenarios/03-credential-placeholder.sh` の実行結果 (抜粋)
+`scenarios/03-credential-placeholder.sh` の実行結果 (抜粋)
 
 ```text
 ▸ what the agent sees in its environment
@@ -327,7 +334,7 @@ ECHO_TOKEN=openshell:resolve:env:v460554092086405377_ECHO_TOKEN
 
 sandbox の環境変数には `openshell:resolve:env:...` という placeholder しか入っていません。httpbin.org に送ると、返ってきたヘッダには本物の値が入っていて、supervisor が差し替えたことが分かります。一方、ネットワークポリシー上は許可されている postman-echo.com に同じ placeholder を送ると `credential_endpoint_mismatch` で拒否されました。
 
-出力: `scenarios/03-credential-placeholder.sh` の実行結果のうちポリシー判定のログ (抜粋)
+`scenarios/03-credential-placeholder.sh` の実行結果のうちポリシー判定のログ (抜粋)
 
 ```text
 HTTP:GET [INFO] ALLOWED GET https://postman-echo.com/get [policy:postman_echo engine:l7]
@@ -387,7 +394,7 @@ network_policies:
 
 3 と 4 が特に効いていると感じました。許可したホストであっても、許可していないメソッドでは送れず、許可していないバイナリからは接続すらできません。ログにも `python3.12` が拒否されたことが残ります。
 
-出力: `scenarios/04-exfil-sim.sh` の実行結果のうちポリシー判定のログ (抜粋)
+`scenarios/04-exfil-sim.sh` の実行結果のうちポリシー判定のログ (抜粋)
 
 ```text
 HTTP:POST [MED] DENIED POST https://api.github.com/gists [policy:github_api engine:l7] [reason:L7_REQUEST deny POST api.github.com:443/gists ...]
@@ -396,7 +403,7 @@ NET:OPEN [MED] DENIED /usr/bin/python3.12(0) -> api.github.com:443 [reason:trans
 
 6a は非 root ユーザーなので Unix のパーミッションだけでも拒否されるケースです。Landlock が効いていることを確かめるために、6b では誰でも書き込めるパス、6c では誰でも読めるファイルを選びました。
 
-出力: `scenarios/04-exfil-sim.sh` の実行結果 (抜粋)
+`scenarios/04-exfil-sim.sh` の実行結果 (抜粋)
 
 ```text
 ▸ 6b. write to /var/tmp: world-writable (1777) but not in read_write (expect: Landlock denies)
@@ -537,7 +544,7 @@ boundary との差分は次の通りです。
 | `policies/candidates/too-wide.yaml` | GitHub API を `access: read-write` に変え、metadata (169.254.169.254) へのルール `metadata` を足した |
 | `policies/candidates/metadata.yaml` | metadata へのルール `metadata` だけを足した |
 
-出力: `scenarios/05-prover.sh` の実行結果 (抜粋)
+`scenarios/05-prover.sh` の実行結果 (抜粋)
 
 ```text
 ▸ candidates/metadata.yaml
