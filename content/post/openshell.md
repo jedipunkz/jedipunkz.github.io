@@ -98,7 +98,10 @@ brew services restart openshell
 
 もう 1 つ、デフォルトの sandbox イメージ (`nvcr.io/nvidia/base/ubuntu:24.04`) には curl が入っていません。検証用に curl と python3 を足したイメージを作り、`--from` で指定しています。
 
+ファイル: `Dockerfile`
+
 ```dockerfile
+# OpenShell's default sandbox image ships without curl or python3.
 FROM nvcr.io/nvidia/base/ubuntu:24.04@sha256:d9461f428eea54e553add3a5158a0f245c6e1ea73efc59fff8e98e3d4a38e378
 
 RUN apt-get update \
@@ -107,6 +110,8 @@ RUN apt-get update \
 ```
 
 各シナリオは次のヘルパを使っています。`sandbox create --detach -- sleep infinity` で待機させておき、`sandbox exec` でコマンドを流し込みます。
+
+ファイル: `lib.sh` (抜粋)
 
 ```bash
 sbx() { openshell sandbox exec -n "$SANDBOX" --no-tty --timeout 30 -- sh -c "$*" 2>&1; }
@@ -127,6 +132,8 @@ create_sandbox() {
 
 ポリシーを指定せずに sandbox を作ると、ネットワークルールを 1 つも持たないデフォルトポリシーが適用されます。
 
+出力: `scenarios/01-default-deny.sh` の実行結果 (抜粋)
+
 ```text
 ▸ curl https://api.github.com/zen (expect: denied)
 curl: (7) Failed to connect to api.github.com port 443 after 1 ms: Couldn't connect to server
@@ -135,6 +142,8 @@ curl: (7) Failed to connect to api.github.com port 443 after 1 ms: Couldn't conn
 ```
 
 curl は接続できずに失敗します。面白いのは DNS で、`getent` は `198.18.0.3` というベンチマーク用アドレス帯 (198.18.0.0/15) のアドレスを返しました。DNS の問い合わせには supervisor が代わりに応答し、本物のアドレスは返していないようです。ログには判定結果がすべて残ります。
+
+出力: `scenarios/01-default-deny.sh` の実行結果のうちポリシー判定のログ (抜粋)
 
 ```text
 NET:REFUSE [MED] DENIED api.github.com [reason:policy_dns_ineligible]
@@ -146,6 +155,8 @@ NET:OPEN [MED] DENIED /usr/bin/curl(0) -> api.github.com:443 [reason:transparent
 ## シナリオ 02: L7 で GET だけを許可する
 
 curl に GitHub API への読み取りだけを許可するポリシーです。
+
+ファイル: `policies/github-readonly.yaml` (抜粋。コメントは日本語に訳しています)
 
 ```yaml
 network_policies:
@@ -163,6 +174,8 @@ network_policies:
 
 `protocol: rest` を指定すると supervisor が TLS を終端し、HTTP のメソッドとパスまで検査します。
 
+出力: `scenarios/02-l7-readonly.sh` の実行結果 (抜粋)
+
 ```text
 ▸ GET https://api.github.com/zen (expect: allowed)
 Half measures are as bad as nothing at all.
@@ -174,6 +187,8 @@ Half measures are as bad as nothing at all.
 
 次に、ルールが無い npm registry へのアクセスが拒否されることを確認してから、sandbox を動かしたままルールを追加します。
 
+ファイル: `scenarios/02-l7-readonly.sh` (抜粋)
+
 ```shell
 openshell policy update "$SANDBOX" \
   --rule-name npm \
@@ -181,6 +196,8 @@ openshell policy update "$SANDBOX" \
   --add-endpoint registry.npmjs.org:443:read-only:rest:enforce \
   --wait
 ```
+
+出力: `scenarios/02-l7-readonly.sh` の実行結果 (抜粋)
 
 ```text
 ✓ Policy version 2 submitted (hash: 146a3829ebec)
@@ -196,6 +213,8 @@ openshell policy update "$SANDBOX" \
 OpenShell では API key などの credential を provider として gateway に登録し、sandbox に紐付けます。このときエージェントには本物の値ではなく placeholder が渡り、許可された宛先へのリクエストに限り supervisor が本物の値に差し替えます。
 
 確認のため、リクエストヘッダをそのまま返してくれる httpbin.org にだけ credential を紐付けた provider profile を作りました。値はダミーです。
+
+ファイル: `profiles/echo.yaml` (抜粋)
 
 ```yaml
 id: echo
@@ -217,12 +236,16 @@ endpoints:
 binaries: [/usr/bin/curl]
 ```
 
-さらに sandbox のポリシーで、似たようなエコーサービスである postman-echo.com への GET も許可しておきます。こちらには credential を紐付けません。
+さらに sandbox のポリシー (`policies/echo-mismatch.yaml`) で、似たようなエコーサービスである postman-echo.com への GET も許可しておきます。こちらには credential を紐付けません。
+
+ファイル: `scenarios/03-credential-placeholder.sh` (抜粋。パスは簡略化)
 
 ```shell
 openshell profile import -f profiles/echo.yaml
 openshell provider create --name echo --type echo --credential ECHO_TOKEN=dummy-not-a-real-secret
 ```
+
+出力: `scenarios/03-credential-placeholder.sh` の実行結果 (抜粋)
 
 ```text
 ▸ what the agent sees in its environment
@@ -235,6 +258,8 @@ ECHO_TOKEN=openshell:resolve:env:v460554092086405377_ECHO_TOKEN
 
 sandbox の環境変数には `openshell:resolve:env:...` という placeholder しか入っていません。httpbin.org に送ると、返ってきたヘッダには本物の値が入っていて、supervisor が差し替えたことが分かります。一方、ネットワークポリシー上は許可されている postman-echo.com に同じ placeholder を送ると `credential_endpoint_mismatch` で拒否されました。
 
+出力: `scenarios/03-credential-placeholder.sh` の実行結果のうちポリシー判定のログ (抜粋)
+
 ```text
 HTTP:GET [INFO] ALLOWED GET https://postman-echo.com/get [policy:postman_echo engine:l7]
 HTTP:GET [HIGH] DENIED GET  [policy:postman_echo engine:credential-binding] [reason:credential_endpoint_mismatch]
@@ -244,7 +269,7 @@ HTTP:GET [HIGH] DENIED GET  [policy:postman_echo engine:credential-binding] [rea
 
 ## シナリオ 04: 窃取スクリプトを模擬する
 
-冒頭で触れた LiteLLM や Claude Code 拡張の事件では、悪意あるコードが環境変数や認証情報を集めて外部へ送り、さらに `authorized_keys` への鍵の追加や、起動時に自動実行されるファイルの設置によって永続化を図っていました。これを無害な形で真似て、OpenShell の sandbox 内で実行してみます。ポリシーはシナリオ 02 と同じ GitHub API 読み取りのみです。
+冒頭で触れた LiteLLM や Claude Code 拡張の事件では、悪意あるコードが環境変数や認証情報を集めて外部へ送り、さらに `authorized_keys` への鍵の追加や、起動時に自動実行されるファイルの設置によって永続化を図っていました。これを無害な形で真似たスクリプト (`scenarios/04-exfil-sim.sh`) を、OpenShell の sandbox 内で実行してみます。ポリシーはシナリオ 02 と同じ `policies/github-readonly.yaml` (GitHub API の読み取りのみ) です。
 
 | # | 試したこと | 結果 | 止めた層 |
 |---|---|---|---|
@@ -260,12 +285,16 @@ HTTP:GET [HIGH] DENIED GET  [policy:postman_echo engine:credential-binding] [rea
 
 3 と 4 が特に効いていると感じました。許可したホストであっても、許可していないメソッドでは送れず、許可していないバイナリからは接続すらできません。ログにも `python3.12` が拒否されたことが残ります。
 
+出力: `scenarios/04-exfil-sim.sh` の実行結果のうちポリシー判定のログ (抜粋)
+
 ```text
 HTTP:POST [MED] DENIED POST https://api.github.com/gists [policy:github_api engine:l7] [reason:L7_REQUEST deny POST api.github.com:443/gists ...]
 NET:OPEN [MED] DENIED /usr/bin/python3.12(0) -> api.github.com:443 [reason:transparent_tcp_policy_denied]
 ```
 
 6a は非 root ユーザーなので Unix のパーミッションだけでも拒否されるケースです。Landlock が効いていることを確かめるために、6b では誰でも書き込めるパス、6c では誰でも読めるファイルを選びました。
+
+出力: `scenarios/04-exfil-sim.sh` の実行結果 (抜粋)
 
 ```text
 ▸ 6b. write to /var/tmp: world-writable (1777) but not in read_write (expect: Landlock denies)
@@ -284,13 +313,15 @@ head: cannot open '/var/lib/dpkg/status' for reading: Permission denied
 
 OpenShell には SMT ソルバでポリシーを検査する `openshell-prover` が付いています。gateway は不要で、ポリシーファイル同士を比較できます。「この環境で許す最大の範囲」を boundary として書いておき、candidate がそれを超えていないかを調べます。
 
-boundary はシナリオ 02 と同じ GitHub API の読み取りのみとし、candidate を 3 つ用意しました。
+boundary (`policies/boundary.yaml`) はシナリオ 02 と同じ GitHub API の読み取りのみとし、candidate を 3 つ用意しました。
 
-| candidate | 内容 |
+| ファイル | 内容 |
 |---|---|
-| `ok.yaml` | boundary から `/var/log` の読み取りを外したもの |
-| `too-wide.yaml` | GitHub API を `read-write` にし、metadata へのルールを足したもの |
-| `metadata.yaml` | boundary に metadata (169.254.169.254) へのルールだけを足したもの |
+| `policies/candidates/ok.yaml` | boundary から `/var/log` の読み取りを外したもの |
+| `policies/candidates/too-wide.yaml` | GitHub API を `read-write` にし、metadata へのルールを足したもの |
+| `policies/candidates/metadata.yaml` | boundary に metadata (169.254.169.254) へのルールだけを足したもの |
+
+出力: `scenarios/05-prover.sh` の実行結果 (抜粋)
 
 ```text
 ▸ candidates/metadata.yaml
@@ -307,6 +338,8 @@ counterexample: network ... host=api.github.com:443 ... protocol=rest method=POS
 意外だったのは `metadata.yaml` が `within_boundary` になったことです。ドキュメントを確認すると、OpenShell はループバック・リンクローカル・クラウドの metadata アドレスへの接続をポリシーにかかわらず常に拒否する仕様でした。ポリシーに書いても実際には何も許可されないので、boundary を超えていないという判定は正しいことになります。
 
 prover は Linux 用の静的バイナリが GitHub Releases にあるので、CI にも簡単に組み込めます。
+
+ファイル: `.github/workflows/prover.yml` (抜粋)
 
 ```yaml
       - name: install openshell-prover
