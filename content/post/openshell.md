@@ -1,5 +1,5 @@
 ---
-title: "NVIDIA OpenShell で AI エージェントを閉じ込める仕組みを動かして理解する"
+title: "NVIDIA OpenShell を使った AI Agent 環境のガードレイル策"
 description: "NVIDIA の AI エージェント向けランタイム OpenShell を macOS + Docker Desktop で動かし、default deny、L7 制御、credential placeholder、窃取スクリプトの模擬、policy prover による boundary check をサンプル環境で確認しました"
 date: 2026-11-03T13:40:00+09:00
 tags: ["OpenShell", "AI Agent", "Sandbox", "Security"]
@@ -16,7 +16,7 @@ draft: false
 
 https://github.com/jedipunkz/openshell-playground
 
-検証したバージョンは OpenShell v0.1.6、環境は macOS (Apple Silicon) + Docker Desktop です。
+検証したバージョンは OpenShell v0.1.6、環境は macOS + Docker Desktop です。
 
 ## 結論
 
@@ -37,7 +37,7 @@ OpenShell は gateway、supervisor、sandbox の 3 つで構成されます。
 ```mermaid
 flowchart LR
   CLI[openshell CLI] --> GW[gateway<br/>制御プレーン]
-  GW <-- policy / credential / log --> SV[supervisor<br/>信頼される側]
+  GW <-- policy / credential / log --> SV[supervisor]
   subgraph boundary[sandbox boundary]
     SB[sandbox] --> AG[agent]
   end
@@ -130,7 +130,30 @@ create_sandbox() {
 
 ## シナリオ 01: default deny
 
-ポリシーを指定せずに sandbox を作ると、ネットワークルールを 1 つも持たないデフォルトポリシーが適用されます。
+このシナリオでは policies ファイルを使わず、ポリシーを指定せずに sandbox を作ります。このとき実際に適用されたポリシーを `openshell sandbox get <name> --policy-only` で取得すると、次の内容でした。
+
+出力: `openshell sandbox get <name> --policy-only` の実行結果
+
+```yaml
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /bin
+    - /usr
+    - /lib
+    - /proc
+    - /dev/urandom
+    - /etc
+    - /var/log
+  read_write:
+    - /tmp
+    - /dev/null
+landlock:
+  compatibility: best_effort
+```
+
+`filesystem_policy` は読み取り専用のパスと読み書き可能なパスの一覧で、`include_workdir: true` によって作業ディレクトリ (`/sandbox`) も読み書き可能になります。`landlock.compatibility: best_effort` は、Landlock でファイルシステムのルールを適用できなかった場合でも、ルールなしで sandbox を起動し、重大度の高い警告をログに残す設定です。`hard_requirement` にすると、その場合は起動に失敗します。`network_policies` のセクションはありません。OpenShell は `network_policies` で許可されていない通信をすべて拒否するので、このポリシーでは外への通信が 1 つも通りません。
 
 出力: `scenarios/01-default-deny.sh` の実行結果 (抜粋)
 
@@ -154,25 +177,43 @@ NET:OPEN [MED] DENIED /usr/bin/curl(0) -> api.github.com:443 [reason:transparent
 
 ## シナリオ 02: L7 で GET だけを許可する
 
-curl に GitHub API への読み取りだけを許可するポリシーです。
+curl に GitHub API への読み取りだけを許可するポリシーを使います。
 
-ファイル: `policies/github-readonly.yaml` (抜粋。コメントは日本語に訳しています)
+ファイル: `policies/github-readonly.yaml`
 
 ```yaml
+version: 1
+
+# Same filesystem baseline as OpenShell's default policy.
+filesystem_policy:
+  include_workdir: true
+  read_only: [/bin, /usr, /lib, /proc, /dev/urandom, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: best_effort
+
 network_policies:
   github_api:
     name: github-api-readonly
     endpoints:
       - host: api.github.com
         port: 443
-        protocol: rest      # TLS を終端して HTTP リクエストを検査する
+        protocol: rest      # terminate TLS and inspect each HTTP request
         enforcement: enforce
-        access: read-only   # GET, HEAD, OPTIONS のみ
+        access: read-only   # GET, HEAD, OPTIONS only
     binaries:
       - { path: /usr/bin/curl }
 ```
 
-`protocol: rest` を指定すると supervisor が TLS を終端し、HTTP のメソッドとパスまで検査します。
+`filesystem_policy` と `landlock` はシナリオ 01 のデフォルトポリシーと同じ内容です。違いは `network_policies` で、`github_api` というルールを 1 つ追加しています。
+
+| 項目 | 意味 |
+|---|---|
+| `endpoints[].host` / `port` | 接続を許可する宛先。ここでは `api.github.com:443` |
+| `protocol: rest` | supervisor が TLS を終端し、HTTP のメソッドとパスまで検査する |
+| `access: read-only` | `GET` / `HEAD` / `OPTIONS` だけを許可するプリセット |
+| `enforcement: enforce` | 違反したリクエストを拒否する。省略時の既定値は `audit` で、ログに残すだけで通してしまう |
+| `binaries[].path` | このルールを使えるバイナリ。ここでは `/usr/bin/curl` だけ |
 
 出力: `scenarios/02-l7-readonly.sh` の実行結果 (抜粋)
 
@@ -236,7 +277,35 @@ endpoints:
 binaries: [/usr/bin/curl]
 ```
 
-さらに sandbox のポリシー (`policies/echo-mismatch.yaml`) で、似たようなエコーサービスである postman-echo.com への GET も許可しておきます。こちらには credential を紐付けません。
+sandbox のポリシーには次のファイルを使います。
+
+ファイル: `policies/echo-mismatch.yaml`
+
+```yaml
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only: [/bin, /usr, /lib, /proc, /dev/urandom, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: best_effort
+
+# Network policy allows curl to reach postman-echo.com, but the echo provider's
+# credential is bound to httpbin.org only. A placeholder sent here must be rejected.
+network_policies:
+  postman_echo:
+    endpoints:
+      - host: postman-echo.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+    binaries:
+      - { path: /usr/bin/curl }
+```
+
+`network_policies` では、httpbin.org と同じようにリクエストを返してくれるエコーサービスの postman-echo.com への GET を curl に許可しています。httpbin.org への通信はこのファイルには書いていません。provider を sandbox に紐付けると、profile の `endpoints` が `_provider_echo` というルールとして自動で追加されるためです。postman-echo.com は通信こそ許可していますが、credential は紐付けていません。
 
 ファイル: `scenarios/03-credential-placeholder.sh` (抜粋。パスは簡略化)
 
@@ -269,7 +338,40 @@ HTTP:GET [HIGH] DENIED GET  [policy:postman_echo engine:credential-binding] [rea
 
 ## シナリオ 04: 窃取スクリプトを模擬する
 
-冒頭で触れた LiteLLM や Claude Code 拡張の事件では、悪意あるコードが環境変数や認証情報を集めて外部へ送り、さらに `authorized_keys` への鍵の追加や、起動時に自動実行されるファイルの設置によって永続化を図っていました。これを無害な形で真似たスクリプト (`scenarios/04-exfil-sim.sh`) を、OpenShell の sandbox 内で実行してみます。ポリシーはシナリオ 02 と同じ `policies/github-readonly.yaml` (GitHub API の読み取りのみ) です。
+冒頭で触れた LiteLLM や Claude Code 拡張の事件では、悪意あるコードが環境変数や認証情報を集めて外部へ送り、さらに `authorized_keys` への鍵の追加や、起動時に自動実行されるファイルの設置によって永続化を図っていました。これを無害な形で真似たスクリプト (`scenarios/04-exfil-sim.sh`) を、OpenShell の sandbox 内で実行してみます。ポリシーはシナリオ 02 と同じファイルです。
+
+ファイル: `policies/github-readonly.yaml`
+
+```yaml
+version: 1
+
+# Same filesystem baseline as OpenShell's default policy.
+filesystem_policy:
+  include_workdir: true
+  read_only: [/bin, /usr, /lib, /proc, /dev/urandom, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  github_api:
+    name: github-api-readonly
+    endpoints:
+      - host: api.github.com
+        port: 443
+        protocol: rest      # terminate TLS and inspect each HTTP request
+        enforcement: enforce
+        access: read-only   # GET, HEAD, OPTIONS only
+    binaries:
+      - { path: /usr/bin/curl }
+```
+
+攻撃側から見ると、このポリシーで許されているのは次の 2 つだけです。
+
+- `/usr/bin/curl` から `api.github.com:443` への `GET` / `HEAD` / `OPTIONS`
+- `read_only` に挙げたパスの読み取りと、`read_write` に挙げたパスへの読み書き
+
+これ以外の操作がそれぞれどこで拒否されるかを確かめます。
 
 | # | 試したこと | 結果 | 止めた層 |
 |---|---|---|---|
@@ -313,13 +415,127 @@ head: cannot open '/var/lib/dpkg/status' for reading: Permission denied
 
 OpenShell には SMT ソルバでポリシーを検査する `openshell-prover` が付いています。gateway は不要で、ポリシーファイル同士を比較できます。「この環境で許す最大の範囲」を boundary として書いておき、candidate がそれを超えていないかを調べます。
 
-boundary (`policies/boundary.yaml`) はシナリオ 02 と同じ GitHub API の読み取りのみとし、candidate を 3 つ用意しました。
+boundary は、シナリオ 02 と同じく GitHub API の読み取りだけを許可する内容にしました。
 
-| ファイル | 内容 |
+ファイル: `policies/boundary.yaml`
+
+```yaml
+# The most access any agent policy in this repo may grant.
+version: 1
+
+filesystem_policy:
+  read_only: [/bin, /usr, /lib, /proc, /dev/urandom, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  github_api:
+    endpoints:
+      - host: api.github.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+    binaries:
+      - { path: /usr/bin/curl }
+```
+
+これに対して candidate を 3 つ用意しました。
+
+ファイル: `policies/candidates/ok.yaml`
+
+```yaml
+# Narrower than the boundary: no /var/log read, same GitHub read-only rule.
+version: 1
+
+filesystem_policy:
+  read_only: [/bin, /usr, /lib, /proc, /dev/urandom, /etc]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  github_api:
+    endpoints:
+      - host: api.github.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+    binaries:
+      - { path: /usr/bin/curl }
+```
+
+ファイル: `policies/candidates/too-wide.yaml`
+
+```yaml
+# Looks like a small change, but grants writes to GitHub and cloud metadata access.
+version: 1
+
+filesystem_policy:
+  read_only: [/bin, /usr, /lib, /proc, /dev/urandom, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  github_api:
+    endpoints:
+      - host: api.github.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-write
+    binaries:
+      - { path: /usr/bin/curl }
+  metadata:
+    endpoints:
+      - host: 169.254.169.254
+        port: 80
+    binaries:
+      - { path: /usr/bin/curl }
+```
+
+ファイル: `policies/candidates/metadata.yaml`
+
+```yaml
+# Same as the boundary plus one rule for the cloud metadata endpoint.
+# Result is within_boundary: OpenShell never authorizes link-local destinations,
+# so this rule grants nothing (docs: policies/network-rules "Restrict Destination Addresses").
+version: 1
+
+filesystem_policy:
+  read_only: [/bin, /usr, /lib, /proc, /dev/urandom, /etc, /var/log]
+  read_write: [/sandbox, /tmp, /dev/null]
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  github_api:
+    endpoints:
+      - host: api.github.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-only
+    binaries:
+      - { path: /usr/bin/curl }
+  metadata:
+    endpoints:
+      - host: 169.254.169.254
+        port: 80
+    binaries:
+      - { path: /usr/bin/curl }
+```
+
+boundary との差分は次の通りです。
+
+| ファイル | boundary との差分 |
 |---|---|
-| `policies/candidates/ok.yaml` | boundary から `/var/log` の読み取りを外したもの |
-| `policies/candidates/too-wide.yaml` | GitHub API を `read-write` にし、metadata へのルールを足したもの |
-| `policies/candidates/metadata.yaml` | boundary に metadata (169.254.169.254) へのルールだけを足したもの |
+| `policies/candidates/ok.yaml` | `read_only` から `/var/log` を外した。boundary より狭い |
+| `policies/candidates/too-wide.yaml` | GitHub API を `access: read-write` に変え、metadata (169.254.169.254) へのルール `metadata` を足した |
+| `policies/candidates/metadata.yaml` | metadata へのルール `metadata` だけを足した |
 
 出力: `scenarios/05-prover.sh` の実行結果 (抜粋)
 
@@ -361,8 +577,6 @@ prover は Linux 用の静的バイナリが GitHub Releases にあるので、C
 - まだ v0.1.x で、stable 版が毎週リリースされています。Experimental と書かれたインターフェースは patch リリースで変わる可能性があります。
 - install.sh 版は匿名 telemetry がデフォルトで有効です。
 - Docker Desktop では前述の `supervisor_network_mode = "bridge"` の設定が必要でした。
-- 公式 example の README にある出力例 (CONNECT 時の 403) と、実際の挙動 (透過 TCP での拒否) が異なっていました。example と docs で記載が揃っていない箇所があるので、実際に動かして確かめるのが確実です。
-- 今回はエージェント自体を動かしていません。OpenShell には、拒否された通信からルールを下書きし、prover でリスクを検査してから人が承認する policy advisor という仕組みもあり、OpenCode などのエージェントと組み合わせて使うのが想定された使い方です。
 
 ## まとめ
 
