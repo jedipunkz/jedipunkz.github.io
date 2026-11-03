@@ -1,6 +1,6 @@
 ---
 title: "NVIDIA OpenShell で AI エージェントを閉じ込める仕組みを動かして理解する"
-description: "NVIDIA が公開した AI エージェント向けランタイム OpenShell を macOS + Docker Desktop で動かし、default deny、L7 制御、credential placeholder、窃取スクリプトの模擬、policy prover による boundary check をサンプル環境で確認しました"
+description: "NVIDIA の AI エージェント向けランタイム OpenShell を macOS + Docker Desktop で動かし、default deny、L7 制御、credential placeholder、窃取スクリプトの模擬、policy prover による boundary check をサンプル環境で確認しました"
 date: 2026-11-03T13:40:00+09:00
 tags: ["OpenShell", "AI Agent", "Sandbox", "Security"]
 categories: ["AI", "SRE", "Security"]
@@ -10,7 +10,7 @@ draft: false
 
 以前の記事 [自作 Go ツールに導入したガードレール策](/post/fuzz-fish-guardrails/) や [Google ADK Go 2.x の Dynamic Workflow とその為のガードレール](/post/adk-go-dynamic-loop/) では、AI エージェントに作業させるときのガードレールをコードやワークフローの側で考えていました。一方で最近は [LiteLLM 1.107.0 の PyPI パッケージ侵害](https://safedep.io/litellm-pypi-compromise-credential-stealer-backdoor/) や、[Cursor Marketplace で配布された Claude Code 拡張にバックドアが仕込まれた件](https://phorion.io/blog/offical-claude-code-vsx-compromise/) など、エージェントが動く開発環境そのものが狙われる事件が続いています。
 
-そんな中で、NVIDIA の [OpenShell](https://github.com/NVIDIA/OpenShell) が 0.1.x で安定したリリースサイクルに入り、Hacker News でも話題になっていました。「自律 AI エージェントのための安全でプライベートなランタイム」をうたうもので、エージェントが触れるファイル・ネットワーク・API をポリシーで宣言し、カーネルレベルで強制します。README を読むだけでは実際にどこまで止まるのかが分からなかったので、サンプル環境を作って手を動かしてみました。
+そんな中で、NVIDIA の [OpenShell](https://github.com/NVIDIA/OpenShell) が 0.1.x で安定したリリースサイクルに入り、Hacker News でも話題になっていました。OpenShell は「自律 AI エージェントのための安全でプライベートなランタイム」をうたうもので、エージェントが触れるファイル・ネットワーク・API をポリシーで宣言し、カーネルレベルで強制します。README を読むだけでは実際にどこまで防げるのかが分からなかったので、サンプル環境を作って手を動かしてみました。
 
 コードは下記に置いてあります。
 
@@ -22,13 +22,13 @@ https://github.com/jedipunkz/openshell-playground
 
 | 試したこと | 結果 |
 |---|---|
-| ポリシー無しで外へ通信 | TCP も DNS もすべて拒否される |
+| ポリシーを指定せずに外へ通信 | TCP も DNS もすべて拒否される |
 | GitHub API を GET のみ許可 | GET は通り、POST は L7 で 403 になる。ルール追加は再起動不要 |
 | credential を provider 経由で渡す | エージェントには placeholder しか見えず、紐付けた宛先にだけ本物の値が送られる |
-| 窃取スクリプトの模擬 | 外部送信・許可ホストへの POST・別バイナリからの通信・metadata 参照・許可外パスへの読み書きは止まる。書き込み可能な workspace への永続化は止まらない |
+| 窃取スクリプトの模擬 | 外部送信・許可ホストへの POST・別バイナリからの通信・metadata 参照・許可外パスへの読み書きは拒否される。書き込み可能な workspace への永続化は防げない |
 | policy prover | 上限ポリシーを超える変更を反例付きで検出できる。CI に組み込める |
 
-「エージェントが何を持ち出せて、どこに送れるか」をホスト・メソッド・バイナリ単位で絞り込め、その判断がすべてログに残るのが OpenShell の価値だと感じました。逆に、許可した範囲の中で何が起きるかまでは面倒を見てくれないので、workspace の扱いは別途考える必要があります。
+「エージェントが何を持ち出せて、どこに送れるか」をホスト・メソッド・バイナリ単位で絞り込めて、その判定がすべてログに残るのが OpenShell の価値だと感じました。逆に、許可した範囲の中で何が起きるかまでは面倒を見てくれないので、workspace の扱いは別途考える必要があります。
 
 ## アーキテクチャ
 
@@ -51,7 +51,7 @@ flowchart LR
 | supervisor | ポリシー判定、credential の付与、DNS 解決、許可された接続の中継 |
 | sandbox | エージェントと同じ側にいて、エージェントのプロセスを管理する。判定はしない |
 
-ポイントは、エージェントと同じ側にいる sandbox が何も判断せず、盗まれて困るもの (gateway の署名鍵、provider の credential など) を持たないことです。sandbox はエージェントの TCP 接続と DNS クエリを seccomp user notification で横取りし、`/proc` から呼び出し元のバイナリを特定して supervisor に渡します。supervisor がポリシーを見て許可すれば、supervisor 自身が本当の接続を張って中継します。ファイルアクセスは Landlock で制限されます。
+ポイントは、エージェントと同じ側にいる sandbox が何も判断せず、盗まれて困るもの (gateway の署名鍵、provider の credential など) を持たないことです。sandbox はエージェントの TCP 接続と DNS クエリを seccomp user notification で横取りし、`/proc` から呼び出し元のバイナリを特定して supervisor に渡します。supervisor がポリシーを見て許可すれば、supervisor 自身が実際の接続を張って中継します。ファイルアクセスは Landlock で制限されます。
 
 Docker ランタイムの場合、エージェントが動くコンテナはネットワークが無効 (`network=none`) で、supervisor との Unix socket だけが外への経路になります。ポリシーを迂回して直接外へ出る経路そのものが無い、という作りです。
 
@@ -64,7 +64,7 @@ Docker ランタイムの場合、エージェントが動くコンテナはネ�
 | `policies/` | sandbox 用ポリシーと、prover 用の boundary / candidate |
 | `profiles/echo.yaml` | シナリオ 03 用の provider profile |
 | `scenarios/` | 各シナリオのスクリプト。sandbox を作って試し、終了時に削除する |
-| `.github/workflows/prover.yml` | policy の変更を prover で検査する CI |
+| `.github/workflows/prover.yml` | ポリシーの変更を prover で検査する CI |
 
 ### インストールと Docker Desktop での注意点
 
@@ -76,7 +76,7 @@ curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | 
 
 ここで 2 点ハマりました。
 
-1 点目は homebrew-core にも `openshell` formula があることです。こちらは gateway が telemetry 無しでビルドされている一方、service 定義も TLS 証明書の生成も無いため、そのままでは gateway を起動できませんでした。公式の手順通り install.sh を使うのが無難です。なお install.sh 版は匿名 telemetry がデフォルトで有効です。無効化は gateway の環境変数 `OPENSHELL_TELEMETRY_ENABLED=false` で行い、Homebrew の service は起動時に `~/.config/openshell/gateway.env` を読み込むので、そこに書いておくのが手軽です。
+1 点目は、最初に homebrew-core の `openshell` formula を入れてしまったことです。こちらは gateway が telemetry 無しでビルドされている一方、service 定義も TLS 証明書の生成も無いため、そのままでは gateway を起動できませんでした。公式の手順通り install.sh を使うのが無難です。なお install.sh 版は匿名 telemetry がデフォルトで有効です。無効化は gateway の環境変数 `OPENSHELL_TELEMETRY_ENABLED=false` で行い、Homebrew の service は起動時に `~/.config/openshell/gateway.env` を読み込むので、そこに書いておくのが手軽です。
 
 2 点目は sandbox の作成が `ControlSupervisorStartFailed` で失敗したことです。gateway のログを見ると次のようになっていました。
 
@@ -84,7 +84,7 @@ curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | 
 Selected Docker supervisor networking ... network_mode=Host endpoint=https://127.0.0.1:17670
 ```
 
-Docker driver はデフォルトで supervisor コンテナを host network で動かし、`127.0.0.1` の gateway へ接続しにいきます。しかし Docker Desktop の host network は Linux VM 側のものなので、macOS 側の loopback で待っている gateway には届きません。bridge mode に切り替えると、supervisor は `host.docker.internal` 経由で接続するようになり解決しました。
+Docker driver はデフォルトで supervisor コンテナを host network で動かし、`127.0.0.1` の gateway へ接続しにいきます。しかし Docker Desktop の host network は Linux VM 側のものなので、macOS 側の loopback で待ち受けている gateway には届きません。bridge mode に切り替えると、supervisor は `host.docker.internal` 経由で接続するようになり解決しました。
 
 ```toml
 # $(brew --prefix)/var/openshell/gateway.toml
@@ -134,7 +134,7 @@ curl: (7) Failed to connect to api.github.com port 443 after 1 ms: Couldn't conn
 198.18.0.3      example.com
 ```
 
-curl は接続できずに失敗します。面白いのは DNS で、`getent` は `198.18.0.3` というベンチマーク用アドレス帯の値を返しました。名前解決自体は supervisor が代わりに応答していて、実際のアドレスは渡していないようです。ログには判定結果がすべて残ります。
+curl は接続できずに失敗します。面白いのは DNS で、`getent` は `198.18.0.3` というベンチマーク用アドレス帯 (198.18.0.0/15) のアドレスを返しました。DNS の問い合わせには supervisor が代わりに応答し、本物のアドレスは返していないようです。ログには判定結果がすべて残ります。
 
 ```text
 NET:REFUSE [MED] DENIED api.github.com [reason:policy_dns_ineligible]
@@ -170,7 +170,7 @@ Half measures are as bad as nothing at all.
 {"error":"policy_denied","policy":"github_api","rule":"POST /user/repos","detail":"POST /user/repos not permitted by policy","layer":"l7",...}
 ```
 
-接続先としては許可されている `api.github.com` でも、POST は L7 で 403 になります。レスポンスの JSON にはどのルールが足りないか (`rule_missing`) が入っていて、エージェントが「何が足りないか」を機械的に読み取れるようになっています。
+接続先としては許可されている `api.github.com` でも、POST は L7 で 403 になります。レスポンスの JSON には不足しているルールが `rule_missing` として入っており、エージェントは何を許可してもらえばよいかを機械的に読み取れます。
 
 次に、ルールが無い npm registry へのアクセスが拒否されることを確認してから、sandbox を動かしたままルールを追加します。
 
@@ -193,7 +193,7 @@ openshell policy update "$SANDBOX" \
 
 ## シナリオ 03: credential placeholder
 
-OpenShell では API key などの credential を provider として gateway に登録し、sandbox に紐付けます。このときエージェントには本物の値ではなく placeholder が渡り、許可された宛先へのリクエストでだけ supervisor が本物の値に差し替えます。
+OpenShell では API key などの credential を provider として gateway に登録し、sandbox に紐付けます。このときエージェントには本物の値ではなく placeholder が渡り、許可された宛先へのリクエストに限り supervisor が本物の値に差し替えます。
 
 確認のため、リクエストヘッダをそのまま返してくれる httpbin.org にだけ credential を紐付けた provider profile を作りました。値はダミーです。
 
@@ -240,11 +240,11 @@ HTTP:GET [INFO] ALLOWED GET https://postman-echo.com/get [policy:postman_echo en
 HTTP:GET [HIGH] DENIED GET  [policy:postman_echo engine:credential-binding] [reason:credential_endpoint_mismatch]
 ```
 
-ネットワークの許可と credential の紐付けが独立して判定されていて、「通信は許可しているが、その宛先に credential を送ってよいとは言っていない」という区別ができます。エージェントに渡した token を別のサービスに送らせる、という攻撃はこの層で止まります。
+ネットワークの許可と credential の紐付けが独立して判定されていて、「通信は許可しているが、その宛先に credential を送ってよいとは言っていない」という区別ができます。エージェントに渡した token を別のサービスに送らせる、という攻撃はこの層で防げます。
 
 ## シナリオ 04: 窃取スクリプトを模擬する
 
-冒頭で触れた LiteLLM や VS Code 拡張の事件では、悪意あるコードが環境変数や認証情報を集めて外部へ送り、さらに `authorized_keys` や起動スクリプトに永続化の仕掛けを残していました。これを無害な形で真似て、OpenShell の sandbox 内で実行してみます。ポリシーはシナリオ 02 と同じ GitHub API 読み取りのみです。
+冒頭で触れた LiteLLM や Claude Code 拡張の事件では、悪意あるコードが環境変数や認証情報を集めて外部へ送り、さらに `authorized_keys` への鍵の追加や、起動時に自動実行されるファイルの設置によって永続化を図っていました。これを無害な形で真似て、OpenShell の sandbox 内で実行してみます。ポリシーはシナリオ 02 と同じ GitHub API 読み取りのみです。
 
 | # | 試したこと | 結果 | 止めた層 |
 |---|---|---|---|
@@ -265,7 +265,7 @@ HTTP:POST [MED] DENIED POST https://api.github.com/gists [policy:github_api engi
 NET:OPEN [MED] DENIED /usr/bin/python3.12(0) -> api.github.com:443 [reason:transparent_tcp_policy_denied]
 ```
 
-6a は非 root ユーザーなので Unix のパーミッションだけでも拒否されるケースです。Landlock が効いていることを確かめるために、6b と 6c ではパーミッション上は誰でも読み書きできるパスを選びました。
+6a は非 root ユーザーなので Unix のパーミッションだけでも拒否されるケースです。Landlock が効いていることを確かめるために、6b では誰でも書き込めるパス、6c では誰でも読めるファイルを選びました。
 
 ```text
 ▸ 6b. write to /var/tmp: world-writable (1777) but not in read_write (expect: Landlock denies)
@@ -304,7 +304,7 @@ counterexample: network ... host=api.github.com:443 ... protocol=rest method=POS
 
 `too-wide.yaml` は boundary を超えていると判定され、反例として「api.github.com への POST」が示されました。反例は 1 つだけ示される仕様なので、metadata の方は出てきません。
 
-意外だったのは `metadata.yaml` が `within_boundary` になったことです。ドキュメントを確認すると、OpenShell はループバック・リンクローカル・クラウドの metadata アドレスへの接続をポリシーに関わらず常に拒否する仕様でした。ポリシーに書いても実際には何も許可されないので、boundary を超えていないという判定は正しいことになります。
+意外だったのは `metadata.yaml` が `within_boundary` になったことです。ドキュメントを確認すると、OpenShell はループバック・リンクローカル・クラウドの metadata アドレスへの接続をポリシーにかかわらず常に拒否する仕様でした。ポリシーに書いても実際には何も許可されないので、boundary を超えていないという判定は正しいことになります。
 
 prover は Linux 用の静的バイナリが GitHub Releases にあるので、CI にも簡単に組み込めます。
 
@@ -321,15 +321,15 @@ prover は Linux 用の静的バイナリが GitHub Releases にあるので、C
         run: openshell-prover check candidates/ok.yaml --boundary boundary.yaml
 ```
 
-終了コードは `within_boundary` が 0、`exceeds_boundary` が 1、エラーが 2、検査できない (`unsupported`) か時間切れ (`inconclusive`) が 3 です。以前 [Conftest OPA で Terraform コード開発に制約を設ける](/post/conftest/) で Terraform に対してやったことを、エージェントのポリシーに対して形式検証でやれるイメージです。ただし GraphQL や MCP のルールは今のところ検査対象外で、`unsupported` が返ります。0 以外はすべて失敗として扱うのが安全です。
+終了コードは `within_boundary` が 0、`exceeds_boundary` が 1、エラーが 2、検査できない (`unsupported`) か時間切れ (`inconclusive`) が 3 です。以前 [Conftest OPA で Terraform コード開発に制約を設ける](/post/conftest/) で Terraform に対してやったことを、エージェントのポリシーに対して形式検証でできるイメージです。ただし GraphQL や MCP のルールは今のところ検査対象外で、`unsupported` が返ります。0 以外はすべて失敗として扱うのが安全です。
 
 ## 気になった点
 
-- v0.1.x で、毎週 stable がリリースされています。Experimental と書かれたインターフェースは patch リリースで変わる可能性があります。
+- まだ v0.1.x で、stable 版が毎週リリースされています。Experimental と書かれたインターフェースは patch リリースで変わる可能性があります。
 - install.sh 版は匿名 telemetry がデフォルトで有効です。
 - Docker Desktop では前述の `supervisor_network_mode = "bridge"` の設定が必要でした。
 - 公式 example の README にある出力例 (CONNECT 時の 403) と、実際の挙動 (透過 TCP での拒否) が異なっていました。example と docs で記載が揃っていない箇所があるので、実際に動かして確かめるのが確実です。
-- 今回はエージェント自体を動かしていません。OpenShell には、拒否された通信からルールを下書きし、prover でリスクを検査してから人が承認する policy advisor という仕組みもあり、OpenCode などのエージェントと組み合わせて使うのが本来の使い方です。
+- 今回はエージェント自体を動かしていません。OpenShell には、拒否された通信からルールを下書きし、prover でリスクを検査してから人が承認する policy advisor という仕組みもあり、OpenCode などのエージェントと組み合わせて使うのが想定された使い方です。
 
 ## まとめ
 
