@@ -256,7 +256,7 @@ HTTP:GET [HIGH] DENIED GET  [policy:postman_echo engine:credential-binding] [rea
 | 6a | `/etc/profile.d` にスクリプトを置く | 拒否 | Unix パーミッション (非 root のため) |
 | 6b | `/var/tmp` に書き込む | 拒否 | Landlock |
 | 6c | `/var/lib/dpkg/status` を読む | 拒否 | Landlock |
-| 7 | `~/.ssh/authorized_keys` に鍵を追記 | 成功 | 止まらない |
+| 7 | `~/.ssh/authorized_keys` に鍵を追記 | 成功 | (防げない) |
 
 3 と 4 が特に効いていると感じました。許可したホストであっても、許可していないメソッドでは送れず、許可していないバイナリからは接続すらできません。ログにも `python3.12` が拒否されたことが残ります。
 
@@ -276,7 +276,7 @@ sh: 1: cannot create /var/tmp/zz-persist: Permission denied
 head: cannot open '/var/lib/dpkg/status' for reading: Permission denied
 ```
 
-`/var/tmp` は 1777、`/var/lib/dpkg/status` は 644 なのに拒否されており、ポリシーの `read_only` / `read_write` に無いパスへのアクセスは Landlock で止まっています。
+`/var/tmp` は 1777、`/var/lib/dpkg/status` は 644 なのに拒否されており、ポリシーの `read_only` / `read_write` に無いパスへのアクセスは Landlock によって拒否されています。
 
 一方で 7 は成功しました。sandbox のホームディレクトリ `/sandbox` は workspace として読み書き可能なので、そこに何を書き込むかは OpenShell の関知するところではありません。今回の検証ではこの鍵で sandbox に入れるかどうかまでは確認していませんが、workspace に残ったファイルを後で別の環境に持ち出すような運用をしていると、永続化の足がかりになりえます。sandbox を使い捨てにする (`--no-keep`) か、workspace の中身を信用しない運用が必要です。
 
