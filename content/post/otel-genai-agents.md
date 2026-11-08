@@ -1,5 +1,5 @@
 ---
-title: "OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go を可観測にする"
+title: "OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上"
 description: "OTel GenAI semantic conventions の現状を整理し、Claude Code・OpenCode・Google ADK Go の telemetry を Grafana LGTM に集めて、semconv にどこまで沿っているかと、横断ダッシュボードで何が見えるかをサンプル環境で確認しました"
 date: 2026-11-08T12:00:00+09:00
 tags: ["OpenTelemetry", "AI Agent", "Observability", "Claude Code", "OpenCode", "ADK"]
