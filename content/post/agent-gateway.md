@@ -134,6 +134,8 @@ routes:
 
 エージェントの実装は a2a-go の JSON-RPC handler に、受け取ったテキストを処理する関数を渡すだけです。Agent Card には自分自身の URL (`http://127.0.0.1:9302/invoke`) を書いています。
 
+(Agent Card とは A2A エージェントが「自分は何者でどこにどう話しかければよいか」を書いて公開する jSON です)
+
 ```go
 card := &a2a.AgentCard{
 	Name:        *name,
@@ -208,7 +210,7 @@ card, err := agentcard.NewResolver(hc).Resolve(ctx, cardURL, agentcard.WithPath(
 
 ## シナリオ 02: MCP server を束ねて tool 単位で認可する
 
-docs と ops の 2 つの MCP server を、1 つの endpoint (`:3001/mcp`) に束ねます。agentgateway は複数の MCP server を 1 つの MCP server に見せる multiplex の機能を持っていて、束ねた後の tool 名は `<target 名>_<tool 名>` の形になります。
+docs と ops という 2 つの MCP server を、1 つの endpoint (`:3001/mcp`) に束ねてみます。agentgateway は複数の MCP server を 1 つの MCP server に見せる multiplex の機能を持っていて、束ねた後の tool 名は `<target 名>_<tool 名>` の形になります。
 
 認可には JWT の claim を使います。JWT は `cmd/jwt` で作り、`role` claim に `viewer` か `operator` を入れています。読み取り系の tool (`search_docs`、`get_status`) は誰でも使え、`restart_service` は operator だけが使える、というルールです。
 
@@ -296,19 +298,9 @@ http.status=200 jwt.sub=bob protocol=mcp mcp.method.name=tools/call mcp.target=o
 認可で拒否された場合は HTTP 400 になり、client 側では `tools/call` の呼び出し自体が失敗しました。一方、guardrail で拒否された場合は HTTP 200 で、tool の結果として `isError: true` とメッセージが返ります。エージェントから見ると「tool を呼んだら失敗した」という扱いになるので、LLM は理由を読んで別の手を考えられます。
 
 
-### prefix を付けずに tool を呼ぶと
-
-最後に、prefix を付けずに `get_status` を呼んでみました。
-
-```plain
-http.status=400 jwt.sub=bob protocol=mcp mcp.method.name=tools/call mcp.target=get mcp.resource.type=tool gen_ai.tool.name=status error="mcp: authorization denied for tool: get_status" reason=Authorization
-```
-
-最初の `_` で区切られ、target `get` の tool `status` と解釈されています。tool 名に `_` を含む MCP server は多いので、multiplex するときは prefix を付けた名前で呼ぶ前提になります。
-
 ## シナリオ 03: LLM に API key 認証と token rate limit をかける
 
-fake LLM を OpenAI 互換の custom provider として登録し、team ごとに API key を発行して、team ごとの token 上限 (1 分あたり 40 token) を設定します。API key は設定ファイルに直接書かず、環境変数から読みます。
+fake LLM を OpenAI 互換の custom provider として登録し、team ごとに API key を発行して、team ごとの token 上限 (1 分あたり 40 token) を設定します。
 
 ```yaml
 llm:
