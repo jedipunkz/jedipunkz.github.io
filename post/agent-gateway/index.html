@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="ja" dir="auto">
+
+<head><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway | jedipunkz 🚀 のブログ</title>
+<meta name="keywords" content="agentgateway, A2A, MCP, AI Agent, Go">
+<meta name="description" content="AI エージェントの通信 (エージェント間の A2A、tool 呼び出しの MCP、LLM API) を OSS の agentgateway に通し、Agent Card の書き換え、JWT による tool 単位の認可、引数を見た guardrail、token 単位の rate limit、エージェントをまたいだ trace を Go のサンプル環境で確認しました">
+<meta name="author" content="jedipunkz">
+<link rel="canonical" href="https://jedipunkz.rocks/post/agent-gateway/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.93fab3171fff6ba6152e8c67ba3e8cfcee77a1e7b231fd29570601c555d983ef.css" integrity="sha256-k/qzFx//a6YVLoxnuj6M/O53oeeyMf0pVwYBxVXZg&#43;8=" rel="preload stylesheet" as="style">
+<link rel="icon" href="https://jedipunkz.rocks/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.rocks/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.rocks/favicon-32x32.png">
+<link rel="apple-touch-icon" href="https://jedipunkz.rocks/apple-touch-icon.png">
+<link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/agent-gateway/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-track {
+                background: 0 0;
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-thumb {
+                border-color: var(--theme);
+            }
+        }
+
+    </style>
+</noscript>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&amp;family=JetBrains&#43;Mono:wght@400;500&amp;family=Noto&#43;Sans&#43;JP:wght@400..700&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&amp;family=JetBrains&#43;Mono:wght@400;500&amp;family=Noto&#43;Sans&#43;JP:wght@400..700&amp;display=swap">
+
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-2H91XCYVZ8"></script>
+      <script>
+        var doNotTrack = false;
+        if ( true ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-2H91XCYVZ8');
+        }
+      </script><meta property="og:url" content="https://jedipunkz.rocks/post/agent-gateway/">
+  <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
+  <meta property="og:title" content="A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway">
+  <meta property="og:description" content="AI エージェントの通信 (エージェント間の A2A、tool 呼び出しの MCP、LLM API) を OSS の agentgateway に通し、Agent Card の書き換え、JWT による tool 単位の認可、引数を見た guardrail、token 単位の rate limit、エージェントをまたいだ trace を Go のサンプル環境で確認しました">
+  <meta property="og:locale" content="ja">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="post">
+    <meta property="article:published_time" content="2026-11-14T12:00:00+09:00">
+    <meta property="article:modified_time" content="2026-11-14T12:00:00+09:00">
+    <meta property="article:tag" content="Agentgateway">
+    <meta property="article:tag" content="A2A">
+    <meta property="article:tag" content="MCP">
+    <meta property="article:tag" content="AI Agent">
+    <meta property="article:tag" content="Go">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_25e40fdc931f686e.jpg">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_25e40fdc931f686e.jpg">
+<meta name="twitter:image:alt" content="A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway">
+<meta name="twitter:title" content="A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway">
+<meta name="twitter:description" content="AI エージェントの通信 (エージェント間の A2A、tool 呼び出しの MCP、LLM API) を OSS の agentgateway に通し、Agent Card の書き換え、JWT による tool 単位の認可、引数を見た guardrail、token 単位の rate limit、エージェントをまたいだ trace を Go のサンプル環境で確認しました">
+  <meta name="twitter:site" content="@jedipunkz">
+  <meta name="twitter:creator" content="@jedipunkz">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway",
+  "name": "A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway",
+  "description": "AI エージェントの通信 (エージェント間の A2A、tool 呼び出しの MCP、LLM API) を OSS の agentgateway に通し、Agent Card の書き換え、JWT による tool 単位の認可、引数を見た guardrail、token 単位の rate limit、エージェントをまたいだ trace を Go のサンプル環境で確認しました",
+  "keywords": [
+    "agentgateway", "A2A", "MCP", "AI Agent", "Go"
+  ],
+  "articleBody": "こんにちは。ジェダイパンくず🍞 です。\n今年 (2026 年) は、「エージェントの通信をまとめて扱う gateway」が製品カテゴリとして立ち上がってきました。Kong は 4 月に AI Gateway 3.14 で Agent-to-Agent (A2A) のトラフィックに対応し、API7 は 8 月に A2A 1.0 を gateway でどう扱うかの記事を公開し、Maxim も 10 月に自社の Bifrost へ Agent Gateway を追加しています。そこで今回は OSS の agentgateway を使って、A2A・MCP・LLM の 3 種類のトラフィックを 1 つの gateway に通すサンプル環境を作り、手を動かしてみました。\n動作確認のために書いたコードは下記に置いてあります。\nhttps://github.com/jedipunkz/agent-gateway-playground\n検証したバージョンは agentgateway v1.7.0、a2a-go v2.8.0 (A2A v1.0)、MCP Go SDK v1.8.0 です。環境は Linux で、Docker は使っていません。\nAgent Gateway とは AI エージェントが外とやりとりする通信は、大きく次の 3 種類に分けられます。\n通信 プロトコル gateway が中身として見るもの エージェント → LLM OpenAI / Anthropic などの API モデル名、入出力の token 数、プロンプト エージェント → tool MCP (JSON-RPC) tools/list や tools/call などのメソッド、tool 名、引数 エージェント → エージェント A2A (JSON-RPC / REST / gRPC) Agent Card、SendMessage などのメソッド、task の状態、context ID 一般的な API gateway は主に HTTP のパスやヘッダを見て振り分けます。しかしこれらの通信はどれも中身を JSON-RPC や独自の JSON の本文で表すので、パスだけでは「どの tool を呼んだか」「どのエージェントのどの task か」が分かりません。Agent Gateway と呼ばれている製品は、これらのプロトコルを解釈して、その単位で認可・制限・観測をするものです。\n参考にした各社の記事やドキュメントを読んで、A2A の扱いを比べると次のようになります。agentgateway 以外はドキュメントを読んだだけで、動かしてはいません。\n製品 A2A の扱い agentgateway OSS (Apache-2.0、Rust)。route に a2a policy を付けると Agent Card の URL を書き換え、メソッドや task の状態をログに出す。A2A v0.3 と v1.0 の両方の形式を解釈する。MCP と LLM も同じバイナリで扱う Kong AI Gateway 3.14 で AI A2A Proxy plugin が追加された。A2A のリクエストを検出して task のメタデータを抜き出し、Agent Card の URL を書き換える。認証は既存の認証 plugin を使う API7 AISIX エージェントごとに /a2a/ の endpoint を作る。エージェントごとに A2A 1.0 か 0.3 を固定し、バージョン間の変換はしない。既定は拒否 Bifrost (Maxim) 2026 年 10 月に Agent Gateway を追加。Agent Card をリクエストごとにエージェントから取り直し、endpoint と認証の情報を書き換えて返す どの製品も「Agent Card の URL を gateway に書き換えて、以降の呼び出しを gateway に向けさせる」という同じ発想で作られています。API7 の記事 A2A Protocol 1.0 at the Gateway では、A2A 1.0 で署名付き Agent Card やテナントのルーティングが仕様に入ったと書かれていました。一方で「どの署名者を信頼するか」「どの入力でテナントを決めるか」は運用者が決めることであり、その決定を強制する場所が gateway だ、というのがこの記事の主張です。\nサンプル環境の構成 エージェント、MCP server、LLM はすべて Go で書きました。LLM は OpenAI 互換の API で応答する fake LLM です。\nflowchart LR C[client] --\u003e|A2A :3000| GW subgraph GW[agentgateway] A2A[routes\na2a policy] MCP[mcp\njwtAuth / mcpAuthorization / mcpGuardrails] LLM[llm\napiKey / localRateLimit] end A2A --\u003e P[planner agent] P --\u003e|A2A :3000| A2A A2A --\u003e W[worker agent] W --\u003e|MCP :3001| MCP W --\u003e|OpenAI API :4000| LLM MCP --\u003e D[mcpserver docs] MCP --\u003e O[mcpserver ops] LLM --\u003e F[fakellm] GW -. OTLP/HTTP .-\u003e T[traceview :4318] planner は受け取ったメッセージを worker に転送するだけのエージェントで、worker は MCP の tool と LLM を呼んで返事を作ります。planner から worker への呼び出しも gateway を経由させています。\nパス 内容 cmd/agent A2A v1.0 (JSON-RPC) エージェント。-peer で転送役、-mcp / -llm で tool と LLM を呼ぶ。-send で client として動く cmd/mcpserver Streamable HTTP の MCP server cmd/fakellm OpenAI 互換の /v1/chat/completions を返す fake LLM cmd/jwt シナリオ用の ES256 鍵と JWT を作る cmd/mcpcall MCP の tools/list と tools/call を行う client cmd/traceview OTLP/HTTP で受けた span をツリー表示する簡易 backend scenarios/ シナリオごとの gateway 設定と実行スクリプト agentgateway は GitHub Releases のバイナリをそのまま使います。scripts/setup.sh がバイナリの取得と Go のビルドを行い、各シナリオは run.sh を実行するだけで再現できます。\n./scripts/setup.sh ./scenarios/01-a2a/run.sh 設定ファイルの形式 agentgateway の設定ファイルには、listener と route を入れ子で書く binds 形式と、gateway・route・MCP・LLM をトップレベルに並べる gateways 形式があります。公式の example には binds 形式のものも多いのですが、binds には待ち受けアドレスを指定する項目が無く、全インターフェースで listen します。今回は gateways.*.bindAddress で 127.0.0.1 を指定できる gateways 形式に統一しました。readiness (:15021) と metrics (:15020) も既定では全インターフェースで listen するので、config で loopback に限定しています。\nconfig: # 未指定だと agentgateway が鍵を生成してこのファイルに書き込むため、環境変数で渡す session: key: $SESSION_KEY readinessAddr: 127.0.0.1:15021 statsAddr: 127.0.0.1:15020 gateways: a2a: port: 3000 bindAddress: 127.0.0.1 config.session.key はセッション ID の暗号化に使う鍵で、未指定のまま起動すると agentgateway が鍵を生成して設定ファイルに追記します。気付かずに commit すると鍵がリポジトリに入るので注意が必要です。値に $SESSION_KEY と書けば環境変数から読まれます。環境変数が無い場合は起動時にエラーになります。\nシナリオ 01: A2A エージェントを gateway の配下に並べる planner と worker の 2 体を、1 つの gateway の配下に /planner と /worker のパスで並べます。route に a2a: {} を付けると、その route は A2A のトラフィックとして扱われます。\nroutes: - name: planner gateways: a2a matches: - path: pathPrefix: /planner policies: urlRewrite: path: prefix: / a2a: {} backends: - host: 127.0.0.1:9302 - name: worker gateways: a2a matches: - path: pathPrefix: /worker policies: urlRewrite: path: prefix: / a2a: {} backends: - host: 127.0.0.1:9301 エージェントの実装は a2a-go の JSON-RPC handler に、受け取ったテキストを処理する関数を渡すだけです。Agent Card には自分自身の URL (http://127.0.0.1:9302/invoke) を書いています。\n(Agent Card とは A2A エージェントが「自分は何者でどこにどう話しかければよいか」を書いて公開する jSON です)\ncard := \u0026a2a.AgentCard{ Name: *name, Description: *name + \" agent\", // gateway はこの URL を自分の URL に書き換えて返す (agent card rewrite) SupportedInterfaces: []*a2a.AgentInterface{ a2a.NewAgentInterface(\"http://\"+*addr+\"/invoke\", a2a.TransportProtocolJSONRPC), }, // ... } mux := http.NewServeMux() mux.Handle(\"/invoke\", a2asrv.NewJSONRPCHandler(a2asrv.NewHandler(exec))) mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card)) Agent Card の書き換え backend から直接取った Agent Card と、gateway 経由で取った Agent Card を比べます。\n$ curl -s http://127.0.0.1:9302/.well-known/agent-card.json | jq '.supportedInterfaces' [ { \"url\": \"http://127.0.0.1:9302/invoke\", \"protocolBinding\": \"JSONRPC\", \"protocolVersion\": \"1.0\" } ] $ curl -s http://127.0.0.1:3000/planner/.well-known/agent-card.json | jq '.supportedInterfaces' [ { \"url\": \"http://127.0.0.1:3000/planner/invoke\", \"protocolBinding\": \"JSONRPC\", \"protocolVersion\": \"1.0\" } ] gateway 経由では url が http://127.0.0.1:3000/planner/invoke に書き換わっています。A2A の client は Agent Card に書かれた URL にメッセージを送るので、最初に gateway から Agent Card を取りさえすれば、以降の呼び出しも gateway を通ります。agentgateway は A2A v1.0 の supportedInterfaces[].url と v0.3 の url の両方に対応していて、urlRewrite でパスを書き換えている場合も、それを考慮した URL に直してくれます。\nメッセージを送る client から planner にメッセージを送ると、planner が gateway 経由で worker に転送し、worker の返事が返ってきます。\n$ bin/agent -name client -send http://127.0.0.1:3000/planner \"checkout\" [planner] [worker] received \"checkout\" gateway のアクセスログです (一部抜粋しています)。\nroute=default/planner http.method=GET http.path=/planner/.well-known/agent-card.json http.status=200 protocol=a2a duration=0ms route=default/worker http.method=GET http.path=/worker/.well-known/agent-card.json http.status=200 protocol=a2a duration=0ms route=default/worker http.method=POST http.path=/worker/invoke http.status=200 protocol=a2a a2a.method=SendMessage a2a.response.outcome=success a2a.result.kind=message a2a.context.id=01a1d56f-d37b-7d59-a75a-092092397b75 duration=0ms route=default/planner http.method=POST http.path=/planner/invoke http.status=200 protocol=a2a a2a.method=SendMessage a2a.response.outcome=success a2a.result.kind=message a2a.context.id=01a1d56f-d37a-7a99-b1f4-4f1d5f1237de duration=1ms a2a.method=SendMessage が A2A v1.0 のメソッド名です (v0.3 では message/send)。応答の種類 (message か task)、task の状態、エラーコード、context ID もログに出ます。\nただし context ID は planner と worker で別の値になっています。A2A の context ID は会話の単位で、planner が worker に新しいメッセージを送ると、worker 側では別の会話として扱われるためです。エージェントをまたいで 1 つのリクエストを追うには、後述のシナリオ 04 の trace を使います。\na2a-go で path 付きの URL を扱う gateway の配下にパスで並べたエージェントを a2a-go の client から呼ぶとき、一点つまずきました。agentcard.Resolver.Resolve() に http://127.0.0.1:3000/planner を渡すと 404 になります。a2a-go は base URL のパスが空か / のときだけ /.well-known/agent-card.json を付け、パスがあればその URL を Agent Card の URL そのものとみなすためです。WithPath で明示すれば解決します。\ncard, err := agentcard.NewResolver(hc).Resolve(ctx, cardURL, agentcard.WithPath(a2asrv.WellKnownAgentCardPath)) シナリオ 02: MCP server を束ねて tool 単位で認可する docs と ops という 2 つの MCP server を、1 つの endpoint (:3001/mcp) に束ねてみます。agentgateway は複数の MCP server を 1 つの MCP server に見せる multiplex の機能を持っていて、束ねた後の tool 名は _ の形になります。\n認可には JWT の claim を使います。JWT は cmd/jwt で作り、role claim に viewer か operator を入れています。読み取り系の tool (search_docs、get_status) は誰でも使え、restart_service は operator だけが使える、というルールです。\nmcp: gateways: mcp policies: jwtAuth: mode: strict providers: - issuer: agent-gateway-playground audiences: [playground] jwks: file: ./jwt/jwks.json # tool 単位の認可。判定に使えるのは tool 名・target・JWT claim など (引数は見えない) mcpAuthorization: rules: # 有効な JWT があれば読み取り系 tool は使える - allow: 'mcp.tool.name in [\"search_docs\", \"get_status\"]' # restart_service は operator だけ - allow: 'jwt.role == \"operator\" \u0026\u0026 mcp.tool.name == \"restart_service\"' targets: - name: docs mcp: host: http://127.0.0.1:9201/mcp - name: ops mcp: host: http://127.0.0.1:9202/mcp run.sh の出力です。\n## token なし connect: calling \"initialize\": sending \"initialize\": Unauthorized ## viewer: tools/list と restart_service tool: docs_search_docs tool: ops_get_status call: calling \"tools/call\": sending \"tools/call\": unknown resource: rejected by transport: Bad Request ## operator: restart_service (checkout) tool: docs_search_docs tool: ops_get_status tool: ops_restart_service result (isError=false): checkout: restarted viewer の tools/list には ops_restart_service が出てきません。許可されない tool は一覧から消えるので、エージェントはそもそも呼べる tool として認識しません。それでも名前を指定して呼ぶと 400 で拒否されます。ログには誰が (jwt.sub) どの target のどの tool を呼んで、なぜ拒否されたのかが残ります。\nhttp.status=401 protocol=http error=\"authentication failure: no bearer token found\" reason=JwtAuth http.status=400 jwt.sub=alice protocol=mcp mcp.method.name=tools/call mcp.target=ops mcp.resource.type=tool gen_ai.tool.name=restart_service error=\"mcp: authorization denied for tool: ops_restart_service\" reason=Authorization http.status=200 jwt.sub=bob protocol=mcp mcp.method.name=tools/call mcp.target=ops mcp.resource.type=tool gen_ai.tool.name=restart_service mcpGuardrails 引数を見るには mcpGuardrails を使います。guardrail は MCP のリクエストやレスポンスを CEL 式で検査し、拒否 (reject) や書き換え (transform) ができる機能です。\n# 引数を見た制御は guardrail で行う。payments の再起動は operator でも拒否する mcpGuardrails: processors: - kind: expression methods: {\"tools/call\": request} condition: \u003e- mcp.tool.target == \"ops\" \u0026\u0026 mcp.params.name == \"restart_service\" \u0026\u0026 has(mcp.params.arguments.service) \u0026\u0026 mcp.params.arguments.service == \"payments\" reject: \"restarting payments requires a change request\" ## operator: restart_service (payments) -\u003e guardrail result (isError=true): restarting payments requires a change request http.status=200 jwt.sub=bob protocol=mcp mcp.method.name=tools/call mcp.target=ops mcp.resource.type=tool gen_ai.tool.name=restart_service error=\"mcp: mcpGuardrails rejected: restarting payments requires a change request\" reason=MCP 認可で拒否された場合は HTTP 400 になり、client 側では tools/call の呼び出し自体が失敗しました。一方、guardrail で拒否された場合は HTTP 200 で、tool の結果として isError: true とメッセージが返ります。エージェントから見ると「tool を呼んだら失敗した」という扱いになるので、LLM は理由を読んで別の手を考えられます。\nシナリオ 03: LLM に API key 認証と token rate limit をかける fake LLM を OpenAI 互換の custom provider として登録し、team ごとに API key を発行して、team ごとの token 上限 (1 分あたり 40 token) を設定します。\nllm: gateways: llm policies: apiKey: mode: strict location: header: name: authorization prefix: 'Bearer ' keys: - key: $TEAM_A_KEY metadata: team: team-a - key: $TEAM_B_KEY metadata: team: team-b # team ごとに 1 分あたり 40 token まで localRateLimit: - type: tokens maxTokens: 40 tokensPerFill: 40 fillInterval: 60s key: apiKey.team models: - name: fake provider: custom: formats: - type: completions params: baseUrl: http://127.0.0.1:9100/v1 model: fake-1 key に付けた metadata は CEL から apiKey.team として参照できるので、rate limit の bucket を team 単位にしています。client は model: fake を指定し、gateway が fake-1 に置き換えて fake LLM に送ります。\n## key なし 401 authentication failed ## team-a を 5 回 (上限 40 token/分) 200 {\"prompt_tokens\":5,\"completion_tokens\":7,\"total_tokens\":12} 200 {\"prompt_tokens\":5,\"completion_tokens\":7,\"total_tokens\":12} 200 {\"prompt_tokens\":5,\"completion_tokens\":7,\"total_tokens\":12} 200 {\"prompt_tokens\":5,\"completion_tokens\":7,\"total_tokens\":12} 429 rate limit exceeded ## team-b (別 bucket) 200 {\"prompt_tokens\":5,\"completion_tokens\":7,\"total_tokens\":12} 1 回 12 token なので、上限が 40 token なら 3 回で止まりそうですが、実際には 4 回目まで通って 5 回目で 429 になりました。token 数はレスポンスを受け取るまで分からないので、リクエストの時点では残りがあるかだけを見て通し、レスポンスの token 数を後から差し引いているようです (ソースまでは確認していません)。上限は「1 リクエスト分はみ出しうる目安」として設定する必要があります。\nアクセスログと metrics には、OTel GenAI semantic conventions の名前で token 数が出ます。前回の記事 ではエージェントごとに token 数の属性名がばらばらでしたが、LLM の呼び出しを gateway に通せば、どのエージェントから呼んでも同じ名前で集計できます。\nhttp.status=200 protocol=llm gen_ai.operation.name=chat gen_ai.provider.name=custom gen_ai.request.model=fake-1 gen_ai.response.model=fake-1 agw.ai.original_model=fake gen_ai.usage.input_tokens=5 gen_ai.usage.output_tokens=7 http.status=429 protocol=llm agw.ai.original_model=fake error=\"rate limit exceeded\" reason=RateLimit agentgateway_gen_ai_client_token_usage_sum{gen_ai_token_type=\"input\",gen_ai_operation_name=\"chat\",gen_ai_system=\"custom\",gen_ai_request_model=\"fake-1\",gen_ai_response_model=\"fake-1\"} 25.0 agentgateway_gen_ai_client_token_usage_sum{gen_ai_token_type=\"output\",gen_ai_operation_name=\"chat\",gen_ai_system=\"custom\",gen_ai_request_model=\"fake-1\",gen_ai_response_model=\"fake-1\"} 35.0 シナリオ 04: エージェントをまたいだ trace 最後に、01〜03 の設定を 1 つの gateway プロセスにまとめ、client → planner → worker → MCP / LLM の流れを 1 本の trace で見ます。gateway の設定には trace の送り先を足すだけです。\nconfig: tracing: otlpEndpoint: http://127.0.0.1:4318 otlpProtocol: http randomSampling: \"true\" エージェント側は、受けるリクエストを otelhttp.NewHandler で包み、送るリクエストは otelhttp.NewTransport を通して、traceparent ヘッダを伝搬させます。A2A の client にも MCP の client にも *http.Client を渡せるので、エージェントのコードに trace の処理はほとんど入りません。\nfunc Client(header, value string) *http.Client { var rt http.RoundTripper = otelhttp.NewTransport(http.DefaultTransport) if value != \"\" { rt = headerRT{rt, header, value} } return \u0026http.Client{Transport: rt} } trace の backend には、OTLP/HTTP で受けた span をツリー表示するだけの cmd/traceview を書いて使いました。実行結果です。\ntrace 060470cb44a14a16e8ec4c68974468c4 (39 spans) - [client] send http://127.0.0.1:3000/planner - [client] HTTP GET - [agentgateway] GET /planner/* - [agentgateway] GET - [planner] GET /.well-known/agent-card.json - [client] HTTP POST - [agentgateway] POST /planner/* a2a.method=SendMessage - [agentgateway] POST - [planner] POST /invoke - [planner] HTTP GET - [agentgateway] GET /worker/* - [agentgateway] GET - [worker] GET /.well-known/agent-card.json - [planner] HTTP POST - [agentgateway] POST /worker/* a2a.method=SendMessage - [agentgateway] POST - [worker] POST /invoke - [worker] HTTP POST - [agentgateway] server/discover - [agentgateway] server/discover docs - [agentgateway] server/discover ops - [worker] HTTP POST - [agentgateway] initialize - [agentgateway] initialize docs - [agentgateway] initialize ops - [worker] HTTP POST - [agentgateway] notifications/initialized - [agentgateway] notifications/initialized docs - [agentgateway] notifications/initialized ops - [worker] HTTP POST - [agentgateway] tools/call gen_ai.tool.name=get_status - [agentgateway] tools/call ops_get_status gen_ai.tool.name=get_status - [worker] HTTP DELETE - [agentgateway] DELETE /mcp/* - [agentgateway] DELETE docs - [agentgateway] DELETE ops - [worker] HTTP POST - [agentgateway] POST /v1/chat/completions gen_ai.operation.name=chat gen_ai.usage.input_tokens=8 gen_ai.usage.output_tokens=10 - [agentgateway] POST client から LLM の呼び出しまでが 1 本の trace につながりました。gateway は受けた traceparent を引き継いで自分の span を作り、backend に転送するときにも traceparent を付けています。A2A の span には a2a.method、MCP の span には gen_ai.tool.name、LLM の span には token 数が付くので、trace を見るだけで「planner がどのエージェントを呼び、そのエージェントがどの tool を呼び、LLM に何 token 使ったか」が分かります。シナリオ 01 で見たとおり context ID はエージェントごとに別になるので、エージェントをまたいだ追跡は trace ID で行うことになります。\ntrace からは multiplex のコストも見えます。worker は ops_get_status を 1 回呼んだだけですが、server/discover、initialize、notifications/initialized、セッション終了の DELETE は docs と ops の両方に送られています。束ねる MCP server が増えると、セッションを張るたびに送られるリクエストも、その数に比例して増えます。\n気になった点 設定ファイルに config.session.key が無いと、agentgateway が起動時に鍵を生成して設定ファイルに書き込みます。 binds 形式の設定では待ち受けアドレスを指定できず、全インターフェースで listen します。readiness と metrics の port も既定では全インターフェースです。 CEL のリファレンスに載っている変数でも、使える場所が限られているものがあります (mcp.tool.arguments は認可では使えず、mcp.target.name は guardrail で評価エラーになる)。ルールを書いたら、許可されるケースと拒否されるケースの両方を実際に呼んで確かめる必要があると思いました。 gateway は経路上の判定点なので、エージェントが gateway を迂回して backend を直接呼べると意味がありません。今回は全部 127.0.0.1 で動かしているので、planner から worker の port を直接叩くこともできます。本番では、backend にはネットワーク上 gateway からしか届かないようにするか、OpenShell のようなサンドボックスで外向きの通信を gateway だけに絞る必要があります。 まとめ agentgateway を使って、A2A・MCP・LLM の 3 種類のトラフィックを 1 つの gateway に通してみました。Agent Card の書き換えでエージェント間の呼び出しを gateway に寄せられること、MCP の tool を JWT の claim で絞ると一覧からも消えること、LLM の token を team 単位で制限できること、そしてそれらがすべて同じ形式のログと 1 本の trace に残ることを確認できました。エージェントが増えても「誰が何を呼んだか」を 1 か所で答えられるのは、運用する側として安心材料になると感じました。\n一方で、認可ルールでは tool の引数を参照できず guardrail で補う必要があることや、CEL の変数が使える場所の違いなど、まだ発展途上の部分もありました。\n",
+  "wordCount" : "1669",
+  "inLanguage": "ja",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_25e40fdc931f686e.jpg",
+  "datePublished": "2026-11-14T12:00:00+09:00",
+  "dateModified": "2026-11-14T12:00:00+09:00",
+  "author":{
+    "@type": "Person",
+    "name": "jedipunkz"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "https://jedipunkz.rocks/post/agent-gateway/"
+  },
+  "publisher": {
+    "@type": "Person",
+    "name": "jedipunkz 🚀 のブログ",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
+    }
+  }
+}
+</script>
+
+</head>
+
+<body class="" id="top">
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.body.classList.add('dark');
+    } else if (localStorage.getItem("pref-theme") === "light") {
+        document.body.classList.remove('dark')
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark');
+    }
+
+</script>
+
+<header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="https://jedipunkz.rocks/" accesskey="h" title="jedipunkz (Alt + H)">jedipunkz</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="https://jedipunkz.rocks/about" title="About Me">
+                    <span>About Me</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
+      A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway
+    </h1>
+    <div class="post-description">
+      AI エージェントの通信 (エージェント間の A2A、tool 呼び出しの MCP、LLM API) を OSS の agentgateway に通し、Agent Card の書き換え、JWT による tool 単位の認可、引数を見た guardrail、token 単位の rate limit、エージェントをまたいだ trace を Go のサンプル環境で確認しました
+    </div>
+    <div class="post-meta"><span title='2026-11-14 12:00:00 +0900 +0900'>2026-11-14</span>&nbsp;·&nbsp;8 分&nbsp;·&nbsp;jedipunkz
+
+</div>
+  </header> 
+  <div class="post-content"><p>こんにちは。<a href="https://x.com/jedipunkz">ジェダイパンくず🍞</a> です。</p>
+<p>今年 (2026 年) は、「エージェントの通信をまとめて扱う gateway」が製品カテゴリとして立ち上がってきました。Kong は 4 月に AI Gateway 3.14 で Agent-to-Agent (A2A) のトラフィックに対応し、API7 は 8 月に A2A 1.0 を gateway でどう扱うかの記事を公開し、Maxim も 10 月に自社の Bifrost へ Agent Gateway を追加しています。そこで今回は OSS の <a href="https://github.com/agentgateway/agentgateway">agentgateway</a> を使って、A2A・MCP・LLM の 3 種類のトラフィックを 1 つの gateway に通すサンプル環境を作り、手を動かしてみました。</p>
+<p>動作確認のために書いたコードは下記に置いてあります。</p>
+<p><a href="https://github.com/jedipunkz/agent-gateway-playground">https://github.com/jedipunkz/agent-gateway-playground</a></p>
+<p>検証したバージョンは agentgateway v1.7.0、<a href="https://github.com/a2aproject/a2a-go">a2a-go</a> v2.8.0 (A2A v1.0)、<a href="https://github.com/modelcontextprotocol/go-sdk">MCP Go SDK</a> v1.8.0 です。環境は Linux で、Docker は使っていません。</p>
+<h2 id="agent-gateway-とは">Agent Gateway とは<a hidden class="anchor" aria-hidden="true" href="#agent-gateway-とは">#</a></h2>
+<p>AI エージェントが外とやりとりする通信は、大きく次の 3 種類に分けられます。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>通信</th>
+        <th>プロトコル</th>
+        <th>gateway が中身として見るもの</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>エージェント → LLM</td>
+        <td>OpenAI / Anthropic などの API</td>
+        <td>モデル名、入出力の token 数、プロンプト</td>
+      </tr>
+      <tr>
+        <td>エージェント → tool</td>
+        <td>MCP (JSON-RPC)</td>
+        <td><code>tools/list</code> や <code>tools/call</code> などのメソッド、tool 名、引数</td>
+      </tr>
+      <tr>
+        <td>エージェント → エージェント</td>
+        <td>A2A (JSON-RPC / REST / gRPC)</td>
+        <td>Agent Card、<code>SendMessage</code> などのメソッド、task の状態、context ID</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>一般的な API gateway は主に HTTP のパスやヘッダを見て振り分けます。しかしこれらの通信はどれも中身を JSON-RPC や独自の JSON の本文で表すので、パスだけでは「どの tool を呼んだか」「どのエージェントのどの task か」が分かりません。Agent Gateway と呼ばれている製品は、これらのプロトコルを解釈して、その単位で認可・制限・観測をするものです。</p>
+<p>参考にした各社の記事やドキュメントを読んで、A2A の扱いを比べると次のようになります。agentgateway 以外はドキュメントを読んだだけで、動かしてはいません。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>製品</th>
+        <th>A2A の扱い</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><a href="https://agentgateway.dev/docs/targets/a2a">agentgateway</a></td>
+        <td>OSS (Apache-2.0、Rust)。route に <code>a2a</code> policy を付けると Agent Card の URL を書き換え、メソッドや task の状態をログに出す。A2A v0.3 と v1.0 の両方の形式を解釈する。MCP と LLM も同じバイナリで扱う</td>
+      </tr>
+      <tr>
+        <td><a href="https://developer.konghq.com/plugins/ai-a2a-proxy/">Kong AI Gateway</a></td>
+        <td>3.14 で AI A2A Proxy plugin が追加された。A2A のリクエストを検出して task のメタデータを抜き出し、Agent Card の URL を書き換える。認証は既存の認証 plugin を使う</td>
+      </tr>
+      <tr>
+        <td><a href="https://docs.api7.ai/ai-gateway/agent-gateway/overview">API7 AISIX</a></td>
+        <td>エージェントごとに <code>/a2a/&lt;agent&gt;</code> の endpoint を作る。エージェントごとに A2A 1.0 か 0.3 を固定し、バージョン間の変換はしない。既定は拒否</td>
+      </tr>
+      <tr>
+        <td><a href="https://www.getmaxim.ai/articles/a2a-protocol-gateway/">Bifrost (Maxim)</a></td>
+        <td>2026 年 10 月に Agent Gateway を追加。Agent Card をリクエストごとにエージェントから取り直し、endpoint と認証の情報を書き換えて返す</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>どの製品も「Agent Card の URL を gateway に書き換えて、以降の呼び出しを gateway に向けさせる」という同じ発想で作られています。API7 の記事 <a href="https://api7.ai/blog/a2a-protocol-gateway-layer">A2A Protocol 1.0 at the Gateway</a> では、A2A 1.0 で署名付き Agent Card やテナントのルーティングが仕様に入ったと書かれていました。一方で「どの署名者を信頼するか」「どの入力でテナントを決めるか」は運用者が決めることであり、その決定を強制する場所が gateway だ、というのがこの記事の主張です。</p>
+<h2 id="サンプル環境の構成">サンプル環境の構成<a hidden class="anchor" aria-hidden="true" href="#サンプル環境の構成">#</a></h2>
+<p>エージェント、MCP server、LLM はすべて Go で書きました。LLM は OpenAI 互換の API で応答する fake LLM です。</p>
+<pre class="mermaid">
+  flowchart LR
+  C[client] --&gt;|A2A :3000| GW
+  subgraph GW[agentgateway]
+    A2A[routes&lt;br/&gt;a2a policy]
+    MCP[mcp&lt;br/&gt;jwtAuth / mcpAuthorization / mcpGuardrails]
+    LLM[llm&lt;br/&gt;apiKey / localRateLimit]
+  end
+  A2A --&gt; P[planner agent]
+  P --&gt;|A2A :3000| A2A
+  A2A --&gt; W[worker agent]
+  W --&gt;|MCP :3001| MCP
+  W --&gt;|OpenAI API :4000| LLM
+  MCP --&gt; D[mcpserver docs]
+  MCP --&gt; O[mcpserver ops]
+  LLM --&gt; F[fakellm]
+  GW -. OTLP/HTTP .-&gt; T[traceview :4318]
+</pre>
+<p>planner は受け取ったメッセージを worker に転送するだけのエージェントで、worker は MCP の tool と LLM を呼んで返事を作ります。planner から worker への呼び出しも gateway を経由させています。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>パス</th>
+        <th>内容</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>cmd/agent</code></td>
+        <td>A2A v1.0 (JSON-RPC) エージェント。<code>-peer</code> で転送役、<code>-mcp</code> / <code>-llm</code> で tool と LLM を呼ぶ。<code>-send</code> で client として動く</td>
+      </tr>
+      <tr>
+        <td><code>cmd/mcpserver</code></td>
+        <td>Streamable HTTP の MCP server</td>
+      </tr>
+      <tr>
+        <td><code>cmd/fakellm</code></td>
+        <td>OpenAI 互換の <code>/v1/chat/completions</code> を返す fake LLM</td>
+      </tr>
+      <tr>
+        <td><code>cmd/jwt</code></td>
+        <td>シナリオ用の ES256 鍵と JWT を作る</td>
+      </tr>
+      <tr>
+        <td><code>cmd/mcpcall</code></td>
+        <td>MCP の <code>tools/list</code> と <code>tools/call</code> を行う client</td>
+      </tr>
+      <tr>
+        <td><code>cmd/traceview</code></td>
+        <td>OTLP/HTTP で受けた span をツリー表示する簡易 backend</td>
+      </tr>
+      <tr>
+        <td><code>scenarios/</code></td>
+        <td>シナリオごとの gateway 設定と実行スクリプト</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>agentgateway は GitHub Releases のバイナリをそのまま使います。<code>scripts/setup.sh</code> がバイナリの取得と Go のビルドを行い、各シナリオは <code>run.sh</code> を実行するだけで再現できます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">./scripts/setup.sh
+</span></span><span class="line"><span class="cl">./scenarios/01-a2a/run.sh
+</span></span></code></pre></div><h3 id="設定ファイルの形式">設定ファイルの形式<a hidden class="anchor" aria-hidden="true" href="#設定ファイルの形式">#</a></h3>
+<p>agentgateway の設定ファイルには、listener と route を入れ子で書く <code>binds</code> 形式と、gateway・route・MCP・LLM をトップレベルに並べる <code>gateways</code> 形式があります。公式の example には <code>binds</code> 形式のものも多いのですが、<code>binds</code> には待ち受けアドレスを指定する項目が無く、全インターフェースで listen します。今回は <code>gateways.*.bindAddress</code> で <code>127.0.0.1</code> を指定できる <code>gateways</code> 形式に統一しました。readiness (<code>:15021</code>) と metrics (<code>:15020</code>) も既定では全インターフェースで listen するので、<code>config</code> で loopback に限定しています。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">config</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="c"># 未指定だと agentgateway が鍵を生成してこのファイルに書き込むため、環境変数で渡す</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">session</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l">$SESSION_KEY</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">readinessAddr</span><span class="p">:</span><span class="w"> </span><span class="m">127.0.0.1</span><span class="p">:</span><span class="m">15021</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">statsAddr</span><span class="p">:</span><span class="w"> </span><span class="m">127.0.0.1</span><span class="p">:</span><span class="m">15020</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nt">gateways</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">a2a</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">port</span><span class="p">:</span><span class="w"> </span><span class="m">3000</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">bindAddress</span><span class="p">:</span><span class="w"> </span><span class="m">127.0.0.1</span><span class="w">
+</span></span></span></code></pre></div><p><code>config.session.key</code> はセッション ID の暗号化に使う鍵で、未指定のまま起動すると agentgateway が鍵を生成して設定ファイルに追記します。気付かずに commit すると鍵がリポジトリに入るので注意が必要です。値に <code>$SESSION_KEY</code> と書けば環境変数から読まれます。環境変数が無い場合は起動時にエラーになります。</p>
+<h2 id="シナリオ-01-a2a-エージェントを-gateway-の配下に並べる">シナリオ 01: A2A エージェントを gateway の配下に並べる<a hidden class="anchor" aria-hidden="true" href="#シナリオ-01-a2a-エージェントを-gateway-の配下に並べる">#</a></h2>
+<p>planner と worker の 2 体を、1 つの gateway の配下に <code>/planner</code> と <code>/worker</code> のパスで並べます。route に <code>a2a: {}</code> を付けると、その route は A2A のトラフィックとして扱われます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">routes</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl">- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">planner</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">gateways</span><span class="p">:</span><span class="w"> </span><span class="l">a2a</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">matches</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span>- <span class="nt">path</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">pathPrefix</span><span class="p">:</span><span class="w"> </span><span class="l">/planner</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">policies</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">urlRewrite</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">path</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l">/</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">a2a</span><span class="p">:</span><span class="w"> </span>{}<span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">backends</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span>- <span class="nt">host</span><span class="p">:</span><span class="w"> </span><span class="m">127.0.0.1</span><span class="p">:</span><span class="m">9302</span><span class="w">
+</span></span></span><span class="line"><span class="cl">- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">worker</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">gateways</span><span class="p">:</span><span class="w"> </span><span class="l">a2a</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">matches</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span>- <span class="nt">path</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">pathPrefix</span><span class="p">:</span><span class="w"> </span><span class="l">/worker</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">policies</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">urlRewrite</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">path</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="l">/</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">a2a</span><span class="p">:</span><span class="w"> </span>{}<span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">backends</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span>- <span class="nt">host</span><span class="p">:</span><span class="w"> </span><span class="m">127.0.0.1</span><span class="p">:</span><span class="m">9301</span><span class="w">
+</span></span></span></code></pre></div><p>エージェントの実装は a2a-go の JSON-RPC handler に、受け取ったテキストを処理する関数を渡すだけです。Agent Card には自分自身の URL (<code>http://127.0.0.1:9302/invoke</code>) を書いています。</p>
+<p>(Agent Card とは A2A エージェントが「自分は何者でどこにどう話しかければよいか」を書いて公開する jSON です)</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">card</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">a2a</span><span class="p">.</span><span class="nx">AgentCard</span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">Name</span><span class="p">:</span><span class="w">        </span><span class="o">*</span><span class="nx">name</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">Description</span><span class="p">:</span><span class="w"> </span><span class="o">*</span><span class="nx">name</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="s">&#34; agent&#34;</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="c1">// gateway はこの URL を自分の URL に書き換えて返す (agent card rewrite)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">SupportedInterfaces</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">a2a</span><span class="p">.</span><span class="nx">AgentInterface</span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">a2a</span><span class="p">.</span><span class="nf">NewAgentInterface</span><span class="p">(</span><span class="s">&#34;http://&#34;</span><span class="o">+*</span><span class="nx">addr</span><span class="o">+</span><span class="s">&#34;/invoke&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">a2a</span><span class="p">.</span><span class="nx">TransportProtocolJSONRPC</span><span class="p">),</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">},</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="c1">// ...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nx">mux</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">http</span><span class="p">.</span><span class="nf">NewServeMux</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nx">mux</span><span class="p">.</span><span class="nf">Handle</span><span class="p">(</span><span class="s">&#34;/invoke&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">a2asrv</span><span class="p">.</span><span class="nf">NewJSONRPCHandler</span><span class="p">(</span><span class="nx">a2asrv</span><span class="p">.</span><span class="nf">NewHandler</span><span class="p">(</span><span class="nx">exec</span><span class="p">)))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nx">mux</span><span class="p">.</span><span class="nf">Handle</span><span class="p">(</span><span class="nx">a2asrv</span><span class="p">.</span><span class="nx">WellKnownAgentCardPath</span><span class="p">,</span><span class="w"> </span><span class="nx">a2asrv</span><span class="p">.</span><span class="nf">NewStaticAgentCardHandler</span><span class="p">(</span><span class="nx">card</span><span class="p">))</span><span class="w">
+</span></span></span></code></pre></div><h3 id="agent-card-の書き換え">Agent Card の書き換え<a hidden class="anchor" aria-hidden="true" href="#agent-card-の書き換え">#</a></h3>
+<p>backend から直接取った Agent Card と、gateway 経由で取った Agent Card を比べます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">$ curl -s http://127.0.0.1:9302/.well-known/agent-card.json <span class="p">|</span> jq <span class="s1">&#39;.supportedInterfaces&#39;</span>
+</span></span><span class="line"><span class="cl"><span class="o">[</span>
+</span></span><span class="line"><span class="cl">  <span class="o">{</span>
+</span></span><span class="line"><span class="cl">    <span class="s2">&#34;url&#34;</span>: <span class="s2">&#34;http://127.0.0.1:9302/invoke&#34;</span>,
+</span></span><span class="line"><span class="cl">    <span class="s2">&#34;protocolBinding&#34;</span>: <span class="s2">&#34;JSONRPC&#34;</span>,
+</span></span><span class="line"><span class="cl">    <span class="s2">&#34;protocolVersion&#34;</span>: <span class="s2">&#34;1.0&#34;</span>
+</span></span><span class="line"><span class="cl">  <span class="o">}</span>
+</span></span><span class="line"><span class="cl"><span class="o">]</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">$ curl -s http://127.0.0.1:3000/planner/.well-known/agent-card.json <span class="p">|</span> jq <span class="s1">&#39;.supportedInterfaces&#39;</span>
+</span></span><span class="line"><span class="cl"><span class="o">[</span>
+</span></span><span class="line"><span class="cl">  <span class="o">{</span>
+</span></span><span class="line"><span class="cl">    <span class="s2">&#34;url&#34;</span>: <span class="s2">&#34;http://127.0.0.1:3000/planner/invoke&#34;</span>,
+</span></span><span class="line"><span class="cl">    <span class="s2">&#34;protocolBinding&#34;</span>: <span class="s2">&#34;JSONRPC&#34;</span>,
+</span></span><span class="line"><span class="cl">    <span class="s2">&#34;protocolVersion&#34;</span>: <span class="s2">&#34;1.0&#34;</span>
+</span></span><span class="line"><span class="cl">  <span class="o">}</span>
+</span></span><span class="line"><span class="cl"><span class="o">]</span>
+</span></span></code></pre></div><p>gateway 経由では <code>url</code> が <code>http://127.0.0.1:3000/planner/invoke</code> に書き換わっています。A2A の client は Agent Card に書かれた URL にメッセージを送るので、最初に gateway から Agent Card を取りさえすれば、以降の呼び出しも gateway を通ります。agentgateway は A2A v1.0 の <code>supportedInterfaces[].url</code> と v0.3 の <code>url</code> の両方に対応していて、<code>urlRewrite</code> でパスを書き換えている場合も、それを考慮した URL に直してくれます。</p>
+<h3 id="メッセージを送る">メッセージを送る<a hidden class="anchor" aria-hidden="true" href="#メッセージを送る">#</a></h3>
+<p>client から planner にメッセージを送ると、planner が gateway 経由で worker に転送し、worker の返事が返ってきます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">$ bin/agent -name client -send http://127.0.0.1:3000/planner <span class="s2">&#34;checkout&#34;</span>
+</span></span><span class="line"><span class="cl"><span class="o">[</span>planner<span class="o">]</span> <span class="o">[</span>worker<span class="o">]</span> received <span class="s2">&#34;checkout&#34;</span>
+</span></span></code></pre></div><p>gateway のアクセスログです (一部抜粋しています)。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-plain" data-lang="plain"><span class="line"><span class="cl">route=default/planner http.method=GET http.path=/planner/.well-known/agent-card.json http.status=200 protocol=a2a duration=0ms
+</span></span><span class="line"><span class="cl">route=default/worker http.method=GET http.path=/worker/.well-known/agent-card.json http.status=200 protocol=a2a duration=0ms
+</span></span><span class="line"><span class="cl">route=default/worker http.method=POST http.path=/worker/invoke http.status=200 protocol=a2a a2a.method=SendMessage a2a.response.outcome=success a2a.result.kind=message a2a.context.id=01a1d56f-d37b-7d59-a75a-092092397b75 duration=0ms
+</span></span><span class="line"><span class="cl">route=default/planner http.method=POST http.path=/planner/invoke http.status=200 protocol=a2a a2a.method=SendMessage a2a.response.outcome=success a2a.result.kind=message a2a.context.id=01a1d56f-d37a-7a99-b1f4-4f1d5f1237de duration=1ms
+</span></span></code></pre></div><p><code>a2a.method=SendMessage</code> が A2A v1.0 のメソッド名です (v0.3 では <code>message/send</code>)。応答の種類 (<code>message</code> か <code>task</code>)、task の状態、エラーコード、context ID もログに出ます。</p>
+<p>ただし context ID は planner と worker で別の値になっています。A2A の context ID は会話の単位で、planner が worker に新しいメッセージを送ると、worker 側では別の会話として扱われるためです。エージェントをまたいで 1 つのリクエストを追うには、後述のシナリオ 04 の trace を使います。</p>
+<h3 id="a2a-go-で-path-付きの-url-を扱う">a2a-go で path 付きの URL を扱う<a hidden class="anchor" aria-hidden="true" href="#a2a-go-で-path-付きの-url-を扱う">#</a></h3>
+<p>gateway の配下にパスで並べたエージェントを a2a-go の client から呼ぶとき、一点つまずきました。<code>agentcard.Resolver.Resolve()</code> に <code>http://127.0.0.1:3000/planner</code> を渡すと 404 になります。a2a-go は base URL のパスが空か <code>/</code> のときだけ <code>/.well-known/agent-card.json</code> を付け、パスがあればその URL を Agent Card の URL そのものとみなすためです。<code>WithPath</code> で明示すれば解決します。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">card</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">agentcard</span><span class="p">.</span><span class="nf">NewResolver</span><span class="p">(</span><span class="nx">hc</span><span class="p">).</span><span class="nf">Resolve</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">cardURL</span><span class="p">,</span><span class="w"> </span><span class="nx">agentcard</span><span class="p">.</span><span class="nf">WithPath</span><span class="p">(</span><span class="nx">a2asrv</span><span class="p">.</span><span class="nx">WellKnownAgentCardPath</span><span class="p">))</span><span class="w">
+</span></span></span></code></pre></div><h2 id="シナリオ-02-mcp-server-を束ねて-tool-単位で認可する">シナリオ 02: MCP server を束ねて tool 単位で認可する<a hidden class="anchor" aria-hidden="true" href="#シナリオ-02-mcp-server-を束ねて-tool-単位で認可する">#</a></h2>
+<p>docs と ops という 2 つの MCP server を、1 つの endpoint (<code>:3001/mcp</code>) に束ねてみます。agentgateway は複数の MCP server を 1 つの MCP server に見せる multiplex の機能を持っていて、束ねた後の tool 名は <code>&lt;target 名&gt;_&lt;tool 名&gt;</code> の形になります。</p>
+<p>認可には JWT の claim を使います。JWT は <code>cmd/jwt</code> で作り、<code>role</code> claim に <code>viewer</code> か <code>operator</code> を入れています。読み取り系の tool (<code>search_docs</code>、<code>get_status</code>) は誰でも使え、<code>restart_service</code> は operator だけが使える、というルールです。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">mcp</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">gateways</span><span class="p">:</span><span class="w"> </span><span class="l">mcp</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">policies</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">jwtAuth</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l">strict</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">providers</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">issuer</span><span class="p">:</span><span class="w"> </span><span class="l">agent-gateway-playground</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">audiences</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="l">playground]</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">jwks</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">file</span><span class="p">:</span><span class="w"> </span><span class="l">./jwt/jwks.json</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c"># tool 単位の認可。判定に使えるのは tool 名・target・JWT claim など (引数は見えない)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">mcpAuthorization</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">rules</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="c"># 有効な JWT があれば読み取り系 tool は使える</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">allow</span><span class="p">:</span><span class="w"> </span><span class="s1">&#39;mcp.tool.name in [&#34;search_docs&#34;, &#34;get_status&#34;]&#39;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="c"># restart_service は operator だけ</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">allow</span><span class="p">:</span><span class="w"> </span><span class="s1">&#39;jwt.role == &#34;operator&#34; &amp;&amp; mcp.tool.name == &#34;restart_service&#34;&#39;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">targets</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">docs</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">mcp</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">host</span><span class="p">:</span><span class="w"> </span><span class="l">http://127.0.0.1:9201/mcp</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">ops</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">mcp</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">host</span><span class="p">:</span><span class="w"> </span><span class="l">http://127.0.0.1:9202/mcp</span><span class="w">
+</span></span></span></code></pre></div><p><code>run.sh</code> の出力です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-plain" data-lang="plain"><span class="line"><span class="cl">## token なし
+</span></span><span class="line"><span class="cl">connect: calling &#34;initialize&#34;: sending &#34;initialize&#34;: Unauthorized
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## viewer: tools/list と restart_service
+</span></span><span class="line"><span class="cl">tool: docs_search_docs
+</span></span><span class="line"><span class="cl">tool: ops_get_status
+</span></span><span class="line"><span class="cl">call: calling &#34;tools/call&#34;: sending &#34;tools/call&#34;: unknown resource: rejected by transport: Bad Request
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## operator: restart_service (checkout)
+</span></span><span class="line"><span class="cl">tool: docs_search_docs
+</span></span><span class="line"><span class="cl">tool: ops_get_status
+</span></span><span class="line"><span class="cl">tool: ops_restart_service
+</span></span><span class="line"><span class="cl">result (isError=false): checkout: restarted
+</span></span></code></pre></div><p>viewer の <code>tools/list</code> には <code>ops_restart_service</code> が出てきません。許可されない tool は一覧から消えるので、エージェントはそもそも呼べる tool として認識しません。それでも名前を指定して呼ぶと 400 で拒否されます。ログには誰が (<code>jwt.sub</code>) どの target のどの tool を呼んで、なぜ拒否されたのかが残ります。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-plain" data-lang="plain"><span class="line"><span class="cl">http.status=401 protocol=http error=&#34;authentication failure: no bearer token found&#34; reason=JwtAuth
+</span></span><span class="line"><span class="cl">http.status=400 jwt.sub=alice protocol=mcp mcp.method.name=tools/call mcp.target=ops mcp.resource.type=tool gen_ai.tool.name=restart_service error=&#34;mcp: authorization denied for tool: ops_restart_service&#34; reason=Authorization
+</span></span><span class="line"><span class="cl">http.status=200 jwt.sub=bob protocol=mcp mcp.method.name=tools/call mcp.target=ops mcp.resource.type=tool gen_ai.tool.name=restart_service
+</span></span></code></pre></div><h3 id="mcpguardrails">mcpGuardrails<a hidden class="anchor" aria-hidden="true" href="#mcpguardrails">#</a></h3>
+<p>引数を見るには <code>mcpGuardrails</code> を使います。guardrail は MCP のリクエストやレスポンスを CEL 式で検査し、拒否 (<code>reject</code>) や書き換え (<code>transform</code>) ができる機能です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="w">    </span><span class="c"># 引数を見た制御は guardrail で行う。payments の再起動は operator でも拒否する</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">mcpGuardrails</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">processors</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l">expression</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">methods</span><span class="p">:</span><span class="w"> </span>{<span class="nt">&#34;tools/call&#34;: </span><span class="l">request}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">condition</span><span class="p">:</span><span class="w"> </span><span class="p">&gt;-</span><span class="sd">
+</span></span></span><span class="line"><span class="cl"><span class="sd">          mcp.tool.target == &#34;ops&#34; &amp;&amp;
+</span></span></span><span class="line"><span class="cl"><span class="sd">          mcp.params.name == &#34;restart_service&#34; &amp;&amp;
+</span></span></span><span class="line"><span class="cl"><span class="sd">          has(mcp.params.arguments.service) &amp;&amp;
+</span></span></span><span class="line"><span class="cl"><span class="sd">          mcp.params.arguments.service == &#34;payments&#34;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">reject</span><span class="p">:</span><span class="w"> </span><span class="s2">&#34;restarting payments requires a change request&#34;</span><span class="w">
+</span></span></span></code></pre></div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-plain" data-lang="plain"><span class="line"><span class="cl">## operator: restart_service (payments) -&gt; guardrail
+</span></span><span class="line"><span class="cl">result (isError=true): restarting payments requires a change request
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-plain" data-lang="plain"><span class="line"><span class="cl">http.status=200 jwt.sub=bob protocol=mcp mcp.method.name=tools/call mcp.target=ops mcp.resource.type=tool gen_ai.tool.name=restart_service error=&#34;mcp: mcpGuardrails rejected: restarting payments requires a change request&#34; reason=MCP
+</span></span></code></pre></div><p>認可で拒否された場合は HTTP 400 になり、client 側では <code>tools/call</code> の呼び出し自体が失敗しました。一方、guardrail で拒否された場合は HTTP 200 で、tool の結果として <code>isError: true</code> とメッセージが返ります。エージェントから見ると「tool を呼んだら失敗した」という扱いになるので、LLM は理由を読んで別の手を考えられます。</p>
+<h2 id="シナリオ-03-llm-に-api-key-認証と-token-rate-limit-をかける">シナリオ 03: LLM に API key 認証と token rate limit をかける<a hidden class="anchor" aria-hidden="true" href="#シナリオ-03-llm-に-api-key-認証と-token-rate-limit-をかける">#</a></h2>
+<p>fake LLM を OpenAI 互換の custom provider として登録し、team ごとに API key を発行して、team ごとの token 上限 (1 分あたり 40 token) を設定します。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">llm</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">gateways</span><span class="p">:</span><span class="w"> </span><span class="l">llm</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">policies</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">apiKey</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">mode</span><span class="p">:</span><span class="w"> </span><span class="l">strict</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">location</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">header</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">authorization</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">prefix</span><span class="p">:</span><span class="w"> </span><span class="s1">&#39;Bearer &#39;</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">keys</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l">$TEAM_A_KEY</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">team</span><span class="p">:</span><span class="w"> </span><span class="l">team-a</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l">$TEAM_B_KEY</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">metadata</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">          </span><span class="nt">team</span><span class="p">:</span><span class="w"> </span><span class="l">team-b</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c"># team ごとに 1 分あたり 40 token まで</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">localRateLimit</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span>- <span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l">tokens</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">maxTokens</span><span class="p">:</span><span class="w"> </span><span class="m">40</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">tokensPerFill</span><span class="p">:</span><span class="w"> </span><span class="m">40</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">fillInterval</span><span class="p">:</span><span class="w"> </span><span class="l">60s</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l">apiKey.team</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">models</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span>- <span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l">fake</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">custom</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span><span class="nt">formats</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">        </span>- <span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l">completions</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">params</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">baseUrl</span><span class="p">:</span><span class="w"> </span><span class="l">http://127.0.0.1:9100/v1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="nt">model</span><span class="p">:</span><span class="w"> </span><span class="l">fake-1</span><span class="w">
+</span></span></span></code></pre></div><p>key に付けた <code>metadata</code> は CEL から <code>apiKey.team</code> として参照できるので、rate limit の bucket を team 単位にしています。client は <code>model: fake</code> を指定し、gateway が <code>fake-1</code> に置き換えて fake LLM に送ります。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-plain" data-lang="plain"><span class="line"><span class="cl">## key なし
+</span></span><span class="line"><span class="cl">401 authentication failed
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## team-a を 5 回 (上限 40 token/分)
+</span></span><span class="line"><span class="cl">200 {&#34;prompt_tokens&#34;:5,&#34;completion_tokens&#34;:7,&#34;total_tokens&#34;:12}
+</span></span><span class="line"><span class="cl">200 {&#34;prompt_tokens&#34;:5,&#34;completion_tokens&#34;:7,&#34;total_tokens&#34;:12}
+</span></span><span class="line"><span class="cl">200 {&#34;prompt_tokens&#34;:5,&#34;completion_tokens&#34;:7,&#34;total_tokens&#34;:12}
+</span></span><span class="line"><span class="cl">200 {&#34;prompt_tokens&#34;:5,&#34;completion_tokens&#34;:7,&#34;total_tokens&#34;:12}
+</span></span><span class="line"><span class="cl">429 rate limit exceeded
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">## team-b (別 bucket)
+</span></span><span class="line"><span class="cl">200 {&#34;prompt_tokens&#34;:5,&#34;completion_tokens&#34;:7,&#34;total_tokens&#34;:12}
+</span></span></code></pre></div><p>1 回 12 token なので、上限が 40 token なら 3 回で止まりそうですが、実際には 4 回目まで通って 5 回目で 429 になりました。token 数はレスポンスを受け取るまで分からないので、リクエストの時点では残りがあるかだけを見て通し、レスポンスの token 数を後から差し引いているようです (ソースまでは確認していません)。上限は「1 リクエスト分はみ出しうる目安」として設定する必要があります。</p>
+<p>アクセスログと metrics には、OTel GenAI semantic conventions の名前で token 数が出ます。<a href="/post/otel-genai-agents/">前回の記事</a> ではエージェントごとに token 数の属性名がばらばらでしたが、LLM の呼び出しを gateway に通せば、どのエージェントから呼んでも同じ名前で集計できます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-plain" data-lang="plain"><span class="line"><span class="cl">http.status=200 protocol=llm gen_ai.operation.name=chat gen_ai.provider.name=custom gen_ai.request.model=fake-1 gen_ai.response.model=fake-1 agw.ai.original_model=fake gen_ai.usage.input_tokens=5 gen_ai.usage.output_tokens=7
+</span></span><span class="line"><span class="cl">http.status=429 protocol=llm agw.ai.original_model=fake error=&#34;rate limit exceeded&#34; reason=RateLimit
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" class="chroma"><code class="language-plain" data-lang="plain"><span class="line"><span class="cl">agentgateway_gen_ai_client_token_usage_sum{gen_ai_token_type=&#34;input&#34;,gen_ai_operation_name=&#34;chat&#34;,gen_ai_system=&#34;custom&#34;,gen_ai_request_model=&#34;fake-1&#34;,gen_ai_response_model=&#34;fake-1&#34;} 25.0
+</span></span><span class="line"><span class="cl">agentgateway_gen_ai_client_token_usage_sum{gen_ai_token_type=&#34;output&#34;,gen_ai_operation_name=&#34;chat&#34;,gen_ai_system=&#34;custom&#34;,gen_ai_request_model=&#34;fake-1&#34;,gen_ai_response_model=&#34;fake-1&#34;} 35.0
+</span></span></code></pre></div><h2 id="シナリオ-04-エージェントをまたいだ-trace">シナリオ 04: エージェントをまたいだ trace<a hidden class="anchor" aria-hidden="true" href="#シナリオ-04-エージェントをまたいだ-trace">#</a></h2>
+<p>最後に、01〜03 の設定を 1 つの gateway プロセスにまとめ、client → planner → worker → MCP / LLM の流れを 1 本の trace で見ます。gateway の設定には trace の送り先を足すだけです。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">config</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">tracing</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">otlpEndpoint</span><span class="p">:</span><span class="w"> </span><span class="l">http://127.0.0.1:4318</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">otlpProtocol</span><span class="p">:</span><span class="w"> </span><span class="l">http</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">randomSampling</span><span class="p">:</span><span class="w"> </span><span class="s2">&#34;true&#34;</span><span class="w">
+</span></span></span></code></pre></div><p>エージェント側は、受けるリクエストを <code>otelhttp.NewHandler</code> で包み、送るリクエストは <code>otelhttp.NewTransport</code> を通して、<code>traceparent</code> ヘッダを伝搬させます。A2A の client にも MCP の client にも <code>*http.Client</code> を渡せるので、エージェントのコードに trace の処理はほとんど入りません。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">Client</span><span class="p">(</span><span class="nx">header</span><span class="p">,</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Client</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="kd">var</span><span class="w"> </span><span class="nx">rt</span><span class="w"> </span><span class="nx">http</span><span class="p">.</span><span class="nx">RoundTripper</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">otelhttp</span><span class="p">.</span><span class="nf">NewTransport</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">DefaultTransport</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">value</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="s">&#34;&#34;</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">rt</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">headerRT</span><span class="p">{</span><span class="nx">rt</span><span class="p">,</span><span class="w"> </span><span class="nx">header</span><span class="p">,</span><span class="w"> </span><span class="nx">value</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">http</span><span class="p">.</span><span class="nx">Client</span><span class="p">{</span><span class="nx">Transport</span><span class="p">:</span><span class="w"> </span><span class="nx">rt</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>trace の backend には、OTLP/HTTP で受けた span をツリー表示するだけの <code>cmd/traceview</code> を書いて使いました。実行結果です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-plain" data-lang="plain"><span class="line"><span class="cl">trace 060470cb44a14a16e8ec4c68974468c4 (39 spans)
+</span></span><span class="line"><span class="cl">  - [client] send http://127.0.0.1:3000/planner
+</span></span><span class="line"><span class="cl">    - [client] HTTP GET
+</span></span><span class="line"><span class="cl">      - [agentgateway] GET /planner/*
+</span></span><span class="line"><span class="cl">        - [agentgateway] GET
+</span></span><span class="line"><span class="cl">          - [planner] GET /.well-known/agent-card.json
+</span></span><span class="line"><span class="cl">    - [client] HTTP POST
+</span></span><span class="line"><span class="cl">      - [agentgateway] POST /planner/* a2a.method=SendMessage
+</span></span><span class="line"><span class="cl">        - [agentgateway] POST
+</span></span><span class="line"><span class="cl">          - [planner] POST /invoke
+</span></span><span class="line"><span class="cl">            - [planner] HTTP GET
+</span></span><span class="line"><span class="cl">              - [agentgateway] GET /worker/*
+</span></span><span class="line"><span class="cl">                - [agentgateway] GET
+</span></span><span class="line"><span class="cl">                  - [worker] GET /.well-known/agent-card.json
+</span></span><span class="line"><span class="cl">            - [planner] HTTP POST
+</span></span><span class="line"><span class="cl">              - [agentgateway] POST /worker/* a2a.method=SendMessage
+</span></span><span class="line"><span class="cl">                - [agentgateway] POST
+</span></span><span class="line"><span class="cl">                  - [worker] POST /invoke
+</span></span><span class="line"><span class="cl">                    - [worker] HTTP POST
+</span></span><span class="line"><span class="cl">                      - [agentgateway] server/discover
+</span></span><span class="line"><span class="cl">                        - [agentgateway] server/discover docs
+</span></span><span class="line"><span class="cl">                        - [agentgateway] server/discover ops
+</span></span><span class="line"><span class="cl">                    - [worker] HTTP POST
+</span></span><span class="line"><span class="cl">                      - [agentgateway] initialize
+</span></span><span class="line"><span class="cl">                        - [agentgateway] initialize docs
+</span></span><span class="line"><span class="cl">                        - [agentgateway] initialize ops
+</span></span><span class="line"><span class="cl">                    - [worker] HTTP POST
+</span></span><span class="line"><span class="cl">                      - [agentgateway] notifications/initialized
+</span></span><span class="line"><span class="cl">                        - [agentgateway] notifications/initialized docs
+</span></span><span class="line"><span class="cl">                        - [agentgateway] notifications/initialized ops
+</span></span><span class="line"><span class="cl">                    - [worker] HTTP POST
+</span></span><span class="line"><span class="cl">                      - [agentgateway] tools/call gen_ai.tool.name=get_status
+</span></span><span class="line"><span class="cl">                        - [agentgateway] tools/call ops_get_status gen_ai.tool.name=get_status
+</span></span><span class="line"><span class="cl">                    - [worker] HTTP DELETE
+</span></span><span class="line"><span class="cl">                      - [agentgateway] DELETE /mcp/*
+</span></span><span class="line"><span class="cl">                        - [agentgateway] DELETE docs
+</span></span><span class="line"><span class="cl">                        - [agentgateway] DELETE ops
+</span></span><span class="line"><span class="cl">                    - [worker] HTTP POST
+</span></span><span class="line"><span class="cl">                      - [agentgateway] POST /v1/chat/completions gen_ai.operation.name=chat gen_ai.usage.input_tokens=8 gen_ai.usage.output_tokens=10
+</span></span><span class="line"><span class="cl">                        - [agentgateway] POST
+</span></span></code></pre></div><p>client から LLM の呼び出しまでが 1 本の trace につながりました。gateway は受けた <code>traceparent</code> を引き継いで自分の span を作り、backend に転送するときにも <code>traceparent</code> を付けています。A2A の span には <code>a2a.method</code>、MCP の span には <code>gen_ai.tool.name</code>、LLM の span には token 数が付くので、trace を見るだけで「planner がどのエージェントを呼び、そのエージェントがどの tool を呼び、LLM に何 token 使ったか」が分かります。シナリオ 01 で見たとおり context ID はエージェントごとに別になるので、エージェントをまたいだ追跡は trace ID で行うことになります。</p>
+<p>trace からは multiplex のコストも見えます。worker は <code>ops_get_status</code> を 1 回呼んだだけですが、<code>server/discover</code>、<code>initialize</code>、<code>notifications/initialized</code>、セッション終了の <code>DELETE</code> は docs と ops の両方に送られています。束ねる MCP server が増えると、セッションを張るたびに送られるリクエストも、その数に比例して増えます。</p>
+<h2 id="気になった点">気になった点<a hidden class="anchor" aria-hidden="true" href="#気になった点">#</a></h2>
+<ul>
+<li>設定ファイルに <code>config.session.key</code> が無いと、agentgateway が起動時に鍵を生成して設定ファイルに書き込みます。</li>
+<li><code>binds</code> 形式の設定では待ち受けアドレスを指定できず、全インターフェースで listen します。readiness と metrics の port も既定では全インターフェースです。</li>
+<li>CEL のリファレンスに載っている変数でも、使える場所が限られているものがあります (<code>mcp.tool.arguments</code> は認可では使えず、<code>mcp.target.name</code> は guardrail で評価エラーになる)。ルールを書いたら、許可されるケースと拒否されるケースの両方を実際に呼んで確かめる必要があると思いました。</li>
+<li>gateway は経路上の判定点なので、エージェントが gateway を迂回して backend を直接呼べると意味がありません。今回は全部 <code>127.0.0.1</code> で動かしているので、planner から worker の port を直接叩くこともできます。本番では、backend にはネットワーク上 gateway からしか届かないようにするか、<a href="/post/openshell/">OpenShell</a> のようなサンドボックスで外向きの通信を gateway だけに絞る必要があります。</li>
+</ul>
+<h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
+<p>agentgateway を使って、A2A・MCP・LLM の 3 種類のトラフィックを 1 つの gateway に通してみました。Agent Card の書き換えでエージェント間の呼び出しを gateway に寄せられること、MCP の tool を JWT の claim で絞ると一覧からも消えること、LLM の token を team 単位で制限できること、そしてそれらがすべて同じ形式のログと 1 本の trace に残ることを確認できました。エージェントが増えても「誰が何を呼んだか」を 1 か所で答えられるのは、運用する側として安心材料になると感じました。</p>
+<p>一方で、認可ルールでは tool の引数を参照できず guardrail で補う必要があることや、CEL の変数が使える場所の違いなど、まだ発展途上の部分もありました。</p>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+      <li><a href="https://jedipunkz.rocks/tags/agentgateway/">Agentgateway</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/a2a/">A2A</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/mcp/">MCP</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/ai-agent/">AI Agent</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/go/">Go</a></li>
+    </ul>
+<nav class="paginav">
+  <a class="next" href="https://jedipunkz.rocks/post/otel-genai-agents/">
+    <span class="title">次へ »</span>
+    <br>
+    <span>OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上</span>
+  </a>
+</nav>
+
+
+<ul class="share-buttons">
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway on x"
+            href="https://x.com/intent/tweet/?text=A2A%e3%83%bbMCP%e3%83%bbLLM%20%e3%81%ae%e3%83%88%e3%83%a9%e3%83%95%e3%82%a3%e3%83%83%e3%82%af%e3%82%92%e7%b5%b1%e5%90%88%e7%9a%84%e3%81%ab%e3%83%97%e3%83%ad%e3%82%ad%e3%82%b7%e3%81%97%e8%aa%8d%e5%8f%af%e3%83%bb%e5%88%b6%e9%99%90%e3%83%bb%e8%bf%bd%e8%b7%a1%e3%81%99%e3%82%8b%20agentgateway&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fagent-gateway%2f&amp;hashtags=agentgateway%2cA2A%2cMCP%2cAIAgent%2cGo">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M512 62.554 L 512 449.446 C 512 483.97 483.97 512 449.446 512 L 62.554 512 C 28.03 512 0 483.97 0 449.446 L 0 62.554 C 0 28.03 28.029 0 62.554 0 L 449.446 0 C 483.971 0 512 28.03 512 62.554 Z M 269.951 190.75 L 182.567 75.216 L 56 75.216 L 207.216 272.95 L 63.9 436.783 L 125.266 436.783 L 235.9 310.383 L 332.567 436.783 L 456 436.783 L 298.367 228.367 L 432.367 75.216 L 371.033 75.216 Z M 127.633 110 L 164.101 110 L 383.481 400.065 L 349.5 400.065 Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway on linkedin"
+            href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fagent-gateway%2f&amp;title=A2A%e3%83%bbMCP%e3%83%bbLLM%20%e3%81%ae%e3%83%88%e3%83%a9%e3%83%95%e3%82%a3%e3%83%83%e3%82%af%e3%82%92%e7%b5%b1%e5%90%88%e7%9a%84%e3%81%ab%e3%83%97%e3%83%ad%e3%82%ad%e3%82%b7%e3%81%97%e8%aa%8d%e5%8f%af%e3%83%bb%e5%88%b6%e9%99%90%e3%83%bb%e8%bf%bd%e8%b7%a1%e3%81%99%e3%82%8b%20agentgateway&amp;summary=A2A%e3%83%bbMCP%e3%83%bbLLM%20%e3%81%ae%e3%83%88%e3%83%a9%e3%83%95%e3%82%a3%e3%83%83%e3%82%af%e3%82%92%e7%b5%b1%e5%90%88%e7%9a%84%e3%81%ab%e3%83%97%e3%83%ad%e3%82%ad%e3%82%b7%e3%81%97%e8%aa%8d%e5%8f%af%e3%83%bb%e5%88%b6%e9%99%90%e3%83%bb%e8%bf%bd%e8%b7%a1%e3%81%99%e3%82%8b%20agentgateway&amp;source=https%3a%2f%2fjedipunkz.rocks%2fpost%2fagent-gateway%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-288.985,423.278l0,-225.717l-75.04,0l0,225.717l75.04,0Zm270.539,0l0,-129.439c0,-69.333 -37.018,-101.586 -86.381,-101.586c-39.804,0 -57.634,21.891 -67.617,37.266l0,-31.958l-75.021,0c0.995,21.181 0,225.717 0,225.717l75.02,0l0,-126.056c0,-6.748 0.486,-13.492 2.474,-18.315c5.414,-13.475 17.767,-27.434 38.494,-27.434c27.135,0 38.007,20.707 38.007,51.037l0,120.768l75.024,0Zm-307.552,-334.556c-25.674,0 -42.448,16.879 -42.448,39.002c0,21.658 16.264,39.002 41.455,39.002l0.484,0c26.165,0 42.452,-17.344 42.452,-39.002c-0.485,-22.092 -16.241,-38.954 -41.943,-39.002Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway on reddit"
+            href="https://reddit.com/submit?url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fagent-gateway%2f&title=A2A%e3%83%bbMCP%e3%83%bbLLM%20%e3%81%ae%e3%83%88%e3%83%a9%e3%83%95%e3%82%a3%e3%83%83%e3%82%af%e3%82%92%e7%b5%b1%e5%90%88%e7%9a%84%e3%81%ab%e3%83%97%e3%83%ad%e3%82%ad%e3%82%b7%e3%81%97%e8%aa%8d%e5%8f%af%e3%83%bb%e5%88%b6%e9%99%90%e3%83%bb%e8%bf%bd%e8%b7%a1%e3%81%99%e3%82%8b%20agentgateway">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-3.446,265.638c0,-22.964 -18.616,-41.58 -41.58,-41.58c-11.211,0 -21.361,4.457 -28.841,11.666c-28.424,-20.508 -67.586,-33.757 -111.204,-35.278l18.941,-89.121l61.884,13.157c0.756,15.734 13.642,28.29 29.56,28.29c16.407,0 29.706,-13.299 29.706,-29.701c0,-16.403 -13.299,-29.702 -29.706,-29.702c-11.666,0 -21.657,6.792 -26.515,16.578l-69.105,-14.69c-1.922,-0.418 -3.939,-0.042 -5.585,1.036c-1.658,1.073 -2.811,2.761 -3.224,4.686l-21.152,99.438c-44.258,1.228 -84.046,14.494 -112.837,35.232c-7.468,-7.164 -17.589,-11.591 -28.757,-11.591c-22.965,0 -41.585,18.616 -41.585,41.58c0,16.896 10.095,31.41 24.568,37.918c-0.639,4.135 -0.99,8.328 -0.99,12.576c0,63.977 74.469,115.836 166.33,115.836c91.861,0 166.334,-51.859 166.334,-115.836c0,-4.218 -0.347,-8.387 -0.977,-12.493c14.564,-6.47 24.735,-21.034 24.735,-38.001Zm-119.474,108.193c-20.27,20.241 -59.115,21.816 -70.534,21.816c-11.428,0 -50.277,-1.575 -70.522,-21.82c-3.007,-3.008 -3.007,-7.882 0,-10.889c3.003,-2.999 7.882,-3.003 10.885,0c12.777,12.781 40.11,17.317 59.637,17.317c19.522,0 46.86,-4.536 59.657,-17.321c3.016,-2.999 7.886,-2.995 10.885,0.008c3.008,3.011 3.003,7.882 -0.008,10.889Zm-5.23,-48.781c-16.373,0 -29.701,-13.324 -29.701,-29.698c0,-16.381 13.328,-29.714 29.701,-29.714c16.378,0 29.706,13.333 29.706,29.714c0,16.374 -13.328,29.698 -29.706,29.698Zm-160.386,-29.702c0,-16.381 13.328,-29.71 29.714,-29.71c16.369,0 29.689,13.329 29.689,29.71c0,16.373 -13.32,29.693 -29.689,29.693c-16.386,0 -29.714,-13.32 -29.714,-29.693Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway on facebook"
+            href="https://facebook.com/sharer/sharer.php?u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fagent-gateway%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-106.468,0l0,-192.915l66.6,0l12.672,-82.621l-79.272,0l0,-53.617c0,-22.603 11.073,-44.636 46.58,-44.636l36.042,0l0,-70.34c0,0 -32.71,-5.582 -63.982,-5.582c-65.288,0 -107.96,39.569 -107.96,111.204l0,62.971l-72.573,0l0,82.621l72.573,0l0,192.915l-191.104,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway on whatsapp"
+            href="https://api.whatsapp.com/send?text=A2A%e3%83%bbMCP%e3%83%bbLLM%20%e3%81%ae%e3%83%88%e3%83%a9%e3%83%95%e3%82%a3%e3%83%83%e3%82%af%e3%82%92%e7%b5%b1%e5%90%88%e7%9a%84%e3%81%ab%e3%83%97%e3%83%ad%e3%82%ad%e3%82%b7%e3%81%97%e8%aa%8d%e5%8f%af%e3%83%bb%e5%88%b6%e9%99%90%e3%83%bb%e8%bf%bd%e8%b7%a1%e3%81%99%e3%82%8b%20agentgateway%20-%20https%3a%2f%2fjedipunkz.rocks%2fpost%2fagent-gateway%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-58.673,127.703c-33.842,-33.881 -78.847,-52.548 -126.798,-52.568c-98.799,0 -179.21,80.405 -179.249,179.234c-0.013,31.593 8.241,62.428 23.927,89.612l-25.429,92.884l95.021,-24.925c26.181,14.28 55.659,21.807 85.658,21.816l0.074,0c98.789,0 179.206,-80.413 179.247,-179.243c0.018,-47.895 -18.61,-92.93 -52.451,-126.81Zm-126.797,275.782l-0.06,0c-26.734,-0.01 -52.954,-7.193 -75.828,-20.767l-5.441,-3.229l-56.386,14.792l15.05,-54.977l-3.542,-5.637c-14.913,-23.72 -22.791,-51.136 -22.779,-79.287c0.033,-82.142 66.867,-148.971 149.046,-148.971c39.793,0.014 77.199,15.531 105.329,43.692c28.128,28.16 43.609,65.592 43.594,105.4c-0.034,82.149 -66.866,148.983 -148.983,148.984Zm81.721,-111.581c-4.479,-2.242 -26.499,-13.075 -30.604,-14.571c-4.105,-1.495 -7.091,-2.241 -10.077,2.241c-2.986,4.483 -11.569,14.572 -14.182,17.562c-2.612,2.988 -5.225,3.364 -9.703,1.12c-4.479,-2.241 -18.91,-6.97 -36.017,-22.23c-13.314,-11.876 -22.304,-26.542 -24.916,-31.026c-2.612,-4.484 -0.279,-6.908 1.963,-9.14c2.016,-2.007 4.48,-5.232 6.719,-7.847c2.24,-2.615 2.986,-4.484 4.479,-7.472c1.493,-2.99 0.747,-5.604 -0.374,-7.846c-1.119,-2.241 -10.077,-24.288 -13.809,-33.256c-3.635,-8.733 -7.327,-7.55 -10.077,-7.688c-2.609,-0.13 -5.598,-0.158 -8.583,-0.158c-2.986,0 -7.839,1.121 -11.944,5.604c-4.105,4.484 -15.675,15.32 -15.675,37.364c0,22.046 16.048,43.342 18.287,46.332c2.24,2.99 31.582,48.227 76.511,67.627c10.685,4.615 19.028,7.371 25.533,9.434c10.728,3.41 20.492,2.929 28.209,1.775c8.605,-1.285 26.499,-10.833 30.231,-21.295c3.732,-10.464 3.732,-19.431 2.612,-21.298c-1.119,-1.869 -4.105,-2.99 -8.583,-5.232Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway on telegram"
+            href="https://telegram.me/share/url?text=A2A%e3%83%bbMCP%e3%83%bbLLM%20%e3%81%ae%e3%83%88%e3%83%a9%e3%83%95%e3%82%a3%e3%83%83%e3%82%af%e3%82%92%e7%b5%b1%e5%90%88%e7%9a%84%e3%81%ab%e3%83%97%e3%83%ad%e3%82%ad%e3%82%b7%e3%81%97%e8%aa%8d%e5%8f%af%e3%83%bb%e5%88%b6%e9%99%90%e3%83%bb%e8%bf%bd%e8%b7%a1%e3%81%99%e3%82%8b%20agentgateway&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fagent-gateway%2f">
+            <svg version="1.1" xml:space="preserve" viewBox="2 2 28 28" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M26.49,29.86H5.5a3.37,3.37,0,0,1-2.47-1,3.35,3.35,0,0,1-1-2.47V5.48A3.36,3.36,0,0,1,3,3,3.37,3.37,0,0,1,5.5,2h21A3.38,3.38,0,0,1,29,3a3.36,3.36,0,0,1,1,2.46V26.37a3.35,3.35,0,0,1-1,2.47A3.38,3.38,0,0,1,26.49,29.86Zm-5.38-6.71a.79.79,0,0,0,.85-.66L24.73,9.24a.55.55,0,0,0-.18-.46.62.62,0,0,0-.41-.17q-.08,0-16.53,6.11a.59.59,0,0,0-.41.59.57.57,0,0,0,.43.52l4,1.24,1.61,4.83a.62.62,0,0,0,.63.43.56.56,0,0,0,.4-.17L16.54,20l4.09,3A.9.9,0,0,0,21.11,23.15ZM13.8,20.71l-1.21-4q8.72-5.55,8.78-5.55c.15,0,.23,0,.23.16a.18.18,0,0,1,0,.06s-2.51,2.3-7.52,6.8Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway on ycombinator"
+            href="https://news.ycombinator.com/submitlink?t=A2A%e3%83%bbMCP%e3%83%bbLLM%20%e3%81%ae%e3%83%88%e3%83%a9%e3%83%95%e3%82%a3%e3%83%83%e3%82%af%e3%82%92%e7%b5%b1%e5%90%88%e7%9a%84%e3%81%ab%e3%83%97%e3%83%ad%e3%82%ad%e3%82%b7%e3%81%97%e8%aa%8d%e5%8f%af%e3%83%bb%e5%88%b6%e9%99%90%e3%83%bb%e8%bf%bd%e8%b7%a1%e3%81%99%e3%82%8b%20agentgateway&u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fagent-gateway%2f">
+            <svg version="1.1" xml:space="preserve" width="30px" height="30px" viewBox="0 0 512 512" fill="currentColor"
+                xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+                <path
+                    d="M449.446 0C483.971 0 512 28.03 512 62.554L512 449.446C512 483.97 483.97 512 449.446 512L62.554 512C28.03 512 0 483.97 0 449.446L0 62.554C0 28.03 28.029 0 62.554 0L449.446 0ZM183.8767 87.9921H121.8427L230.6673 292.4508V424.0079H281.3328V292.4508L390.1575 87.9921H328.1233L256 238.2489z" />
+            </svg>
+        </a>
+    </li>
+</ul>
+
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="https://jedipunkz.rocks/">jedipunkz 🚀 のブログ</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a><script type="module">
+  if (document.querySelector("pre.mermaid")) {
+    const { default: mermaid } = await import(
+      "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
+    );
+    
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        darkMode: true,
+        background: "#1a1b26",
+        mainBkg: "#24283b",
+        primaryColor: "#24283b",
+        primaryTextColor: "#c0caf5",
+        primaryBorderColor: "#7aa2f7",
+        secondaryColor: "#414868",
+        secondaryTextColor: "#c0caf5",
+        secondaryBorderColor: "#565f89",
+        tertiaryColor: "#1f2335",
+        tertiaryTextColor: "#c0caf5",
+        tertiaryBorderColor: "#565f89",
+        lineColor: "#7dcfff",
+        textColor: "#c0caf5",
+        nodeTextColor: "#c0caf5",
+        edgeLabelBackground: "#1a1b26",
+        clusterBkg: "#1f2335",
+        clusterBorder: "#565f89",
+        titleColor: "#c0caf5"
+      }
+    });
+    await mermaid.run();
+  }
+</script>
+
+
+<script>
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        if (document.body.className.includes("dark")) {
+            document.body.classList.remove('dark');
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            document.body.classList.add('dark');
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+<script>
+    document.querySelectorAll('pre > code').forEach((codeblock) => {
+        const container = codeblock.parentNode.parentNode;
+
+        const copybutton = document.createElement('button');
+        copybutton.classList.add('copy-code');
+        copybutton.innerHTML = 'コピー';
+
+        function copyingDone() {
+            copybutton.innerHTML = 'コピーされました!';
+            setTimeout(() => {
+                copybutton.innerHTML = 'コピー';
+            }, 2000);
+        }
+
+        copybutton.addEventListener('click', (cb) => {
+            if ('clipboard' in navigator) {
+                navigator.clipboard.writeText(codeblock.textContent);
+                copyingDone();
+                return;
+            }
+
+            const range = document.createRange();
+            range.selectNodeContents(codeblock);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            try {
+                document.execCommand('copy');
+                copyingDone();
+            } catch (e) { };
+            selection.removeRange(range);
+        });
+
+        if (container.classList.contains("highlight")) {
+            container.appendChild(copybutton);
+        } else if (container.parentNode.firstChild == container) {
+            
+        } else if (codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.nodeName == "TABLE") {
+            
+            codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.appendChild(copybutton);
+        } else {
+            
+            codeblock.parentNode.appendChild(copybutton);
+        }
+    });
+</script>
+</body>
+
+</html>

@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="ja" dir="auto">
+
+<head><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>Google ADK Go 2.x の Dynamic Workflow とその為のガードレール | jedipunkz 🚀 のブログ</title>
+<meta name="keywords" content="">
+<meta name="description" content="Claude Agent SDK の agent loop や Claude Code の dynamic workflows と同じことを Google ADK Go 2.x でやるとどうなるか。上限を持たない llmagent のループに、ラウンド上限・進捗なし停止・トークン予算・ツール allowlist を自分で組み込みます">
+<meta name="author" content="jedipunkz">
+<link rel="canonical" href="https://jedipunkz.rocks/post/adk-go-dynamic-loop/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.93fab3171fff6ba6152e8c67ba3e8cfcee77a1e7b231fd29570601c555d983ef.css" integrity="sha256-k/qzFx//a6YVLoxnuj6M/O53oeeyMf0pVwYBxVXZg&#43;8=" rel="preload stylesheet" as="style">
+<link rel="icon" href="https://jedipunkz.rocks/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.rocks/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.rocks/favicon-32x32.png">
+<link rel="apple-touch-icon" href="https://jedipunkz.rocks/apple-touch-icon.png">
+<link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/adk-go-dynamic-loop/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-track {
+                background: 0 0;
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-thumb {
+                border-color: var(--theme);
+            }
+        }
+
+    </style>
+</noscript>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&amp;family=JetBrains&#43;Mono:wght@400;500&amp;family=Noto&#43;Sans&#43;JP:wght@400..700&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&amp;family=JetBrains&#43;Mono:wght@400;500&amp;family=Noto&#43;Sans&#43;JP:wght@400..700&amp;display=swap">
+
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-2H91XCYVZ8"></script>
+      <script>
+        var doNotTrack = false;
+        if ( true ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-2H91XCYVZ8');
+        }
+      </script><meta property="og:url" content="https://jedipunkz.rocks/post/adk-go-dynamic-loop/">
+  <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
+  <meta property="og:title" content="Google ADK Go 2.x の Dynamic Workflow とその為のガードレール">
+  <meta property="og:description" content="Claude Agent SDK の agent loop や Claude Code の dynamic workflows と同じことを Google ADK Go 2.x でやるとどうなるか。上限を持たない llmagent のループに、ラウンド上限・進捗なし停止・トークン予算・ツール allowlist を自分で組み込みます">
+  <meta property="og:locale" content="ja">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="post">
+    <meta property="article:published_time" content="2026-10-12T12:00:00+09:00">
+    <meta property="article:modified_time" content="2026-10-12T12:00:00+09:00">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_972726121a96cd5f.jpg">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_972726121a96cd5f.jpg">
+<meta name="twitter:image:alt" content="Google ADK Go 2.x の Dynamic Workflow とその為のガードレール">
+<meta name="twitter:title" content="Google ADK Go 2.x の Dynamic Workflow とその為のガードレール">
+<meta name="twitter:description" content="Claude Agent SDK の agent loop や Claude Code の dynamic workflows と同じことを Google ADK Go 2.x でやるとどうなるか。上限を持たない llmagent のループに、ラウンド上限・進捗なし停止・トークン予算・ツール allowlist を自分で組み込みます">
+  <meta name="twitter:site" content="@jedipunkz">
+  <meta name="twitter:creator" content="@jedipunkz">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Google ADK Go 2.x の Dynamic Workflow とその為のガードレール",
+  "name": "Google ADK Go 2.x の Dynamic Workflow とその為のガードレール",
+  "description": "Claude Agent SDK の agent loop や Claude Code の dynamic workflows と同じことを Google ADK Go 2.x でやるとどうなるか。上限を持たない llmagent のループに、ラウンド上限・進捗なし停止・トークン予算・ツール allowlist を自分で組み込みます",
+  "keywords": [
+    
+  ],
+  "articleBody": "こんにちは。ジェダイパンくず🚀 です。\n前回の記事 ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える の最後に、こんな宿題を残していました。\nインシデント対応は「調べて、分からなかったらもう少し調べる」という反復が本質なので、完全に静的なグラフでは表現しきれない部分があります。NewDynamicNode で調査ループを書き、確定した対処だけを静的グラフに戻す、というハイブリッドが現実解な気がしていますが、そうすると動的ノードの中身が結局ブラックボックスになるジレンマがあります。\nその後、Claude Agent SDK の agent loop や、Claude Code の dynamic workflows を眺めていて、「自律的に、動的に回るループ」を Google の Agent Development Kit（ADK）でやるとどうなるのかが気になりました。結論を先に書くと、ループそのものは ADK でも回せます。ただし止める仕組みは自分で書く必要があります。この記事はその「止める仕組み」、つまりガードレールの話です。\n記事中のコードは jedipunkz/adk-playground の investigation-loop にあり、ADK Go v2.5.0（2026-09-30 リリース）で go vet とテストを通しています。\n「ループ」は 2 種類ある 最初に整理しておきたいのは、「自律的なループ」と言ったときに 2 つの別のものが混ざりがちだという点です。\nClaude 側 ADK Go 側 agent loop（1 エージェントの中で、モデル → ツール → モデルを繰り返す） Claude Agent SDK の query() llmagent オーケストレーションのループ（エージェントを何度も呼び、結果を見て次を決める） Claude Code の dynamic workflows（loop until done パターン） workflow.NewDynamicNode Claude Code の dynamic workflows は、Claude 自身が JavaScript のオーケストレーション用スクリプトを書き、ランタイムがそれをバックグラウンドで実行する機能です。スクリプトの中では agent() でサブエージェントを起動し、parallel() / pipeline() で fan-out します。ループ・分岐・途中結果はスクリプトの変数が持つので、Claude のコンテキストには最終結果しか入りません。\nADK の dynamic workflow も「制御フローをコードに置く」という点は同じです。違いはそのコードを書くのが人間（開発者）だという点です。ADK には LLM がオーケストレーションを書く仕組みは組み込まれていません。\n今回はこの 2 つを組み合わせます。外側のループ（何ラウンド回すか、いつ止めるか）を Go の dynamic node に置き、内側の agent loop（1 ラウンドの調査）を llmagent に任せます。\nADK の llmagent は止まらない まず内側の agent loop です。ADK Go の llmagent のループ本体は internal/llminternal/base_flow.go の Flow.Run にあります（v2.5.0 時点、要点だけ抜粋）。\nfunc (f *Flow) Run(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] { return func(yield func(*session.Event, error) bool) { thoughtOnlyTurns := 0 for { var lastEvent *session.Event for ev, err := range f.runOneStep(ctx) { // ... イベントを上流に流す lastEvent = ev } if lastEvent == nil { return } if lastEvent.IsFinalResponse() { if !isThoughtOnlyTurn(lastEvent) { return } thoughtOnlyTurns++ if thoughtOnlyTurns \u003e= maxConsecutiveThoughtOnlyTurns { return } } // ... } } } runOneStep がモデルを 1 回呼び、ツール呼び出しがあればツールを実行します。ツール呼び出しのない最終応答が返るまで for {} が回り続けます。組み込みの上限は「思考だけのターンが 10 回続いたら諦める」（maxConsecutiveThoughtOnlyTurns = 10）だけです。MaxLLMCalls という設定は存在しますが、v2.5.0 では live（双方向ストリーミング）用の LiveRunConfig のフィールドで、通常の実行では使われていません。\nClaude Agent SDK と並べるとこうなります。\nClaude Agent SDK ADK Go v2.5.0 max_turns / maxTurns なし max_budget_usd / maxBudgetUsd なし allowed_tools / disallowed_tools / permission_mode なし（BeforeToolCallback で自分で書く） 読み取り系ツールだけ並列実行し、書き込み系は順番に実行 1 応答内の複数のツール呼び出しを、既定で goroutine で並列実行（読み書きを区別しない） 自動 compaction runner.Config.Compaction（既定は無効） ADK が劣っているという話ではありません。Claude Agent SDK は Claude Code という完成した harness をライブラリとして使うもので、ADK は harness を組み立てるための framework です。ただ、上限がない状態で外側にさらにループを重ねると、暴走の上に暴走を重ねることになります。なので今回はガードレールを先に設計しました。\n設計 作ったのはインシデント調査のエージェントです。構造は 1 ノードだけのワークフローです。\nSTART ─\u003e investigate (dynamic, Go) ──RunNode × N──\u003e investigator (llmagent + tools) investigate は workflow.NewDynamicNode で書いた Go のオーケストレータです。ラウンドを回し、ラウンド間で何を引き継ぐか、いつ止めるかを決めます investigator は read-only のツール（query_metrics / query_logs / list_deploys）を持つ llmagent です。1 ラウンドの中で agent loop を回し、新しく分かったことを JSON で返します ポイントは、llmagent をワークフローのノードにすると既定で single-turn になることです。investigator には前のラウンドの会話履歴が見えず、オーケストレータが渡したプロンプトだけを見ます。つまりラウンドをまたいで何を覚えておくかを Go のコードが決めます。今回引き継ぐのは確定した findings のリストだけです。\nfunc roundPrompt(question string, round int, known []string) string { var sb strings.Builder fmt.Fprintf(\u0026sb, \"Incident: %s\\nRound: %d\\n\", question, round) if len(known) == 0 { sb.WriteString(\"Known findings: none yet.\\n\") return sb.String() } sb.WriteString(\"Known findings:\\n\") for _, f := range known { fmt.Fprintf(\u0026sb, \"- %s\\n\", f) } return sb.String() } これは Claude Code の dynamic workflows が「途中結果はスクリプトの変数に置き、Claude のコンテキストには入れない」としているのと同じ考え方です。ラウンドを重ねてもコンテキストが膨らまず、compaction で指示が要約されて消える心配もありません。\nガードレールを 4 層で組む ガードレールは置き場所ごとに 4 層に分けました。\n層 ガードレール 実装 既定値 ループ（Go） 最大ラウンド数 investigate の for 条件 6 ループ（Go） 進捗なし停止 新しい finding が N ラウンド連続で出なければ止める 2 ループ（Go） LLM の done 提案 finding が 1 件以上あるときだけ受け入れる - ループ（Go） 不正な出力 JSON として読めない応答は finding を増やせない - 両方 トークン予算 AfterModelCallback で集計し、ラウンド開始前と BeforeModelCallback で判定 30,000 agent loop ラウンドあたりのモデル呼び出し上限 BeforeModelCallback 8 ツール allowlist と引数の制限 BeforeToolCallback read-only 3 ツール、時間窓 60 分 スケジューラ ラウンドのタイムアウト NodeConfig.Timeout 2 分 上限値はひとつの struct にまとめました。\ntype Limits struct { MaxRounds int NoProgressRounds int MaxModelCallsPerRound int TokenBudget int MaxWindowMinutes int } ループ層: 止める判断は Go が持つ オーケストレータの本体です。\nfunc investigate(ctx agent.Context, question string, investigator workflow.Node, g *guard) (report, error) { id := ctx.InvocationID() defer g.finish(id) var ( findings []string seen = map[string]bool{} idle int r = report{Stop: stopMaxRounds} ) for r.Rounds \u003c g.limits.MaxRounds { if g.snapshot(id).tokens \u003e= g.limits.TokenBudget { r.Stop = stopBudget break } r.Rounds++ g.beginRound(id) out, err := workflow.RunNode[string](ctx, investigator, roundPrompt(question, r.Rounds, findings)) if err != nil { return report{}, fmt.Errorf(\"round %d: %w\", r.Rounds, err) } res := parseRound(out) added := 0 for _, f := range res.Findings { key := strings.ToLower(strings.TrimSpace(f)) if key == \"\" || seen[key] { continue } seen[key] = true findings = append(findings, strings.TrimSpace(f)) added++ } if added == 0 { idle++ } else { idle = 0 } if res.Done \u0026\u0026 len(findings) \u003e 0 { r.Stop = stopModelDone break } if idle \u003e= g.limits.NoProgressRounds { r.Stop = stopNoProgress break } } // ... } Claude のブログ記事 A harness for every task では loop until done を「作業量が分からないタスクで、固定回数ではなく停止条件（たとえば『新しい発見がない』）が成り立つまでエージェントを起動し続ける」パターンとして紹介しています。ここではその停止条件を Go で書いています。\nLLM が \"done\": true を返すことは許していますが、それだけでは止めません。finding が 1 件もないのに done を返すのは「調べるのを諦めた」可能性があるためです。逆に、LLM が done を返さなくても、新しい発見が 2 ラウンド続けてなければ Go が止めます。前回の記事と同じく「LLM は提案し、判断はコードがする」形です。\nLLM の出力のパースも、ガードレールとして扱っています。\nfunc parseRound(out string) roundResult { start, end := strings.Index(out, \"{\"), strings.LastIndex(out, \"}\") if start \u003c 0 || end \u003c= start { return roundResult{} } var res roundResult if err := json.Unmarshal([]byte(out[start:end+1]), \u0026res); err != nil { return roundResult{} } return res } 読めない応答は「新しい発見ゼロ」として扱います。壊れた出力が findings に紛れ込むことはなく、壊れた出力が続けば進捗なし停止でループが終わります。\nagent loop 層: エラーではなく「空の答え」で止める 内側の llmagent のループは BeforeModelCallback で止めます。このコールバックが *model.LLMResponse を返すと、ADK は実際のモデル呼び出しをスキップしてその応答を使います。\nconst cutoffAnswer = `{\"findings\": [], \"done\": false}` func (g *guard) beforeModel(ctx agent.Context, _ *model.LLMRequest) (*model.LLMResponse, error) { g.mu.Lock() defer g.mu.Unlock() s := g.state(ctx.InvocationID()) var reason string switch { case s.tokens \u003e= g.limits.TokenBudget: reason = fmt.Sprintf(\"token budget %d exhausted\", g.limits.TokenBudget) case s.roundCalls \u003e= g.limits.MaxModelCallsPerRound: reason = fmt.Sprintf(\"%d model calls in one round\", g.limits.MaxModelCallsPerRound) default: s.roundCalls++ return nil, nil } s.cutoffs = append(s.cutoffs, reason) return \u0026model.LLMResponse{ Content: genai.NewContentFromText(cutoffAnswer, genai.RoleModel), TurnComplete: true, }, nil } ここで迷ったのは、上限に達したときに error を返すか、応答を返すかです。error を返すとノードが失敗し、RetryConfig を付けていればリトライされて、むしろ呼び出しが増えます。そこでツール呼び出しを含まない応答を返すことにしました。先ほどの Flow.Run は「ツール呼び出しのない最終応答」でループを抜けるので、これで agent loop は正常に終わります。返す内容は「findings が空のラウンド結果」なので、オーケストレータ側では進捗なしのラウンドとして数えられます。\nトークンは AfterModelCallback で数えます。\nfunc (g *guard) afterModel(ctx agent.Context, resp *model.LLMResponse, _ error) (*model.LLMResponse, error) { if resp == nil || resp.Partial || resp.UsageMetadata == nil { return nil, nil } g.mu.Lock() defer g.mu.Unlock() g.state(ctx.InvocationID()).tokens += int(resp.UsageMetadata.TotalTokenCount) return nil, nil } ストリーミング時の部分チャンク（Partial）は数えないようにしています。数えると同じ応答を二重に数えるためです。\nツール層: allowlist と引数の制限 BeforeToolCallback は結果を返すとツールの実行をスキップし、返した結果をツールの結果としてモデルに渡します。また、args を書き換えて nil, nil を返すと、書き換えた引数でツールが実行されます。この 2 つの性質を使います。\nfunc (g *guard) beforeTool(ctx agent.Context, t tool.Tool, args map[string]any) (map[string]any, error) { if !readOnlyTools[t.Name()] { g.mu.Lock() s := g.state(ctx.InvocationID()) s.denied = append(s.denied, t.Name()) g.mu.Unlock() return map[string]any{\"error\": fmt.Sprintf(\"tool %q is not allowed: this agent is read-only\", t.Name())}, nil } switch w := args[\"window_minutes\"].(type) { case float64: if int(w) \u003e g.limits.MaxWindowMinutes { args[\"window_minutes\"] = float64(g.limits.MaxWindowMinutes) } case int: if w \u003e g.limits.MaxWindowMinutes { args[\"window_minutes\"] = g.limits.MaxWindowMinutes } } return nil, nil } 拒否は Go の error ではなくツールの結果として返しています。こうするとモデルは「このツールは使えない」と知った上で、許可されたツールで調査を続けられます。\nサンプルではわざと restart_pod（全 Pod を再起動する書き込み系ツール）をツール一覧に入れています。「危険なツールは最初から渡さなければいい」と思うかもしれません。しかし MCP toolset を使うと、サーバが公開しているツールは書き込み系も含めてそのまま入ってきます。渡していないつもりで渡っている状況を前提に、allowlist で止める形にしました。Claude Agent SDK の allowed_tools / disallowed_tools に相当するものです。\nスケジューラ層: タイムアウト 最後はノード単位のタイムアウトです。\ninvestigatorNode, err := workflow.NewAgentNode(investigator, workflow.NodeConfig{Timeout: roundTimeout}) これは無限ループではなく、処理が止まったまま返ってこない（ハングする）ケースに備えるものです。モデルやツールが応答しなくなると呼び出し回数もトークンも増えないため、上の 3 層では止められません。\n動作確認 API キーがなくても動くように、スクリプト化したスタブモデルを用意しました。INVESTIGATION_SCENARIO で振る舞いを切り替えると、各ガードレールが発動する様子を見られます。\ngit clone https://github.com/jedipunkz/adk-playground cd adk-playground/investigation-loop go run . console converge: 新しい発見がなくなって止まる 3 ラウンドで 3 件見つけ、その後は既知のことしか返さないシナリオです。途中のラウンドで restart_pod を呼ぼうとし、4 時間分のログも要求します。\nInvestigation stopped after 5 round(s): no new findings. Tokens used: 13500. Findings: - checkout-api error rate rose to 18% at 10:07 - payments-db is refusing connections: too many clients - v1.42 deployed at 10:00 lowered DB_POOL_SIZE from 50 to 20 Tool calls refused: - restart_pod ラウンド 4・5 で新しい発見がなかったので、5 ラウンド目で止まりました。restart_pod は拒否され、一度も実行されていません。ログの時間窓は 240 分から 60 分に丸められています（どちらもテストで確認しています）。\nrunaway-tools: ツールを呼び続けて答えない Investigation stopped after 2 round(s): no new findings. Tokens used: 24000. Findings: - none Rounds cut short by guardrails: - 8 model calls in one round - 8 model calls in one round 各ラウンドがモデル呼び出し 8 回で打ち切られ、空の結果になります。空のラウンドが 2 回続いたので、オーケストレータが止めました。agent loop 層とループ層が連携して止めている例です。\nendless-findings: 毎ラウンド「新しい」ことを言い続ける Investigation stopped after 5 round(s): token budget exhausted. Tokens used: 30000. Findings: - possible anomaly #1 worth a closer look - possible anomaly #2 worth a closer look - possible anomaly #3 worth a closer look - possible anomaly #4 worth a closer look - possible anomaly #5 worth a closer look 一番厄介なのはこれです。毎回違う文言で「何か見つけた」と返されると、進捗なし停止は効きません。最後に止めるのはトークン予算です。文言だけ変えた同じ指摘を同一とみなす判定は、Go の文字列比較ではできません。ここは予算という、内容を見ないガードレールが必要になるところだと思います。\nテストは 3 シナリオを ADK の runner で端から端まで実行し、停止理由、restart_pod が実行されていないこと、引数が丸められていることを確認しています。\nfunc TestConvergeStopsWhenNothingNewTurnsUp(t *testing.T) { restartCalls.Store(0) got, windows := run(t, scenarioConverge) // ... if n := restartCalls.Load(); n != 0 { t.Errorf(\"restart_pod ran %d time(s); the allowlist must refuse it\", n) } if len(windows) != 1 || windows[0] != float64(defaultLimits.MaxWindowMinutes) { t.Errorf(\"query_logs saw window_minutes %v, want it clamped to [%d]\", windows, defaultLimits.MaxWindowMinutes) } } 前回の記事で「ルーティングのテストは、分岐が LLM の判断だったら書けなかったテスト」と書きました。今回も同じで、停止条件がコードにあるから停止のテストが書けます。\nハマりどころと学び ガードレールの状態をどこに持つか コールバックは llmagent に 1 度だけ登録するので、状態は実行ごとに分ける必要があります。今回は ctx.InvocationID() をキーにしました。dynamic node の中から RunNode で呼んだ子の llmagent は、親と同じ InvocationID を持つためです。これにより、オーケストレータが beginRound でリセットしたカウンタを、子のコールバックがそのまま参照できます。\nただし状態はプロセスのメモリにあります。ADK のワークフローはセッションの履歴から再開できますが、別のプロセスで再開するとトークン集計は 0 から始まります。厳密にやるなら、session state に置く必要があります。\nオーケストレータは決定的に書く ADK の dynamic node は再開時に本体を頭から再実行し、完了済みの子ノードはチェックポイントから結果を返します（RerunOnResume の既定値が true）。子の実行 ID は親 ID とカウンタから決まるので、同じ入力から同じ順序で RunNode を呼ぶ必要があります。オーケストレータの中で時刻や乱数を使ってはいけません。\nClaude Code の dynamic workflows も、スクリプトの中で Date.now() や Math.random() を呼ぶと例外になります。理由は同じで、再実行したときに同じ agent() 呼び出しを再現するためです。言語もランタイムも違いますが、同じ制約にたどり着いているのが面白いところです。\ncompaction は root が LLM agent でないと素直に使えない runner.Config.Compaction は、Summarizer を指定しない場合は root agent のモデルで要約します。そのため root が LLM agent である必要があります。今回のように root が workflow agent だとこの前提が満たされないので、Summarizer を自分で渡す必要があります。今回はラウンドごとに single-turn で文脈がリセットされるので、compaction 自体が不要でした。\nツールの並列実行は読み書きを区別しない 前述のとおり、ADK は 1 応答内の複数のツール呼び出しを並列に実行します。Claude Agent SDK のように「書き込み系は順番に実行する」区別はありません。今回は書き込み系を allowlist で全部止めたので問題になりませんでしたが、書き込み系を許可するなら直列化を自分で考える必要があります。\nClaude Code の dynamic workflows と比べて 一番大きな違いは、やはりオーケストレーションを書くのが誰かです。\nClaude Code では、Claude がタスクに合わせてスクリプトを書きます。事前に想定していなかった形のタスクにも、その場で専用の harness を作れるのが強みです。その代わり、実行前に人間がスクリプトを承認する（あるいは承認を省略する）運用になります。\nADK では人間が書きます。柔軟性では劣りますが、停止条件・上限・許可されたツールがすべてコードとしてレビューでき、テストで固定できます。本番環境に触れる SRE のエージェントでは、こちらの性質がほしい場面が多いと感じています。\n前回の宿題だった「動的ノードの中身がブラックボックスになる」問題について、今回の結論はこうです。ループの中身（LLM が何を調べるか）は動的なままでよく、ループの外枠（何を引き継ぎ、いつ止め、何を許すか）を静的なコードにすればよい。中身が読めなくても、外枠が読めてテストできれば、自律度を上げても怖くありません。\nまとめ ADK Go の llmagent も Claude Agent SDK と同じ agent loop（モデル → ツール → モデル）を回すが、ターン上限・予算上限・ツール許可は持たない NewDynamicNode で外側のループを Go で書くと、Claude Code の dynamic workflows の loop until done と同じ形になる。違いはスクリプトを書くのが人間であること ガードレールは置き場所ごとに 4 層に分けた。ループ層（ラウンド上限・進捗なし停止・done 提案の扱い）、agent loop 層（BeforeModelCallback で呼び出し上限と予算）、ツール層（BeforeToolCallback で allowlist と引数制限）、スケジューラ層（Timeout） agent loop を止めるときは error ではなく「ツール呼び出しのない空の答え」を返すと、リトライに化けずに正常に終わる 毎回違う文言で発見を言い続けるモデルは、内容で止めることができない。予算のような内容を見ないガードレールが最後の砦になる 次は、実際の Gemini で動かしたときにモデルがどれくらいの頻度で JSON を壊すのか、進捗なし停止がどのくらい効くのかを見てみたいと思っています。\n参考 Claude Agent SDK の概要 エージェントループの仕組み Orchestrate subagents at scale with dynamic workflows A harness for every task: dynamic workflows in Claude Code ADK Dynamic workflows google/adk-go google.golang.org/adk/v2/workflow ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える jedipunkz/adk-playground — investigation-loop（この記事で書いたコード） ",
+  "wordCount" : "1358",
+  "inLanguage": "ja",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_972726121a96cd5f.jpg",
+  "datePublished": "2026-10-12T12:00:00+09:00",
+  "dateModified": "2026-10-12T12:00:00+09:00",
+  "author":{
+    "@type": "Person",
+    "name": "jedipunkz"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "https://jedipunkz.rocks/post/adk-go-dynamic-loop/"
+  },
+  "publisher": {
+    "@type": "Person",
+    "name": "jedipunkz 🚀 のブログ",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
+    }
+  }
+}
+</script>
+
+</head>
+
+<body class="" id="top">
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.body.classList.add('dark');
+    } else if (localStorage.getItem("pref-theme") === "light") {
+        document.body.classList.remove('dark')
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark');
+    }
+
+</script>
+
+<header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="https://jedipunkz.rocks/" accesskey="h" title="jedipunkz (Alt + H)">jedipunkz</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="https://jedipunkz.rocks/about" title="About Me">
+                    <span>About Me</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
+      Google ADK Go 2.x の Dynamic Workflow とその為のガードレール
+    </h1>
+    <div class="post-description">
+      Claude Agent SDK の agent loop や Claude Code の dynamic workflows と同じことを Google ADK Go 2.x でやるとどうなるか。上限を持たない llmagent のループに、ラウンド上限・進捗なし停止・トークン予算・ツール allowlist を自分で組み込みます
+    </div>
+    <div class="post-meta"><span title='2026-10-12 12:00:00 +0900 +0900'>2026-10-12</span>&nbsp;·&nbsp;7 分&nbsp;·&nbsp;jedipunkz
+
+</div>
+  </header> 
+  <div class="post-content"><p>こんにちは。<a href="https://x.com/jedipunkz">ジェダイパンくず🚀</a> です。</p>
+<p>前回の記事 <a href="/post/adk-go-2/">ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える</a> の最後に、こんな宿題を残していました。</p>
+<blockquote>
+<p>インシデント対応は「調べて、分からなかったらもう少し調べる」という反復が本質なので、完全に静的なグラフでは表現しきれない部分があります。<code>NewDynamicNode</code> で調査ループを書き、確定した対処だけを静的グラフに戻す、というハイブリッドが現実解な気がしていますが、そうすると動的ノードの中身が結局ブラックボックスになるジレンマがあります。</p>
+</blockquote>
+<p>その後、<a href="https://code.claude.com/docs/ja/agent-sdk/overview">Claude Agent SDK</a> の agent loop や、Claude Code の <a href="https://code.claude.com/docs/en/workflows">dynamic workflows</a> を眺めていて、「自律的に、動的に回るループ」を Google の Agent Development Kit（ADK）でやるとどうなるのかが気になりました。結論を先に書くと、<strong>ループそのものは ADK でも回せます。ただし止める仕組みは自分で書く必要があります</strong>。この記事はその「止める仕組み」、つまりガードレールの話です。</p>
+<p>記事中のコードは <a href="https://github.com/jedipunkz/adk-playground/tree/main/investigation-loop">jedipunkz/adk-playground の investigation-loop</a> にあり、ADK Go v2.5.0（2026-09-30 リリース）で <code>go vet</code> とテストを通しています。</p>
+<h2 id="ループは-2-種類ある">「ループ」は 2 種類ある<a hidden class="anchor" aria-hidden="true" href="#ループは-2-種類ある">#</a></h2>
+<p>最初に整理しておきたいのは、「自律的なループ」と言ったときに 2 つの別のものが混ざりがちだという点です。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>Claude 側</th>
+        <th>ADK Go 側</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>agent loop（1 エージェントの中で、モデル → ツール → モデルを繰り返す）</td>
+        <td>Claude Agent SDK の <code>query()</code></td>
+        <td><code>llmagent</code></td>
+      </tr>
+      <tr>
+        <td>オーケストレーションのループ（エージェントを何度も呼び、結果を見て次を決める）</td>
+        <td>Claude Code の dynamic workflows（loop until done パターン）</td>
+        <td><code>workflow.NewDynamicNode</code></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>Claude Code の dynamic workflows は、<strong>Claude 自身が JavaScript のオーケストレーション用スクリプトを書き</strong>、ランタイムがそれをバックグラウンドで実行する機能です。スクリプトの中では <code>agent()</code> でサブエージェントを起動し、<code>parallel()</code> / <code>pipeline()</code> で fan-out します。ループ・分岐・途中結果はスクリプトの変数が持つので、Claude のコンテキストには最終結果しか入りません。</p>
+<p>ADK の dynamic workflow も「制御フローをコードに置く」という点は同じです。違いは<strong>そのコードを書くのが人間（開発者）だ</strong>という点です。ADK には LLM がオーケストレーションを書く仕組みは組み込まれていません。</p>
+<p>今回はこの 2 つを組み合わせます。外側のループ（何ラウンド回すか、いつ止めるか）を Go の dynamic node に置き、内側の agent loop（1 ラウンドの調査）を <code>llmagent</code> に任せます。</p>
+<h2 id="adk-の-llmagent-は止まらない">ADK の llmagent は止まらない<a hidden class="anchor" aria-hidden="true" href="#adk-の-llmagent-は止まらない">#</a></h2>
+<p>まず内側の agent loop です。ADK Go の <code>llmagent</code> のループ本体は <code>internal/llminternal/base_flow.go</code> の <code>Flow.Run</code> にあります（v2.5.0 時点、要点だけ抜粋）。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">f</span><span class="w"> </span><span class="o">*</span><span class="nx">Flow</span><span class="p">)</span><span class="w"> </span><span class="nf">Run</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">agent</span><span class="p">.</span><span class="nx">InvocationContext</span><span class="p">)</span><span class="w"> </span><span class="nx">iter</span><span class="p">.</span><span class="nx">Seq2</span><span class="p">[</span><span class="o">*</span><span class="nx">session</span><span class="p">.</span><span class="nx">Event</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">]</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">yield</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="o">*</span><span class="nx">session</span><span class="p">.</span><span class="nx">Event</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="kt">bool</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">thoughtOnlyTurns</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">0</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">for</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="kd">var</span><span class="w"> </span><span class="nx">lastEvent</span><span class="w"> </span><span class="o">*</span><span class="nx">session</span><span class="p">.</span><span class="nx">Event</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">for</span><span class="w"> </span><span class="nx">ev</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">f</span><span class="p">.</span><span class="nf">runOneStep</span><span class="p">(</span><span class="nx">ctx</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="c1">// ... イベントを上流に流す</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nx">lastEvent</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">ev</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">if</span><span class="w"> </span><span class="nx">lastEvent</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="k">return</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">if</span><span class="w"> </span><span class="nx">lastEvent</span><span class="p">.</span><span class="nf">IsFinalResponse</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="k">if</span><span class="w"> </span><span class="p">!</span><span class="nf">isThoughtOnlyTurn</span><span class="p">(</span><span class="nx">lastEvent</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">					</span><span class="k">return</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nx">thoughtOnlyTurns</span><span class="o">++</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="k">if</span><span class="w"> </span><span class="nx">thoughtOnlyTurns</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="nx">maxConsecutiveThoughtOnlyTurns</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">					</span><span class="k">return</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="c1">// ...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p><code>runOneStep</code> がモデルを 1 回呼び、ツール呼び出しがあればツールを実行します。<strong>ツール呼び出しのない最終応答が返るまで <code>for {}</code> が回り続けます</strong>。組み込みの上限は「思考だけのターンが 10 回続いたら諦める」（<code>maxConsecutiveThoughtOnlyTurns = 10</code>）だけです。<code>MaxLLMCalls</code> という設定は存在しますが、v2.5.0 では live（双方向ストリーミング）用の <code>LiveRunConfig</code> のフィールドで、通常の実行では使われていません。</p>
+<p>Claude Agent SDK と並べるとこうなります。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Claude Agent SDK</th>
+        <th>ADK Go v2.5.0</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>max_turns</code> / <code>maxTurns</code></td>
+        <td>なし</td>
+      </tr>
+      <tr>
+        <td><code>max_budget_usd</code> / <code>maxBudgetUsd</code></td>
+        <td>なし</td>
+      </tr>
+      <tr>
+        <td><code>allowed_tools</code> / <code>disallowed_tools</code> / <code>permission_mode</code></td>
+        <td>なし（<code>BeforeToolCallback</code> で自分で書く）</td>
+      </tr>
+      <tr>
+        <td>読み取り系ツールだけ並列実行し、書き込み系は順番に実行</td>
+        <td>1 応答内の複数のツール呼び出しを、既定で goroutine で並列実行（読み書きを区別しない）</td>
+      </tr>
+      <tr>
+        <td>自動 compaction</td>
+        <td><code>runner.Config.Compaction</code>（既定は無効）</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>ADK が劣っているという話ではありません。Claude Agent SDK は Claude Code という完成した harness をライブラリとして使うもので、ADK は harness を組み立てるための framework です。ただ、上限がない状態で外側にさらにループを重ねると、暴走の上に暴走を重ねることになります。なので今回は<strong>ガードレールを先に設計しました</strong>。</p>
+<h2 id="設計">設計<a hidden class="anchor" aria-hidden="true" href="#設計">#</a></h2>
+<p>作ったのはインシデント調査のエージェントです。構造は 1 ノードだけのワークフローです。</p>
+<pre tabindex="0"><code>START ─&gt; investigate (dynamic, Go) ──RunNode × N──&gt; investigator (llmagent + tools)
+</code></pre><ul>
+<li><code>investigate</code> は <code>workflow.NewDynamicNode</code> で書いた Go のオーケストレータです。ラウンドを回し、ラウンド間で何を引き継ぐか、いつ止めるかを決めます</li>
+<li><code>investigator</code> は read-only のツール（<code>query_metrics</code> / <code>query_logs</code> / <code>list_deploys</code>）を持つ <code>llmagent</code> です。1 ラウンドの中で agent loop を回し、新しく分かったことを JSON で返します</li>
+</ul>
+<p>ポイントは、<code>llmagent</code> をワークフローのノードにすると既定で <strong>single-turn</strong> になることです。investigator には前のラウンドの会話履歴が見えず、オーケストレータが渡したプロンプトだけを見ます。つまり<strong>ラウンドをまたいで何を覚えておくかを Go のコードが決めます</strong>。今回引き継ぐのは確定した findings のリストだけです。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">roundPrompt</span><span class="p">(</span><span class="nx">question</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">round</span><span class="w"> </span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">known</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="kd">var</span><span class="w"> </span><span class="nx">sb</span><span class="w"> </span><span class="nx">strings</span><span class="p">.</span><span class="nx">Builder</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Fprintf</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">sb</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;Incident: %s\nRound: %d\n&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">question</span><span class="p">,</span><span class="w"> </span><span class="nx">round</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">known</span><span class="p">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">sb</span><span class="p">.</span><span class="nf">WriteString</span><span class="p">(</span><span class="s">&#34;Known findings: none yet.\n&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="nx">sb</span><span class="p">.</span><span class="nf">String</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">sb</span><span class="p">.</span><span class="nf">WriteString</span><span class="p">(</span><span class="s">&#34;Known findings:\n&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">f</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">known</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Fprintf</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">sb</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;- %s\n&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">f</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">sb</span><span class="p">.</span><span class="nf">String</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>これは Claude Code の dynamic workflows が「途中結果はスクリプトの変数に置き、Claude のコンテキストには入れない」としているのと同じ考え方です。ラウンドを重ねてもコンテキストが膨らまず、compaction で指示が要約されて消える心配もありません。</p>
+<h2 id="ガードレールを-4-層で組む">ガードレールを 4 層で組む<a hidden class="anchor" aria-hidden="true" href="#ガードレールを-4-層で組む">#</a></h2>
+<p>ガードレールは置き場所ごとに 4 層に分けました。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>層</th>
+        <th>ガードレール</th>
+        <th>実装</th>
+        <th>既定値</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>ループ（Go）</td>
+        <td>最大ラウンド数</td>
+        <td><code>investigate</code> の for 条件</td>
+        <td>6</td>
+      </tr>
+      <tr>
+        <td>ループ（Go）</td>
+        <td>進捗なし停止</td>
+        <td>新しい finding が N ラウンド連続で出なければ止める</td>
+        <td>2</td>
+      </tr>
+      <tr>
+        <td>ループ（Go）</td>
+        <td>LLM の done 提案</td>
+        <td>finding が 1 件以上あるときだけ受け入れる</td>
+        <td>-</td>
+      </tr>
+      <tr>
+        <td>ループ（Go）</td>
+        <td>不正な出力</td>
+        <td>JSON として読めない応答は finding を増やせない</td>
+        <td>-</td>
+      </tr>
+      <tr>
+        <td>両方</td>
+        <td>トークン予算</td>
+        <td><code>AfterModelCallback</code> で集計し、ラウンド開始前と <code>BeforeModelCallback</code> で判定</td>
+        <td>30,000</td>
+      </tr>
+      <tr>
+        <td>agent loop</td>
+        <td>ラウンドあたりのモデル呼び出し上限</td>
+        <td><code>BeforeModelCallback</code></td>
+        <td>8</td>
+      </tr>
+      <tr>
+        <td>ツール</td>
+        <td>allowlist と引数の制限</td>
+        <td><code>BeforeToolCallback</code></td>
+        <td>read-only 3 ツール、時間窓 60 分</td>
+      </tr>
+      <tr>
+        <td>スケジューラ</td>
+        <td>ラウンドのタイムアウト</td>
+        <td><code>NodeConfig.Timeout</code></td>
+        <td>2 分</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>上限値はひとつの struct にまとめました。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">type</span><span class="w"> </span><span class="nx">Limits</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">MaxRounds</span><span class="w">             </span><span class="kt">int</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">NoProgressRounds</span><span class="w">      </span><span class="kt">int</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">MaxModelCallsPerRound</span><span class="w"> </span><span class="kt">int</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">TokenBudget</span><span class="w">           </span><span class="kt">int</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">MaxWindowMinutes</span><span class="w">      </span><span class="kt">int</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><h3 id="ループ層-止める判断は-go-が持つ">ループ層: 止める判断は Go が持つ<a hidden class="anchor" aria-hidden="true" href="#ループ層-止める判断は-go-が持つ">#</a></h3>
+<p>オーケストレータの本体です。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">investigate</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">question</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">investigator</span><span class="w"> </span><span class="nx">workflow</span><span class="p">.</span><span class="nx">Node</span><span class="p">,</span><span class="w"> </span><span class="nx">g</span><span class="w"> </span><span class="o">*</span><span class="nx">guard</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">report</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">id</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">ctx</span><span class="p">.</span><span class="nf">InvocationID</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">defer</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nf">finish</span><span class="p">(</span><span class="nx">id</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="kd">var</span><span class="w"> </span><span class="p">(</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">findings</span><span class="w"> </span><span class="p">[]</span><span class="kt">string</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">seen</span><span class="w">     </span><span class="p">=</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">bool</span><span class="p">{}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">idle</span><span class="w">     </span><span class="kt">int</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">r</span><span class="w">        </span><span class="p">=</span><span class="w"> </span><span class="nx">report</span><span class="p">{</span><span class="nx">Stop</span><span class="p">:</span><span class="w"> </span><span class="nx">stopMaxRounds</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">for</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">Rounds</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nx">limits</span><span class="p">.</span><span class="nx">MaxRounds</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nf">snapshot</span><span class="p">(</span><span class="nx">id</span><span class="p">).</span><span class="nx">tokens</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nx">limits</span><span class="p">.</span><span class="nx">TokenBudget</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">r</span><span class="p">.</span><span class="nx">Stop</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">stopBudget</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">break</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">r</span><span class="p">.</span><span class="nx">Rounds</span><span class="o">++</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">g</span><span class="p">.</span><span class="nf">beginRound</span><span class="p">(</span><span class="nx">id</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">out</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">workflow</span><span class="p">.</span><span class="nx">RunNode</span><span class="p">[</span><span class="kt">string</span><span class="p">](</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">investigator</span><span class="p">,</span><span class="w"> </span><span class="nf">roundPrompt</span><span class="p">(</span><span class="nx">question</span><span class="p">,</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">Rounds</span><span class="p">,</span><span class="w"> </span><span class="nx">findings</span><span class="p">))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">return</span><span class="w"> </span><span class="nx">report</span><span class="p">{},</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;round %d: %w&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">r</span><span class="p">.</span><span class="nx">Rounds</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">res</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nf">parseRound</span><span class="p">(</span><span class="nx">out</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">added</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">0</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">f</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">res</span><span class="p">.</span><span class="nx">Findings</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">key</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">strings</span><span class="p">.</span><span class="nf">ToLower</span><span class="p">(</span><span class="nx">strings</span><span class="p">.</span><span class="nf">TrimSpace</span><span class="p">(</span><span class="nx">f</span><span class="p">))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">if</span><span class="w"> </span><span class="nx">key</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">&#34;&#34;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">seen</span><span class="p">[</span><span class="nx">key</span><span class="p">]</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="k">continue</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">seen</span><span class="p">[</span><span class="nx">key</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="kc">true</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">findings</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">append</span><span class="p">(</span><span class="nx">findings</span><span class="p">,</span><span class="w"> </span><span class="nx">strings</span><span class="p">.</span><span class="nf">TrimSpace</span><span class="p">(</span><span class="nx">f</span><span class="p">))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">added</span><span class="o">++</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">added</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">idle</span><span class="o">++</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">idle</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mi">0</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">res</span><span class="p">.</span><span class="nx">Done</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">findings</span><span class="p">)</span><span class="w"> </span><span class="p">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">r</span><span class="p">.</span><span class="nx">Stop</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">stopModelDone</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">break</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">idle</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nx">limits</span><span class="p">.</span><span class="nx">NoProgressRounds</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">r</span><span class="p">.</span><span class="nx">Stop</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">stopNoProgress</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">break</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="c1">// ...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>Claude のブログ記事 <a href="https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code">A harness for every task</a> では loop until done を「作業量が分からないタスクで、固定回数ではなく停止条件（たとえば『新しい発見がない』）が成り立つまでエージェントを起動し続ける」パターンとして紹介しています。ここではその停止条件を Go で書いています。</p>
+<p>LLM が <code>&quot;done&quot;: true</code> を返すことは許していますが、<strong>それだけでは止めません</strong>。finding が 1 件もないのに done を返すのは「調べるのを諦めた」可能性があるためです。逆に、LLM が done を返さなくても、新しい発見が 2 ラウンド続けてなければ Go が止めます。前回の記事と同じく「LLM は提案し、判断はコードがする」形です。</p>
+<p>LLM の出力のパースも、ガードレールとして扱っています。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">parseRound</span><span class="p">(</span><span class="nx">out</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="nx">roundResult</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">start</span><span class="p">,</span><span class="w"> </span><span class="nx">end</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">strings</span><span class="p">.</span><span class="nf">Index</span><span class="p">(</span><span class="nx">out</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;{&#34;</span><span class="p">),</span><span class="w"> </span><span class="nx">strings</span><span class="p">.</span><span class="nf">LastIndex</span><span class="p">(</span><span class="nx">out</span><span class="p">,</span><span class="w"> </span><span class="s">&#34;}&#34;</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">start</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">end</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">start</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="nx">roundResult</span><span class="p">{}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="kd">var</span><span class="w"> </span><span class="nx">res</span><span class="w"> </span><span class="nx">roundResult</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">json</span><span class="p">.</span><span class="nf">Unmarshal</span><span class="p">([]</span><span class="nb">byte</span><span class="p">(</span><span class="nx">out</span><span class="p">[</span><span class="nx">start</span><span class="p">:</span><span class="nx">end</span><span class="o">+</span><span class="mi">1</span><span class="p">]),</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">res</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="nx">roundResult</span><span class="p">{}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">res</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>読めない応答は「新しい発見ゼロ」として扱います。壊れた出力が findings に紛れ込むことはなく、壊れた出力が続けば進捗なし停止でループが終わります。</p>
+<h3 id="agent-loop-層-エラーではなく空の答えで止める">agent loop 層: エラーではなく「空の答え」で止める<a hidden class="anchor" aria-hidden="true" href="#agent-loop-層-エラーではなく空の答えで止める">#</a></h3>
+<p>内側の <code>llmagent</code> のループは <code>BeforeModelCallback</code> で止めます。このコールバックが <code>*model.LLMResponse</code> を返すと、ADK は実際のモデル呼び出しをスキップしてその応答を使います。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">const</span><span class="w"> </span><span class="nx">cutoffAnswer</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">`{&#34;findings&#34;: [], &#34;done&#34;: false}`</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">g</span><span class="w"> </span><span class="o">*</span><span class="nx">guard</span><span class="p">)</span><span class="w"> </span><span class="nf">beforeModel</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">LLMRequest</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">LLMResponse</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">g</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Lock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">defer</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Unlock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">s</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nf">state</span><span class="p">(</span><span class="nx">ctx</span><span class="p">.</span><span class="nf">InvocationID</span><span class="p">())</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="kd">var</span><span class="w"> </span><span class="nx">reason</span><span class="w"> </span><span class="kt">string</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">switch</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">case</span><span class="w"> </span><span class="nx">s</span><span class="p">.</span><span class="nx">tokens</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nx">limits</span><span class="p">.</span><span class="nx">TokenBudget</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">reason</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">&#34;token budget %d exhausted&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nx">limits</span><span class="p">.</span><span class="nx">TokenBudget</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">case</span><span class="w"> </span><span class="nx">s</span><span class="p">.</span><span class="nx">roundCalls</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nx">limits</span><span class="p">.</span><span class="nx">MaxModelCallsPerRound</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">reason</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">&#34;%d model calls in one round&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nx">limits</span><span class="p">.</span><span class="nx">MaxModelCallsPerRound</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">default</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">s</span><span class="p">.</span><span class="nx">roundCalls</span><span class="o">++</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">s</span><span class="p">.</span><span class="nx">cutoffs</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">append</span><span class="p">(</span><span class="nx">s</span><span class="p">.</span><span class="nx">cutoffs</span><span class="p">,</span><span class="w"> </span><span class="nx">reason</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">model</span><span class="p">.</span><span class="nx">LLMResponse</span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">Content</span><span class="p">:</span><span class="w">      </span><span class="nx">genai</span><span class="p">.</span><span class="nf">NewContentFromText</span><span class="p">(</span><span class="nx">cutoffAnswer</span><span class="p">,</span><span class="w"> </span><span class="nx">genai</span><span class="p">.</span><span class="nx">RoleModel</span><span class="p">),</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">TurnComplete</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">},</span><span class="w"> </span><span class="kc">nil</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>ここで迷ったのは、上限に達したときに error を返すか、応答を返すかです。error を返すとノードが失敗し、<code>RetryConfig</code> を付けていればリトライされて、むしろ呼び出しが増えます。そこで<strong>ツール呼び出しを含まない応答</strong>を返すことにしました。先ほどの <code>Flow.Run</code> は「ツール呼び出しのない最終応答」でループを抜けるので、これで agent loop は正常に終わります。返す内容は「findings が空のラウンド結果」なので、オーケストレータ側では進捗なしのラウンドとして数えられます。</p>
+<p>トークンは <code>AfterModelCallback</code> で数えます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">g</span><span class="w"> </span><span class="o">*</span><span class="nx">guard</span><span class="p">)</span><span class="w"> </span><span class="nf">afterModel</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">resp</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">LLMResponse</span><span class="p">,</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">LLMResponse</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">resp</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">resp</span><span class="p">.</span><span class="nx">Partial</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">resp</span><span class="p">.</span><span class="nx">UsageMetadata</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">g</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Lock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">defer</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Unlock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">g</span><span class="p">.</span><span class="nf">state</span><span class="p">(</span><span class="nx">ctx</span><span class="p">.</span><span class="nf">InvocationID</span><span class="p">()).</span><span class="nx">tokens</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="nb">int</span><span class="p">(</span><span class="nx">resp</span><span class="p">.</span><span class="nx">UsageMetadata</span><span class="p">.</span><span class="nx">TotalTokenCount</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>ストリーミング時の部分チャンク（<code>Partial</code>）は数えないようにしています。数えると同じ応答を二重に数えるためです。</p>
+<h3 id="ツール層-allowlist-と引数の制限">ツール層: allowlist と引数の制限<a hidden class="anchor" aria-hidden="true" href="#ツール層-allowlist-と引数の制限">#</a></h3>
+<p><code>BeforeToolCallback</code> は結果を返すとツールの実行をスキップし、返した結果をツールの結果としてモデルに渡します。また、<code>args</code> を書き換えて <code>nil, nil</code> を返すと、書き換えた引数でツールが実行されます。この 2 つの性質を使います。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">g</span><span class="w"> </span><span class="o">*</span><span class="nx">guard</span><span class="p">)</span><span class="w"> </span><span class="nf">beforeTool</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">agent</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">t</span><span class="w"> </span><span class="nx">tool</span><span class="p">.</span><span class="nx">Tool</span><span class="p">,</span><span class="w"> </span><span class="nx">args</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">any</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">any</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="p">!</span><span class="nx">readOnlyTools</span><span class="p">[</span><span class="nx">t</span><span class="p">.</span><span class="nf">Name</span><span class="p">()]</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">g</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Lock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">s</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nf">state</span><span class="p">(</span><span class="nx">ctx</span><span class="p">.</span><span class="nf">InvocationID</span><span class="p">())</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">s</span><span class="p">.</span><span class="nx">denied</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">append</span><span class="p">(</span><span class="nx">s</span><span class="p">.</span><span class="nx">denied</span><span class="p">,</span><span class="w"> </span><span class="nx">t</span><span class="p">.</span><span class="nf">Name</span><span class="p">())</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">g</span><span class="p">.</span><span class="nx">mu</span><span class="p">.</span><span class="nf">Unlock</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">return</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">any</span><span class="p">{</span><span class="s">&#34;error&#34;</span><span class="p">:</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">&#34;tool %q is not allowed: this agent is read-only&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">t</span><span class="p">.</span><span class="nf">Name</span><span class="p">())},</span><span class="w"> </span><span class="kc">nil</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">switch</span><span class="w"> </span><span class="nx">w</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">args</span><span class="p">[</span><span class="s">&#34;window_minutes&#34;</span><span class="p">].(</span><span class="kd">type</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">case</span><span class="w"> </span><span class="kt">float64</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nb">int</span><span class="p">(</span><span class="nx">w</span><span class="p">)</span><span class="w"> </span><span class="p">&gt;</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nx">limits</span><span class="p">.</span><span class="nx">MaxWindowMinutes</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">args</span><span class="p">[</span><span class="s">&#34;window_minutes&#34;</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">float64</span><span class="p">(</span><span class="nx">g</span><span class="p">.</span><span class="nx">limits</span><span class="p">.</span><span class="nx">MaxWindowMinutes</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">case</span><span class="w"> </span><span class="kt">int</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">w</span><span class="w"> </span><span class="p">&gt;</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nx">limits</span><span class="p">.</span><span class="nx">MaxWindowMinutes</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">args</span><span class="p">[</span><span class="s">&#34;window_minutes&#34;</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">g</span><span class="p">.</span><span class="nx">limits</span><span class="p">.</span><span class="nx">MaxWindowMinutes</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="kc">nil</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>拒否は Go の error ではなく<strong>ツールの結果</strong>として返しています。こうするとモデルは「このツールは使えない」と知った上で、許可されたツールで調査を続けられます。</p>
+<p>サンプルではわざと <code>restart_pod</code>（全 Pod を再起動する書き込み系ツール）をツール一覧に入れています。「危険なツールは最初から渡さなければいい」と思うかもしれません。しかし MCP toolset を使うと、サーバが公開しているツールは書き込み系も含めてそのまま入ってきます。<strong>渡していないつもりで渡っている</strong>状況を前提に、allowlist で止める形にしました。Claude Agent SDK の <code>allowed_tools</code> / <code>disallowed_tools</code> に相当するものです。</p>
+<h3 id="スケジューラ層-タイムアウト">スケジューラ層: タイムアウト<a hidden class="anchor" aria-hidden="true" href="#スケジューラ層-タイムアウト">#</a></h3>
+<p>最後はノード単位のタイムアウトです。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">investigatorNode</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">workflow</span><span class="p">.</span><span class="nf">NewAgentNode</span><span class="p">(</span><span class="nx">investigator</span><span class="p">,</span><span class="w"> </span><span class="nx">workflow</span><span class="p">.</span><span class="nx">NodeConfig</span><span class="p">{</span><span class="nx">Timeout</span><span class="p">:</span><span class="w"> </span><span class="nx">roundTimeout</span><span class="p">})</span><span class="w">
+</span></span></span></code></pre></div><p>これは無限ループではなく、処理が止まったまま返ってこない（ハングする）ケースに備えるものです。モデルやツールが応答しなくなると呼び出し回数もトークンも増えないため、上の 3 層では止められません。</p>
+<h2 id="動作確認">動作確認<a hidden class="anchor" aria-hidden="true" href="#動作確認">#</a></h2>
+<p>API キーがなくても動くように、スクリプト化したスタブモデルを用意しました。<code>INVESTIGATION_SCENARIO</code> で振る舞いを切り替えると、各ガードレールが発動する様子を見られます。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-bash" data-lang="bash"><span class="line"><span class="cl">git clone https://github.com/jedipunkz/adk-playground
+</span></span><span class="line"><span class="cl"><span class="nb">cd</span> adk-playground/investigation-loop
+</span></span><span class="line"><span class="cl">go run . console
+</span></span></code></pre></div><h3 id="converge-新しい発見がなくなって止まる">converge: 新しい発見がなくなって止まる<a hidden class="anchor" aria-hidden="true" href="#converge-新しい発見がなくなって止まる">#</a></h3>
+<p>3 ラウンドで 3 件見つけ、その後は既知のことしか返さないシナリオです。途中のラウンドで <code>restart_pod</code> を呼ぼうとし、4 時間分のログも要求します。</p>
+<pre tabindex="0"><code>Investigation stopped after 5 round(s): no new findings. Tokens used: 13500.
+
+Findings:
+- checkout-api error rate rose to 18% at 10:07
+- payments-db is refusing connections: too many clients
+- v1.42 deployed at 10:00 lowered DB_POOL_SIZE from 50 to 20
+
+Tool calls refused:
+- restart_pod
+</code></pre><p>ラウンド 4・5 で新しい発見がなかったので、5 ラウンド目で止まりました。<code>restart_pod</code> は拒否され、一度も実行されていません。ログの時間窓は 240 分から 60 分に丸められています（どちらもテストで確認しています）。</p>
+<h3 id="runaway-tools-ツールを呼び続けて答えない">runaway-tools: ツールを呼び続けて答えない<a hidden class="anchor" aria-hidden="true" href="#runaway-tools-ツールを呼び続けて答えない">#</a></h3>
+<pre tabindex="0"><code>Investigation stopped after 2 round(s): no new findings. Tokens used: 24000.
+
+Findings:
+- none
+
+Rounds cut short by guardrails:
+- 8 model calls in one round
+- 8 model calls in one round
+</code></pre><p>各ラウンドがモデル呼び出し 8 回で打ち切られ、空の結果になります。空のラウンドが 2 回続いたので、オーケストレータが止めました。agent loop 層とループ層が連携して止めている例です。</p>
+<h3 id="endless-findings-毎ラウンド新しいことを言い続ける">endless-findings: 毎ラウンド「新しい」ことを言い続ける<a hidden class="anchor" aria-hidden="true" href="#endless-findings-毎ラウンド新しいことを言い続ける">#</a></h3>
+<pre tabindex="0"><code>Investigation stopped after 5 round(s): token budget exhausted. Tokens used: 30000.
+
+Findings:
+- possible anomaly #1 worth a closer look
+- possible anomaly #2 worth a closer look
+- possible anomaly #3 worth a closer look
+- possible anomaly #4 worth a closer look
+- possible anomaly #5 worth a closer look
+</code></pre><p>一番厄介なのはこれです。毎回違う文言で「何か見つけた」と返されると、進捗なし停止は効きません。最後に止めるのはトークン予算です。文言だけ変えた同じ指摘を同一とみなす判定は、Go の文字列比較ではできません。ここは<strong>予算という、内容を見ないガードレールが必要になる</strong>ところだと思います。</p>
+<p>テストは 3 シナリオを ADK の runner で端から端まで実行し、停止理由、<code>restart_pod</code> が実行されていないこと、引数が丸められていることを確認しています。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="nf">TestConvergeStopsWhenNothingNewTurnsUp</span><span class="p">(</span><span class="nx">t</span><span class="w"> </span><span class="o">*</span><span class="nx">testing</span><span class="p">.</span><span class="nx">T</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">restartCalls</span><span class="p">.</span><span class="nf">Store</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">got</span><span class="p">,</span><span class="w"> </span><span class="nx">windows</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="nx">t</span><span class="p">,</span><span class="w"> </span><span class="nx">scenarioConverge</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="c1">// ...</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">n</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">restartCalls</span><span class="p">.</span><span class="nf">Load</span><span class="p">();</span><span class="w"> </span><span class="nx">n</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">t</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;restart_pod ran %d time(s); the allowlist must refuse it&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">n</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">windows</span><span class="p">)</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">windows</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="nb">float64</span><span class="p">(</span><span class="nx">defaultLimits</span><span class="p">.</span><span class="nx">MaxWindowMinutes</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">t</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;query_logs saw window_minutes %v, want it clamped to [%d]&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">windows</span><span class="p">,</span><span class="w"> </span><span class="nx">defaultLimits</span><span class="p">.</span><span class="nx">MaxWindowMinutes</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>前回の記事で「ルーティングのテストは、分岐が LLM の判断だったら書けなかったテスト」と書きました。今回も同じで、<strong>停止条件がコードにあるから停止のテストが書けます</strong>。</p>
+<h2 id="ハマりどころと学び">ハマりどころと学び<a hidden class="anchor" aria-hidden="true" href="#ハマりどころと学び">#</a></h2>
+<h3 id="ガードレールの状態をどこに持つか">ガードレールの状態をどこに持つか<a hidden class="anchor" aria-hidden="true" href="#ガードレールの状態をどこに持つか">#</a></h3>
+<p>コールバックは <code>llmagent</code> に 1 度だけ登録するので、状態は実行ごとに分ける必要があります。今回は <code>ctx.InvocationID()</code> をキーにしました。dynamic node の中から <code>RunNode</code> で呼んだ子の <code>llmagent</code> は、親と同じ InvocationID を持つためです。これにより、オーケストレータが <code>beginRound</code> でリセットしたカウンタを、子のコールバックがそのまま参照できます。</p>
+<p>ただし状態はプロセスのメモリにあります。ADK のワークフローはセッションの履歴から再開できますが、別のプロセスで再開するとトークン集計は 0 から始まります。厳密にやるなら、session state に置く必要があります。</p>
+<h3 id="オーケストレータは決定的に書く">オーケストレータは決定的に書く<a hidden class="anchor" aria-hidden="true" href="#オーケストレータは決定的に書く">#</a></h3>
+<p>ADK の dynamic node は再開時に<strong>本体を頭から再実行</strong>し、完了済みの子ノードはチェックポイントから結果を返します（<code>RerunOnResume</code> の既定値が <code>true</code>）。子の実行 ID は親 ID とカウンタから決まるので、同じ入力から同じ順序で <code>RunNode</code> を呼ぶ必要があります。オーケストレータの中で時刻や乱数を使ってはいけません。</p>
+<p>Claude Code の dynamic workflows も、スクリプトの中で <code>Date.now()</code> や <code>Math.random()</code> を呼ぶと例外になります。理由は同じで、再実行したときに同じ <code>agent()</code> 呼び出しを再現するためです。言語もランタイムも違いますが、同じ制約にたどり着いているのが面白いところです。</p>
+<h3 id="compaction-は-root-が-llm-agent-でないと素直に使えない">compaction は root が LLM agent でないと素直に使えない<a hidden class="anchor" aria-hidden="true" href="#compaction-は-root-が-llm-agent-でないと素直に使えない">#</a></h3>
+<p><code>runner.Config.Compaction</code> は、Summarizer を指定しない場合は root agent のモデルで要約します。そのため root が LLM agent である必要があります。今回のように root が workflow agent だとこの前提が満たされないので、Summarizer を自分で渡す必要があります。今回はラウンドごとに single-turn で文脈がリセットされるので、compaction 自体が不要でした。</p>
+<h3 id="ツールの並列実行は読み書きを区別しない">ツールの並列実行は読み書きを区別しない<a hidden class="anchor" aria-hidden="true" href="#ツールの並列実行は読み書きを区別しない">#</a></h3>
+<p>前述のとおり、ADK は 1 応答内の複数のツール呼び出しを並列に実行します。Claude Agent SDK のように「書き込み系は順番に実行する」区別はありません。今回は書き込み系を allowlist で全部止めたので問題になりませんでしたが、書き込み系を許可するなら直列化を自分で考える必要があります。</p>
+<h2 id="claude-code-の-dynamic-workflows-と比べて">Claude Code の dynamic workflows と比べて<a hidden class="anchor" aria-hidden="true" href="#claude-code-の-dynamic-workflows-と比べて">#</a></h2>
+<p>一番大きな違いは、やはり<strong>オーケストレーションを書くのが誰か</strong>です。</p>
+<p>Claude Code では、Claude がタスクに合わせてスクリプトを書きます。事前に想定していなかった形のタスクにも、その場で専用の harness を作れるのが強みです。その代わり、実行前に人間がスクリプトを承認する（あるいは承認を省略する）運用になります。</p>
+<p>ADK では人間が書きます。柔軟性では劣りますが、停止条件・上限・許可されたツールがすべてコードとしてレビューでき、テストで固定できます。本番環境に触れる SRE のエージェントでは、こちらの性質がほしい場面が多いと感じています。</p>
+<p>前回の宿題だった「動的ノードの中身がブラックボックスになる」問題について、今回の結論はこうです。<strong>ループの中身（LLM が何を調べるか）は動的なままでよく、ループの外枠（何を引き継ぎ、いつ止め、何を許すか）を静的なコードにすればよい</strong>。中身が読めなくても、外枠が読めてテストできれば、自律度を上げても怖くありません。</p>
+<h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
+<ul>
+<li>ADK Go の <code>llmagent</code> も Claude Agent SDK と同じ agent loop（モデル → ツール → モデル）を回すが、ターン上限・予算上限・ツール許可は持たない</li>
+<li><code>NewDynamicNode</code> で外側のループを Go で書くと、Claude Code の dynamic workflows の loop until done と同じ形になる。違いはスクリプトを書くのが人間であること</li>
+<li>ガードレールは置き場所ごとに 4 層に分けた。ループ層（ラウンド上限・進捗なし停止・done 提案の扱い）、agent loop 層（<code>BeforeModelCallback</code> で呼び出し上限と予算）、ツール層（<code>BeforeToolCallback</code> で allowlist と引数制限）、スケジューラ層（<code>Timeout</code>）</li>
+<li>agent loop を止めるときは error ではなく「ツール呼び出しのない空の答え」を返すと、リトライに化けずに正常に終わる</li>
+<li>毎回違う文言で発見を言い続けるモデルは、内容で止めることができない。予算のような内容を見ないガードレールが最後の砦になる</li>
+</ul>
+<p>次は、実際の Gemini で動かしたときにモデルがどれくらいの頻度で JSON を壊すのか、進捗なし停止がどのくらい効くのかを見てみたいと思っています。</p>
+<h2 id="参考">参考<a hidden class="anchor" aria-hidden="true" href="#参考">#</a></h2>
+<ul>
+<li><a href="https://code.claude.com/docs/ja/agent-sdk/overview">Claude Agent SDK の概要</a></li>
+<li><a href="https://code.claude.com/docs/ja/agent-sdk/agent-loop">エージェントループの仕組み</a></li>
+<li><a href="https://code.claude.com/docs/en/workflows">Orchestrate subagents at scale with dynamic workflows</a></li>
+<li><a href="https://claude.com/blog/a-harness-for-every-task-dynamic-workflows-in-claude-code">A harness for every task: dynamic workflows in Claude Code</a></li>
+<li><a href="https://adk.dev/graphs/dynamic/">ADK Dynamic workflows</a></li>
+<li><a href="https://github.com/google/adk-go">google/adk-go</a></li>
+<li><a href="https://pkg.go.dev/google.golang.org/adk/v2/workflow">google.golang.org/adk/v2/workflow</a></li>
+<li><a href="/post/adk-go-2/">ADK Go 2.0 のグラフワークフローを読んで SRE Agent への応用を考える</a></li>
+<li><a href="https://github.com/jedipunkz/adk-playground/tree/main/investigation-loop">jedipunkz/adk-playground — investigation-loop</a>（この記事で書いたコード）</li>
+</ul>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+    </ul>
+<nav class="paginav">
+  <a class="prev" href="https://jedipunkz.rocks/post/fuzz-fish-guardrails/">
+    <span class="title">« 前へ</span>
+    <br>
+    <span>自作 Go ツールに導入したガードレール策</span>
+  </a>
+  <a class="next" href="https://jedipunkz.rocks/post/go-testing-2/">
+    <span class="title">次へ »</span>
+    <br>
+    <span>[Go 再学習] Go のテストを理解する 後編: 性能・堅牢性を確かめる</span>
+  </a>
+</nav>
+
+
+<ul class="share-buttons">
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google ADK Go 2.x の Dynamic Workflow とその為のガードレール on x"
+            href="https://x.com/intent/tweet/?text=Google%20ADK%20Go%202.x%20%e3%81%ae%20Dynamic%20Workflow%20%e3%81%a8%e3%81%9d%e3%81%ae%e7%82%ba%e3%81%ae%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-dynamic-loop%2f&amp;hashtags=">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M512 62.554 L 512 449.446 C 512 483.97 483.97 512 449.446 512 L 62.554 512 C 28.03 512 0 483.97 0 449.446 L 0 62.554 C 0 28.03 28.029 0 62.554 0 L 449.446 0 C 483.971 0 512 28.03 512 62.554 Z M 269.951 190.75 L 182.567 75.216 L 56 75.216 L 207.216 272.95 L 63.9 436.783 L 125.266 436.783 L 235.9 310.383 L 332.567 436.783 L 456 436.783 L 298.367 228.367 L 432.367 75.216 L 371.033 75.216 Z M 127.633 110 L 164.101 110 L 383.481 400.065 L 349.5 400.065 Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google ADK Go 2.x の Dynamic Workflow とその為のガードレール on linkedin"
+            href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-dynamic-loop%2f&amp;title=Google%20ADK%20Go%202.x%20%e3%81%ae%20Dynamic%20Workflow%20%e3%81%a8%e3%81%9d%e3%81%ae%e7%82%ba%e3%81%ae%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab&amp;summary=Google%20ADK%20Go%202.x%20%e3%81%ae%20Dynamic%20Workflow%20%e3%81%a8%e3%81%9d%e3%81%ae%e7%82%ba%e3%81%ae%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab&amp;source=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-dynamic-loop%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-288.985,423.278l0,-225.717l-75.04,0l0,225.717l75.04,0Zm270.539,0l0,-129.439c0,-69.333 -37.018,-101.586 -86.381,-101.586c-39.804,0 -57.634,21.891 -67.617,37.266l0,-31.958l-75.021,0c0.995,21.181 0,225.717 0,225.717l75.02,0l0,-126.056c0,-6.748 0.486,-13.492 2.474,-18.315c5.414,-13.475 17.767,-27.434 38.494,-27.434c27.135,0 38.007,20.707 38.007,51.037l0,120.768l75.024,0Zm-307.552,-334.556c-25.674,0 -42.448,16.879 -42.448,39.002c0,21.658 16.264,39.002 41.455,39.002l0.484,0c26.165,0 42.452,-17.344 42.452,-39.002c-0.485,-22.092 -16.241,-38.954 -41.943,-39.002Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google ADK Go 2.x の Dynamic Workflow とその為のガードレール on reddit"
+            href="https://reddit.com/submit?url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-dynamic-loop%2f&title=Google%20ADK%20Go%202.x%20%e3%81%ae%20Dynamic%20Workflow%20%e3%81%a8%e3%81%9d%e3%81%ae%e7%82%ba%e3%81%ae%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-3.446,265.638c0,-22.964 -18.616,-41.58 -41.58,-41.58c-11.211,0 -21.361,4.457 -28.841,11.666c-28.424,-20.508 -67.586,-33.757 -111.204,-35.278l18.941,-89.121l61.884,13.157c0.756,15.734 13.642,28.29 29.56,28.29c16.407,0 29.706,-13.299 29.706,-29.701c0,-16.403 -13.299,-29.702 -29.706,-29.702c-11.666,0 -21.657,6.792 -26.515,16.578l-69.105,-14.69c-1.922,-0.418 -3.939,-0.042 -5.585,1.036c-1.658,1.073 -2.811,2.761 -3.224,4.686l-21.152,99.438c-44.258,1.228 -84.046,14.494 -112.837,35.232c-7.468,-7.164 -17.589,-11.591 -28.757,-11.591c-22.965,0 -41.585,18.616 -41.585,41.58c0,16.896 10.095,31.41 24.568,37.918c-0.639,4.135 -0.99,8.328 -0.99,12.576c0,63.977 74.469,115.836 166.33,115.836c91.861,0 166.334,-51.859 166.334,-115.836c0,-4.218 -0.347,-8.387 -0.977,-12.493c14.564,-6.47 24.735,-21.034 24.735,-38.001Zm-119.474,108.193c-20.27,20.241 -59.115,21.816 -70.534,21.816c-11.428,0 -50.277,-1.575 -70.522,-21.82c-3.007,-3.008 -3.007,-7.882 0,-10.889c3.003,-2.999 7.882,-3.003 10.885,0c12.777,12.781 40.11,17.317 59.637,17.317c19.522,0 46.86,-4.536 59.657,-17.321c3.016,-2.999 7.886,-2.995 10.885,0.008c3.008,3.011 3.003,7.882 -0.008,10.889Zm-5.23,-48.781c-16.373,0 -29.701,-13.324 -29.701,-29.698c0,-16.381 13.328,-29.714 29.701,-29.714c16.378,0 29.706,13.333 29.706,29.714c0,16.374 -13.328,29.698 -29.706,29.698Zm-160.386,-29.702c0,-16.381 13.328,-29.71 29.714,-29.71c16.369,0 29.689,13.329 29.689,29.71c0,16.373 -13.32,29.693 -29.689,29.693c-16.386,0 -29.714,-13.32 -29.714,-29.693Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google ADK Go 2.x の Dynamic Workflow とその為のガードレール on facebook"
+            href="https://facebook.com/sharer/sharer.php?u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-dynamic-loop%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-106.468,0l0,-192.915l66.6,0l12.672,-82.621l-79.272,0l0,-53.617c0,-22.603 11.073,-44.636 46.58,-44.636l36.042,0l0,-70.34c0,0 -32.71,-5.582 -63.982,-5.582c-65.288,0 -107.96,39.569 -107.96,111.204l0,62.971l-72.573,0l0,82.621l72.573,0l0,192.915l-191.104,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google ADK Go 2.x の Dynamic Workflow とその為のガードレール on whatsapp"
+            href="https://api.whatsapp.com/send?text=Google%20ADK%20Go%202.x%20%e3%81%ae%20Dynamic%20Workflow%20%e3%81%a8%e3%81%9d%e3%81%ae%e7%82%ba%e3%81%ae%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab%20-%20https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-dynamic-loop%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-58.673,127.703c-33.842,-33.881 -78.847,-52.548 -126.798,-52.568c-98.799,0 -179.21,80.405 -179.249,179.234c-0.013,31.593 8.241,62.428 23.927,89.612l-25.429,92.884l95.021,-24.925c26.181,14.28 55.659,21.807 85.658,21.816l0.074,0c98.789,0 179.206,-80.413 179.247,-179.243c0.018,-47.895 -18.61,-92.93 -52.451,-126.81Zm-126.797,275.782l-0.06,0c-26.734,-0.01 -52.954,-7.193 -75.828,-20.767l-5.441,-3.229l-56.386,14.792l15.05,-54.977l-3.542,-5.637c-14.913,-23.72 -22.791,-51.136 -22.779,-79.287c0.033,-82.142 66.867,-148.971 149.046,-148.971c39.793,0.014 77.199,15.531 105.329,43.692c28.128,28.16 43.609,65.592 43.594,105.4c-0.034,82.149 -66.866,148.983 -148.983,148.984Zm81.721,-111.581c-4.479,-2.242 -26.499,-13.075 -30.604,-14.571c-4.105,-1.495 -7.091,-2.241 -10.077,2.241c-2.986,4.483 -11.569,14.572 -14.182,17.562c-2.612,2.988 -5.225,3.364 -9.703,1.12c-4.479,-2.241 -18.91,-6.97 -36.017,-22.23c-13.314,-11.876 -22.304,-26.542 -24.916,-31.026c-2.612,-4.484 -0.279,-6.908 1.963,-9.14c2.016,-2.007 4.48,-5.232 6.719,-7.847c2.24,-2.615 2.986,-4.484 4.479,-7.472c1.493,-2.99 0.747,-5.604 -0.374,-7.846c-1.119,-2.241 -10.077,-24.288 -13.809,-33.256c-3.635,-8.733 -7.327,-7.55 -10.077,-7.688c-2.609,-0.13 -5.598,-0.158 -8.583,-0.158c-2.986,0 -7.839,1.121 -11.944,5.604c-4.105,4.484 -15.675,15.32 -15.675,37.364c0,22.046 16.048,43.342 18.287,46.332c2.24,2.99 31.582,48.227 76.511,67.627c10.685,4.615 19.028,7.371 25.533,9.434c10.728,3.41 20.492,2.929 28.209,1.775c8.605,-1.285 26.499,-10.833 30.231,-21.295c3.732,-10.464 3.732,-19.431 2.612,-21.298c-1.119,-1.869 -4.105,-2.99 -8.583,-5.232Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google ADK Go 2.x の Dynamic Workflow とその為のガードレール on telegram"
+            href="https://telegram.me/share/url?text=Google%20ADK%20Go%202.x%20%e3%81%ae%20Dynamic%20Workflow%20%e3%81%a8%e3%81%9d%e3%81%ae%e7%82%ba%e3%81%ae%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-dynamic-loop%2f">
+            <svg version="1.1" xml:space="preserve" viewBox="2 2 28 28" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M26.49,29.86H5.5a3.37,3.37,0,0,1-2.47-1,3.35,3.35,0,0,1-1-2.47V5.48A3.36,3.36,0,0,1,3,3,3.37,3.37,0,0,1,5.5,2h21A3.38,3.38,0,0,1,29,3a3.36,3.36,0,0,1,1,2.46V26.37a3.35,3.35,0,0,1-1,2.47A3.38,3.38,0,0,1,26.49,29.86Zm-5.38-6.71a.79.79,0,0,0,.85-.66L24.73,9.24a.55.55,0,0,0-.18-.46.62.62,0,0,0-.41-.17q-.08,0-16.53,6.11a.59.59,0,0,0-.41.59.57.57,0,0,0,.43.52l4,1.24,1.61,4.83a.62.62,0,0,0,.63.43.56.56,0,0,0,.4-.17L16.54,20l4.09,3A.9.9,0,0,0,21.11,23.15ZM13.8,20.71l-1.21-4q8.72-5.55,8.78-5.55c.15,0,.23,0,.23.16a.18.18,0,0,1,0,.06s-2.51,2.3-7.52,6.8Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share Google ADK Go 2.x の Dynamic Workflow とその為のガードレール on ycombinator"
+            href="https://news.ycombinator.com/submitlink?t=Google%20ADK%20Go%202.x%20%e3%81%ae%20Dynamic%20Workflow%20%e3%81%a8%e3%81%9d%e3%81%ae%e7%82%ba%e3%81%ae%e3%82%ac%e3%83%bc%e3%83%89%e3%83%ac%e3%83%bc%e3%83%ab&u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fadk-go-dynamic-loop%2f">
+            <svg version="1.1" xml:space="preserve" width="30px" height="30px" viewBox="0 0 512 512" fill="currentColor"
+                xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+                <path
+                    d="M449.446 0C483.971 0 512 28.03 512 62.554L512 449.446C512 483.97 483.97 512 449.446 512L62.554 512C28.03 512 0 483.97 0 449.446L0 62.554C0 28.03 28.029 0 62.554 0L449.446 0ZM183.8767 87.9921H121.8427L230.6673 292.4508V424.0079H281.3328V292.4508L390.1575 87.9921H328.1233L256 238.2489z" />
+            </svg>
+        </a>
+    </li>
+</ul>
+
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="https://jedipunkz.rocks/">jedipunkz 🚀 のブログ</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a><script type="module">
+  if (document.querySelector("pre.mermaid")) {
+    const { default: mermaid } = await import(
+      "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
+    );
+    
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        darkMode: true,
+        background: "#1a1b26",
+        mainBkg: "#24283b",
+        primaryColor: "#24283b",
+        primaryTextColor: "#c0caf5",
+        primaryBorderColor: "#7aa2f7",
+        secondaryColor: "#414868",
+        secondaryTextColor: "#c0caf5",
+        secondaryBorderColor: "#565f89",
+        tertiaryColor: "#1f2335",
+        tertiaryTextColor: "#c0caf5",
+        tertiaryBorderColor: "#565f89",
+        lineColor: "#7dcfff",
+        textColor: "#c0caf5",
+        nodeTextColor: "#c0caf5",
+        edgeLabelBackground: "#1a1b26",
+        clusterBkg: "#1f2335",
+        clusterBorder: "#565f89",
+        titleColor: "#c0caf5"
+      }
+    });
+    await mermaid.run();
+  }
+</script>
+
+
+<script>
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        if (document.body.className.includes("dark")) {
+            document.body.classList.remove('dark');
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            document.body.classList.add('dark');
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+<script>
+    document.querySelectorAll('pre > code').forEach((codeblock) => {
+        const container = codeblock.parentNode.parentNode;
+
+        const copybutton = document.createElement('button');
+        copybutton.classList.add('copy-code');
+        copybutton.innerHTML = 'コピー';
+
+        function copyingDone() {
+            copybutton.innerHTML = 'コピーされました!';
+            setTimeout(() => {
+                copybutton.innerHTML = 'コピー';
+            }, 2000);
+        }
+
+        copybutton.addEventListener('click', (cb) => {
+            if ('clipboard' in navigator) {
+                navigator.clipboard.writeText(codeblock.textContent);
+                copyingDone();
+                return;
+            }
+
+            const range = document.createRange();
+            range.selectNodeContents(codeblock);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            try {
+                document.execCommand('copy');
+                copyingDone();
+            } catch (e) { };
+            selection.removeRange(range);
+        });
+
+        if (container.classList.contains("highlight")) {
+            container.appendChild(copybutton);
+        } else if (container.parentNode.firstChild == container) {
+            
+        } else if (codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.nodeName == "TABLE") {
+            
+            codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.appendChild(copybutton);
+        } else {
+            
+            codeblock.parentNode.appendChild(copybutton);
+        }
+    });
+</script>
+</body>
+
+</html>
