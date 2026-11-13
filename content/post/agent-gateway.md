@@ -16,26 +16,6 @@ https://github.com/jedipunkz/agent-gateway-playground
 
 検証したバージョンは agentgateway v1.7.0、[a2a-go](https://github.com/a2aproject/a2a-go) v2.8.0 (A2A v1.0)、[MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) v1.8.0 です。環境は Linux で、Docker は使っていません。
 
-## 用語集
-
-この記事に出てくる用語のうち、まだ馴染みが薄そうなものをまとめておきます。
-
-| 用語 | 説明 |
-|---|---|
-| A2A (Agent2Agent Protocol) | AI エージェント同士が通信するためのオープンなプロトコル。Google が提唱し、仕様と各言語の SDK が [a2aproject](https://github.com/a2aproject) で公開されています。この記事では v1.0 を使います |
-| Agent Card | A2A のエージェントが「自分は何者で、どこにどう話しかければよいか」を書いて公開する JSON。`/.well-known/agent-card.json` に置かれ、名前・できること (skill)・呼び出し先の URL・必要な認証方式などが入ります。client は最初にこれを取得してからメッセージを送ります |
-| context ID | A2A で 1 つの会話を表す ID。同じ会話の中の複数回のやりとりを束ねるのに使います |
-| MCP (Model Context Protocol) | AI エージェントが外部の tool やデータにアクセスするためのプロトコル。tool を提供する側を MCP server と呼び、エージェントは `tools/list` で tool の一覧を取得し、`tools/call` で呼び出します |
-| multiplex | agentgateway の機能で、複数の MCP server を 1 つの MCP server に見せるもの。束ねる MCP server ごとに target という名前を付け、束ねた後の tool 名は `<target 名>_<tool 名>` の形になります |
-| JSON-RPC | JSON で「メソッド名と引数」を送り、結果を受け取る RPC の形式。MCP と A2A はどちらもこの形式でやりとりするので、HTTP のパスだけでは何を呼んだのかが分かりません |
-| JWT の claim | JWT (署名付きのトークン) に入っている「誰か」「どの権限か」などの情報。この記事では `sub` (利用者) と、独自に追加した `role` (権限) を使います |
-| CEL (Common Expression Language) | Google が作った小さな式言語。`jwt.role == "operator" && mcp.tool.name == "restart_service"` のような条件を 1 行で書いて評価します。ループや副作用が無く必ず短時間で終わるので、リクエストごとの判定に向いています。Kubernetes の ValidatingAdmissionPolicy でも使われています |
-| guardrail | エージェントの入出力を検査して、危険なものを拒否したり書き換えたりする仕組み。agentgateway では MCP のリクエストやレスポンスに対して CEL の条件で設定できます |
-| token (LLM) | LLM が文章を処理する単位。単語や文字のかけらに相当し、LLM API の課金や利用上限は token 数で決まります |
-| bucket (rate limit) | rate limit で使用量を数える入れ物。「team ごとに 1 つ」のように分けておくと、ある team が上限に達しても別の team には影響しません |
-| OTLP | OpenTelemetry の telemetry (trace・metrics・log) を送るためのプロトコル。この記事では HTTP 版 (OTLP/HTTP) を使います |
-| traceparent | 分散 trace で、リクエストがどの trace のどの span から来たかを次のサービスに伝える HTTP ヘッダ。各サービスがこれを引き継ぐと、サービスをまたいだ処理が 1 本の trace になります |
-| GenAI semantic conventions | OpenTelemetry が定めている、生成 AI 向けの telemetry の名前の付け方。たとえば入力 token 数は `gen_ai.usage.input_tokens` という名前で記録します。詳しくは [以前の記事](/post/otel-genai-agents/) にまとめました |
 
 ## Agent Gateway とは
 
