@@ -8,27 +8,13 @@ draft: true
 ---
 こんにちは。[ジェダイパンくず🍞](https://x.com/jedipunkz) です。
 
-以前の記事 [NVIDIA OpenShell を使った AI Agent 環境のガードレイル策](/post/openshell/) ではエージェントが外部と通信する経路をサンドボックスで絞り、[OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上](/post/otel-genai-agents/) ではエージェントごとの telemetry を 1 つの backend に集めました。どちらもエージェント 1 体を単位にした話でしたが、エージェントが別のエージェントを呼び、MCP server の tool を呼び、LLM を呼ぶ構成になると、その間を流れるトラフィックをどこで認可し、どこで制限し、どこで観測するのかが気になってきます。
+今年 (2026 年) は、「エージェントの通信をまとめて扱う gateway」が製品カテゴリとして立ち上がってきました。Kong は 4 月に AI Gateway 3.14 で Agent-to-Agent (A2A) のトラフィックに対応し、API7 は 8 月に A2A 1.0 を gateway でどう扱うかの記事を公開し、Maxim も 10 月に自社の Bifrost へ Agent Gateway を追加しています。そこで今回は OSS の [agentgateway](https://github.com/agentgateway/agentgateway) を使って、A2A・MCP・LLM の 3 種類のトラフィックを 1 つの gateway に通すサンプル環境を作り、手を動かしてみました。
 
-今年 (2026 年) は、この「エージェントの通信をまとめて扱う gateway」が製品カテゴリとして立ち上がってきました。Kong は 4 月に AI Gateway 3.14 で Agent-to-Agent (A2A) のトラフィックに対応し、API7 は 8 月に A2A 1.0 を gateway でどう扱うかの記事を公開し、Maxim も 10 月に自社の Bifrost へ Agent Gateway を追加しています。そこで今回は OSS の [agentgateway](https://github.com/agentgateway/agentgateway) を使って、A2A・MCP・LLM の 3 種類のトラフィックを 1 つの gateway に通すサンプル環境を作り、手を動かしてみました。
-
-コードは下記に置いてあります。
+動作確認のために書いたコードは下記に置いてあります。
 
 https://github.com/jedipunkz/agent-gateway-playground
 
-検証したバージョンは agentgateway v1.7.0、[a2a-go](https://github.com/a2aproject/a2a-go) v2.8.0 (A2A v1.0)、[MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) v1.8.0 です。環境は Linux (WSL2) で、Docker は使っていません。
-
-## 結論
-
-| 試したこと | 結果 |
-|---|---|
-| A2A エージェントを gateway の配下に並べる | Agent Card の URL が gateway の URL に書き換わり、以降の呼び出しも gateway を通る。ログに A2A のメソッド名や context ID が出る |
-| MCP server 2 つを 1 endpoint に束ね、JWT で tool を絞る | 許可されない tool は `tools/list` から消え、呼んでも拒否される。ただし認可ルールでは tool の引数を参照できない |
-| tool の引数を見て拒否する | `mcpGuardrails` の expression で書ける。`restart_service` の対象が `payments` のときだけ拒否できた |
-| LLM に API key 認証と token rate limit をかける | key なしは 401、team ごとの token 上限を超えると 429。token は後から差し引かれるようで、上限を 1 リクエスト分超えて通る |
-| エージェントをまたいだ trace | client → planner → worker → MCP / LLM が gateway の span を挟んで 1 本の trace になった (39 span) |
-
-エージェントの通信をすべて gateway に通せば、「誰が・どのエージェントや tool を・どの引数で呼んだか」を 1 か所で判定し、同じ形式のログと trace に残せます。これが agentgateway を使う一番の価値だと感じました。一方で、認可ルールで引数を参照できないことや、設定ファイルへの自動書き込みなど、ドキュメントを読むだけでは分からない挙動もいくつかありました。
+検証したバージョンは agentgateway v1.7.0、[a2a-go](https://github.com/a2aproject/a2a-go) v2.8.0 (A2A v1.0)、[MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) v1.8.0 です。環境は Linux で、Docker は使っていません。
 
 ## Agent Gateway とは
 
@@ -55,7 +41,7 @@ AI エージェントが外とやりとりする通信は、大きく次の 3 �
 
 ## サンプル環境の構成
 
-エージェント、MCP server、LLM はすべて Go で書いた小さな偽物です。LLM は OpenAI 互換の API で応答するだけの fake LLM なので、API key は要りません。
+エージェント、MCP server、LLM はすべて Go で書きました。LLM は OpenAI 互換の API で応答する fake LLM です。
 
 ```mermaid
 flowchart LR
@@ -80,15 +66,15 @@ planner は受け取ったメッセージを worker に転送するだけのエ�
 
 | パス | 内容 |
 |---|---|
-| `cmd/agent` | A2A v1.0 (JSON-RPC) エージェント。`-peer` で転送役、`-mcp` / `-llm` で tool と LLM を呼ぶ役になる。`-send` で client として動く |
-| `cmd/mcpserver` | Streamable HTTP の MCP server。`-name docs` は `search_docs`、`-name ops` は `get_status` / `restart_service` を提供する |
+| `cmd/agent` | A2A v1.0 (JSON-RPC) エージェント。`-peer` で転送役、`-mcp` / `-llm` で tool と LLM を呼ぶ。`-send` で client として動く |
+| `cmd/mcpserver` | Streamable HTTP の MCP server |
 | `cmd/fakellm` | OpenAI 互換の `/v1/chat/completions` を返す fake LLM |
 | `cmd/jwt` | シナリオ用の ES256 鍵と JWT を作る |
 | `cmd/mcpcall` | MCP の `tools/list` と `tools/call` を行う client |
 | `cmd/traceview` | OTLP/HTTP で受けた span をツリー表示する簡易 backend |
 | `scenarios/` | シナリオごとの gateway 設定と実行スクリプト |
 
-agentgateway は GitHub Releases のバイナリをそのまま使います。`scripts/setup.sh` がバイナリの取得 (sha256 の検証付き) と Go のビルドを行い、各シナリオは `run.sh` を実行するだけで再現できます。
+agentgateway は GitHub Releases のバイナリをそのまま使います。`scripts/setup.sh` がバイナリの取得と Go のビルドを行い、各シナリオは `run.sh` を実行するだけで再現できます。
 
 ```sh
 ./scripts/setup.sh
@@ -112,11 +98,11 @@ gateways:
     bindAddress: 127.0.0.1
 ```
 
-`config.session.key` はセッション ID の暗号化に使う鍵で、未指定のまま起動すると agentgateway が鍵を生成して設定ファイルに追記します (`--validate-only` では書き込まれません)。気付かずに commit すると鍵がリポジトリに入ります。値に `$SESSION_KEY` と書けば環境変数から読まれ、ファイルは書き換えられません。環境変数が無い場合は起動時にエラーになります。
+`config.session.key` はセッション ID の暗号化に使う鍵で、未指定のまま起動すると agentgateway が鍵を生成して設定ファイルに追記します。気付かずに commit すると鍵がリポジトリに入るので注意が必要です。値に `$SESSION_KEY` と書けば環境変数から読まれます。環境変数が無い場合は起動時にエラーになります。
 
 ## シナリオ 01: A2A エージェントを gateway の配下に並べる
 
-planner と worker の 2 体を、1 つの gateway (`:3000`) の配下に `/planner` と `/worker` のパスで並べます。route に `a2a: {}` を付けると、その route は A2A のトラフィックとして扱われます。
+planner と worker の 2 体を、1 つの gateway の配下に `/planner` と `/worker` のパスで並べます。route に `a2a: {}` を付けると、その route は A2A のトラフィックとして扱われます。
 
 ```yaml
 routes:
@@ -199,7 +185,7 @@ $ bin/agent -name client -send http://127.0.0.1:3000/planner "checkout"
 [planner] [worker] received "checkout"
 ```
 
-gateway のアクセスログです (読みやすいように一部の項目を削っています)。
+gateway のアクセスログです (一部抜粋しています)。
 
 ```plain
 route=default/planner http.method=GET http.path=/planner/.well-known/agent-card.json http.status=200 protocol=a2a duration=0ms
@@ -208,7 +194,7 @@ route=default/worker http.method=POST http.path=/worker/invoke http.status=200 p
 route=default/planner http.method=POST http.path=/planner/invoke http.status=200 protocol=a2a a2a.method=SendMessage a2a.response.outcome=success a2a.result.kind=message a2a.context.id=01a1d56f-d37a-7a99-b1f4-4f1d5f1237de duration=1ms
 ```
 
-`a2a.method=SendMessage` が A2A v1.0 のメソッド名です (v0.3 では `message/send`)。返事の種類 (`message` か `task`)、task の状態、エラーコード、context ID もログに出ます。
+`a2a.method=SendMessage` が A2A v1.0 のメソッド名です (v0.3 では `message/send`)。応答の種類 (`message` か `task`)、task の状態、エラーコード、context ID もログに出ます。
 
 ただし context ID は planner と worker で別の値になっています。A2A の context ID は会話の単位で、planner が worker に新しいメッセージを送ると、worker 側では別の会話として扱われるためです。エージェントをまたいで 1 つのリクエストを追うには、後述のシナリオ 04 の trace を使います。
 
@@ -271,7 +257,7 @@ tool: ops_restart_service
 result (isError=false): checkout: restarted
 ```
 
-viewer の `tools/list` には `ops_restart_service` が出てきません。許可されない tool は一覧から消えるので、エージェント (の LLM) はそもそも呼べる tool として認識しません。それでも名前を指定して呼ぶと 400 で拒否されます。ログには誰が (`jwt.sub`) どの target のどの tool を呼んで、なぜ拒否されたのかが残ります。
+viewer の `tools/list` には `ops_restart_service` が出てきません。許可されない tool は一覧から消えるので、エージェントはそもそも呼べる tool として認識しません。それでも名前を指定して呼ぶと 400 で拒否されます。ログには誰が (`jwt.sub`) どの target のどの tool を呼んで、なぜ拒否されたのかが残ります。
 
 ```plain
 http.status=401 protocol=http error="authentication failure: no bearer token found" reason=JwtAuth
@@ -279,17 +265,8 @@ http.status=400 jwt.sub=alice protocol=mcp mcp.method.name=tools/call mcp.target
 http.status=200 jwt.sub=bob protocol=mcp mcp.method.name=tools/call mcp.target=ops mcp.resource.type=tool gen_ai.tool.name=restart_service
 ```
 
-### 認可ルールでは tool の引数を参照できない
 
-次に「operator でも `payments` の再起動はさせない」という、tool の引数を見たルールを足そうとしました。CEL のリファレンス (`schema/cel.md`) には `mcp.tool.arguments` という変数が載っているので、最初は認可ルールに書きました。
-
-```yaml
-- allow: 'jwt.role == "operator" && mcp.tool.name == "restart_service" && mcp.tool.arguments.service != "payments"'
-```
-
-ところがこのルールでは、operator の `tools/list` からも `ops_restart_service` が消え、`checkout` の再起動も拒否されました。`has(mcp.tool.arguments)` で存在を確認する書き方にすると、今度は `payments` の再起動も通ります。認可ルールの評価時には引数が渡されていないようです。実際に agentgateway のソース (`crates/agentgateway/src/mcp/rbac.rs`) を読むと、MCP の認可で使われる tool の情報は target 名と tool 名だけでした。v1.7.0 の時点では、`mcpAuthorization` で判定できるのは「どの tool か」までで、「どの引数か」は判定できません。
-
-### 引数を見た拒否は guardrail で書く
+### mcpGuardrails
 
 引数を見るには `mcpGuardrails` を使います。guardrail は MCP のリクエストやレスポンスを CEL 式で検査し、拒否 (`reject`) や書き換え (`transform`) ができる機能です。
 
@@ -318,10 +295,6 @@ http.status=200 jwt.sub=bob protocol=mcp mcp.method.name=tools/call mcp.target=o
 
 認可で拒否された場合は HTTP 400 になり、client 側では `tools/call` の呼び出し自体が失敗しました。一方、guardrail で拒否された場合は HTTP 200 で、tool の結果として `isError: true` とメッセージが返ります。エージェントから見ると「tool を呼んだら失敗した」という扱いになるので、LLM は理由を読んで別の手を考えられます。
 
-guardrail の式を書くときにも 2 点はまりました。
-
-- `mcp.params.name` に入っているのは target の prefix を外した tool 名 (`restart_service`) で、`ops_restart_service` と書くと一致しません。同じ名前の tool が別の target にあると両方に一致するので、`mcp.tool.target` で target を絞ります。
-- 最初は target を `mcp.target.name` で絞ろうとしました。この変数は guardrail では評価エラーになり、`payments` の呼び出しは `guardrail check failed` で拒否されました。一方、`checkout` の呼び出しは通りました。CEL の `&&` は片方が false なら、もう片方がエラーでも false を返すため、`service == "payments"` が false になる呼び出しではエラーが表に出ません。エラーのときに拒否側に倒れるのは安全ですが、式の誤りに気付きにくいです。
 
 ### prefix を付けずに tool を呼ぶと
 
@@ -487,4 +460,4 @@ trace からは multiplex のコストも見えます。worker は `ops_get_stat
 
 agentgateway を使って、A2A・MCP・LLM の 3 種類のトラフィックを 1 つの gateway に通してみました。Agent Card の書き換えでエージェント間の呼び出しを gateway に寄せられること、MCP の tool を JWT の claim で絞ると一覧からも消えること、LLM の token を team 単位で制限できること、そしてそれらがすべて同じ形式のログと 1 本の trace に残ることを確認できました。エージェントが増えても「誰が何を呼んだか」を 1 か所で答えられるのは、運用する側として安心材料になると感じました。
 
-一方で、認可ルールでは tool の引数を参照できず guardrail で補う必要があることや、CEL の変数が使える場所の違いなど、まだ発展途上の部分もありました。次は Kubernetes の Gateway API 経由で agentgateway を動かし、エージェントを Pod として並べたときに、迂回できない経路をどう作るかを試してみたいと思います。
+一方で、認可ルールでは tool の引数を参照できず guardrail で補う必要があることや、CEL の変数が使える場所の違いなど、まだ発展途上の部分もありました。
