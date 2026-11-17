@@ -69,13 +69,43 @@ PR の本数を見ると、エージェントを大量に並列で走らせて�
 
 読んでいて気づいたのは、58 本のうち 57 本の skill に `disable-model-invocation: true` が付いていることです。モデルが自分の判断でこれらを呼ぶことはなく、`/poteto-mode` が必要なファイルをパスで読みに行く作りになっているので、原則の skill だけを入れても動きません。
 
-単体で使える skill で気になったのは次のものです。
+ルーターと原則以外の skill は次の 33 本で、どれも `/<name>` で単体でも呼べます。
 
-- `/correct`: エージェントが繰り返す間違いを探し、アーキテクチャ、型、lint、テストの順に、できるだけ上の段で起きなくする。文章のルールは最後の手段。逆ピラミッドをそのまま skill にしたもの
-- `/create-verification-skill`: そのプロジェクト用の `verify-<app>` skill を作る
-- `/arena`: 同じタスクを複数のモデルに別々の worktree でやらせ、別のモデルに比べさせる
-- `/interrogate`: 複数のモデルで diff をレビューし、再現できた指摘だけを残す
-- `/no-comments`: Comment Sicko という subagent に不要なコメントを洗い出させる
+| skill | 内容 |
+|---|---|
+| `/architect` | 実装の前に型、シグネチャ、モジュール構成をスケッチし、実装中も設計を見続ける |
+| `/arena` | 同じタスクを複数の候補に並列でやらせ、土台を 1 つ選んで、他の候補の良い部分を取り込む |
+| `/automate-me` | 自分の作業の仕方を `<name>-mode` という個人用の skill にまとめる |
+| `/benchmark-checklist` | 計測した性能の数値を、報告したり判断に使ったりする前に検証する |
+| `/blast-radius` | 変更が diff の外で何を壊しうるかを探し、安全だと言える根拠を実際にコードを動かして示す |
+| `/bro` | 直前の発言を、専門用語を使わずに言い直す |
+| `/correct` | エージェントが繰り返す間違いを、アーキテクチャ、型、lint、テストの順に、できるだけ上の段で起きなくする。文章のルールは最後の手段 |
+| `/create-formal-verification-skill` | バグのコストが大きくテストが届きにくい箇所を形式検証する、プロジェクト用の skill を作る |
+| `/create-verification-skill` | ユーザーと同じようにアプリを操作して確かめる、プロジェクト用の `verify-<app>` skill を作る |
+| `/figure-it-out` | 合う playbook がない大きな作業のために、判断を記録しながら進める手順を組み立てる |
+| `/how` | サブシステムの仕組み、処理の流れ、コードの置き場所を説明する |
+| `/in-your-own-words` | ユーザーの目標と解きたい問題を、自分の言葉で言い直す |
+| `/interrogate` | 複数のモデルが変更や設計を壊そうとし、実行して証明できた指摘だけを残す |
+| `/ketchup` | 前回のメッセージ以降に変わったことと、ユーザーの判断待ちの項目をまとめる |
+| `/ketchup-video` | `/ketchup` の内容を字幕付きの短いスライド動画にする |
+| `/maintain-formal-verification-skill` | コードの変更に合わせて形式検証のモデルを直し、失敗が検証側のずれかコードのバグかを判定する |
+| `/maintain-verification-skill` | `verify-<app>` skill と Feature Map を、実際のアプリの挙動と定期的に突き合わせて直す |
+| `/make-bot-ui` | Grok Bot を webhook で起動するカスタム UI を作る |
+| `/no-comments` | Comment Sicko という subagent に不要なコメントを洗い出させ、採用した指摘を直す |
+| `/poteto-help` | pstack の導入方法や、タスクに合う skill、playbook、原則の選び方を案内する |
+| `/recall` | 過去のセッションや今の状態から、最近の作業の文脈を組み立て直す |
+| `/reflect` | セッションの記録から残すべき学びを抜き出し、既存の skill への修正案にする |
+| `/setup-pstack` | 役割ごとに使うモデルと推論の予算を設定する |
+| `/sharpen` | タスクを大きくせずに深くして、プロンプトを書き直す |
+| `/show-me-your-work` | 長時間の作業や無人の作業で、判断ごとに内容、理由、根拠、結果を TSV に記録する |
+| `/statechart` | 状態を持つシステムの TLA+ モデルを検査し、Mermaid の statechart として描く |
+| `/swarm` | 複数の worker に並列で仕事を振り、結果を 1 つの報告にまとめる |
+| `/tdd` | 失敗するテストから始める。頼まれたときか、安く書けるテストがあるときだけ使う |
+| `/teach` | `/how` と `/why` の結果をまとめて、仕組みと経緯を説明する |
+| `/technical-writing` | 技術文書、PR の説明、commit メッセージを書くときの文章の基準 |
+| `/typescript-best-practices` | TypeScript のファイルを読み書きするときのルール |
+| `/unslop` | 文章から AI っぽさを取り除く |
+| `/why` | なぜそうなっているかを、設計の経緯や過去の regression から出典付きで答える |
 
 Claude Code でも、README にある下記の手順でインストールできます。コマンドに接頭辞が付くので、入口は `/pstack:poteto-mode` になります。
 
@@ -88,6 +118,32 @@ Claude Code でも、README にある下記の手順でインストールでき�
 
 自分の [dotfiles](https://github.com/jedipunkz/dotfiles) にも pstack を取り込みました ([PR #350](https://github.com/jedipunkz/dotfiles/pull/350))。
 
+### 使い方
+
+dotfiles を clone して `setup.sh` を実行すると、`~/.claude/skills` と `~/.claude/agents` にリンクが張られます。Codex と Gemini は、同じディレクトリを指す `~/.agents/skills` から読みます。
+
+```sh
+git clone https://github.com/jedipunkz/dotfiles.git ~/dotfiles
+cd ~/dotfiles
+bash setup.sh --dry-run
+bash setup.sh
+```
+
+基本の入口は `/tachikoma <タスク>` です。
+
+```
+/tachikoma users API が id 未指定のとき 500 を返す。直して
+```
+
+こう頼むと、目標を言い直し、Bug fix の playbook を選び、再現、原因の絞り込み、修正、同じ環境での確認と進んでいきます。報告には、どの原則がどの判断に効いたかも書かれます。playbook は依頼の内容から `/tachikoma` が選ぶので、自分で指定する必要はありません。
+
+上の表の skill も、取り込まなかったもの (後述) を除いて `/correct` や `/create-verification-skill` のように直接呼べます。
+
+次の skill は、呼ばなくても場面に応じて使われます。
+
+- `systematic-debugging`、`test-driven-development`、`verification-before-completion`: デバッグ、テスト、完了報告の場面でモデルが自動で呼びます。中身は pstack の Bug fix の playbook、`tdd`、Prove It Works への誘導です
+- `go-best-practices`、`typescript-best-practices`、`terraform-best-practices`: `/tachikoma` がそれぞれの言語のコードを扱うときに読みます
+
 ### plugin ではなくファイルをコピーした
 
 Claude Code 向けの plugin はあるのですが、plugin として入れると Claude Code からしか使えません。自分の dotfiles では skill を `~/.claude/skills/` の 1 か所に置いて、Claude Code、Codex、Gemini で同じファイルを読ませているので、pstack の skill をファイルごとコピーしました (MIT ライセンスなので著作権表示を同梱しています)。
@@ -96,13 +152,7 @@ Claude Code 向けの plugin はあるのですが、plugin として入れる�
 
 ### ルーターを /tachikoma にした
 
-前述のとおり、pstack はルーターがないと動かないので、`poteto-mode` を中心に据えて `/tachikoma` という名前に変えました。使い方は下記のような感じです。
-
-```
-/tachikoma users API が id 未指定のとき 500 を返す。直して
-```
-
-こう頼むと、目標を言い直し、Bug fix の playbook を選び、再現、原因の絞り込み、修正、同じ環境での確認と進んでいきます。報告には、どの原則がどの判断に効いたかも書かれます。
+前述のとおり、pstack はルーターがないと動かないので、`poteto-mode` を中心に据えて `/tachikoma` という名前に変えました。
 
 pstack は「元に戻せる作業は確認せずに進める」方針 (原則の Never Block on the Human) なのですが、自分のグローバルの CLAUDE.md には「迷ったら確認する」と書いています。ここは `/tachikoma` を使っているときだけ pstack の方針に従うようにしました。force push や deploy、データ削除の前では止まります。
 
@@ -112,7 +162,7 @@ pstack の本文には `Task` ツールやモデルの slug、Bugbot など、Cu
 
 ただ、対応表は `/tachikoma` を経由したときにしか読まれないので、`/create-verification-skill` などを直接呼ぶと、Cursor のパスのまま `.cursor/skills/` に書き出してしまいます。そのため、単体で呼べる skill の冒頭に「Claude Code では先に対応表を読む」という 1 行を足しました。
 
-Bugbot やクラウドエージェント、iOS シミュレータが前提の playbook (Babysit、Shipping、Autopilot など 7 本) は取り込んでいません。
+Bugbot やクラウドエージェント、iOS シミュレータが前提の playbook (Babysit、Shipping、Autopilot など 7 本) は取り込んでいません。skill では、pstack 自体の設定や案内のための `/setup-pstack` と `/poteto-help`、Grok Bot や Cursor が前提の `/make-bot-ui`、`/automate-me`、`/ketchup-video`、普段の作業では使う機会が少ない `/statechart` と形式検証の 2 本を外しました。
 
 ### Go と Terraform のルールを足した
 
@@ -120,27 +170,9 @@ pstack には TypeScript 用の `typescript-best-practices` しかないので�
 
 どちらにも「新しいルールは golangci-lint (`forbidigo`、`depguard` など) や tflint に入れ、エラーメッセージに代わりの書き方を書く」という行を入れています。逆ピラミッドの考え方を、自分がよく書く言語に当てはめたものです。
 
-なお、Claude Code では `/tachikoma` がルーターとして動くところまで確認しましたが、Codex と Gemini から `$tachikoma` で呼んだときの動きはまだ確かめていません。
-
-## 自分たちの現場で真似できそうなこと
-
-自分たちの現場は Google Cloud、AWS、Datadog の構成で、Grokbot のチームほどのトークンの予算はありません。それでも真似できそうだと思ったのは次の 3 つです。
-
-1. CLAUDE.md / AGENTS.md に 1 行足したくなったら、先に lint や CI で書けないか考える。ESLint の `no-restricted-syntax`、golangci-lint の `forbidigo`、tflint や Conftest など、エラーメッセージを書ける道具は既にあります。`/correct` を使えば、既存のルールの棚卸しから始められます
-2. リポジトリごとに `verify-<app>` skill を作り、完了と言う前に必ず実行させる。API サーバーなら実際にリクエストを投げてレスポンスを見る、Terraform なら `terraform plan` の差分に意図しない削除や作り直しがないか確かめる、といった形になると思います
-3. バグ修正は、再現してから直させる
-
-逆に、トークンの約 70% を検証に回すことや、`/arena` のように複数モデルを毎回走らせることはそのままは無理なので、認証や課金、データ削除、インフラのようにリスクの高い変更に絞って使うことになりそうです。本人も「トークンが無制限の AI ラボで働いている」と前置きしたうえで、自分のやり方をそのまま真似しないよう話していました。自動マージも、検証の仕組みを信用できるようになるまでは手を出さないほうが良さそうです。
-
-## まとめ
-
-Lauren Tan 氏の AI コーディングの方法と pstack について調べ、自分の dotfiles に取り込んでみました。月に数千本という数字の裏でやっていたのは、エージェントが間違えにくいコードベースを作ることと、間違えたらすぐ分かる検証の仕組みを作ることでした。
-
-トークンの予算は違っても、「プロンプトにルールを足さず、lint や型で強制する」はすぐに始められます。まずは手元のリポジトリで `/correct` から試してみようと思います。
-
 ## 参考
 
-- [cursor/plugins の pstack (commit 2f87c854fe3e)](https://github.com/cursor/plugins/tree/2f87c854fe3e/pstack)
+- [cursor/plugins の pstack](https://github.com/cursor/plugins/tree/main/pstack)
 - [BigGo: AI Engineer カンファレンスでの講演のまとめ](https://finance.biggo.com/news/5a6129233f489c0e)
 - [Superbash: ワークショップ動画の検証記事](https://www.superbash.ai/articles/lauren-tan-ai-coding-agents-trust-curve/)
 - [The Neuron: pstack の解説](https://www.theneuron.ai/explainer-articles/pstack-explained-lauren-tans-system-for-trustworthy-ai-agents/)
