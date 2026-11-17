@@ -120,15 +120,6 @@ Claude Code でも、README にある下記の手順でインストールでき�
 
 ### 使い方
 
-dotfiles を clone して `setup.sh` を実行すると、`~/.claude/skills` と `~/.claude/agents` にリンクが張られます。Codex と Gemini は、同じディレクトリを指す `~/.agents/skills` から読みます。
-
-```sh
-git clone https://github.com/jedipunkz/dotfiles.git ~/dotfiles
-cd ~/dotfiles
-bash setup.sh --dry-run
-bash setup.sh
-```
-
 基本の入口は `/tachikoma <タスク>` です。
 
 ```
