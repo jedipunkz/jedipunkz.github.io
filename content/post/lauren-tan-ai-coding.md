@@ -385,15 +385,94 @@ Feature Map も、フロントエンドに限らず作れそうです。API サ�
 - TLA+ や Lean: 書くコストはエージェントで下がっても、モデルが正しいかを人間が判断するコストは残ります。分散ロックやジョブの重複実行のように、実際に事故が起きた箇所から試すのが良さそうです。
 - 自動マージ: 検証の仕組みが信用できるようになる前に真似すると事故になります。本人も「並列化は信頼の後」と言っているとおり、ここは最後に考えるものです。
 
+---
+
+## 自分の dotfiles に取り込んだ
+
+前の章で考えたことを、自分の [dotfiles](https://github.com/jedipunkz/dotfiles) に実際に取り込みました ([PR #350](https://github.com/jedipunkz/dotfiles/pull/350))。変更の概要は次のとおりです。
+
+| 対象 | 内容 |
+|---|---|
+| pstack の skill 49 本と `comment-sicko` | `cursor/plugins@2f87c854fe3e` から原文のまま `.claude/skills/` と `.claude/agents/` にコピーし、MIT の著作権表示を `PSTACK_NOTICE.md` に置いた |
+| `poteto-mode` と `poteto-agent` | `tachikoma` と `tachikoma-agent` に名前を変え、Claude Code 向けに書き換えた |
+| `go-best-practices`、`terraform-best-practices` | 自作。pstack の `typescript-best-practices` と同じ表形式 |
+| 既存の `systematic-debugging`、`test-driven-development`、`verification-before-completion` | 本文を、pstack の Bug fix の playbook、`tdd`、Prove It Works への誘導に置き換えた |
+
+### plugin で入れずにコピーした理由
+
+Claude Code には公式のインストール手順がありますが、plugin として入れると Claude Code からしか見えません。私の dotfiles は skill の実体を `~/.claude/skills/` の 1 か所に置き、Claude Code、Codex、Gemini が同じファイルを読む構成なので、ファイルをコピーしました。
+
+書き直さずに原文のままコピーしたのは、設計の練度を落とさないためと、upstream の更新を差分で取り込めるようにするためです。最初の commit を原文そのままにし、改変は後続の commit に分けました。最初の commit から `HEAD` までの差分を見れば、upstream から何を変えたかだけが分かります。
+
+### ルーターを中心に据える
+
+前述のとおり、pstack の skill はほとんどが `disable-model-invocation: true` です。原則の skill だけをコピーしても、モデルがそれを呼ぶことはありません。そこでルーターの `poteto-mode` を中心に据え、`/tachikoma` という名前にしました。
+
+```
+/tachikoma users API が id 未指定のとき 500 を返す。直して
+```
+
+と頼むと、次の順に進みます。
+
+1. 目標と、それを満たす最小の変更を言い直す
+2. 依頼の種類から playbook を選ぶ (この例では Bug fix)
+3. playbook の手順を todo に写す
+4. 必要な原則の skill を読んで適用する
+5. 必要なら `tachikoma-agent` や言語別の writer / reviewer の subagent に任せる
+6. 実物で確かめてから報告する。報告には、どの原則がどの判断を変えたかを書く
+
+pstack の Never Block on the Human に合わせて、元に戻せる作業は確認せずに進めます。ただしこの方針は `/tachikoma` の中だけに効かせ、グローバルの CLAUDE.md にある「迷ったら確認する」というルールは変えていません。force push、deploy、データ削除、外部への送信の前では止まります。
+
+### Cursor 固有の部分を読み替える
+
+pstack の本文には、`Task` ツール、`subagent_type`、モデルの slug、Bugbot、cloud agent、`/loop` といった Cursor の語彙が出てきます。読み替えは自分で書かず、pstack に同梱されている Claude Code 用の対応表を `tachikoma/references/claude-code.md` に移して使っています。対応表への改変は、パスの定義、agent 名、`setup-pstack` を入れていない場合の扱いだけです。
+
+ただし、この対応表は `/tachikoma` を経由したときにしか読まれません。`/create-verification-skill` などを直接呼ぶと、Cursor のパスのまま `.cursor/skills/` に書き出してしまいます。そこで、単体で呼べる skill の冒頭に「Claude Code では先に `../tachikoma/references/claude-code.md` を読む」という 1 行を足しました。
+
+`tachikoma` の本文でも、Cursor にしかないものを次のように置き換えています。
+
+| 元の記述 | 置き換え後 | 理由 |
+|---|---|---|
+| `cursor-team-kit` の `/deslop` | リポジトリの formatter と linter | Cursor の plugin がないため |
+| `control-ui` / `control-cli` | プロジェクトの `verify-<app>` skill | 同上 |
+| PR の見出しと形式 | 自分の commit と PR のルール | PR のテンプレートは自分のルールを優先するため |
+| `unslop` / `technical-writing` を常に適用 | 英語の文章だけに適用 | 日本語の文章は自分の文体ルールに従わせるため |
+| `tachikoma-agent` のモデルの slug | `opus` | Claude Code の Agent ツールが Cursor の slug を受け付けないため |
+
+あわせて、subagent が Go、TypeScript、Terraform、shell のファイルを編集したら、言語別の reviewer agent に diff を見せてから受け取る、という条件を足しました。
+
+### 取り込まなかったもの
+
+| 対象 | 理由 |
+|---|---|
+| playbook 7 本 (Visual parity、Eval、Babysit、Shipping、Autopilot-full、Autopilot-stack、Worktree cleanup) | Bugbot、cloud agent、iOS シミュレータ、複数ベンダーのモデルの panel が前提のため |
+| `setup-pstack`、`poteto-help` | pstack 自体の設定と案内のため |
+| `make-bot-ui`、Benny | Grokbot、Cursor Automations、Slack 連携が前提のため |
+| `automate-me`、`ketchup-video` | Cursor のセッション記録や動画の生成が前提のため |
+| `statechart`、形式検証の skill 2 本 | TLA+ と Lean は、Go、TypeScript、Terraform の日常の作業では使う機会が少ないため保留 |
+
+### Go と Terraform のルールを足す
+
+pstack には `typescript-best-practices` しかないので、同じ表形式で Go 版と Terraform 版を書きました。原則の Type System Discipline、Boundary Discipline、Make Operations Idempotent を、各言語の書き方に落としたものです。
+
+| 言語 | 主なルール |
+|---|---|
+| Go | 意味を持つ primitive は named type にする。境界で parse する。閉じた列挙は `exhaustive` linter で網羅を強制する。エラーは `errors.Is` / `errors.As` で判定する。越えてはいけない import は `internal/` で遮断する |
+| Terraform | 入力は `validation` で境界で検査する。前提は `precondition` で表明する。リネームは `moved` / `removed` で行う。再実行したら差分 0 になるようにする。`terraform plan -out` と `terraform show -json` の結果を完了の証拠にする |
+
+どちらにも「新しいルールは golangci-lint (`forbidigo`、`depguard`、`exhaustive`) や tflint に入れ、エラーメッセージに代わりの書き方を書く」という行を入れました。逆ピラミッドの考え方を、言語ごとの具体的な置き場所に落としたものです。
+
+### 確認できたことと未確認のこと
+
+Claude Code では、`claude -p "/tachikoma ..."` を実行すると、ルーターが Investigation の playbook を選び、対応表を読むところまで確認しました。Codex と Gemini から `$tachikoma` で呼んだときの動きと、両者が `disable-model-invocation` をどう扱うかは未確認です。
+
 ### 最初の一歩
 
-自分ならこの順番で試します。
+新しいリポジトリで使い始めるときは、次の順に進めます。
 
-1. CLAUDE.md / AGENTS.md を読み直し、機械的にチェックできるルールを lint や CI に移して、文章からは消す
-2. よく使うリポジトリに `verify-<app>` 相当の skill を 1 つ作り、「完了と言う前に必ずこれを実行する」と決める
-3. バグ修正の依頼の書き方を「言い直す → 再現する → 直す → 確かめる」の 4 段に固定する
-
-どれも新しい道具を入れなくても、今の Claude Code だけで始められます。
+1. `/correct` で、エージェントが繰り返している間違いを lint、型、CI に移し、CLAUDE.md / AGENTS.md の文章からは消す
+2. `/create-verification-skill` でそのリポジトリ用の `verify-<app>` skill を作り、完了と言う前に必ず実行させる
+3. バグ修正は `/tachikoma` に頼み、Bug fix の playbook (再現する → 原因を絞り込む → 直す → 同じ環境で確かめる) に乗せる
 
 ## まとめ
 
