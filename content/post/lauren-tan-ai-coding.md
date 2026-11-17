@@ -4,7 +4,7 @@ description: "月に数千本の PR をエージェントに書かせている L
 date: 2026-11-17T12:00:00+09:00
 tags: ["AI Coding", "Coding Agent", "Claude Code", "Cursor", "pstack"]
 categories: ["AI", "Development"]
-draft: true
+draft: false
 ---
 こんにちは。[ジェダイパンくず🍞](https://x.com/jedipunkz) です。
 
