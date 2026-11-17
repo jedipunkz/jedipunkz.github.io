@@ -14,26 +14,20 @@ draft: false
 
 以前 [Claude Agent SDK](/post/claude-agent-sdk/) や [zellij で Claude Code を並列に動かす話](/post/zellij-swarm-claude-code/) を書きましたが、今回は道具の話ではなく、エージェントにコードを書かせる側の「仕組みの作り方」の話です。
 
-## 情報源と注意点
-
-先に断っておくと、本記事は一次情報を直接確認できた範囲が狭いです。本人の X のスレッド (pstack guide Part 1 / Part 2) は取得できず、講演とワークショップの動画も私は視聴していません。以下の二次情報を突き合わせて書いています。
+## 情報源
 
 | 情報源 | 内容 | 日付 |
 |---|---|---|
+| [cursor/plugins の pstack](https://github.com/cursor/plugins/tree/2f87c854fe3e/pstack) | pstack 本体。本記事の skill・playbook・原則の数と一覧、モデルの既定値はこの commit を基準にしている | 2026-11-16 |
 | [BigGo の記事](https://finance.biggo.com/news/5a6129233f489c0e) | AI Engineer カンファレンスでの発言のまとめ。逆ピラミッド、禁止事項、検証、数値 | 2026-11-14 |
 | [Superbash の記事](https://www.superbash.ai/articles/lauren-tan-ai-coding-agents-trust-curve/) | X で拡散した 57 分のワークショップ動画の検証記事。強制の 5 層、control-glass、eval | 2026-10-28 |
 | [The Neuron の記事](https://www.theneuron.ai/explainer-articles/pstack-explained-lauren-tans-system-for-trustworthy-ai-agents/) | 本人の X スレッド「pstack guide」の解説 | 2026-09-10 |
-| [Flavio Copes の pstack 解説](https://flaviocopes.com/pstack.md) と [poteto-mode 解説](https://flaviocopes.com/poteto-mode.md) | pstack の skill・playbook・原則の一覧 | 2026-08〜10 |
+| [Flavio Copes の pstack 解説](https://flaviocopes.com/pstack.md) と [poteto-mode 解説](https://flaviocopes.com/poteto-mode.md) | pstack の使い方と、2026 年 8〜10 月時点の構成 | 2026-08〜10 |
 
-pstack 本体は [cursor/plugins の pstack ディレクトリ](https://github.com/cursor/plugins/tree/main/pstack) で公開されています。
+数値を読むときの注意が 2 点あります。
 
-二次記事どうしで食い違っている点もあります。
-
-- 所属: ワークショップ動画の画面表示は「Software engineer | SpaceXAI」、BigGo は「SpaceXSI の Grokbot チーム」と書いています。本記事では「Grokbot (Electron 製のデスクトップアプリ) を開発しているチームのエンジニア」とだけ書きます。
-- 個人の PR 数: 記事によって「月約 2,000 本」「8 月に 2,462 本」「先月約 1,000 本」「前月 3,000 本」とばらばらです。期間も数え方も違うので、合計したり比べたりしないでください。
+- 本人の月間 PR 数は、記事によって「月約 2,000 本」「8 月に 2,462 本」「先月約 1,000 本」「前月 3,000 本」と異なります。期間も数え方も違うので、比べたり合計したりはできません。
 - 拡散した動画に付いていた「50 体のエージェントで 20 人分の仕事」「採用率 97%」「75 万ドル以上のオファー」などのキャプションは、Superbash の検証によると動画の中では話されていません。
-
-もう 1 点。本人も「トークンが無制限の AI ラボで働いている」と前置きしたうえで、自分のトークンの使い方をそのまま真似しないよう注意しています。この前提は最後の章でもう一度扱います。
 
 ---
 
@@ -174,34 +168,41 @@ Cursor の `/loop` で「この eval を回し続けて」と指示し、10/10 �
 
 ## pstack: 方法を skill にまとめたもの
 
-ここまでの方法は、pstack という Cursor 向けのプラグインにまとめて公開されています。SKILL.md 形式なので Claude Code や Codex でも読み込めます。Flavio Copes の解説によると、2026 年 8〜9 月時点の構成は次のとおりです。
+ここまでの方法は、pstack という Cursor 向けのプラグインにまとめて公開されています。2026-11-16 時点 (commit `2f87c854fe3e`) の構成は次のとおりです。
 
-- workflow skill 24 個
-- エンジニアリングの原則 23 個
-- task playbook 22 個 (内部用の「Opening a PR」を含めると 23 個)
-- subagent 2 個
-- 補助プログラム
-- 任意で使う automation pack (Benny)
+| 種類 | 数 | 中身 |
+|---|---|---|
+| skill | 58 | うち原則 (`principle-*`) が 24、ルーターの `poteto-mode` が 1 |
+| playbook | 22 | `poteto-mode/playbooks/` の下にある、タスクの種類ごとの手順書 |
+| subagent | 2 | `poteto-agent`、`comment-sicko` |
+| automation | - | Benny など。`automations/` の下にある |
 
 The Neuron の記事によると、Cursor 社内ではこの skill 群が 1 週間で 10,000 回使われたそうです (Flavio Copes の記事では 9,000 回)。
 
 ### 入口は /poteto-mode
 
-使い方は `/poteto-mode <タスク>` だけです。`/poteto-mode` はルーターとして次のことをします。
+58 本の skill のうち 57 本には `disable-model-invocation: true` が付いています。モデルが自分の判断でこれらの skill を呼ぶことはなく、ルーターの `/poteto-mode` が playbook と原則のファイルをパスで読みに行く構造です。使い方は `/poteto-mode <タスク>` だけで、`/poteto-mode` は次のことをします。
 
 1. タスクの種類に合う playbook を選ぶ
 2. playbook の手順をタスクリストにコピーする
-3. 必要な skill を呼ぶ
+3. 必要な skill を読む
 4. subagent に仕事を振る
 5. 最後に検証を要求する
 
 Cursor では次の手順で導入します。
 
 1. Cursor のチャットで `/add-plugin pstack` を実行する
-2. `/setup-pstack` を実行する (`~/.cursor/rules/pstack-models.mdc` にモデルの割り当てが書かれる)
+2. `/setup-pstack` を実行し、推論の予算と使うモデルを選ぶ (`~/.cursor/rules/pstack-models.mdc` に書かれる)
 3. 新しいチャットを開いて `/poteto-mode <タスク>` を実行する
 
-Claude Code 向けには Michael Denyer 氏による非公式の移植版があり、`/plugin marketplace add michael-denyer/pstack-claude` と `/plugin install pstack@pstack-claude` で入ります。ただし非公式の移植版の中には、PR のコメントのような外部の入力を読むことや、権限確認を飛ばす指示が含まれていることを指摘されたものもあります。入れる前に中身を読んだほうが良いです。
+Claude Code にも README に公式の手順があります。
+
+```
+/plugin marketplace add cursor/plugins
+/plugin install pstack@cursor-plugins
+```
+
+Claude Code ではプラグインのコマンドに接頭辞が付くので、入口は `/pstack:poteto-mode` になります。`Task` ツールやモデルの slug のような Cursor 固有の名前は、同梱の [Claude Code 用の対応表](https://github.com/cursor/plugins/blob/2f87c854fe3e/pstack/docs/harness/claude-code.md) で読み替えます。Bugbot や Automations のように Cursor にしかない機能を使う手順は、1 行の注記を出して飛ばします。サードパーティの marketplace は自動更新が既定で無効なので、更新するときは `claude plugin update pstack@cursor-plugins` を実行します。
 
 ### 主な skill
 
@@ -220,14 +221,15 @@ Claude Code 向けには Michael Denyer 氏による非公式の移植版があ�
 | `/maintain-verification-skill` | 上の skill を保守する (少なくとも毎日実行する) |
 | `/automate-me` | 自分のセッションの記録から `<name>-mode` の SKILL.md を下書きする |
 | `/reflect` | セッションの記録をレビューに回す。承認するまで何も変わらない |
-| no-comments | コメントを消す subagent (Comment Sicko) |
-| unslop | 文章から AI っぽさを取り除く |
+| `/correct` | エージェントが繰り返す間違いを、アーキテクチャ、型、lint、テストの順に、できるだけ上の段で起きなくする。文章のルールは最後の手段 |
+| `/no-comments` | Comment Sicko という subagent を起動して不要なコメントを洗い出し、採用した指摘を直す |
+| `unslop` | 文章から AI っぽさを取り除く |
 
 `/create-verification-skill` が独立した skill になっていることからも、検証の仕組みをプロジェクトごとに作って育てることを重視しているのが分かります。
 
 ### playbook
 
-`/poteto-mode` が選ぶ playbook は、Flavio Copes の 2026 年 10 月時点の一覧で 23 個あります。
+`/poteto-mode` が選ぶ playbook は 22 本あります。
 
 | playbook | 内容 |
 |---|---|
@@ -246,7 +248,6 @@ Claude Code 向けには Michael Denyer 氏による非公式の移植版があ�
 | Babysit | PR や stack をマージできる状態まで持っていく |
 | Shipping | green の stack を独立に検証し、通った PR を land する |
 | Autonomous run | 長いタスク 1 つを確認できる完了まで進める |
-| Orchestrate | 多くの stacked PR を伴う数日がかりのプログラム |
 | Autopilot-full | 独立した PR のキューをマージされるまで回す |
 | Autopilot-stack | キューを 1 つの stack としてレビューと land に回す |
 | Session pickup | 他のエージェントの未完了の作業を引き継ぐ |
@@ -259,28 +260,48 @@ Claude Code 向けには Michael Denyer 氏による非公式の移植版があ�
 
 ### 原則
 
-23 個の原則のうち、解説記事で名前が分かったのは次の 12 個です。
+原則は 24 本あり、`/poteto-mode` の中では 5 つに分類されています。
 
-| 原則 | 要旨 |
-|---|---|
-| Laziness Protocol | 削除と、最小で完結した変更を優先する |
-| Subtract Before You Add | 新しい設計を入れる前に不要な経路を消す |
-| Minimize Reader Load | 層と隠れた state を減らす |
-| Model the Domain | ドメインをモデル化する |
-| Boundary Discipline | 境界を守る |
-| Type System Discipline | 型システムを使い切る |
-| Make Operations Idempotent | 操作を冪等にする |
-| Prove It Works | 実際の成果物で確かめる |
-| Fix Root Causes | 根本原因を直す |
-| Sequence Work into Verifiable Units | 作業を検証できる単位に分けて並べる |
-| Guard the Context Window | context window を守る |
-| Separate Before Serializing Shared State | 共有 state を直列化する前に分離する |
+| 分類 | 原則 | 要旨 |
+|---|---|---|
+| Core | Laziness Protocol | 削除と、問題を解く最小の変更を優先する |
+| Core | Foundational Thinking | ロジックを書く前に、中心になる型とデータ構造、並行に動くものが共有するものを決める |
+| Core | Redesign from First Principles | 新しい要件は、最初からあった前提で設計し直して取り込む |
+| Core | Attack the Premise | 同じ前提に立つ修正が 2 回失敗したら、次の修正の前にその前提を検証する |
+| Core | Subtract Before You Add | 足す前に不要なものを消す |
+| Core | Minimize Reader Load | 層と隠れた state を数えて減らす。呼び出し元が 1 つのラッパーはつぶす |
+| Core | Outcome-Oriented Execution | 移行では目標のアーキテクチャに向かい、使い捨ての互換状態を残さない |
+| Core | Experience First | 実装の都合よりユーザー体験を選ぶ |
+| Core | Exhaust the Design Space | 前例のない設計判断は、2〜3 個のプロトタイプを比べてから決める |
+| Core | Build the Lever | 手作業で済ませず、作業をこなす道具や証明する道具 (codemod、スクリプト) を作る |
+| Architecture | Model the Domain | 散らばった条件分岐ではなく、state machine や型付きのモデルでドメインを表す |
+| Architecture | Boundary Discipline | 検査はシステムの境界で行い、内部の型は信用する |
+| Architecture | Type System Discipline | 不正な状態を表現できない型にする。外部のデータは境界で parse する |
+| Architecture | Make Operations Idempotent | クラッシュや再試行があっても同じ最終状態に収束させる |
+| Architecture | Migrate Callers Then Delete Legacy APIs | 新しい API を入れたら、呼び出し元の移行と古い API の削除を一度に行う |
+| Architecture | Separate Before Serializing Shared State | 共有 state を直列化する前に、共有そのものをなくす |
+| Verification | Prove It Works | プロキシや「コンパイルが通った」ではなく、実物で確かめる |
+| Verification | Fix Root Causes | 症状をたどり、最初におかしくなった場所で直す |
+| Verification | Sequence Work into Verifiable Units | 作業を、それぞれ検査で終わる小さな単位に分けて並べる |
+| Verification | Test Behavior, Not Implementation | 利用者から見える振る舞いをテストする |
+| Verification | Explain the Number | 計測した数値を信じる前に、その値を何が決めているかを説明する |
+| Delegation | Guard the Context Window | 大きな出力は subagent に回し、メインの会話には要約だけを残す |
+| Delegation | Never Block on the Human | 元に戻せる作業は確認せずに進め、結果を見せる |
+| Meta | Encode Lessons in Structure | 同じ指示を 2 回書いたら、lint やメタデータやスクリプトにする |
 
-どれも AI 以前からあるソフトウェア設計の原則です。新しいのは、これを人間向けのコーディング規約ではなく、エージェントが呼び出す skill として 1 原則 1 ファイルで持っている点です。
+最後の Encode Lessons in Structure は、逆ピラミッドの「プロンプトにルールを足さない」をそのまま原則にしたものです。どれも AI 以前からあるソフトウェア設計の原則ですが、人間向けのコーディング規約ではなく、エージェントが読む skill として 1 原則 1 ファイルで持っている点が新しいところです。
 
 ### モデルの使い分け
 
-Flavio Copes の 2026 年 10 月時点の記事によると、playbook ごとにモデルを使い分けています。Feature、Refactoring、Bug fix、Perf issue、Hillclimb のコードは Grok 4.7 (xhigh-fast) が書き、一番難しい変更、文章、判断には Claude Opus 5.5 (xhigh) を使います。`/arena` は既定で Opus と Grok の 2 本を走らせます。8 月時点の記事ではレビューに GPT-5.6 Sol も混ぜていたので、ここはかなり頻繁に変わっているようです。
+2026-11-16 時点の `poteto-mode` の既定値は次のとおりです。
+
+| 役割 | 既定のモデル |
+|---|---|
+| コード、文章、判断 | `claude-opus-5-5-xhigh-fast` |
+| 単純な機械的な編集 | `claude-opus-5-5-high-fast` |
+| レビューや設計の panel、`/arena` の runner | `claude-fable-5-2-high`、`claude-opus-5-5-high-fast`、`gemini-4-carbon-high` を 1 本ずつ |
+
+Fable 5.2 を panel 以外で使うのは、ユーザーが指名したときか、Opus 5.5 xhigh が同じ依頼で 2 回失敗したときだけです。`/arena` の judge には、親と別のベンダーのモデルを選びます。これらの既定値は `/setup-pstack` で役割ごとに上書きできます。Flavio Copes の 10 月時点の記事では Grok 4.7 にコードを書かせる構成が紹介されていたので、既定値はかなり頻繁に変わっています。
 
 ---
 
