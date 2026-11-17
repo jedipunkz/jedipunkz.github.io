@@ -8,7 +8,7 @@ draft: false
 ---
 こんにちは。[ジェダイパンくず🍞](https://x.com/jedipunkz) です。
 
-今年 (2026 年) は、「エージェントの通信をまとめて扱う gateway」が製品カテゴリとして立ち上がってきました。Kong は 4 月に AI Gateway 3.14 で Agent-to-Agent (A2A) のトラフィックに対応し、API7 は 8 月に A2A 1.0 を gateway でどう扱うかの記事を公開し、Maxim も 10 月に自社の Bifrost へ Agent Gateway を追加しています。そこで今回は OSS の [agentgateway](https://github.com/agentgateway/agentgateway) を使って、A2A・MCP・LLM の 3 種類のトラフィックを 1 つの gateway に通すサンプル環境を作り、手を動かしてみました。
+2026 年は、エージェントの通信をまとめて扱う gateway の製品が各社から出てきました。Kong は 4 月に AI Gateway 3.14 で Agent-to-Agent (A2A) のトラフィックに対応しました。API7 は 8 月に、A2A 1.0 を gateway でどう扱うかの記事を公開しました。Maxim は 10 月に、自社の Bifrost へ Agent Gateway を追加しました。そこで今回は OSS の [agentgateway](https://github.com/agentgateway/agentgateway) を使って、A2A・MCP・LLM の 3 種類のトラフィックを 1 つの gateway に通すサンプル環境を作り、手を動かしてみました。
 
 動作確認のために書いたコードは下記に置いてあります。
 
@@ -23,11 +23,11 @@ AI エージェントが外とやりとりする通信は、大きく次の 3 �
 
 | 通信 | プロトコル | gateway が中身として見るもの |
 |---|---|---|
-| エージェント → LLM | OpenAI / Anthropic などの API | モデル名、入出力の token 数、プロンプト |
-| エージェント → tool | MCP (JSON-RPC) | `tools/list` や `tools/call` などのメソッド、tool 名、引数 |
-| エージェント → エージェント | A2A (JSON-RPC / REST / gRPC) | Agent Card、`SendMessage` などのメソッド、task の状態、context ID |
+| エージェントから LLM | OpenAI / Anthropic などの API | モデル名、入出力の token 数、プロンプト |
+| エージェントから tool | MCP (JSON-RPC) | `tools/list` や `tools/call` などのメソッド、tool 名、引数 |
+| エージェントからエージェント | A2A (JSON-RPC / REST / gRPC) | Agent Card、`SendMessage` などのメソッド、task の状態、context ID |
 
-一般的な API gateway は主に HTTP のパスやヘッダを見て振り分けます。しかしこれらの通信はどれも中身を JSON-RPC や独自の JSON の本文で表すので、パスだけでは「どの tool を呼んだか」「どのエージェントのどの task か」が分かりません。Agent Gateway と呼ばれている製品は、これらのプロトコルを解釈して、その単位で認可・制限・観測をするものです。
+一般的な API gateway は HTTP のパスやヘッダを見て振り分けます。しかしこれらの通信はどれも中身を JSON-RPC や独自の JSON の本文で表します。そのため、パスだけでは「どの tool を呼んだか」「どのエージェントのどの task か」が分かりません。Agent Gateway と呼ばれている製品は、これらのプロトコルを解釈して、その単位で認可・制限・観測をするものです。
 
 参考にした各社の記事やドキュメントを読んで、A2A の扱いを比べると次のようになります。agentgateway 以外はドキュメントを読んだだけで、動かしてはいません。
 
@@ -38,7 +38,7 @@ AI エージェントが外とやりとりする通信は、大きく次の 3 �
 | [API7 AISIX](https://docs.api7.ai/ai-gateway/agent-gateway/overview) | エージェントごとに `/a2a/<agent>` の endpoint を作る。エージェントごとに A2A 1.0 か 0.3 を固定し、バージョン間の変換はしない。既定は拒否 |
 | [Bifrost (Maxim)](https://www.getmaxim.ai/articles/a2a-protocol-gateway/) | 2026 年 10 月に Agent Gateway を追加。Agent Card をリクエストごとにエージェントから取り直し、endpoint と認証の情報を書き換えて返す |
 
-どの製品も「Agent Card の URL を gateway に書き換えて、以降の呼び出しを gateway に向けさせる」という同じ発想で作られています。API7 の記事 [A2A Protocol 1.0 at the Gateway](https://api7.ai/blog/a2a-protocol-gateway-layer) では、A2A 1.0 で署名付き Agent Card やテナントのルーティングが仕様に入ったと書かれていました。一方で「どの署名者を信頼するか」「どの入力でテナントを決めるか」は運用者が決めることであり、その決定を強制する場所が gateway だ、というのがこの記事の主張です。
+どの製品も「Agent Card の URL を gateway に書き換えて、以降の呼び出しを gateway に向けさせる」という同じ発想で作られています。API7 の記事 [A2A Protocol 1.0 at the Gateway](https://api7.ai/blog/a2a-protocol-gateway-layer) では、A2A 1.0 で署名付き Agent Card やテナントのルーティングが仕様に入ったと書かれていました。ただし「どの署名者を信頼するか」「どの入力でテナントを決めるか」は仕様では決まらず、運用者が決めます。この記事は、運用者の決定を強制する場所が gateway だと主張しています。
 
 ## サンプル環境の構成
 
@@ -133,9 +133,7 @@ routes:
   - host: 127.0.0.1:9301
 ```
 
-エージェントの実装は a2a-go の JSON-RPC handler に、受け取ったテキストを処理する関数を渡すだけです。Agent Card には自分自身の URL (`http://127.0.0.1:9302/invoke`) を書いています。
-
-(Agent Card とは A2A エージェントが「自分は何者でどこにどう話しかければよいか」を書いて公開する jSON です)
+Agent Card は、A2A エージェントが自分の名前、説明、呼び出し先の URL などを書いて公開する JSON です。エージェントの実装は a2a-go の JSON-RPC handler に、受け取ったテキストを処理する関数を渡すだけです。Agent Card にはエージェント自身の URL `http://127.0.0.1:9302/invoke` を書いています。
 
 ```go
 card := &a2a.AgentCard{
@@ -177,7 +175,7 @@ $ curl -s http://127.0.0.1:3000/planner/.well-known/agent-card.json | jq '.suppo
 ]
 ```
 
-gateway 経由では `url` が `http://127.0.0.1:3000/planner/invoke` に書き換わっています。A2A の client は Agent Card に書かれた URL にメッセージを送るので、最初に gateway から Agent Card を取りさえすれば、以降の呼び出しも gateway を通ります。agentgateway は A2A v1.0 の `supportedInterfaces[].url` と v0.3 の `url` の両方に対応していて、`urlRewrite` でパスを書き換えている場合も、それを考慮した URL に直してくれます。
+gateway 経由では `url` が `http://127.0.0.1:3000/planner/invoke` に書き換わっています。A2A の client は Agent Card に書かれた URL にメッセージを送るので、最初に gateway から Agent Card を取りさえすれば、以降の呼び出しも gateway を通ります。agentgateway は A2A v1.0 の `supportedInterfaces[].url` と v0.3 の `url` の両方を書き換えます。`urlRewrite` でパスを書き換えている route では、書き換え前のパスを含む URL を返します。
 
 ### メッセージを送る
 
@@ -188,7 +186,7 @@ $ bin/agent -name client -send http://127.0.0.1:3000/planner "checkout"
 [planner] [worker] received "checkout"
 ```
 
-gateway のアクセスログです (一部抜粋しています)。
+gateway のアクセスログの一部です。
 
 ```plain
 route=default/planner http.method=GET http.path=/planner/.well-known/agent-card.json http.status=200 protocol=a2a duration=0ms
@@ -197,7 +195,7 @@ route=default/worker http.method=POST http.path=/worker/invoke http.status=200 p
 route=default/planner http.method=POST http.path=/planner/invoke http.status=200 protocol=a2a a2a.method=SendMessage a2a.response.outcome=success a2a.result.kind=message a2a.context.id=01a1d56f-d37a-7a99-b1f4-4f1d5f1237de duration=1ms
 ```
 
-`a2a.method=SendMessage` が A2A v1.0 のメソッド名です (v0.3 では `message/send`)。応答の種類 (`message` か `task`)、task の状態、エラーコード、context ID もログに出ます。
+`a2a.method=SendMessage` は A2A v1.0 のメソッド名で、v0.3 では `message/send` です。応答の種類 (`message` か `task`)、task の状態、エラーコード、context ID もログに出ます。
 
 ただし context ID は planner と worker で別の値になっています。A2A の context ID は会話の単位で、planner が worker に新しいメッセージを送ると、worker 側では別の会話として扱われるためです。エージェントをまたいで 1 つのリクエストを追うには、後述のシナリオ 04 の trace を使います。
 
@@ -296,7 +294,7 @@ result (isError=true): restarting payments requires a change request
 http.status=200 jwt.sub=bob protocol=mcp mcp.method.name=tools/call mcp.target=ops mcp.resource.type=tool gen_ai.tool.name=restart_service error="mcp: mcpGuardrails rejected: restarting payments requires a change request" reason=MCP
 ```
 
-認可で拒否された場合は HTTP 400 になり、client 側では `tools/call` の呼び出し自体が失敗しました。一方、guardrail で拒否された場合は HTTP 200 で、tool の結果として `isError: true` とメッセージが返ります。エージェントから見ると「tool を呼んだら失敗した」という扱いになるので、LLM は理由を読んで別の手を考えられます。
+認可で拒否された場合は HTTP 400 になり、client 側では `tools/call` の呼び出し自体が失敗しました。一方、guardrail で拒否された場合は HTTP 200 で、tool の結果として `isError: true` とメッセージが返ります。エージェントから見ると「tool を呼んだら失敗した」という扱いになります。LLM はメッセージから拒否の理由を読み、次の行動を決められます。
 
 
 ## シナリオ 03: LLM に API key 認証と token rate limit をかける
@@ -355,7 +353,7 @@ key に付けた `metadata` は CEL から `apiKey.team` として参照でき�
 200 {"prompt_tokens":5,"completion_tokens":7,"total_tokens":12}
 ```
 
-1 回 12 token なので、上限が 40 token なら 3 回で止まりそうですが、実際には 4 回目まで通って 5 回目で 429 になりました。token 数はレスポンスを受け取るまで分からないので、リクエストの時点では残りがあるかだけを見て通し、レスポンスの token 数を後から差し引いているようです (ソースまでは確認していません)。上限は「1 リクエスト分はみ出しうる目安」として設定する必要があります。
+1 回 12 token なので、上限が 40 token なら 3 回で止まりそうですが、実際には 4 回目まで通って 5 回目で 429 になりました。token 数はレスポンスを受け取るまで分かりません。そのため gateway は、リクエストの時点では残りがあるかだけを見て通し、レスポンスの token 数を後から差し引いていると推測しています。ソースは確認していません。上限は「1 リクエスト分はみ出しうる目安」として設定する必要があります。
 
 アクセスログと metrics には、OTel GenAI semantic conventions の名前で token 数が出ます。[前回の記事](/post/otel-genai-agents/) ではエージェントごとに token 数の属性名がばらばらでしたが、LLM の呼び出しを gateway に通せば、どのエージェントから呼んでも同じ名前で集計できます。
 
@@ -371,7 +369,7 @@ agentgateway_gen_ai_client_token_usage_sum{gen_ai_token_type="output",gen_ai_ope
 
 ## シナリオ 04: エージェントをまたいだ trace
 
-最後に、01〜03 の設定を 1 つの gateway プロセスにまとめ、client → planner → worker → MCP / LLM の流れを 1 本の trace で見ます。gateway の設定には trace の送り先を足すだけです。
+最後に、01〜03 の設定を 1 つの gateway プロセスにまとめます。client が planner を呼び、planner が worker を呼び、worker が MCP と LLM を呼ぶ流れを 1 本の trace で見ます。gateway の設定には trace の送り先を足すだけです。
 
 ```yaml
 config:
@@ -438,7 +436,7 @@ trace 060470cb44a14a16e8ec4c68974468c4 (39 spans)
                         - [agentgateway] POST
 ```
 
-client から LLM の呼び出しまでが 1 本の trace につながりました。gateway は受けた `traceparent` を引き継いで自分の span を作り、backend に転送するときにも `traceparent` を付けています。A2A の span には `a2a.method`、MCP の span には `gen_ai.tool.name`、LLM の span には token 数が付くので、trace を見るだけで「planner がどのエージェントを呼び、そのエージェントがどの tool を呼び、LLM に何 token 使ったか」が分かります。シナリオ 01 で見たとおり context ID はエージェントごとに別になるので、エージェントをまたいだ追跡は trace ID で行うことになります。
+client から LLM の呼び出しまでが 1 本の trace につながりました。gateway は受けた `traceparent` を引き継いで自分の span を作り、backend に転送するときにも `traceparent` を付けています。A2A の span には `a2a.method`、MCP の span には `gen_ai.tool.name`、LLM の span には token 数が付きます。そのため trace を見るだけで「planner がどのエージェントを呼び、そのエージェントがどの tool を呼び、LLM に何 token 使ったか」が分かります。シナリオ 01 で見たとおり context ID はエージェントごとに別になるので、エージェントをまたいだ追跡は trace ID で行うことになります。
 
 trace からは multiplex のコストも見えます。worker は `ops_get_status` を 1 回呼んだだけですが、`server/discover`、`initialize`、`notifications/initialized`、セッション終了の `DELETE` は docs と ops の両方に送られています。束ねる MCP server が増えると、セッションを張るたびに送られるリクエストも、その数に比例して増えます。
 
@@ -446,11 +444,18 @@ trace からは multiplex のコストも見えます。worker は `ops_get_stat
 
 - 設定ファイルに `config.session.key` が無いと、agentgateway が起動時に鍵を生成して設定ファイルに書き込みます。
 - `binds` 形式の設定では待ち受けアドレスを指定できず、全インターフェースで listen します。readiness と metrics の port も既定では全インターフェースです。
-- CEL のリファレンスに載っている変数でも、使える場所が限られているものがあります (`mcp.tool.arguments` は認可では使えず、`mcp.target.name` は guardrail で評価エラーになる)。ルールを書いたら、許可されるケースと拒否されるケースの両方を実際に呼んで確かめる必要があると思いました。
-- gateway は経路上の判定点なので、エージェントが gateway を迂回して backend を直接呼べると意味がありません。今回は全部 `127.0.0.1` で動かしているので、planner から worker の port を直接叩くこともできます。本番では、backend にはネットワーク上 gateway からしか届かないようにするか、[OpenShell](/post/openshell/) のようなサンドボックスで外向きの通信を gateway だけに絞る必要があります。
+- CEL のリファレンスに載っている変数でも、使える場所が限られているものがあります (`mcp.tool.arguments` は認可では使えず、`mcp.target.name` は guardrail で評価エラーになる)。ルールを書いたら、許可されるケースと拒否されるケースの両方を実際に呼んで確かめる必要があります。
+- エージェントが gateway を迂回して backend を直接呼べると、gateway の認可も rate limit も効きません。今回は全部 `127.0.0.1` で動かしているので、planner から worker の port を直接叩くこともできます。本番では、backend にはネットワーク上 gateway からしか届かないようにするか、[OpenShell](/post/openshell/) のようなサンドボックスで外向きの通信を gateway だけに絞る必要があります。
 
 ## まとめ
 
-agentgateway を使って、A2A・MCP・LLM の 3 種類のトラフィックを 1 つの gateway に通してみました。Agent Card の書き換えでエージェント間の呼び出しを gateway に寄せられること、MCP の tool を JWT の claim で絞ると一覧からも消えること、LLM の token を team 単位で制限できること、そしてそれらがすべて同じ形式のログと 1 本の trace に残ることを確認できました。エージェントが増えても「誰が何を呼んだか」を 1 か所で答えられるのは、運用する側として安心材料になると感じました。
+agentgateway を使って、A2A・MCP・LLM の 3 種類のトラフィックを 1 つの gateway に通してみました。確認できたことは次のとおりです。
 
-一方で、認可ルールでは tool の引数を参照できず guardrail で補う必要があることや、CEL の変数が使える場所の違いなど、まだ発展途上の部分もありました。
+- Agent Card の URL を書き換えると、エージェント間の呼び出しも gateway を通る
+- MCP の tool を JWT の claim で絞ると、許可されない tool は `tools/list` からも消える
+- LLM の token 数を team 単位で制限できる
+- 3 種類の通信がすべて同じ形式のアクセスログと 1 本の trace に残る
+
+エージェントが増えても、「誰がどの tool やエージェントを呼んだか」は gateway のアクセスログ 1 か所で調べられます。
+
+一方で、認可ルールでは tool の引数を参照できないため、引数を見た制御は guardrail で書く必要がありました。また、CEL のリファレンスに載っている変数でも、認可や guardrail では使えないものがありました。
