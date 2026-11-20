@@ -4,7 +4,7 @@ description: "Netflix の Ontology-Driven Observability を参考に、インシ
 date: 2026-11-20T12:00:00+09:00
 tags: ["Ontology", "Knowledge Graph", "TypeDB", "MCP", "Claude Code"]
 categories: ["AI", "SRE", "Observability"]
-draft: true
+draft: false
 ---
 こんにちは。[ジェダイパンくず🍞](https://x.com/jedipunkz) です。
 
