@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="ja" dir="auto">
+
+<head><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="index, follow">
+<title>OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上 | jedipunkz 🚀 のブログ</title>
+<meta name="keywords" content="OpenTelemetry, AI Agent, Observability, Claude Code, OpenCode, ADK">
+<meta name="description" content="OTel GenAI semantic conventions の現状を整理し、Claude Code・OpenCode・Google ADK Go の telemetry を Grafana LGTM に集めて、semconv にどこまで沿っているかと、横断ダッシュボードで何が見えるかをサンプル環境で確認しました">
+<meta name="author" content="jedipunkz">
+<link rel="canonical" href="https://jedipunkz.rocks/post/otel-genai-agents/">
+<link crossorigin="anonymous" href="/assets/css/stylesheet.93fab3171fff6ba6152e8c67ba3e8cfcee77a1e7b231fd29570601c555d983ef.css" integrity="sha256-k/qzFx//a6YVLoxnuj6M/O53oeeyMf0pVwYBxVXZg&#43;8=" rel="preload stylesheet" as="style">
+<link rel="icon" href="https://jedipunkz.rocks/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="https://jedipunkz.rocks/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://jedipunkz.rocks/favicon-32x32.png">
+<link rel="apple-touch-icon" href="https://jedipunkz.rocks/apple-touch-icon.png">
+<link rel="mask-icon" href="https://jedipunkz.rocks/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="ja" href="https://jedipunkz.rocks/post/otel-genai-agents/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-track {
+                background: 0 0;
+            }
+
+            .list:not(.dark)::-webkit-scrollbar-thumb {
+                border-color: var(--theme);
+            }
+        }
+
+    </style>
+</noscript>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&amp;family=JetBrains&#43;Mono:wght@400;500&amp;family=Noto&#43;Sans&#43;JP:wght@400..700&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&amp;family=JetBrains&#43;Mono:wght@400;500&amp;family=Noto&#43;Sans&#43;JP:wght@400..700&amp;display=swap">
+
+      <script async src="https://www.googletagmanager.com/gtag/js?id=G-2H91XCYVZ8"></script>
+      <script>
+        var doNotTrack = false;
+        if ( true ) {
+          var dnt = (navigator.doNotTrack || window.doNotTrack || navigator.msDoNotTrack);
+          var doNotTrack = (dnt == "1" || dnt == "yes");
+        }
+        if (!doNotTrack) {
+          window.dataLayer = window.dataLayer || [];
+          function gtag(){dataLayer.push(arguments);}
+          gtag('js', new Date());
+          gtag('config', 'G-2H91XCYVZ8');
+        }
+      </script><meta property="og:url" content="https://jedipunkz.rocks/post/otel-genai-agents/">
+  <meta property="og:site_name" content="jedipunkz 🚀 のブログ">
+  <meta property="og:title" content="OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上">
+  <meta property="og:description" content="OTel GenAI semantic conventions の現状を整理し、Claude Code・OpenCode・Google ADK Go の telemetry を Grafana LGTM に集めて、semconv にどこまで沿っているかと、横断ダッシュボードで何が見えるかをサンプル環境で確認しました">
+  <meta property="og:locale" content="ja">
+  <meta property="og:type" content="article">
+    <meta property="article:section" content="post">
+    <meta property="article:published_time" content="2026-11-08T12:00:00+09:00">
+    <meta property="article:modified_time" content="2026-11-08T12:00:00+09:00">
+    <meta property="article:tag" content="OpenTelemetry">
+    <meta property="article:tag" content="AI Agent">
+    <meta property="article:tag" content="Observability">
+    <meta property="article:tag" content="Claude Code">
+    <meta property="article:tag" content="OpenCode">
+    <meta property="article:tag" content="ADK">
+  <meta property="og:image" content="https://jedipunkz.rocks/images/social-card-base_hu_b3517f3e27a42bf.jpg">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://jedipunkz.rocks/images/social-card-base_hu_b3517f3e27a42bf.jpg">
+<meta name="twitter:image:alt" content="OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上">
+<meta name="twitter:title" content="OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上">
+<meta name="twitter:description" content="OTel GenAI semantic conventions の現状を整理し、Claude Code・OpenCode・Google ADK Go の telemetry を Grafana LGTM に集めて、semconv にどこまで沿っているかと、横断ダッシュボードで何が見えるかをサンプル環境で確認しました">
+  <meta name="twitter:site" content="@jedipunkz">
+  <meta name="twitter:creator" content="@jedipunkz">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上",
+  "name": "OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上",
+  "description": "OTel GenAI semantic conventions の現状を整理し、Claude Code・OpenCode・Google ADK Go の telemetry を Grafana LGTM に集めて、semconv にどこまで沿っているかと、横断ダッシュボードで何が見えるかをサンプル環境で確認しました",
+  "keywords": [
+    "OpenTelemetry", "AI Agent", "Observability", "Claude Code", "OpenCode", "ADK"
+  ],
+  "articleBody": "こんにちは。ジェダイパンくず🍞 です。\nAI エージェントに作業を任せる時間が増えるほど、「いま何に時間がかかっているのか」「どの tool を何回呼んだのか」「token とお金をどれだけ使ったのか」が気になってきます。Hacker News でも LLM Observability in the Wild – Why OpenTelemetry Should Be the Standard というスレッドで、LLM アプリの可観測性を OpenTelemetry (OTel) に寄せるべきかが議論されていました。「エージェントの処理は tool 呼び出しを含む分散コールグラフなので OTel に向いている」という意見がある一方、「属性を足すだけではマルチエージェントのデバッグには足りない」という声もあります。\nOTel には生成 AI 向けの semantic conventions (以下 GenAI semconv) があり、普段使っている Claude Code、OpenCode、そして以前の記事 Google ADK Go 2.x の Dynamic Workflow とその為のガードレール で触った Google ADK Go も OTel の出力に対応しています。ただ、どれも「OTel 対応」とだけ書かれていて、実際に何が出てくるのか、互いに比較できる形なのかは分かりませんでした。そこで 3 つを同じ backend に流して比べてみました。\nコードは下記に置いてあります。\nhttps://github.com/jedipunkz/otel-genai-playground\n結論 エージェント GenAI semconv との距離 対応 ADK Go ほぼ準拠。semconv v1.44 の span 名・属性がそのまま出る traces, logs OpenCode 属性だけ準拠。span 名は内部の関数名で、gen_ai.operation.name が無い traces, logs Claude Code 独自の claude_code.* スキーマに gen_ai.* 属性を追加した形。token 数は独自名 traces (beta), metrics, logs 3 つとも OTLP で出せるので、backend を 1 つにそろえるだけで「LLM 呼び出しのレイテンシ p95」「tool ごとの呼び出し回数と遅延」を同じ TraceQL で横断して見られました。一方で token 数の属性名や finish_reasons の値はエージェントごとにばらばらで、そのまま集計できるのは一部だけです。GenAI semconv はまだ Development ステータスなので注意が必要と思いました。\nOTel GenAI semantic conventions の現状 GenAI semconv は 2024 年に発足した GenAI SIG で作られている規約らしいです。当初の対象は LLM 呼び出しでしたが、今はエージェント、tool 呼び出し、MCP、評価結果まで範囲が広がっています。\nそもそも semantic conventions とは何かというと、telemetry の「中身の名前の付け方」を決めた規約です。OTel の SDK や OTLP が決めているのは「どう集めて、どう送るか」までで、span にどんな名前を付け、属性をどんなキーで、どんな値で入れるかは決めていません。そこを決めているのが semconv です。\nたとえば「LLM に入力した token 数」は、何も決めなければ実装ごとに input_tokens、prompt_tokens、usage.input のように名前が割れます。GenAI semconv はこれを gen_ai.usage.input_tokens という名前にし、cache から読んだ token も含めた値を入れる、と決めています。名前と意味がそろっていれば、どのエージェントが出した telemetry でも同じクエリで集計できます。逆にそろっていなければ、エージェントごとにクエリを書き分けることになります。この記事で「semconv に沿っているか」を気にするのはそのためです。\nエージェントを観測するときに知りたいことと、semconv でそれに答える属性の対応は次のとおりです。この記事では、3 つのエージェントがこれらの属性を出しているかどうかを物差しにして比べます。\n観測できる内容 semconv の属性 補足 この span は何の処理か gen_ai.operation.name 値は generate_content (LLM 呼び出し)、execute_tool (tool 実行)、invoke_agent (エージェント実行) など。span 名は {operation} {対象名} にする どのモデルを呼んだか gen_ai.provider.name、gen_ai.request.model gen_ai.provider.name は必須で、古い gen_ai.system を置き換えるもの どの tool を呼んだか gen_ai.tool.name、gen_ai.tool.call.id execute_tool の span に付ける token をどれだけ使ったか gen_ai.usage.input_tokens、gen_ai.usage.output_tokens エージェントごとに名前と意味がずれやすい項目 (後述) どのセッションの処理か gen_ai.conversation.id 複数の trace をセッション単位で束ねる 何を送って何が返ってきたか gen_ai.input.messages、gen_ai.output.messages、gen_ai.system_instructions Opt-In。機密情報を含みうるので既定では記録しない サンプル環境の構成 backend は grafana/otel-lgtm を使いました。OTel Collector、Tempo (traces)、Loki (logs)、Prometheus (metrics)、Grafana が 1 コンテナに入っているので、Claude Code の 3 種類の signal を 1 コンテナで受けられます。\nflowchart LR ADK[ADK Go\nfake LLM] -- OTLP/HTTP --\u003e COL OC[OpenCode] -- OTLP/HTTP --\u003e COL CC[Claude Code] -- OTLP/HTTP --\u003e COL subgraph lgtm[grafana/otel-lgtm] COL[OTel Collector] --\u003e T[Tempo] COL --\u003e L[Loki] COL --\u003e P[Prometheus] T \u0026 L \u0026 P --\u003e G[Grafana] end パス 内容 compose.yaml otel-lgtm。ポートは 127.0.0.1 にだけ bind adk-go/ fake LLM で動く ADK エージェント opencode/run.sh OTLP export を有効にして OpenCode を 1 回実行 claude-code/run.sh OTel export を有効にして Claude Code を 1 回実行 grafana/dashboards/ai-agents.json 横断ダッシュボード workspace/weather.txt エージェントに読ませるファイル ファイル: compose.yaml\nservices: lgtm: # Grafana + OTel Collector + Tempo (traces) + Loki (logs) + Prometheus (metrics) in one container. image: grafana/otel-lgtm:0.38.1 ports: # Bind to localhost only: anonymous admin Grafana and unauthenticated OTLP receivers. - \"127.0.0.1:3000:3000\" # Grafana - \"127.0.0.1:4317:4317\" # OTLP gRPC - \"127.0.0.1:4318:4318\" # OTLP HTTP volumes: - ./grafana/dashboards:/otel-lgtm/grafana/conf/provisioning/dashboards/custom:ro - ./grafana/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/custom.yaml:ro otel-lgtm の Grafana は匿名 admin で動き、OTLP receiver にも認証がありません。プロンプトや tool 引数が流れ込む可能性もあるので、ポートは localhost に限定しています。\n3 つとも「weather.txt (ADK は get_weather 関数) を tool で読んで、東京の天気を答える」という同じプロンプトを投げ、tool 呼び出しが 1 回入るようにしました。\ndocker compose up -d ./adk-go/run.sh MODEL= ./opencode/run.sh ./claude-code/run.sh Google ADK Go fake LLM で API key なしに動かす ADK は Gemini 前提に見えますが、モデルは model.LLM インターフェースで差し替えられます。v2.7.1 には gemini のほかに anthropicmodel (experimental) と OpenAI 互換の openaimodel も入っています。今回は telemetry の形を見るのが目的なので、API key が不要で毎回同じ結果になる fake LLM を自分で書きました。model.LLM は Name() と GenerateContent() の 2 メソッドだけです。\nファイル: adk-go/main.go (抜粋)\n// fakeLLM asks for the get_weather tool on the first turn and answers with // text once the tool result is in the request. Token counts are fixed values. type fakeLLM struct{} func (fakeLLM) Name() string { return \"fake-llm\" } func (fakeLLM) GenerateContent(_ context.Context, req *model.LLMRequest, _ bool) iter.Seq2[*model.LLMResponse, error] { return func(yield func(*model.LLMResponse, error) bool) { time.Sleep(200 * time.Millisecond) // make the span visible on a timeline var weather string if n := len(req.Contents); n \u003e 0 { for _, p := range req.Contents[n-1].Parts { if p.FunctionResponse != nil { weather = fmt.Sprint(p.FunctionResponse.Response[\"forecast\"]) } } } var part *genai.Part if weather == \"\" { part = \u0026genai.Part{FunctionCall: \u0026genai.FunctionCall{ ID: \"call-1\", Name: \"get_weather\", Args: map[string]any{\"city\": \"Tokyo\"}, }} } else { part = genai.NewPartFromText(\"Tokyo: \" + weather) } yield(\u0026model.LLMResponse{ Content: \u0026genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{part}}, FinishReason: genai.FinishReasonStop, UsageMetadata: \u0026genai.GenerateContentResponseUsageMetadata{ PromptTokenCount: 120, CandidatesTokenCount: 30, TotalTokenCount: 150, }, }, nil) } } 最初の呼び出しでは tool 呼び出し (FunctionCall) を返し、tool の結果がリクエストに入ってきたらテキストで答えます。\ntelemetry の有効化 telemetry.New() は OTEL_EXPORTER_OTLP_ENDPOINT を見て OTLP/HTTP の exporter を作ります。グローバル provider に登録し、終了時に Shutdown で flush します。\nproviders, err := telemetry.New(ctx, telemetry.WithResource(res)) if err != nil { return err } providers.SetGlobalOtelProviders() defer func() { shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second) defer cancel() if err := providers.Shutdown(shutdownCtx); err != nil { log.Printf(\"telemetry shutdown: %v\", err) } }() ファイル: adk-go/run.sh\nexport OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 # NO_CONTENT (default) | SPAN_ONLY | EVENT_ONLY | SPAN_AND_EVENT export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=\"${CAPTURE:-SPAN_AND_EVENT}\" go run . 出てきた span 1 回の実行は 1 つの trace になり、その中に処理ごとの span が親子関係で並びます。下の図はその親子関係を Grafana (Tempo) で見たもので、インデントが深いほど子の span、上から下が実行順、右側の数字はその span の所要時間です。\n今回の処理の流れは「LLM が tool の呼び出しを要求する → tool を実行する → tool の結果を見て LLM が回答する」で、span もこの順に並びました。\ninvoke_workflow weather_agent 506ms └── invoke_agent weather_agent 505ms ├── generate_content fake-llm 202ms ← 1 回目の LLM 呼び出し (tool を要求) ├── execute_tool get_weather 101ms ← tool の実行 └── generate_content fake-llm 202ms ← 2 回目の LLM 呼び出し (回答) span 何の処理か 主な属性 (今回の値) invoke_workflow / invoke_agent エージェント全体の実行 gen_ai.agent.name=weather_agent、gen_ai.conversation.id=session-1 generate_content LLM 呼び出し gen_ai.request.model=fake-llm、gen_ai.usage.input_tokens=120、gen_ai.usage.output_tokens=30、gen_ai.response.finish_reasons=tool_call (1 回目) / stop (2 回目) execute_tool tool の実行 gen_ai.tool.name=get_weather、gen_ai.tool.call.arguments={\"city\":\"Tokyo\"}、gen_ai.tool.call.result={\"forecast\":\"sunny in Tokyo\"} finish_reasons を見ると、1 回目の LLM 呼び出しが「tool を呼ぶために止まった」(tool_call) こと、2 回目が「回答して終わった」(stop) ことが分かります。本文の記録を有効にしているので、generate_content には gen_ai.input.messages / gen_ai.output.messages としてプロンプトと応答も入っていました。\nspan 名も operation 名も GenAI semconv のとおりで、3 つの Agent の中ではいちばん素直でした。\nOTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT で本文の記録先を選べます。値は SPAN_ONLY / EVENT_ONLY / SPAN_AND_EVENT のいずれかで、未設定なら記録しません。true / 1 は後方互換で EVENT_ONLY 扱いです。 semconv の変化に備えて、ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN=otel_semconv_1_36 で以前の属性形式に戻せます。ソースには「少なくとも 2027-03-31 まで」と書かれています。 fake LLM なので gen_ai.provider.name は付きません。実際のモデルパッケージを使えば付きます。 OpenCode 有効化 OpenCode V2 は OTEL_EXPORTER_OTLP_ENDPOINT を設定するだけで traces と logs を出します。V1 の experimental.openTelemetry は V2 では無視され、警告が出ます (移行ガイド)。\nファイル: opencode/run.sh (抜粋)\nexport OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 # --standalone starts a private server as a child of this shell so it inherits OTEL_* # (the shared background service runs as a separate process). opencode run --standalone -m \"$MODEL\" \\ \"${1:-Read weather.txt and answer in one sentence: what is the weather in Tokyo?}\" V2 の opencode run は通常、バックグラウンドの service に接続して動きます。実際に処理するのはその service なので、--standalone でこの shell の子プロセスとして server を起動し、環境変数を引き継がせています。\n出てきた span 処理の流れは ADK と同じく「LLM が tool を要求 → tool を実行 → LLM が回答」です。OpenCode では LLM 呼び出し 1 回が SessionStep.attempt という span になり、tool の実行はその子として入ります。実際には約 240 span ありますが、LLM と tool に関係するものだけを抜き出すと次のようになります。\nSessionRunner.drain ← 1 ターン (プロンプト 1 回分) の処理 ├── SessionRunner.runStep │ └── SessionStep.attempt 1401ms ← 1 回目の LLM 呼び出し (tool を要求) │ └── Tool.execute 9ms ← tool の実行 │ └── ReadTool.read ← read tool の中身 └── SessionRunner.runStep └── SessionStep.attempt 821ms ← 2 回目の LLM 呼び出し (回答) span 何の処理か 主な属性 (今回の値) SessionRunner.drain 1 ターン分の処理全体 session.id=ses_... (この trace のすべての span に付く) SessionStep.attempt LLM 呼び出し gen_ai.provider.name=opencode-go、gen_ai.request.model=claude-haiku-5-5、gen_ai.usage.input_tokens=19111、gen_ai.usage.output_tokens=99、gen_ai.response.finish_reasons=tool-calls、opencode.llm.first_output_ms=914 Tool.execute tool の実行 gen_ai.tool.name=read、gen_ai.tool.call.id=toolu_... opencode.llm.first_output_ms は最初の出力が返ってくるまでの時間で、1 回目の 1401ms のうち 914ms がそれに当たります。span 名は OpenCode が使っている Effect の関数名そのままです。残りの約 230 span は Config.load や InstructionDiscovery.list といった内部処理で、設定の読み込みのような細かい処理まで見えます。\nGenAI semconv の規定と比べると、次の点が違っていました (一覧は後の「比較」の表にまとめています)。\n項目 semconv の規定 OpenCode の実際 gen_ai.operation.name 必須 無い。「LLM 呼び出しの span」を探すには gen_ai.request.model の有無で判定するしかない gen_ai.provider.name モデルの提供元を表す定義済みの値 (anthropic など) OpenCode のプロバイダー ID (opencode-go) gen_ai.response.finish_reasons tool_call / stop など AI SDK の値 (tool-calls) 本文 Opt-In で gen_ai.input.messages などに記録できる 記録する手段が無い v2.2.5 と v2.2.6 で trace の形が大きく変わった 最初は v2.2.5 で試しましたが、セッションの span がすべて起動時の ServerProcess.start の trace にぶら下がり、属性も空でした。v2.2.6 で入った anomalyco/opencode#60974 で 1 リクエスト・1 ターンごとに trace が分かれ、上の gen_ai.* 属性が付くようになっています。PR の説明には、デスクトップアプリの 1 日分で 650 万 span のうち 97% が 2 つの巨大な trace に入っていたと書かれていました。OpenCode の telemetry を見るなら v2.2.6 以降を使ってください。\nClaude Code 有効化 Claude Code は metrics、logs (events)、traces の 3 種類を出します。traces はまだ beta で、CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1 が無いと出ません。\nファイル: claude-code/run.sh (抜粋)\nexport CLAUDE_CODE_ENABLE_TELEMETRY=1 export CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1 # traces are beta and off without this export OTEL_METRICS_EXPORTER=otlp export OTEL_LOGS_EXPORTER=otlp export OTEL_TRACES_EXPORTER=otlp export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 # Claude Code defaults to delta; with delta no claude_code_* series showed up in the otel-lgtm Prometheus. export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative export OTEL_METRIC_EXPORT_INTERVAL=5000 claude -p --model \"${MODEL:-haiku}\" --allowedTools=Read \\ \"${1:-Read weather.txt and answer in one sentence: what is the weather in Tokyo?}\" metrics の temporality は既定が delta です。そのままだと otel-lgtm の Prometheus に claude_code_* の系列が 1 つも現れず、cumulative にすると記録されました。Prometheus 系の backend に送るときは注意が必要です。\nチームで使うなら、同じ env を managed settings に書いて配布できます。なお、リポジトリの .claude/settings.json に書いた OTEL_* の exporter 設定は無視されます。clone したリポジトリの設定で送信先を書き換えられないようにするためだと思います。\n出てきた span 処理の流れはここでも「LLM が tool を要求 → tool を実行 → LLM が回答」です。Claude Code では tool の span がさらに「permission の確認待ち」と「実際の実行」に分かれています。\nclaude_code.interaction 5418ms ← プロンプト 1 回分の処理全体 ├── claude_code.llm_request 3684ms ← 1 回目の LLM 呼び出し (tool を要求) ├── claude_code.tool 9ms ← tool の呼び出し全体 │ ├── claude_code.tool.blocked_on_user 6ms ← permission の確認待ち │ └── claude_code.tool.execution 3ms ← tool の実行 └── claude_code.llm_request 1272ms ← 2 回目の LLM 呼び出し (回答) span 何の処理か 主な属性 (今回の値) claude_code.interaction プロンプト 1 回分の処理全体 gen_ai.operation.name=invoke_agent、gen_ai.conversation.id=\u003cセッション ID\u003e、user_prompt= claude_code.llm_request LLM 呼び出し gen_ai.request.model=claude-haiku-5-5、gen_ai.response.finish_reasons=tool_use、input_tokens=2、output_tokens=199、cache_read_tokens=9299、ttft_ms=2902 claude_code.tool tool の呼び出し全体 gen_ai.operation.name=execute_tool、gen_ai.tool.name=Read、gen_ai.tool.call.id=toolu_... claude_code.tool.blocked_on_user permission の確認待ち decision=accept、source=user_permanent (許可済みの設定で自動承認) claude_code.tool.execution tool の実行 success=true ttft_ms (time to first token) は最初の token が返ってくるまでの時間で、1 回目の 3684ms のうち 2902ms がそれに当たります。プロンプト本文は既定で になり、長さ (user_prompt_length) だけが記録されます。\nspan 名は独自の claude_code.* ですが、gen_ai.provider.name=anthropic、gen_ai.operation.name (invoke_agent / execute_tool)、gen_ai.conversation.id、gen_ai.tool.name など、semconv で決められたキーの属性も付いていました。span 名こそ独自ですが、「何の処理か」「どの tool か」「どのセッションか」は semconv のキーで引けます。古い gen_ai.system も併記されています。\n一方、token 数は semconv の規定から外れています。\nsemconv の規定 Claude Code の実際 属性名 gen_ai.usage.input_tokens / gen_ai.usage.cache_read.input_tokens など input_tokens / cache_read_tokens など (独自名) input の意味 cache から読んだ token も含めた合計 cache 分を含まない 今回の 1 回目の LLM 呼び出しは input_tokens=2、cache_read_tokens=9299、cache_creation_tokens=41513 でした。semconv の定義どおりなら input は少なくとも 9301 になるはずです。OpenCode は規定どおりで、2 ターン目は gen_ai.usage.input_tokens=19247 のうち cache_read.input_tokens=19107 でした。同じ「input tokens」でも意味が違うので、横断で集計するときは注意が必要です。\nClaude Code ならではなのが claude_code.tool.blocked_on_user で、permission の確認待ちの時間が別 span になっています。「エージェントが遅い」のか「人間の承認待ちで止まっていた」のかを分けて見られます。\nmetrics と events 種類 名前 内容 metrics claude_code.token.usage type (input / output / cacheRead / cacheCreation) と model ごとの token 数 metrics claude_code.cost.usage USD のコスト metrics claude_code.session.count / active_time.total など セッション数、アクティブ時間 events claude_code.user_prompt / api_request / tool_decision / tool_result / assistant_response など Loki に入る。hook や plugin の event もある events には trace_id と span_id が付いていて、Loki のログから該当の span に飛べます。\nプロンプト本文や tool の入力は既定で redact されます。OTEL_LOG_USER_PROMPTS=1 や OTEL_LOG_TOOL_DETAILS=1 で記録できますが、機密情報が流れる前提で backend を選ぶ必要があります。\n比較 左の「GenAI semconv の規定」列が物差しで、各エージェントの列がそれに対する実際の出力です。\nGenAI semconv の規定 ADK Go OpenCode Claude Code span 名 {operation} {対象名} (例: execute_tool get_weather) 規定どおり 内部の関数名 (SessionStep.attempt など) 独自名 (claude_code.llm_request など) gen_ai.operation.name 必須 あり なし あり (invoke_agent / execute_tool) gen_ai.provider.name 必須。値は anthropic / openai / gcp.gemini などの定義済みの値 モデルパッケージが設定 (fake LLM では無し) OpenCode のプロバイダー ID (opencode-go) anthropic token 数 gen_ai.usage.input_tokens (cache 分を含める) / gen_ai.usage.output_tokens 規定どおり 規定どおり 独自名 (input_tokens など)。input は cache 分を含まない finish_reasons の値 stop / tool_call / length など 規定どおり (tool_call / stop) AI SDK の値 (tool-calls / stop) Anthropic API の値 (tool_use) 本文の記録 gen_ai.input.messages などを Opt-In で記録 規定どおり (CAPTURE_MESSAGE_CONTENT で有効化) なし 独自の属性・event (OTEL_LOG_* で有効化) 有効化 規定なし telemetry.New() + OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_ENDPOINT CLAUDE_CODE_ENABLE_TELEMETRY + exporter 指定。traces は beta フラグ metrics gen_ai.client.operation.duration などを定義 なし なし 独自名 (claude_code.token.usage など) 1 ターンの span 数 (今回) 規定なし 5 約 240 6 横断ダッシュボードで可観測性を上げる 可観測性を上げるという目的に戻ると、3 つを 1 つの backend に集める価値は「エージェントの種類を問わず同じ問いを投げられる」点にあります。リポジトリには、Grafana に自動で読み込まれるダッシュボード AI Agents (OTel GenAI) を入れました。\n行 パネル データソース Claude Code metrics Cost (USD)、Cache read ratio、Tokens by type and model Prometheus All agents LLM call latency p95、Tool call latency p95、Tool calls、Input tokens、Errored LLM / tool spans、Recent tool calls Tempo (TraceQL metrics) Claude Code events Tool decisions and results Loki 横断パネルは、Tempo の TraceQL metrics で span 属性から直接集計しています。Tempo 側で span metrics の設定をする必要はありません。\nファイル: grafana/dashboards/ai-agents.json (クエリ部分)\n# LLM 呼び出しの p95 (ADK generate_content / OpenCode SessionStep.attempt / Claude Code claude_code.llm_request) { span.gen_ai.request.model != nil } | quantile_over_time(duration, .95) by (resource.service.name) # tool ごとの呼び出し回数と p95 { span.gen_ai.tool.name != nil } | count_over_time() by (resource.service.name, span.gen_ai.tool.name) { span.gen_ai.tool.name != nil } | quantile_over_time(duration, .95) by (resource.service.name, span.gen_ai.tool.name) # 失敗した LLM / tool 呼び出し { (span.gen_ai.request.model != nil || span.gen_ai.tool.name != nil) \u0026\u0026 status = error } | count_over_time() by (resource.service.name) gen_ai.operation.name は OpenCode に無いので、gen_ai.request.model と gen_ai.tool.name の有無で「LLM 呼び出し」と「tool 呼び出し」を判定しています。この 2 つは 3 エージェントすべてに付いていたので、共通して使える属性でした。逆に gen_ai.usage.input_tokens で集計する Input tokens パネルには、Claude Code が出てきません。semconv の差がそのままダッシュボードの穴として見えます。\nClaude Code の counter は session.id ラベル付きで、セッションごとに別系列になります。短いセッションでは系列の最初のサンプルより前の値を increase() で数えられないため、系列ごとに max_over_time を取って合計しています。\nsum(max_over_time(claude_code_cost_usage_USD_total[$__range])) sum(max_over_time(claude_code_token_usage_tokens_total{type=\"cacheRead\"}[$__range])) / sum(max_over_time(claude_code_token_usage_tokens_total{type=~\"input|cacheRead|cacheCreation\"}[$__range])) 今回の Claude Code 2 回目の実行では cache read が 101,624 token、input が 4 token、cache creation が 284 token で、cache read ratio は 99% を超えていました。コストは $0.0012 です。Hacker News では 4% of Sessions, 65% of the Bill: 30 Days of Claude Code Telemetry という、OTel のデータで一部のセッションにコストが偏っていることを示した記事も話題になっていました。セッション単位でコストと cache 率を見られるのは、Claude Code の metrics ならではの強みです。\nGenAI semconv はまだ Development で、属性名が変わる可能性があります。schema opt-in のような移行手段を用意しているのは、3 つの中では ADK だけでした。 OpenCode は 1 ターンで約 240 span と量が多いです。長時間動かすなら sampling や Collector での filter を考えたほうがよさそうです。 Tempo の検索には取り込みから 10〜30 秒ほどの遅延がありました。 まとめ 気になった点は下記です。\nGenAI semconv はまだ Development で、属性名が変わる可能性があります。schema opt-in のような移行手段を用意しているのは、3 つの中では ADK だけでした。 OpenCode は 1 ターンで約 240 span と量が多いです。長時間動かすなら sampling や Collector での filter を考えたほうがよさそうです。 Tempo の検索には取り込みから 10〜30 秒ほどの遅延がありました。 Claude Code、OpenCode、Google ADK Go の telemetry を grafana/otel-lgtm に集めて、GenAI semconv にどこまで沿っているかを比べました。ADK Go はほぼ semconv どおり、OpenCode は v2.2.6 以降で属性のみ準拠、Claude Code は独自スキーマに gen_ai.* を足した形と、同じ「OTel 対応」でも中身はかなり違いました。\nただ気になった点はあります。\nGenAI semconv はまだ Development で、属性名が変わる可能性があります。schema opt-in のような移行手段を用意しているのは、3 つの中では ADK だけでした。 OpenCode は 1 ターンで約 240 span と量が多いです。長時間動かすなら sampling や Collector での filter を考えたほうがよさそうです。 Tempo の検索には取り込みから 10〜30 秒ほどの遅延がありました。 それでも、gen_ai.request.model と gen_ai.tool.name という最低限の属性が共通していれば、LLM と tool の遅延・回数・エラーはエージェントの種類を問わず 1 つのダッシュボードで見られます。semconv の安定版が登場するまでは「共通に使える属性を用いつつ、足りない部分は各エージェント固有の signal で補う」という組み方がよさそうです。\n",
+  "wordCount" : "1908",
+  "inLanguage": "ja",
+  "image": "https://jedipunkz.rocks/images/social-card-base_hu_b3517f3e27a42bf.jpg",
+  "datePublished": "2026-11-08T12:00:00+09:00",
+  "dateModified": "2026-11-08T12:00:00+09:00",
+  "author":{
+    "@type": "Person",
+    "name": "jedipunkz"
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "https://jedipunkz.rocks/post/otel-genai-agents/"
+  },
+  "publisher": {
+    "@type": "Person",
+    "name": "jedipunkz 🚀 のブログ",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://jedipunkz.rocks/jedipunkz.jpg"
+    }
+  }
+}
+</script>
+
+</head>
+
+<body class="" id="top">
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.body.classList.add('dark');
+    } else if (localStorage.getItem("pref-theme") === "light") {
+        document.body.classList.remove('dark')
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.body.classList.add('dark');
+    }
+
+</script>
+
+<header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="https://jedipunkz.rocks/" accesskey="h" title="jedipunkz (Alt + H)">jedipunkz</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+            <li>
+                <a href="https://jedipunkz.rocks/about" title="About Me">
+                    <span>About Me</span>
+                </a>
+            </li>
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    <div class="breadcrumbs"><a href="https://jedipunkz.rocks/">ホーム</a>&nbsp;»&nbsp;<a href="https://jedipunkz.rocks/post/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
+      OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上
+    </h1>
+    <div class="post-description">
+      OTel GenAI semantic conventions の現状を整理し、Claude Code・OpenCode・Google ADK Go の telemetry を Grafana LGTM に集めて、semconv にどこまで沿っているかと、横断ダッシュボードで何が見えるかをサンプル環境で確認しました
+    </div>
+    <div class="post-meta"><span title='2026-11-08 12:00:00 +0900 +0900'>2026-11-08</span>&nbsp;·&nbsp;9 分&nbsp;·&nbsp;jedipunkz
+
+</div>
+  </header> 
+  <div class="post-content"><p>こんにちは。<a href="https://x.com/jedipunkz">ジェダイパンくず🍞</a> です。</p>
+<p>AI エージェントに作業を任せる時間が増えるほど、「いま何に時間がかかっているのか」「どの tool を何回呼んだのか」「token とお金をどれだけ使ったのか」が気になってきます。Hacker News でも <a href="https://news.ycombinator.com/item?id=45398467">LLM Observability in the Wild – Why OpenTelemetry Should Be the Standard</a> というスレッドで、LLM アプリの可観測性を OpenTelemetry (OTel) に寄せるべきかが議論されていました。「エージェントの処理は tool 呼び出しを含む分散コールグラフなので OTel に向いている」という意見がある一方、「属性を足すだけではマルチエージェントのデバッグには足りない」という声もあります。</p>
+<p>OTel には生成 AI 向けの semantic conventions (以下 GenAI semconv) があり、普段使っている Claude Code、OpenCode、そして以前の記事 <a href="/post/adk-go-dynamic-loop/">Google ADK Go 2.x の Dynamic Workflow とその為のガードレール</a> で触った Google ADK Go も OTel の出力に対応しています。ただ、どれも「OTel 対応」とだけ書かれていて、実際に何が出てくるのか、互いに比較できる形なのかは分かりませんでした。そこで 3 つを同じ backend に流して比べてみました。</p>
+<p>コードは下記に置いてあります。</p>
+<p><a href="https://github.com/jedipunkz/otel-genai-playground">https://github.com/jedipunkz/otel-genai-playground</a></p>
+<h2 id="結論">結論<a hidden class="anchor" aria-hidden="true" href="#結論">#</a></h2>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>エージェント</th>
+        <th>GenAI semconv との距離</th>
+        <th>対応</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>ADK Go</td>
+        <td>ほぼ準拠。semconv v1.44 の span 名・属性がそのまま出る</td>
+        <td>traces, logs</td>
+      </tr>
+      <tr>
+        <td>OpenCode</td>
+        <td>属性だけ準拠。span 名は内部の関数名で、<code>gen_ai.operation.name</code> が無い</td>
+        <td>traces, logs</td>
+      </tr>
+      <tr>
+        <td>Claude Code</td>
+        <td>独自の <code>claude_code.*</code> スキーマに <code>gen_ai.*</code> 属性を追加した形。token 数は独自名</td>
+        <td>traces (beta), metrics, logs</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>3 つとも OTLP で出せるので、backend を 1 つにそろえるだけで「LLM 呼び出しのレイテンシ p95」「tool ごとの呼び出し回数と遅延」を同じ TraceQL で横断して見られました。一方で token 数の属性名や <code>finish_reasons</code> の値はエージェントごとにばらばらで、そのまま集計できるのは一部だけです。GenAI semconv はまだ Development ステータスなので注意が必要と思いました。</p>
+<h2 id="otel-genai-semantic-conventions-の現状">OTel GenAI semantic conventions の現状<a hidden class="anchor" aria-hidden="true" href="#otel-genai-semantic-conventions-の現状">#</a></h2>
+<p>GenAI semconv は 2024 年に発足した GenAI SIG で作られている規約らしいです。当初の対象は LLM 呼び出しでしたが、今はエージェント、tool 呼び出し、MCP、評価結果まで範囲が広がっています。</p>
+<p>そもそも semantic conventions とは何かというと、telemetry の「中身の名前の付け方」を決めた規約です。OTel の SDK や OTLP が決めているのは「どう集めて、どう送るか」までで、span にどんな名前を付け、属性をどんなキーで、どんな値で入れるかは決めていません。そこを決めているのが semconv です。</p>
+<p>たとえば「LLM に入力した token 数」は、何も決めなければ実装ごとに <code>input_tokens</code>、<code>prompt_tokens</code>、<code>usage.input</code> のように名前が割れます。GenAI semconv はこれを <code>gen_ai.usage.input_tokens</code> という名前にし、cache から読んだ token も含めた値を入れる、と決めています。名前と意味がそろっていれば、どのエージェントが出した telemetry でも同じクエリで集計できます。逆にそろっていなければ、エージェントごとにクエリを書き分けることになります。この記事で「semconv に沿っているか」を気にするのはそのためです。</p>
+<p>エージェントを観測するときに知りたいことと、semconv でそれに答える属性の対応は次のとおりです。この記事では、3 つのエージェントがこれらの属性を出しているかどうかを物差しにして比べます。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>観測できる内容</th>
+        <th>semconv の属性</th>
+        <th>補足</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>この span は何の処理か</td>
+        <td><code>gen_ai.operation.name</code></td>
+        <td>値は <code>generate_content</code> (LLM 呼び出し)、<code>execute_tool</code> (tool 実行)、<code>invoke_agent</code> (エージェント実行) など。span 名は <code>{operation} {対象名}</code> にする</td>
+      </tr>
+      <tr>
+        <td>どのモデルを呼んだか</td>
+        <td><code>gen_ai.provider.name</code>、<code>gen_ai.request.model</code></td>
+        <td><code>gen_ai.provider.name</code> は必須で、古い <code>gen_ai.system</code> を置き換えるもの</td>
+      </tr>
+      <tr>
+        <td>どの tool を呼んだか</td>
+        <td><code>gen_ai.tool.name</code>、<code>gen_ai.tool.call.id</code></td>
+        <td><code>execute_tool</code> の span に付ける</td>
+      </tr>
+      <tr>
+        <td>token をどれだけ使ったか</td>
+        <td><code>gen_ai.usage.input_tokens</code>、<code>gen_ai.usage.output_tokens</code></td>
+        <td>エージェントごとに名前と意味がずれやすい項目 (後述)</td>
+      </tr>
+      <tr>
+        <td>どのセッションの処理か</td>
+        <td><code>gen_ai.conversation.id</code></td>
+        <td>複数の trace をセッション単位で束ねる</td>
+      </tr>
+      <tr>
+        <td>何を送って何が返ってきたか</td>
+        <td><code>gen_ai.input.messages</code>、<code>gen_ai.output.messages</code>、<code>gen_ai.system_instructions</code></td>
+        <td>Opt-In。機密情報を含みうるので既定では記録しない</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<h2 id="サンプル環境の構成">サンプル環境の構成<a hidden class="anchor" aria-hidden="true" href="#サンプル環境の構成">#</a></h2>
+<p>backend は <a href="https://github.com/grafana/docker-otel-lgtm">grafana/otel-lgtm</a> を使いました。OTel Collector、Tempo (traces)、Loki (logs)、Prometheus (metrics)、Grafana が 1 コンテナに入っているので、Claude Code の 3 種類の signal を 1 コンテナで受けられます。</p>
+<pre class="mermaid">
+  flowchart LR
+  ADK[ADK Go&lt;br/&gt;fake LLM] -- OTLP/HTTP --&gt; COL
+  OC[OpenCode] -- OTLP/HTTP --&gt; COL
+  CC[Claude Code] -- OTLP/HTTP --&gt; COL
+  subgraph lgtm[grafana/otel-lgtm]
+    COL[OTel Collector] --&gt; T[Tempo]
+    COL --&gt; L[Loki]
+    COL --&gt; P[Prometheus]
+    T &amp; L &amp; P --&gt; G[Grafana]
+  end
+</pre>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>パス</th>
+        <th>内容</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>compose.yaml</code></td>
+        <td>otel-lgtm。ポートは <code>127.0.0.1</code> にだけ bind</td>
+      </tr>
+      <tr>
+        <td><code>adk-go/</code></td>
+        <td>fake LLM で動く ADK エージェント</td>
+      </tr>
+      <tr>
+        <td><code>opencode/run.sh</code></td>
+        <td>OTLP export を有効にして OpenCode を 1 回実行</td>
+      </tr>
+      <tr>
+        <td><code>claude-code/run.sh</code></td>
+        <td>OTel export を有効にして Claude Code を 1 回実行</td>
+      </tr>
+      <tr>
+        <td><code>grafana/dashboards/ai-agents.json</code></td>
+        <td>横断ダッシュボード</td>
+      </tr>
+      <tr>
+        <td><code>workspace/weather.txt</code></td>
+        <td>エージェントに読ませるファイル</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>ファイル: <code>compose.yaml</code></p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-yaml" data-lang="yaml"><span class="line"><span class="cl"><span class="nt">services</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">  </span><span class="nt">lgtm</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="c"># Grafana + OTel Collector + Tempo (traces) + Loki (logs) + Prometheus (metrics) in one container.</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l">grafana/otel-lgtm:0.38.1</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">ports</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span><span class="c"># Bind to localhost only: anonymous admin Grafana and unauthenticated OTLP receivers.</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="s2">&#34;127.0.0.1:3000:3000&#34;</span><span class="w"> </span><span class="c"># Grafana</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="s2">&#34;127.0.0.1:4317:4317&#34;</span><span class="w"> </span><span class="c"># OTLP gRPC</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="s2">&#34;127.0.0.1:4318:4318&#34;</span><span class="w"> </span><span class="c"># OTLP HTTP</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">    </span><span class="nt">volumes</span><span class="p">:</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="l">./grafana/dashboards:/otel-lgtm/grafana/conf/provisioning/dashboards/custom:ro</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">      </span>- <span class="l">./grafana/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/custom.yaml:ro</span><span class="w">
+</span></span></span></code></pre></div><p>otel-lgtm の Grafana は匿名 admin で動き、OTLP receiver にも認証がありません。プロンプトや tool 引数が流れ込む可能性もあるので、ポートは localhost に限定しています。</p>
+<p>3 つとも「<code>weather.txt</code> (ADK は <code>get_weather</code> 関数) を tool で読んで、東京の天気を答える」という同じプロンプトを投げ、tool 呼び出しが 1 回入るようにしました。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl">docker compose up -d
+</span></span><span class="line"><span class="cl">./adk-go/run.sh
+</span></span><span class="line"><span class="cl"><span class="nv">MODEL</span><span class="o">=</span>&lt;provider/model&gt; ./opencode/run.sh
+</span></span><span class="line"><span class="cl">./claude-code/run.sh
+</span></span></code></pre></div><h2 id="google-adk-go">Google ADK Go<a hidden class="anchor" aria-hidden="true" href="#google-adk-go">#</a></h2>
+<h3 id="fake-llm-で-api-key-なしに動かす">fake LLM で API key なしに動かす<a hidden class="anchor" aria-hidden="true" href="#fake-llm-で-api-key-なしに動かす">#</a></h3>
+<p>ADK は Gemini 前提に見えますが、モデルは <code>model.LLM</code> インターフェースで差し替えられます。v2.7.1 には <code>gemini</code> のほかに <code>anthropicmodel</code> (experimental) と OpenAI 互換の <code>openaimodel</code> も入っています。今回は telemetry の形を見るのが目的なので、API key が不要で毎回同じ結果になる fake LLM を自分で書きました。<code>model.LLM</code> は <code>Name()</code> と <code>GenerateContent()</code> の 2 メソッドだけです。</p>
+<p>ファイル: <code>adk-go/main.go</code> (抜粋)</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="c1">// fakeLLM asks for the get_weather tool on the first turn and answers with</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="c1">// text once the tool result is in the request. Token counts are fixed values.</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">type</span><span class="w"> </span><span class="nx">fakeLLM</span><span class="w"> </span><span class="kd">struct</span><span class="p">{}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">fakeLLM</span><span class="p">)</span><span class="w"> </span><span class="nf">Name</span><span class="p">()</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="s">&#34;fake-llm&#34;</span><span class="w"> </span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">fakeLLM</span><span class="p">)</span><span class="w"> </span><span class="nf">GenerateContent</span><span class="p">(</span><span class="nx">_</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">req</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">LLMRequest</span><span class="p">,</span><span class="w"> </span><span class="nx">_</span><span class="w"> </span><span class="kt">bool</span><span class="p">)</span><span class="w"> </span><span class="nx">iter</span><span class="p">.</span><span class="nx">Seq2</span><span class="p">[</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">LLMResponse</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">]</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">yield</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">LLMResponse</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span><span class="w"> </span><span class="kt">bool</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">time</span><span class="p">.</span><span class="nf">Sleep</span><span class="p">(</span><span class="mi">200</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">time</span><span class="p">.</span><span class="nx">Millisecond</span><span class="p">)</span><span class="w"> </span><span class="c1">// make the span visible on a timeline</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="kd">var</span><span class="w"> </span><span class="nx">weather</span><span class="w"> </span><span class="kt">string</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">n</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">req</span><span class="p">.</span><span class="nx">Contents</span><span class="p">);</span><span class="w"> </span><span class="nx">n</span><span class="w"> </span><span class="p">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">p</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">req</span><span class="p">.</span><span class="nx">Contents</span><span class="p">[</span><span class="nx">n</span><span class="o">-</span><span class="mi">1</span><span class="p">].</span><span class="nx">Parts</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="k">if</span><span class="w"> </span><span class="nx">p</span><span class="p">.</span><span class="nx">FunctionResponse</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">					</span><span class="nx">weather</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprint</span><span class="p">(</span><span class="nx">p</span><span class="p">.</span><span class="nx">FunctionResponse</span><span class="p">.</span><span class="nx">Response</span><span class="p">[</span><span class="s">&#34;forecast&#34;</span><span class="p">])</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="kd">var</span><span class="w"> </span><span class="nx">part</span><span class="w"> </span><span class="o">*</span><span class="nx">genai</span><span class="p">.</span><span class="nx">Part</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="k">if</span><span class="w"> </span><span class="nx">weather</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">&#34;&#34;</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">part</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">genai</span><span class="p">.</span><span class="nx">Part</span><span class="p">{</span><span class="nx">FunctionCall</span><span class="p">:</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">genai</span><span class="p">.</span><span class="nx">FunctionCall</span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nx">ID</span><span class="p">:</span><span class="w">   </span><span class="s">&#34;call-1&#34;</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nx">Name</span><span class="p">:</span><span class="w"> </span><span class="s">&#34;get_weather&#34;</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nx">Args</span><span class="p">:</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">any</span><span class="p">{</span><span class="s">&#34;city&#34;</span><span class="p">:</span><span class="w"> </span><span class="s">&#34;Tokyo&#34;</span><span class="p">},</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="p">}}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">part</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">genai</span><span class="p">.</span><span class="nf">NewPartFromText</span><span class="p">(</span><span class="s">&#34;Tokyo: &#34;</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">weather</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nf">yield</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">model</span><span class="p">.</span><span class="nx">LLMResponse</span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">Content</span><span class="p">:</span><span class="w">      </span><span class="o">&amp;</span><span class="nx">genai</span><span class="p">.</span><span class="nx">Content</span><span class="p">{</span><span class="nx">Role</span><span class="p">:</span><span class="w"> </span><span class="nx">genai</span><span class="p">.</span><span class="nx">RoleModel</span><span class="p">,</span><span class="w"> </span><span class="nx">Parts</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">genai</span><span class="p">.</span><span class="nx">Part</span><span class="p">{</span><span class="nx">part</span><span class="p">}},</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">FinishReason</span><span class="p">:</span><span class="w"> </span><span class="nx">genai</span><span class="p">.</span><span class="nx">FinishReasonStop</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="nx">UsageMetadata</span><span class="p">:</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">genai</span><span class="p">.</span><span class="nx">GenerateContentResponseUsageMetadata</span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nx">PromptTokenCount</span><span class="p">:</span><span class="w">     </span><span class="mi">120</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nx">CandidatesTokenCount</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">				</span><span class="nx">TotalTokenCount</span><span class="p">:</span><span class="w">      </span><span class="mi">150</span><span class="p">,</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">			</span><span class="p">},</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="p">},</span><span class="w"> </span><span class="kc">nil</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span></code></pre></div><p>最初の呼び出しでは tool 呼び出し (<code>FunctionCall</code>) を返し、tool の結果がリクエストに入ってきたらテキストで答えます。</p>
+<h3 id="telemetry-の有効化">telemetry の有効化<a hidden class="anchor" aria-hidden="true" href="#telemetry-の有効化">#</a></h3>
+<p><code>telemetry.New()</code> は <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> を見て OTLP/HTTP の exporter を作ります。グローバル provider に登録し、終了時に <code>Shutdown</code> で flush します。</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-go" data-lang="go"><span class="line"><span class="cl"><span class="nx">providers</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">telemetry</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">telemetry</span><span class="p">.</span><span class="nf">WithResource</span><span class="p">(</span><span class="nx">res</span><span class="p">))</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">return</span><span class="w"> </span><span class="nx">err</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="nx">providers</span><span class="p">.</span><span class="nf">SetGlobalOtelProviders</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="k">defer</span><span class="w"> </span><span class="kd">func</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="nx">shutdownCtx</span><span class="p">,</span><span class="w"> </span><span class="nx">cancel</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nf">WithTimeout</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nf">Background</span><span class="p">(),</span><span class="w"> </span><span class="mi">10</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">defer</span><span class="w"> </span><span class="nf">cancel</span><span class="p">()</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">providers</span><span class="p">.</span><span class="nf">Shutdown</span><span class="p">(</span><span class="nx">shutdownCtx</span><span class="p">);</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">		</span><span class="nx">log</span><span class="p">.</span><span class="nf">Printf</span><span class="p">(</span><span class="s">&#34;telemetry shutdown: %v&#34;</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="p">)</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="w">	</span><span class="p">}</span><span class="w">
+</span></span></span><span class="line"><span class="cl"><span class="p">}()</span><span class="w">
+</span></span></span></code></pre></div><p>ファイル: <code>adk-go/run.sh</code></p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">OTEL_EXPORTER_OTLP_ENDPOINT</span><span class="o">=</span>http://127.0.0.1:4318
+</span></span><span class="line"><span class="cl"><span class="c1"># NO_CONTENT (default) | SPAN_ONLY | EVENT_ONLY | SPAN_AND_EVENT</span>
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT</span><span class="o">=</span><span class="s2">&#34;</span><span class="si">${</span><span class="nv">CAPTURE</span><span class="k">:-</span><span class="nv">SPAN_AND_EVENT</span><span class="si">}</span><span class="s2">&#34;</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">go run .
+</span></span></code></pre></div><h3 id="出てきた-span">出てきた span<a hidden class="anchor" aria-hidden="true" href="#出てきた-span">#</a></h3>
+<p>1 回の実行は 1 つの trace になり、その中に処理ごとの span が親子関係で並びます。下の図はその親子関係を Grafana (Tempo) で見たもので、インデントが深いほど子の span、上から下が実行順、右側の数字はその span の所要時間です。</p>
+<p>今回の処理の流れは「LLM が tool の呼び出しを要求する → tool を実行する → tool の結果を見て LLM が回答する」で、span もこの順に並びました。</p>
+<pre tabindex="0"><code>invoke_workflow weather_agent        506ms
+└── invoke_agent weather_agent       505ms
+    ├── generate_content fake-llm    202ms   ← 1 回目の LLM 呼び出し (tool を要求)
+    ├── execute_tool get_weather     101ms   ← tool の実行
+    └── generate_content fake-llm    202ms   ← 2 回目の LLM 呼び出し (回答)
+</code></pre><div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>span</th>
+        <th>何の処理か</th>
+        <th>主な属性 (今回の値)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>invoke_workflow</code> / <code>invoke_agent</code></td>
+        <td>エージェント全体の実行</td>
+        <td><code>gen_ai.agent.name=weather_agent</code>、<code>gen_ai.conversation.id=session-1</code></td>
+      </tr>
+      <tr>
+        <td><code>generate_content</code></td>
+        <td>LLM 呼び出し</td>
+        <td><code>gen_ai.request.model=fake-llm</code>、<code>gen_ai.usage.input_tokens=120</code>、<code>gen_ai.usage.output_tokens=30</code>、<code>gen_ai.response.finish_reasons=tool_call</code> (1 回目) / <code>stop</code> (2 回目)</td>
+      </tr>
+      <tr>
+        <td><code>execute_tool</code></td>
+        <td>tool の実行</td>
+        <td><code>gen_ai.tool.name=get_weather</code>、<code>gen_ai.tool.call.arguments={&quot;city&quot;:&quot;Tokyo&quot;}</code>、<code>gen_ai.tool.call.result={&quot;forecast&quot;:&quot;sunny in Tokyo&quot;}</code></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p><code>finish_reasons</code> を見ると、1 回目の LLM 呼び出しが「tool を呼ぶために止まった」(<code>tool_call</code>) こと、2 回目が「回答して終わった」(<code>stop</code>) ことが分かります。本文の記録を有効にしているので、<code>generate_content</code> には <code>gen_ai.input.messages</code> / <code>gen_ai.output.messages</code> としてプロンプトと応答も入っていました。</p>
+<p>span 名も operation 名も GenAI semconv のとおりで、3 つの Agent の中ではいちばん素直でした。</p>
+<ul>
+<li><code>OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT</code> で本文の記録先を選べます。値は <code>SPAN_ONLY</code> / <code>EVENT_ONLY</code> / <code>SPAN_AND_EVENT</code> のいずれかで、未設定なら記録しません。<code>true</code> / <code>1</code> は後方互換で <code>EVENT_ONLY</code> 扱いです。</li>
+<li>semconv の変化に備えて、<code>ADK_TELEMETRY_SCHEMA_VERSION_OPT_IN=otel_semconv_1_36</code> で以前の属性形式に戻せます。ソースには「少なくとも 2027-03-31 まで」と書かれています。</li>
+<li>fake LLM なので <code>gen_ai.provider.name</code> は付きません。実際のモデルパッケージを使えば付きます。</li>
+</ul>
+<h2 id="opencode">OpenCode<a hidden class="anchor" aria-hidden="true" href="#opencode">#</a></h2>
+<h3 id="有効化">有効化<a hidden class="anchor" aria-hidden="true" href="#有効化">#</a></h3>
+<p>OpenCode V2 は <code>OTEL_EXPORTER_OTLP_ENDPOINT</code> を設定するだけで traces と logs を出します。V1 の <code>experimental.openTelemetry</code> は V2 では無視され、警告が出ます (<a href="https://github.com/anomalyco/opencode/blob/dev/services/site/src/docs/content/migrate-v1.mdx">移行ガイド</a>)。</p>
+<p>ファイル: <code>opencode/run.sh</code> (抜粋)</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">OTEL_EXPORTER_OTLP_ENDPOINT</span><span class="o">=</span>http://127.0.0.1:4318
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl"><span class="c1"># --standalone starts a private server as a child of this shell so it inherits OTEL_*</span>
+</span></span><span class="line"><span class="cl"><span class="c1"># (the shared background service runs as a separate process).</span>
+</span></span><span class="line"><span class="cl">opencode run --standalone -m <span class="s2">&#34;</span><span class="nv">$MODEL</span><span class="s2">&#34;</span> <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="s2">&#34;</span><span class="si">${</span><span class="nv">1</span><span class="k">:-</span><span class="nv">Read</span><span class="p"> weather.txt and answer in one sentence: what is the weather in Tokyo?</span><span class="si">}</span><span class="s2">&#34;</span>
+</span></span></code></pre></div><p>V2 の <code>opencode run</code> は通常、バックグラウンドの service に接続して動きます。実際に処理するのはその service なので、<code>--standalone</code> でこの shell の子プロセスとして server を起動し、環境変数を引き継がせています。</p>
+<h3 id="出てきた-span-1">出てきた span<a hidden class="anchor" aria-hidden="true" href="#出てきた-span-1">#</a></h3>
+<p>処理の流れは ADK と同じく「LLM が tool を要求 → tool を実行 → LLM が回答」です。OpenCode では LLM 呼び出し 1 回が <code>SessionStep.attempt</code> という span になり、tool の実行はその子として入ります。実際には約 240 span ありますが、LLM と tool に関係するものだけを抜き出すと次のようになります。</p>
+<pre tabindex="0"><code>SessionRunner.drain                          ← 1 ターン (プロンプト 1 回分) の処理
+├── SessionRunner.runStep
+│   └── SessionStep.attempt          1401ms  ← 1 回目の LLM 呼び出し (tool を要求)
+│       └── Tool.execute                9ms  ← tool の実行
+│           └── ReadTool.read                ← read tool の中身
+└── SessionRunner.runStep
+    └── SessionStep.attempt           821ms  ← 2 回目の LLM 呼び出し (回答)
+</code></pre><div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>span</th>
+        <th>何の処理か</th>
+        <th>主な属性 (今回の値)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>SessionRunner.drain</code></td>
+        <td>1 ターン分の処理全体</td>
+        <td><code>session.id=ses_...</code> (この trace のすべての span に付く)</td>
+      </tr>
+      <tr>
+        <td><code>SessionStep.attempt</code></td>
+        <td>LLM 呼び出し</td>
+        <td><code>gen_ai.provider.name=opencode-go</code>、<code>gen_ai.request.model=claude-haiku-5-5</code>、<code>gen_ai.usage.input_tokens=19111</code>、<code>gen_ai.usage.output_tokens=99</code>、<code>gen_ai.response.finish_reasons=tool-calls</code>、<code>opencode.llm.first_output_ms=914</code></td>
+      </tr>
+      <tr>
+        <td><code>Tool.execute</code></td>
+        <td>tool の実行</td>
+        <td><code>gen_ai.tool.name=read</code>、<code>gen_ai.tool.call.id=toolu_...</code></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p><code>opencode.llm.first_output_ms</code> は最初の出力が返ってくるまでの時間で、1 回目の 1401ms のうち 914ms がそれに当たります。span 名は OpenCode が使っている Effect の関数名そのままです。残りの約 230 span は <code>Config.load</code> や <code>InstructionDiscovery.list</code> といった内部処理で、設定の読み込みのような細かい処理まで見えます。</p>
+<p>GenAI semconv の規定と比べると、次の点が違っていました (一覧は後の「比較」の表にまとめています)。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>項目</th>
+        <th>semconv の規定</th>
+        <th>OpenCode の実際</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>gen_ai.operation.name</code></td>
+        <td>必須</td>
+        <td>無い。「LLM 呼び出しの span」を探すには <code>gen_ai.request.model</code> の有無で判定するしかない</td>
+      </tr>
+      <tr>
+        <td><code>gen_ai.provider.name</code></td>
+        <td>モデルの提供元を表す定義済みの値 (<code>anthropic</code> など)</td>
+        <td>OpenCode のプロバイダー ID (<code>opencode-go</code>)</td>
+      </tr>
+      <tr>
+        <td><code>gen_ai.response.finish_reasons</code></td>
+        <td><code>tool_call</code> / <code>stop</code> など</td>
+        <td>AI SDK の値 (<code>tool-calls</code>)</td>
+      </tr>
+      <tr>
+        <td>本文</td>
+        <td>Opt-In で <code>gen_ai.input.messages</code> などに記録できる</td>
+        <td>記録する手段が無い</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<h3 id="v225-と-v226-で-trace-の形が大きく変わった">v2.2.5 と v2.2.6 で trace の形が大きく変わった<a hidden class="anchor" aria-hidden="true" href="#v225-と-v226-で-trace-の形が大きく変わった">#</a></h3>
+<p>最初は v2.2.5 で試しましたが、セッションの span がすべて起動時の <code>ServerProcess.start</code> の trace にぶら下がり、属性も空でした。v2.2.6 で入った <a href="https://github.com/anomalyco/opencode/pull/60974">anomalyco/opencode#60974</a> で 1 リクエスト・1 ターンごとに trace が分かれ、上の <code>gen_ai.*</code> 属性が付くようになっています。PR の説明には、デスクトップアプリの 1 日分で 650 万 span のうち 97% が 2 つの巨大な trace に入っていたと書かれていました。OpenCode の telemetry を見るなら v2.2.6 以降を使ってください。</p>
+<h2 id="claude-code">Claude Code<a hidden class="anchor" aria-hidden="true" href="#claude-code">#</a></h2>
+<h3 id="有効化-1">有効化<a hidden class="anchor" aria-hidden="true" href="#有効化-1">#</a></h3>
+<p>Claude Code は metrics、logs (events)、traces の 3 種類を出します。traces はまだ beta で、<code>CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1</code> が無いと出ません。</p>
+<p>ファイル: <code>claude-code/run.sh</code> (抜粋)</p>
+<div class="highlight"><pre tabindex="0" class="chroma"><code class="language-sh" data-lang="sh"><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">CLAUDE_CODE_ENABLE_TELEMETRY</span><span class="o">=</span><span class="m">1</span>
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">CLAUDE_CODE_ENHANCED_TELEMETRY_BETA</span><span class="o">=</span><span class="m">1</span> <span class="c1"># traces are beta and off without this</span>
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">OTEL_METRICS_EXPORTER</span><span class="o">=</span>otlp
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">OTEL_LOGS_EXPORTER</span><span class="o">=</span>otlp
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">OTEL_TRACES_EXPORTER</span><span class="o">=</span>otlp
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">OTEL_EXPORTER_OTLP_PROTOCOL</span><span class="o">=</span>http/protobuf
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">OTEL_EXPORTER_OTLP_ENDPOINT</span><span class="o">=</span>http://127.0.0.1:4318
+</span></span><span class="line"><span class="cl"><span class="c1"># Claude Code defaults to delta; with delta no claude_code_* series showed up in the otel-lgtm Prometheus.</span>
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE</span><span class="o">=</span>cumulative
+</span></span><span class="line"><span class="cl"><span class="nb">export</span> <span class="nv">OTEL_METRIC_EXPORT_INTERVAL</span><span class="o">=</span><span class="m">5000</span>
+</span></span><span class="line"><span class="cl">
+</span></span><span class="line"><span class="cl">claude -p --model <span class="s2">&#34;</span><span class="si">${</span><span class="nv">MODEL</span><span class="k">:-</span><span class="nv">haiku</span><span class="si">}</span><span class="s2">&#34;</span> --allowedTools<span class="o">=</span>Read <span class="se">\
+</span></span></span><span class="line"><span class="cl">  <span class="s2">&#34;</span><span class="si">${</span><span class="nv">1</span><span class="k">:-</span><span class="nv">Read</span><span class="p"> weather.txt and answer in one sentence: what is the weather in Tokyo?</span><span class="si">}</span><span class="s2">&#34;</span>
+</span></span></code></pre></div><p>metrics の temporality は既定が <code>delta</code> です。そのままだと otel-lgtm の Prometheus に <code>claude_code_*</code> の系列が 1 つも現れず、<code>cumulative</code> にすると記録されました。Prometheus 系の backend に送るときは注意が必要です。</p>
+<p>チームで使うなら、同じ <code>env</code> を managed settings に書いて配布できます。なお、リポジトリの <code>.claude/settings.json</code> に書いた <code>OTEL_*</code> の exporter 設定は無視されます。clone したリポジトリの設定で送信先を書き換えられないようにするためだと思います。</p>
+<h3 id="出てきた-span-2">出てきた span<a hidden class="anchor" aria-hidden="true" href="#出てきた-span-2">#</a></h3>
+<p>処理の流れはここでも「LLM が tool を要求 → tool を実行 → LLM が回答」です。Claude Code では tool の span がさらに「permission の確認待ち」と「実際の実行」に分かれています。</p>
+<pre tabindex="0"><code>claude_code.interaction                    5418ms  ← プロンプト 1 回分の処理全体
+├── claude_code.llm_request                3684ms  ← 1 回目の LLM 呼び出し (tool を要求)
+├── claude_code.tool                          9ms  ← tool の呼び出し全体
+│   ├── claude_code.tool.blocked_on_user      6ms  ← permission の確認待ち
+│   └── claude_code.tool.execution            3ms  ← tool の実行
+└── claude_code.llm_request                1272ms  ← 2 回目の LLM 呼び出し (回答)
+</code></pre><div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>span</th>
+        <th>何の処理か</th>
+        <th>主な属性 (今回の値)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>claude_code.interaction</code></td>
+        <td>プロンプト 1 回分の処理全体</td>
+        <td><code>gen_ai.operation.name=invoke_agent</code>、<code>gen_ai.conversation.id=&lt;セッション ID&gt;</code>、<code>user_prompt=&lt;REDACTED&gt;</code></td>
+      </tr>
+      <tr>
+        <td><code>claude_code.llm_request</code></td>
+        <td>LLM 呼び出し</td>
+        <td><code>gen_ai.request.model=claude-haiku-5-5</code>、<code>gen_ai.response.finish_reasons=tool_use</code>、<code>input_tokens=2</code>、<code>output_tokens=199</code>、<code>cache_read_tokens=9299</code>、<code>ttft_ms=2902</code></td>
+      </tr>
+      <tr>
+        <td><code>claude_code.tool</code></td>
+        <td>tool の呼び出し全体</td>
+        <td><code>gen_ai.operation.name=execute_tool</code>、<code>gen_ai.tool.name=Read</code>、<code>gen_ai.tool.call.id=toolu_...</code></td>
+      </tr>
+      <tr>
+        <td><code>claude_code.tool.blocked_on_user</code></td>
+        <td>permission の確認待ち</td>
+        <td><code>decision=accept</code>、<code>source=user_permanent</code> (許可済みの設定で自動承認)</td>
+      </tr>
+      <tr>
+        <td><code>claude_code.tool.execution</code></td>
+        <td>tool の実行</td>
+        <td><code>success=true</code></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p><code>ttft_ms</code> (time to first token) は最初の token が返ってくるまでの時間で、1 回目の 3684ms のうち 2902ms がそれに当たります。プロンプト本文は既定で <code>&lt;REDACTED&gt;</code> になり、長さ (<code>user_prompt_length</code>) だけが記録されます。</p>
+<p>span 名は独自の <code>claude_code.*</code> ですが、<code>gen_ai.provider.name=anthropic</code>、<code>gen_ai.operation.name</code> (<code>invoke_agent</code> / <code>execute_tool</code>)、<code>gen_ai.conversation.id</code>、<code>gen_ai.tool.name</code> など、semconv で決められたキーの属性も付いていました。span 名こそ独自ですが、「何の処理か」「どの tool か」「どのセッションか」は semconv のキーで引けます。古い <code>gen_ai.system</code> も併記されています。</p>
+<p>一方、token 数は semconv の規定から外れています。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>semconv の規定</th>
+        <th>Claude Code の実際</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>属性名</td>
+        <td><code>gen_ai.usage.input_tokens</code> / <code>gen_ai.usage.cache_read.input_tokens</code> など</td>
+        <td><code>input_tokens</code> / <code>cache_read_tokens</code> など (独自名)</td>
+      </tr>
+      <tr>
+        <td>input の意味</td>
+        <td>cache から読んだ token も含めた合計</td>
+        <td>cache 分を含まない</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>今回の 1 回目の LLM 呼び出しは <code>input_tokens=2</code>、<code>cache_read_tokens=9299</code>、<code>cache_creation_tokens=41513</code> でした。semconv の定義どおりなら input は少なくとも 9301 になるはずです。OpenCode は規定どおりで、2 ターン目は <code>gen_ai.usage.input_tokens=19247</code> のうち <code>cache_read.input_tokens=19107</code> でした。同じ「input tokens」でも意味が違うので、横断で集計するときは注意が必要です。</p>
+<p>Claude Code ならではなのが <code>claude_code.tool.blocked_on_user</code> で、permission の確認待ちの時間が別 span になっています。「エージェントが遅い」のか「人間の承認待ちで止まっていた」のかを分けて見られます。</p>
+<h3 id="metrics-と-events">metrics と events<a hidden class="anchor" aria-hidden="true" href="#metrics-と-events">#</a></h3>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>種類</th>
+        <th>名前</th>
+        <th>内容</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>metrics</td>
+        <td><code>claude_code.token.usage</code></td>
+        <td><code>type</code> (input / output / cacheRead / cacheCreation) と <code>model</code> ごとの token 数</td>
+      </tr>
+      <tr>
+        <td>metrics</td>
+        <td><code>claude_code.cost.usage</code></td>
+        <td>USD のコスト</td>
+      </tr>
+      <tr>
+        <td>metrics</td>
+        <td><code>claude_code.session.count</code> / <code>active_time.total</code> など</td>
+        <td>セッション数、アクティブ時間</td>
+      </tr>
+      <tr>
+        <td>events</td>
+        <td><code>claude_code.user_prompt</code> / <code>api_request</code> / <code>tool_decision</code> / <code>tool_result</code> / <code>assistant_response</code> など</td>
+        <td>Loki に入る。hook や plugin の event もある</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>events には <code>trace_id</code> と <code>span_id</code> が付いていて、Loki のログから該当の span に飛べます。</p>
+<p>プロンプト本文や tool の入力は既定で redact されます。<code>OTEL_LOG_USER_PROMPTS=1</code> や <code>OTEL_LOG_TOOL_DETAILS=1</code> で記録できますが、機密情報が流れる前提で backend を選ぶ必要があります。</p>
+<h2 id="比較">比較<a hidden class="anchor" aria-hidden="true" href="#比較">#</a></h2>
+<p>左の「GenAI semconv の規定」列が物差しで、各エージェントの列がそれに対する実際の出力です。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>GenAI semconv の規定</th>
+        <th>ADK Go</th>
+        <th>OpenCode</th>
+        <th>Claude Code</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>span 名</td>
+        <td><code>{operation} {対象名}</code> (例: <code>execute_tool get_weather</code>)</td>
+        <td>規定どおり</td>
+        <td>内部の関数名 (<code>SessionStep.attempt</code> など)</td>
+        <td>独自名 (<code>claude_code.llm_request</code> など)</td>
+      </tr>
+      <tr>
+        <td><code>gen_ai.operation.name</code></td>
+        <td>必須</td>
+        <td>あり</td>
+        <td>なし</td>
+        <td>あり (<code>invoke_agent</code> / <code>execute_tool</code>)</td>
+      </tr>
+      <tr>
+        <td><code>gen_ai.provider.name</code></td>
+        <td>必須。値は <code>anthropic</code> / <code>openai</code> / <code>gcp.gemini</code> などの定義済みの値</td>
+        <td>モデルパッケージが設定 (fake LLM では無し)</td>
+        <td>OpenCode のプロバイダー ID (<code>opencode-go</code>)</td>
+        <td><code>anthropic</code></td>
+      </tr>
+      <tr>
+        <td>token 数</td>
+        <td><code>gen_ai.usage.input_tokens</code> (cache 分を含める) / <code>gen_ai.usage.output_tokens</code></td>
+        <td>規定どおり</td>
+        <td>規定どおり</td>
+        <td>独自名 (<code>input_tokens</code> など)。input は cache 分を含まない</td>
+      </tr>
+      <tr>
+        <td><code>finish_reasons</code> の値</td>
+        <td><code>stop</code> / <code>tool_call</code> / <code>length</code> など</td>
+        <td>規定どおり (<code>tool_call</code> / <code>stop</code>)</td>
+        <td>AI SDK の値 (<code>tool-calls</code> / <code>stop</code>)</td>
+        <td>Anthropic API の値 (<code>tool_use</code>)</td>
+      </tr>
+      <tr>
+        <td>本文の記録</td>
+        <td><code>gen_ai.input.messages</code> などを Opt-In で記録</td>
+        <td>規定どおり (<code>CAPTURE_MESSAGE_CONTENT</code> で有効化)</td>
+        <td>なし</td>
+        <td>独自の属性・event (<code>OTEL_LOG_*</code> で有効化)</td>
+      </tr>
+      <tr>
+        <td>有効化</td>
+        <td>規定なし</td>
+        <td><code>telemetry.New()</code> + <code>OTEL_EXPORTER_OTLP_ENDPOINT</code></td>
+        <td><code>OTEL_EXPORTER_OTLP_ENDPOINT</code></td>
+        <td><code>CLAUDE_CODE_ENABLE_TELEMETRY</code> + exporter 指定。traces は beta フラグ</td>
+      </tr>
+      <tr>
+        <td>metrics</td>
+        <td><code>gen_ai.client.operation.duration</code> などを定義</td>
+        <td>なし</td>
+        <td>なし</td>
+        <td>独自名 (<code>claude_code.token.usage</code> など)</td>
+      </tr>
+      <tr>
+        <td>1 ターンの span 数 (今回)</td>
+        <td>規定なし</td>
+        <td>5</td>
+        <td>約 240</td>
+        <td>6</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<h2 id="横断ダッシュボードで可観測性を上げる">横断ダッシュボードで可観測性を上げる<a hidden class="anchor" aria-hidden="true" href="#横断ダッシュボードで可観測性を上げる">#</a></h2>
+<p>可観測性を上げるという目的に戻ると、3 つを 1 つの backend に集める価値は「エージェントの種類を問わず同じ問いを投げられる」点にあります。リポジトリには、Grafana に自動で読み込まれるダッシュボード <code>AI Agents (OTel GenAI)</code> を入れました。</p>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>行</th>
+        <th>パネル</th>
+        <th>データソース</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Claude Code metrics</td>
+        <td>Cost (USD)、Cache read ratio、Tokens by type and model</td>
+        <td>Prometheus</td>
+      </tr>
+      <tr>
+        <td>All agents</td>
+        <td>LLM call latency p95、Tool call latency p95、Tool calls、Input tokens、Errored LLM / tool spans、Recent tool calls</td>
+        <td>Tempo (TraceQL metrics)</td>
+      </tr>
+      <tr>
+        <td>Claude Code events</td>
+        <td>Tool decisions and results</td>
+        <td>Loki</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p>横断パネルは、Tempo の TraceQL metrics で span 属性から直接集計しています。Tempo 側で span metrics の設定をする必要はありません。</p>
+<p>ファイル: <code>grafana/dashboards/ai-agents.json</code> (クエリ部分)</p>
+<pre tabindex="0"><code># LLM 呼び出しの p95 (ADK generate_content / OpenCode SessionStep.attempt / Claude Code claude_code.llm_request)
+{ span.gen_ai.request.model != nil } | quantile_over_time(duration, .95) by (resource.service.name)
+
+# tool ごとの呼び出し回数と p95
+{ span.gen_ai.tool.name != nil } | count_over_time() by (resource.service.name, span.gen_ai.tool.name)
+{ span.gen_ai.tool.name != nil } | quantile_over_time(duration, .95) by (resource.service.name, span.gen_ai.tool.name)
+
+# 失敗した LLM / tool 呼び出し
+{ (span.gen_ai.request.model != nil || span.gen_ai.tool.name != nil) &amp;&amp; status = error } | count_over_time() by (resource.service.name)
+</code></pre><p><code>gen_ai.operation.name</code> は OpenCode に無いので、<code>gen_ai.request.model</code> と <code>gen_ai.tool.name</code> の有無で「LLM 呼び出し」と「tool 呼び出し」を判定しています。この 2 つは 3 エージェントすべてに付いていたので、共通して使える属性でした。逆に <code>gen_ai.usage.input_tokens</code> で集計する Input tokens パネルには、Claude Code が出てきません。semconv の差がそのままダッシュボードの穴として見えます。</p>
+<p>Claude Code の counter は <code>session.id</code> ラベル付きで、セッションごとに別系列になります。短いセッションでは系列の最初のサンプルより前の値を <code>increase()</code> で数えられないため、系列ごとに <code>max_over_time</code> を取って合計しています。</p>
+<pre tabindex="0"><code>sum(max_over_time(claude_code_cost_usage_USD_total[$__range]))
+sum(max_over_time(claude_code_token_usage_tokens_total{type=&#34;cacheRead&#34;}[$__range]))
+  / sum(max_over_time(claude_code_token_usage_tokens_total{type=~&#34;input|cacheRead|cacheCreation&#34;}[$__range]))
+</code></pre><p>今回の Claude Code 2 回目の実行では cache read が 101,624 token、input が 4 token、cache creation が 284 token で、cache read ratio は 99% を超えていました。コストは $0.0012 です。Hacker News では <a href="https://news.ycombinator.com/item?id=49837478">4% of Sessions, 65% of the Bill: 30 Days of Claude Code Telemetry</a> という、OTel のデータで一部のセッションにコストが偏っていることを示した記事も話題になっていました。セッション単位でコストと cache 率を見られるのは、Claude Code の metrics ならではの強みです。</p>
+<ul>
+<li>GenAI semconv はまだ Development で、属性名が変わる可能性があります。schema opt-in のような移行手段を用意しているのは、3 つの中では ADK だけでした。</li>
+<li>OpenCode は 1 ターンで約 240 span と量が多いです。長時間動かすなら sampling や Collector での filter を考えたほうがよさそうです。</li>
+<li>Tempo の検索には取り込みから 10〜30 秒ほどの遅延がありました。</li>
+</ul>
+<h2 id="まとめ">まとめ<a hidden class="anchor" aria-hidden="true" href="#まとめ">#</a></h2>
+<p>気になった点は下記です。</p>
+<ul>
+<li>GenAI semconv はまだ Development で、属性名が変わる可能性があります。schema opt-in のような移行手段を用意しているのは、3 つの中では ADK だけでした。</li>
+<li>OpenCode は 1 ターンで約 240 span と量が多いです。長時間動かすなら sampling や Collector での filter を考えたほうがよさそうです。</li>
+<li>Tempo の検索には取り込みから 10〜30 秒ほどの遅延がありました。</li>
+</ul>
+<p>Claude Code、OpenCode、Google ADK Go の telemetry を grafana/otel-lgtm に集めて、GenAI semconv にどこまで沿っているかを比べました。ADK Go はほぼ semconv どおり、OpenCode は v2.2.6 以降で属性のみ準拠、Claude Code は独自スキーマに <code>gen_ai.*</code> を足した形と、同じ「OTel 対応」でも中身はかなり違いました。</p>
+<p>ただ気になった点はあります。</p>
+<ul>
+<li>GenAI semconv はまだ Development で、属性名が変わる可能性があります。schema opt-in のような移行手段を用意しているのは、3 つの中では ADK だけでした。</li>
+<li>OpenCode は 1 ターンで約 240 span と量が多いです。長時間動かすなら sampling や Collector での filter を考えたほうがよさそうです。</li>
+<li>Tempo の検索には取り込みから 10〜30 秒ほどの遅延がありました。</li>
+</ul>
+<p>それでも、<code>gen_ai.request.model</code> と <code>gen_ai.tool.name</code> という最低限の属性が共通していれば、LLM と tool の遅延・回数・エラーはエージェントの種類を問わず 1 つのダッシュボードで見られます。semconv の安定版が登場するまでは「共通に使える属性を用いつつ、足りない部分は各エージェント固有の signal で補う」という組み方がよさそうです。</p>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+      <li><a href="https://jedipunkz.rocks/tags/opentelemetry/">OpenTelemetry</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/ai-agent/">AI Agent</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/observability/">Observability</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/claude-code/">Claude Code</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/opencode/">OpenCode</a></li>
+      <li><a href="https://jedipunkz.rocks/tags/adk/">ADK</a></li>
+    </ul>
+<nav class="paginav">
+  <a class="prev" href="https://jedipunkz.rocks/post/agent-gateway/">
+    <span class="title">« 前へ</span>
+    <br>
+    <span>A2A・MCP・LLM のトラフィックを統合的にプロキシし認可・制限・追跡する agentgateway</span>
+  </a>
+  <a class="next" href="https://jedipunkz.rocks/post/openshell/">
+    <span class="title">次へ »</span>
+    <br>
+    <span>NVIDIA OpenShell を使った AI Agent 環境のガードレイル策</span>
+  </a>
+</nav>
+
+
+<ul class="share-buttons">
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上 on x"
+            href="https://x.com/intent/tweet/?text=OpenTelemetry%20GenAI%20%e3%81%a7%20Claude%20Code%20%2f%20OpenCode%20%2f%20ADK%20Go%20%e3%81%ae%e5%8f%af%e8%a6%b3%e6%b8%ac%e6%80%a7%e5%90%91%e4%b8%8a&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fotel-genai-agents%2f&amp;hashtags=OpenTelemetry%2cAIAgent%2cObservability%2cClaudeCode%2cOpenCode%2cADK">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M512 62.554 L 512 449.446 C 512 483.97 483.97 512 449.446 512 L 62.554 512 C 28.03 512 0 483.97 0 449.446 L 0 62.554 C 0 28.03 28.029 0 62.554 0 L 449.446 0 C 483.971 0 512 28.03 512 62.554 Z M 269.951 190.75 L 182.567 75.216 L 56 75.216 L 207.216 272.95 L 63.9 436.783 L 125.266 436.783 L 235.9 310.383 L 332.567 436.783 L 456 436.783 L 298.367 228.367 L 432.367 75.216 L 371.033 75.216 Z M 127.633 110 L 164.101 110 L 383.481 400.065 L 349.5 400.065 Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上 on linkedin"
+            href="https://www.linkedin.com/shareArticle?mini=true&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fotel-genai-agents%2f&amp;title=OpenTelemetry%20GenAI%20%e3%81%a7%20Claude%20Code%20%2f%20OpenCode%20%2f%20ADK%20Go%20%e3%81%ae%e5%8f%af%e8%a6%b3%e6%b8%ac%e6%80%a7%e5%90%91%e4%b8%8a&amp;summary=OpenTelemetry%20GenAI%20%e3%81%a7%20Claude%20Code%20%2f%20OpenCode%20%2f%20ADK%20Go%20%e3%81%ae%e5%8f%af%e8%a6%b3%e6%b8%ac%e6%80%a7%e5%90%91%e4%b8%8a&amp;source=https%3a%2f%2fjedipunkz.rocks%2fpost%2fotel-genai-agents%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-288.985,423.278l0,-225.717l-75.04,0l0,225.717l75.04,0Zm270.539,0l0,-129.439c0,-69.333 -37.018,-101.586 -86.381,-101.586c-39.804,0 -57.634,21.891 -67.617,37.266l0,-31.958l-75.021,0c0.995,21.181 0,225.717 0,225.717l75.02,0l0,-126.056c0,-6.748 0.486,-13.492 2.474,-18.315c5.414,-13.475 17.767,-27.434 38.494,-27.434c27.135,0 38.007,20.707 38.007,51.037l0,120.768l75.024,0Zm-307.552,-334.556c-25.674,0 -42.448,16.879 -42.448,39.002c0,21.658 16.264,39.002 41.455,39.002l0.484,0c26.165,0 42.452,-17.344 42.452,-39.002c-0.485,-22.092 -16.241,-38.954 -41.943,-39.002Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上 on reddit"
+            href="https://reddit.com/submit?url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fotel-genai-agents%2f&title=OpenTelemetry%20GenAI%20%e3%81%a7%20Claude%20Code%20%2f%20OpenCode%20%2f%20ADK%20Go%20%e3%81%ae%e5%8f%af%e8%a6%b3%e6%b8%ac%e6%80%a7%e5%90%91%e4%b8%8a">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-3.446,265.638c0,-22.964 -18.616,-41.58 -41.58,-41.58c-11.211,0 -21.361,4.457 -28.841,11.666c-28.424,-20.508 -67.586,-33.757 -111.204,-35.278l18.941,-89.121l61.884,13.157c0.756,15.734 13.642,28.29 29.56,28.29c16.407,0 29.706,-13.299 29.706,-29.701c0,-16.403 -13.299,-29.702 -29.706,-29.702c-11.666,0 -21.657,6.792 -26.515,16.578l-69.105,-14.69c-1.922,-0.418 -3.939,-0.042 -5.585,1.036c-1.658,1.073 -2.811,2.761 -3.224,4.686l-21.152,99.438c-44.258,1.228 -84.046,14.494 -112.837,35.232c-7.468,-7.164 -17.589,-11.591 -28.757,-11.591c-22.965,0 -41.585,18.616 -41.585,41.58c0,16.896 10.095,31.41 24.568,37.918c-0.639,4.135 -0.99,8.328 -0.99,12.576c0,63.977 74.469,115.836 166.33,115.836c91.861,0 166.334,-51.859 166.334,-115.836c0,-4.218 -0.347,-8.387 -0.977,-12.493c14.564,-6.47 24.735,-21.034 24.735,-38.001Zm-119.474,108.193c-20.27,20.241 -59.115,21.816 -70.534,21.816c-11.428,0 -50.277,-1.575 -70.522,-21.82c-3.007,-3.008 -3.007,-7.882 0,-10.889c3.003,-2.999 7.882,-3.003 10.885,0c12.777,12.781 40.11,17.317 59.637,17.317c19.522,0 46.86,-4.536 59.657,-17.321c3.016,-2.999 7.886,-2.995 10.885,0.008c3.008,3.011 3.003,7.882 -0.008,10.889Zm-5.23,-48.781c-16.373,0 -29.701,-13.324 -29.701,-29.698c0,-16.381 13.328,-29.714 29.701,-29.714c16.378,0 29.706,13.333 29.706,29.714c0,16.374 -13.328,29.698 -29.706,29.698Zm-160.386,-29.702c0,-16.381 13.328,-29.71 29.714,-29.71c16.369,0 29.689,13.329 29.689,29.71c0,16.373 -13.32,29.693 -29.689,29.693c-16.386,0 -29.714,-13.32 -29.714,-29.693Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上 on facebook"
+            href="https://facebook.com/sharer/sharer.php?u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fotel-genai-agents%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-106.468,0l0,-192.915l66.6,0l12.672,-82.621l-79.272,0l0,-53.617c0,-22.603 11.073,-44.636 46.58,-44.636l36.042,0l0,-70.34c0,0 -32.71,-5.582 -63.982,-5.582c-65.288,0 -107.96,39.569 -107.96,111.204l0,62.971l-72.573,0l0,82.621l72.573,0l0,192.915l-191.104,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上 on whatsapp"
+            href="https://api.whatsapp.com/send?text=OpenTelemetry%20GenAI%20%e3%81%a7%20Claude%20Code%20%2f%20OpenCode%20%2f%20ADK%20Go%20%e3%81%ae%e5%8f%af%e8%a6%b3%e6%b8%ac%e6%80%a7%e5%90%91%e4%b8%8a%20-%20https%3a%2f%2fjedipunkz.rocks%2fpost%2fotel-genai-agents%2f">
+            <svg version="1.1" viewBox="0 0 512 512" xml:space="preserve" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M449.446,0c34.525,0 62.554,28.03 62.554,62.554l0,386.892c0,34.524 -28.03,62.554 -62.554,62.554l-386.892,0c-34.524,0 -62.554,-28.03 -62.554,-62.554l0,-386.892c0,-34.524 28.029,-62.554 62.554,-62.554l386.892,0Zm-58.673,127.703c-33.842,-33.881 -78.847,-52.548 -126.798,-52.568c-98.799,0 -179.21,80.405 -179.249,179.234c-0.013,31.593 8.241,62.428 23.927,89.612l-25.429,92.884l95.021,-24.925c26.181,14.28 55.659,21.807 85.658,21.816l0.074,0c98.789,0 179.206,-80.413 179.247,-179.243c0.018,-47.895 -18.61,-92.93 -52.451,-126.81Zm-126.797,275.782l-0.06,0c-26.734,-0.01 -52.954,-7.193 -75.828,-20.767l-5.441,-3.229l-56.386,14.792l15.05,-54.977l-3.542,-5.637c-14.913,-23.72 -22.791,-51.136 -22.779,-79.287c0.033,-82.142 66.867,-148.971 149.046,-148.971c39.793,0.014 77.199,15.531 105.329,43.692c28.128,28.16 43.609,65.592 43.594,105.4c-0.034,82.149 -66.866,148.983 -148.983,148.984Zm81.721,-111.581c-4.479,-2.242 -26.499,-13.075 -30.604,-14.571c-4.105,-1.495 -7.091,-2.241 -10.077,2.241c-2.986,4.483 -11.569,14.572 -14.182,17.562c-2.612,2.988 -5.225,3.364 -9.703,1.12c-4.479,-2.241 -18.91,-6.97 -36.017,-22.23c-13.314,-11.876 -22.304,-26.542 -24.916,-31.026c-2.612,-4.484 -0.279,-6.908 1.963,-9.14c2.016,-2.007 4.48,-5.232 6.719,-7.847c2.24,-2.615 2.986,-4.484 4.479,-7.472c1.493,-2.99 0.747,-5.604 -0.374,-7.846c-1.119,-2.241 -10.077,-24.288 -13.809,-33.256c-3.635,-8.733 -7.327,-7.55 -10.077,-7.688c-2.609,-0.13 -5.598,-0.158 -8.583,-0.158c-2.986,0 -7.839,1.121 -11.944,5.604c-4.105,4.484 -15.675,15.32 -15.675,37.364c0,22.046 16.048,43.342 18.287,46.332c2.24,2.99 31.582,48.227 76.511,67.627c10.685,4.615 19.028,7.371 25.533,9.434c10.728,3.41 20.492,2.929 28.209,1.775c8.605,-1.285 26.499,-10.833 30.231,-21.295c3.732,-10.464 3.732,-19.431 2.612,-21.298c-1.119,-1.869 -4.105,-2.99 -8.583,-5.232Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上 on telegram"
+            href="https://telegram.me/share/url?text=OpenTelemetry%20GenAI%20%e3%81%a7%20Claude%20Code%20%2f%20OpenCode%20%2f%20ADK%20Go%20%e3%81%ae%e5%8f%af%e8%a6%b3%e6%b8%ac%e6%80%a7%e5%90%91%e4%b8%8a&amp;url=https%3a%2f%2fjedipunkz.rocks%2fpost%2fotel-genai-agents%2f">
+            <svg version="1.1" xml:space="preserve" viewBox="2 2 28 28" height="30px" width="30px" fill="currentColor">
+                <path
+                    d="M26.49,29.86H5.5a3.37,3.37,0,0,1-2.47-1,3.35,3.35,0,0,1-1-2.47V5.48A3.36,3.36,0,0,1,3,3,3.37,3.37,0,0,1,5.5,2h21A3.38,3.38,0,0,1,29,3a3.36,3.36,0,0,1,1,2.46V26.37a3.35,3.35,0,0,1-1,2.47A3.38,3.38,0,0,1,26.49,29.86Zm-5.38-6.71a.79.79,0,0,0,.85-.66L24.73,9.24a.55.55,0,0,0-.18-.46.62.62,0,0,0-.41-.17q-.08,0-16.53,6.11a.59.59,0,0,0-.41.59.57.57,0,0,0,.43.52l4,1.24,1.61,4.83a.62.62,0,0,0,.63.43.56.56,0,0,0,.4-.17L16.54,20l4.09,3A.9.9,0,0,0,21.11,23.15ZM13.8,20.71l-1.21-4q8.72-5.55,8.78-5.55c.15,0,.23,0,.23.16a.18.18,0,0,1,0,.06s-2.51,2.3-7.52,6.8Z" />
+            </svg>
+        </a>
+    </li>
+    <li>
+        <a target="_blank" rel="noopener noreferrer" aria-label="share OpenTelemetry GenAI で Claude Code / OpenCode / ADK Go の可観測性向上 on ycombinator"
+            href="https://news.ycombinator.com/submitlink?t=OpenTelemetry%20GenAI%20%e3%81%a7%20Claude%20Code%20%2f%20OpenCode%20%2f%20ADK%20Go%20%e3%81%ae%e5%8f%af%e8%a6%b3%e6%b8%ac%e6%80%a7%e5%90%91%e4%b8%8a&u=https%3a%2f%2fjedipunkz.rocks%2fpost%2fotel-genai-agents%2f">
+            <svg version="1.1" xml:space="preserve" width="30px" height="30px" viewBox="0 0 512 512" fill="currentColor"
+                xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+                <path
+                    d="M449.446 0C483.971 0 512 28.03 512 62.554L512 449.446C512 483.97 483.97 512 449.446 512L62.554 512C28.03 512 0 483.97 0 449.446L0 62.554C0 28.03 28.029 0 62.554 0L449.446 0ZM183.8767 87.9921H121.8427L230.6673 292.4508V424.0079H281.3328V292.4508L390.1575 87.9921H328.1233L256 238.2489z" />
+            </svg>
+        </a>
+    </li>
+</ul>
+
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2026 <a href="https://jedipunkz.rocks/">jedipunkz 🚀 のブログ</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a><script type="module">
+  if (document.querySelector("pre.mermaid")) {
+    const { default: mermaid } = await import(
+      "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs"
+    );
+    
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      themeVariables: {
+        darkMode: true,
+        background: "#1a1b26",
+        mainBkg: "#24283b",
+        primaryColor: "#24283b",
+        primaryTextColor: "#c0caf5",
+        primaryBorderColor: "#7aa2f7",
+        secondaryColor: "#414868",
+        secondaryTextColor: "#c0caf5",
+        secondaryBorderColor: "#565f89",
+        tertiaryColor: "#1f2335",
+        tertiaryTextColor: "#c0caf5",
+        tertiaryBorderColor: "#565f89",
+        lineColor: "#7dcfff",
+        textColor: "#c0caf5",
+        nodeTextColor: "#c0caf5",
+        edgeLabelBackground: "#1a1b26",
+        clusterBkg: "#1f2335",
+        clusterBorder: "#565f89",
+        titleColor: "#c0caf5"
+      }
+    });
+    await mermaid.run();
+  }
+</script>
+
+
+<script>
+    let menu = document.getElementById('menu')
+    if (menu) {
+        menu.scrollLeft = localStorage.getItem("menu-scroll-position");
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        if (document.body.className.includes("dark")) {
+            document.body.classList.remove('dark');
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            document.body.classList.add('dark');
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+<script>
+    document.querySelectorAll('pre > code').forEach((codeblock) => {
+        const container = codeblock.parentNode.parentNode;
+
+        const copybutton = document.createElement('button');
+        copybutton.classList.add('copy-code');
+        copybutton.innerHTML = 'コピー';
+
+        function copyingDone() {
+            copybutton.innerHTML = 'コピーされました!';
+            setTimeout(() => {
+                copybutton.innerHTML = 'コピー';
+            }, 2000);
+        }
+
+        copybutton.addEventListener('click', (cb) => {
+            if ('clipboard' in navigator) {
+                navigator.clipboard.writeText(codeblock.textContent);
+                copyingDone();
+                return;
+            }
+
+            const range = document.createRange();
+            range.selectNodeContents(codeblock);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            try {
+                document.execCommand('copy');
+                copyingDone();
+            } catch (e) { };
+            selection.removeRange(range);
+        });
+
+        if (container.classList.contains("highlight")) {
+            container.appendChild(copybutton);
+        } else if (container.parentNode.firstChild == container) {
+            
+        } else if (codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.nodeName == "TABLE") {
+            
+            codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.appendChild(copybutton);
+        } else {
+            
+            codeblock.parentNode.appendChild(copybutton);
+        }
+    });
+</script>
+</body>
+
+</html>
