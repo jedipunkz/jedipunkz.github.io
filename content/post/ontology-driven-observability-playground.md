@@ -1,6 +1,6 @@
 ---
 title: "運用知識を TypeDB のオントロジーに入れて Claude Code に読み書きさせる"
-description: "Netflix の Ontology-Driven Observability を参考に、インシデントとデプロイの情報を TypeDB の schema で定義した知識グラフに入れ、Go の MCP server 経由で Claude Code に調査と根因仮説の記録をさせました。schema に反する書き込みを DB が拒否すること、読み取り専用の権限では書き込めないことを headless の Claude Code で自動確認しています"
+description: "Netflix の Ontology-Driven Observability を参考に、インシデントとデプロイの情報を TypeDB に入れ、Go の MCP server 経由で Claude Code に調査と根因仮説の記録をさせました。schema に反する書き込みを DB が拒否すること、読み取り専用の権限では書き込めないことを headless の Claude Code で確認しています"
 date: 2026-11-20T12:00:00+09:00
 tags: ["Ontology", "Knowledge Graph", "TypeDB", "MCP", "Claude Code"]
 categories: ["AI", "SRE", "Observability"]
@@ -8,48 +8,48 @@ draft: true
 ---
 こんにちは。[ジェダイパンくず🍞](https://x.com/jedipunkz) です。
 
-Netflix TechBlog の [Ontology-Driven Observability](https://netflixtechblog.com/ontology-driven-observability-building-an-end-to-end-knowledge-graph-at-netflix-scale-421392cf5adf) を読みました。運用データを共通の語彙 (ontology) を持つ知識グラフにまとめ、根因分析をするエージェントがそのグラフを検索する、という内容です。グラフを保存する QuipuDB は Netflix 社内の実装で、公開されていません。
+Netflix TechBlog の [Ontology-Driven Observability](https://netflixtechblog.com/ontology-driven-observability-building-an-end-to-end-knowledge-graph-at-netflix-scale-421392cf5adf) を読みました。運用データを ontology という共通の語彙で定義した知識グラフにまとめ、根因分析をするエージェントがそのグラフを検索する、という内容です。グラフを保存する QuipuDB は Netflix 社内の実装で、公開されていません。
 
-そこで同じ考え方を手元で小さく試しました。運用情報は [TypeDB](https://typedb.com/) に入れ、ontology は TypeDB の schema として定義しています。エージェントには Claude Code を使い、Go で書いた MCP server を経由してグラフを読み書きさせました。
+そこで同じ考え方を手元で小さく試しました。運用情報は [TypeDB](https://typedb.com/) に入れ、ontology は TypeDB の schema として定義しています。エージェントには Claude Code を使い、Go で書いた MCP server を経由して DB を読み書きさせました。
 
 動作確認のために書いたコードは下記に置いてあります。
 
 https://github.com/jedipunkz/ops-ontology-playground
 
-検証したバージョンは TypeDB CE 3.14.2、[MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) v1.8.0、Claude Code 2.1.325、Go 1.27.4 です。環境は WSL2 の Ubuntu 26.04 で、TypeDB は Docker Compose (Docker 29.1.3、Compose 2.40.3) で動かしました。
+検証したバージョンは TypeDB CE 3.14.2、[MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) v1.8.0、Claude Code 2.1.325、Go 1.27.4 です。環境は WSL2 の Ubuntu 26.04 です。TypeDB は Docker 29.1.3 と Compose 2.40.3 で動かしました。
 
 ## 作ったもの
 
 エージェントは次の 3 つのことをします。
 
-1. DB から ontology (schema) を読み、どんな型と関係があるかを知る
+1. DB から schema を読み、どんな型と関係があるかを知る
 2. インシデントとデプロイを検索し、根因の仮説を立てる
-3. 仮説を DB に書き込む。ontology に反する書き込みは DB が拒否する
+3. 仮説を DB に書き込む。schema に反する書き込みは DB が拒否する
 
 書き込んだ仮説は、次に調査するエージェントが読めます。2 回目のエージェントは前回の仮説を見つけ、同じ仮説を重複して書きませんでした。
 
 | Netflix の記事 | この playground |
 |---|---|
-| Observability の ontology | TypeDB の schema (`ontology/schema.tql`) |
+| Observability の ontology | `ontology/schema.tql` に書いた TypeDB の schema |
 | QuipuDB | TypeDB CE |
 | 運用システムからのデータ収集 | 手書きの synthetic data |
 | 根因分析のエージェント | Claude Code と MCP server |
 
-Netflix の production system を再現するものではありません。確かめたかったのは、エージェントが運用知識をどう読み、どういう制約を通して書くかです。
+Netflix の本番システムは再現していません。確かめたのは、エージェントが運用知識をどう読み、どういう制約を通して書くかです。
 
 ## なぜ TypeDB か
 
-最初は Apache Jena Fuseki で作りました。RDF/OWL で ontology を書き、エージェントの書き込みを一時的な named graph に入れて SHACL で検証し、通ったものだけを本体に移す構成です。これは動きましたが、検証のための仕組みを自分で組む部分が多くなりました。
+最初は Apache Jena Fuseki で作りました。RDF/OWL で ontology を書き、エージェントの仮説を一時的な named graph に入れて SHACL で検証し、通ったものだけを本体に移す構成です。これは動きました。ただし、一時 graph への書き込み、SHACL の検証、本体への移動、失敗時の削除をすべて Go で書く必要がありました。
 
-TypeDB は型を中心にした DB で、entity、relation、attribute の型と制約を schema に書きます。schema に反するデータは DB が書き込み時に拒否します。ontology を定義するとそのまま書き込みの検証になるので、今回の目的に合っていると考えて乗り換えました。TypeDB CE のライセンスは MPL-2.0 です。
+TypeDB は型を中心にした DB で、entity、relation、attribute の型と制約を schema に書きます。schema に反するデータは、DB が書き込み時に拒否します。schema を書けば書き込みの検証も決まるので、TypeDB に乗り換えました。TypeDB CE のライセンスは MPL-2.0 です。
 
 ほかに検討したものと、選ばなかった理由です。
 
 | 候補 | 選ばなかった理由 |
 |---|---|
-| Apache Jena Fuseki (RDF/SHACL) | 動いたが、staging graph と SHACL 検証の手順を自分で組む必要があった |
-| Neo4j | property graph で利用者は多い。schema を持たずに使う設計で、RDF や SHACL はプラグイン (neosemantics) で扱う |
-| Graphiti (Zep) | エージェントの記憶用の時系列知識グラフ。書き込み時に LLM で entity を抽出するため、書き込みが決定的にならない |
+| Apache Jena Fuseki と SHACL | 動いたが、一時 graph と SHACL 検証の手順を Go で書く必要があった |
+| Neo4j | property graph で利用者は多い。schema を持たずに使う設計で、RDF や SHACL は neosemantics というプラグインで扱う |
+| Graphiti (Zep) | エージェントの記憶用の時系列知識グラフ。書き込み時に LLM が entity を抽出するため、同じ入力でも書き込まれる内容が LLM の出力で変わる |
 | Kuzu | 2025 年 10 月に開発元がリポジトリを archive した |
 
 ## ontology を schema で書く
@@ -92,12 +92,12 @@ define
 | annotation | 意味 |
 |---|---|
 | `@key` | 一意で必須の識別子 |
-| `@card(1..1)` | ちょうど 1 つ持つ (必須かつ 1 つだけ) |
+| `@card(1..1)` | 必須で、1 つだけ持つ |
 | `@regex` | 文字列の形式 |
 | `@values` | 取りうる値の一覧 |
 | `@range` | 値の範囲 |
 
-エージェントが立てる根因の仮説は `root-cause-hypothesis` という relation にしました。「1 つのインシデントと 1 つのデプロイを結び、要約・根拠・確信度・記録時刻を持つ」という定義が schema そのものになります。
+エージェントが立てる根因の仮説は `root-cause-hypothesis` という relation にしました。この relation は 1 つのインシデントと 1 つのデプロイを結び、要約、根拠、確信度、記録時刻を 1 つずつ持ちます。
 
 データは次のように入れます。
 
@@ -125,9 +125,9 @@ flowchart LR
   T -->|schema の制約で検証| T
 ```
 
-- TypeDB は HTTP API を `127.0.0.1:8000` だけで公開します。gRPC (1729) と monitoring (4104) のポートは公開しません
+- TypeDB は HTTP API を `127.0.0.1:8000` だけで公開します。gRPC の 1729 番と monitoring の 4104 番は公開しません
 - `ops-mcp` は stdio で動く MCP server です。Claude Code が子プロセスとして起動します
-- MCP server は loopback の TypeDB URL しか受け付けず、認証情報は環境変数 `TYPEDB_USERNAME` と `TYPEDB_PASSWORD` から読みます
+- MCP server は loopback の TypeDB URL しか受け付けません。認証情報は環境変数 `TYPEDB_USERNAME` と `TYPEDB_PASSWORD` から読みます
 
 MCP server が持つ tool は 4 つです。
 
@@ -140,7 +140,7 @@ MCP server が持つ tool は 4 つです。
 
 どの tool もエージェントから TypeQL を受け取りません。エージェントが渡すのは `checkout` や `incident-5377` のような slug と、仮説の本文だけです。query は Go 側で組み立てます。
 
-TypeDB の公式 image は root で動きます。そのまま使わず、Dockerfile で実行ファイルの権限を変えて uid 10001 で動かしました。また TypeDB は既定で利用状況とエラーのレポートを外部に送るため、compose の起動オプションで止めています。
+TypeDB の公式 image は root で動きます。この playground では Dockerfile で実行ファイルの権限を変え、uid 10001 で動かしました。また TypeDB は既定で利用状況とエラーのレポートを外部に送るため、compose の起動オプションで止めています。
 
 ```yaml
     command:
@@ -160,15 +160,15 @@ cd ops-ontology-playground
 export TYPEDB_USERNAME=admin TYPEDB_PASSWORD=password
 
 make up    # TypeDB を起動する
-make seed  # ops database を作り直し、schema と sample data を入れる
+make seed  # ops DB を作り直し、schema と sample data を入れる
 make demo  # headless の Claude Code を 3 回実行して結果を確認する
 ```
 
-`make seed` は database を作り直すので、記録済みの仮説は消えます。`make demo` は `claude -p` を 3 回呼ぶため、その分 Claude Code の利用枠を使います。対話で試すときは、このディレクトリで `claude` を起動し、`.mcp.json` の `ops-ontology` server を有効にします。
+`make seed` は ops DB を作り直すので、記録済みの仮説は消えます。`make demo` は `claude -p` を 3 回呼ぶため、その分 Claude Code の利用枠を使います。対話で試すときは、このディレクトリで `claude` を起動し、`.mcp.json` の `ops-ontology` server を有効にします。
 
-## 読む: schema と運用データ
+## schema と運用データを読む
 
-エージェントが最初に呼ぶのは `describe_ontology` です。この tool は TypeDB の `GET /v1/databases/ops/schema` が返す schema をそのまま返します。annotation も含まれるので、エージェントは「confidence は 0 から 1」「仮説にはインシデントとデプロイが 1 つずつ必要」といった制約まで DB から知ることができます。
+エージェントが最初に呼ぶのは `describe_ontology` です。この tool は、TypeDB の `GET /v1/databases/ops/schema` が返す schema を加工せずに返します。schema には annotation も含まれます。エージェントは「confidence は 0 から 1」「仮説にはインシデントとデプロイが 1 つずつ必要」といった制約を DB から読めます。
 
 `search_operational_graph` は次の TypeQL でインシデントを検索します。デプロイも同じ形の query で検索します。
 
@@ -187,7 +187,7 @@ fetch {
 };
 ```
 
-`fetch` は結果を JSON の document で返すので、MCP の tool の出力にそのまま使えます。
+`fetch` は結果を JSON の document で返します。MCP server はこの document を tool の出力に入れて返します。
 
 ```json
 {
@@ -205,7 +205,7 @@ fetch {
 
 slug は Go 側でも `^[a-z][a-z0-9-]{0,62}$` に一致するかを確認してから query に埋め込みます。
 
-## 書く: 制約に反する書き込みは DB が拒否する
+## 制約に反する書き込みを DB が拒否する
 
 `record_root_cause_hypothesis` は、次の 1 つの write transaction で仮説を挿入します。
 
@@ -235,21 +235,21 @@ schema に反する書き込みを TypeDB の HTTP API に直接送ると、DB �
 | deployment を結ばない仮説 | commit 時に `[CNT5] Constraint '@card(1..1)' has been violated: found 0 instances.` |
 | slug が `Hypothesis Test` | `[CNT6] Constraint '@regex("^[a-z][a-z0-9-]{0,62}$")' has been violated` |
 
-`@card` の下限は insert の時点ではなく commit の時点で確認されます。1 回の query で仮説の属性をすべて書くので、足りない属性があれば transaction ごと失敗し、DB には何も残りません。
+TypeDB は `@card` の下限を insert の時点ではなく commit の時点で確認します。MCP server は 1 回の query で仮説の属性をすべて書きます。足りない属性があれば transaction ごと失敗し、DB には何も残りません。
 
-別の application のインシデントとデプロイを組み合わせた場合は、エラーになりません。`match` が何も見つけないため、0 件を挿入して正常終了します。そこで Go 側で挿入件数を確認し、0 件ならエラーとして返しています。
+別の application のインシデントとデプロイを組み合わせた場合は、エラーになりません。`match` が何も見つけないため、TypeDB は 0 件を挿入して正常終了します。そこで Go 側で挿入件数を確認し、0 件ならエラーとして返しています。
 
 ```text
 incident and deployment must exist and refer to the same application
 ```
 
-DB の制約は schema の形を守るだけです。仮説が正しいかどうかは確認しません。デプロイの 8 分後にインシデントが始まったことは仮説の根拠になりますが、因果を確かめるには metrics、ログ、trace、変更の差分といった別の観測が必要です。
+DB の制約が確認するのはデータの形だけです。仮説が正しいかどうかは確認しません。デプロイの 8 分後にインシデントが始まったことは仮説の根拠になります。因果を確かめるには、metrics、ログ、trace、変更の差分といった別の観測が必要です。
 
-今回は値を query に bind する仕組みを使っていません。要約と根拠の文字列は Go 側で `\` と `"` を escape してから埋め込みます。制御文字は受け付けません。`"; match $x isa thing; delete $x;` を含む要約を記録すると、文字列としてそのまま保存され、データは消えませんでした。
+この playground では、値を query に bind する仕組みを使っていません。MCP server は要約と根拠の文字列の `\` と `"` を escape してから query に埋め込みます。制御文字は受け付けません。`"; match $x isa thing; delete $x;` を含む要約を記録すると、文字列のまま保存され、データは消えませんでした。
 
-## make demo: 読み返しと権限を自動で確認する
+## make demo で読み返しと権限を確認する
 
-`make demo` は headless の Claude Code (`claude -p`) を 3 回実行し、毎回 DB の状態で結果を判定します。プロンプトはどの回も同じです。
+`make demo` は `claude -p` で headless の Claude Code を 3 回実行し、毎回 DB の状態で結果を判定します。プロンプトはどの回も同じです。
 
 ```text
 Why did checkout have a SEV-2 incident, and which deployment is a plausible cause?
@@ -262,7 +262,7 @@ Record a hypothesis with the evidence from the graph. Reply in 3 lines or fewer.
 | 2 | 4 つすべて | 仮説が 1 件記録される |
 | 3 | 4 つすべて | 2 回目の仮説を読み、重複を書かない。仮説は 1 件のまま |
 
-Claude Code は次のように起動しています。`--permission-mode dontAsk` は、許可リストにない tool の呼び出しを確認せずに拒否するモードです。
+Claude Code は次のように起動しています。`--permission-mode dontAsk` を付けると、Claude Code は許可リストにない tool の呼び出しを確認せずに拒否します。
 
 ```sh
 claude -p "$prompt" \
@@ -273,7 +273,7 @@ claude -p "$prompt" \
   --output-format json
 ```
 
-1 回目は書き込み tool を許可していません。拒否された tool は JSON 出力の `permission_denials` に入るので、そこに `record_root_cause_hypothesis` があることを確認します。実行結果です。
+1 回目は書き込み tool を許可していません。Claude Code は拒否した tool を JSON 出力の `permission_denials` に入れます。demo は、そこに `record_root_cause_hypothesis` があることを確認します。実行結果です。
 
 ```text
 == run 1: read tools only; the write must be denied
@@ -290,9 +290,9 @@ OK: incident-5377 has 1 hypotheses
 OK: incident-5377 has 1 hypotheses
 ```
 
-エージェントにどこまで書かせるかは、MCP server の tool の分け方と Claude Code の許可リストで決められます。読み取りだけを許可すれば、調査はできても DB は変わりません。書き込み tool は `ReadOnlyHint` を付けずに登録しているので、MCP client は読み取り tool と区別できます。
+エージェントが DB を変更できるかどうかは、MCP server の tool の分け方と Claude Code の許可リストで決まります。読み取りの 3 つだけを許可した 1 回目では、エージェントは調査を終えましたが、DB は変わりませんでした。書き込み tool は `ReadOnlyHint` を付けずに登録しているので、MCP client は読み取り tool と区別できます。
 
-3 回目のエージェントは `list_hypotheses` で 2 回目の仮説を読み、書き込みをしませんでした。MCP server の instructions に「記録する前に `list_hypotheses` を呼び、既存の仮説と重複するものは記録しない」と書いてあるためです。DB はエージェント同士が調査結果を受け渡す場所としても使えます。
+3 回目のエージェントは `list_hypotheses` で 2 回目の仮説を読み、書き込みをしませんでした。MCP server の instructions に「記録する前に `list_hypotheses` を呼び、既存の仮説と重複するものは記録しない」と書いてあるためです。
 
 2 回目に記録された仮説です。
 
@@ -307,28 +307,28 @@ OK: incident-5377 has 1 hypotheses
 }
 ```
 
-confidence の 0.6 はモデルが出した値で、校正された確率ではありません。DB に残しておけば、仮説を採用するかどうかを人が後から根拠と一緒に判断できます。
+confidence の 0.6 はモデルが出した値で、校正された確率ではありません。仮説は根拠と一緒に DB に残るので、採用するかどうかは人が後から判断できます。
 
 ## ローカル LLM をやめた経緯
 
 最初は Google の ADK for Go でエージェントを書き、LLM には Ollama でローカルの `qwen3:4b` を使っていました。API key なしで手元だけで完結させたかったためです。
 
-ところが手元の環境では Ollama が GPU を使えず、CPU で推論していました (`ollama ps` の VRAM 使用量が 0)。推論中はマシン全体が重くなり、tool 呼び出しが最後まで安定して動くかも確かめきれませんでした。
+ところが手元の環境では Ollama が GPU を使えず、CPU で推論していました。`ollama ps` の VRAM 使用量は 0 でした。推論中はマシン全体が重くなり、tool 呼び出しが最後まで安定して動くかも確かめきれませんでした。
 
-記事で見せたいのは DB への読み書きの制約で、エージェントの実装ではありません。そこで tool を MCP server として公開し、エージェント役を Claude Code に任せました。MCP server は MCP に対応した他の client からも使えます。
+この記事の対象は DB への読み書きの制約です。そこで tool を MCP server として公開し、エージェント役を Claude Code に任せました。MCP server は MCP に対応した他の client からも使えます。
 
 ## 再現していないもの
 
 - QuipuDB の実装と Netflix の規模
-- 実際の運用システム (監視、デプロイ、インシデント管理など) からのデータ収集。今回のデータは手書きの synthetic data です
+- 監視、デプロイ、インシデント管理といった実際の運用システムからのデータ収集。今回のデータは手書きの synthetic data です
 - 複数の専門エージェントによる根因分析
 - 本番運用で必要な認証、TLS、権限設計、可用性。今回は TypeDB の初期認証情報のまま、TLS なしで loopback だけに公開しています
 
 ## まとめ
 
-Ontology-Driven Observability で大事なのは、graph database を入れること自体ではありません。運用データの意味と関係を ontology で定義し、別々のシステムから来る情報を同じ語彙で引けるようにすることです。
+TypeDB の schema に `@key`、`@card`、`@regex`、`@values`、`@range` を書くと、範囲外の値、必須属性の欠落、形式違反の書き込みを DB が拒否しました。application が一致しない組み合わせは、Go 側で挿入件数を確認して拒否しています。
 
-TypeDB では ontology を schema として書くと、それがそのまま書き込みの検証になりました。エージェントには TypeQL を書かせず、型の決まった tool だけを渡しています。エージェントが書ける値の範囲は schema が決め、書けるかどうかは Claude Code の許可リストが決めます。どちらも `make demo` で自動で確認できます。
+エージェントには TypeQL を書かせず、4 つの tool だけを渡しました。エージェントが書ける値は schema が決め、書けるかどうかは Claude Code の許可リストが決めます。`make demo` は、読み取りだけの許可で書き込みが拒否されること、記録した仮説を次の回のエージェントが読むことを DB の件数で確認します。
 
 次は OpenTelemetry の trace とデプロイの履歴を自動で DB に取り込み、synthetic data ではない入力で試してみたいです。
 
