@@ -63,14 +63,18 @@ flowchart LR
   GW -. OTLP/HTTP .-> T[traceview :4318]
 ```
 
-図の各要素の動作です。agentgateway の枠内の 3 つは 1 つの gateway プロセスが開く listener で、枠外のエージェント・MCP server・fake LLM・traceview はそれぞれ別プロセスです。
+図の各要素を、client がメッセージを送ってから返事が返るまでの処理の順に説明します。agentgateway の枠内の 3 つは 1 つの gateway プロセスが開く listener で、枠外のエージェント・MCP server・fake LLM・traceview はそれぞれ別プロセスです。
 
-- routes (a2a policy): `:3000` で A2A を受ける listener。`/planner` と `/worker` のパスで backend のエージェントに振り分け、Agent Card の URL を gateway の URL に書き換え、`SendMessage` などのメソッドや task の状態をログに出す
-- mcp (jwtAuth / mcpAuthorization / mcpGuardrails): `:3001/mcp` で MCP を受ける listener。docs と ops の 2 つの MCP server を 1 つの MCP server に見せ、JWT の検証、tool 単位の認可、引数を見た guardrail を適用する
-- llm (apiKey / localRateLimit): `:4000` で OpenAI 互換 API を受ける listener。API key で認証し、team ごとの token rate limit をかけて fake LLM に転送する
-- planner agent: client からメッセージを受け、worker に転送するだけのエージェント。worker の呼び出しも gateway の `/worker` を経由させる
-- worker agent: planner からメッセージを受け、gateway 経由で MCP の tool と LLM を呼んで返事を作るエージェント
-- traceview: gateway から OTLP/HTTP で受けた span をツリー表示する簡易 backend
+1. client が gateway の `:3000/planner` に A2A でメッセージを送る
+2. routes (a2a policy) が受ける。Agent Card の URL を gateway の URL に書き換え、`SendMessage` などのメソッドや task の状態をログに出し、パスに応じて planner agent に転送する
+3. planner agent がメッセージを受け、worker を直接呼ばずに gateway の `/worker` へ転送する
+4. routes (a2a policy) が手順 2 と同じ処理をして worker agent に転送する
+5. worker agent が返事を作るために、gateway 経由で MCP の tool と LLM を呼ぶ
+6. mcp (jwtAuth / mcpAuthorization / mcpGuardrails) が `:3001/mcp` で tool の呼び出しを受ける。JWT の検証、tool 単位の認可、引数を見た guardrail を適用し、docs と ops の 2 つの MCP server を 1 つの MCP server に見せて転送する
+7. llm (apiKey / localRateLimit) が `:4000` で LLM の呼び出しを受ける。API key で認証し、team ごとの token rate limit をかけて fake LLM に転送する
+8. worker の返事が planner、client へと逆順で返る
+
+traceview はこの流れとは独立に、gateway が OTLP/HTTP で送る span を受けてツリー表示します。
 
 agentgateway は GitHub Releases のバイナリをそのまま使います。`scripts/setup.sh` がバイナリの取得と Go のビルドを行い、各シナリオは `run.sh` を実行するだけで再現できます。
 
