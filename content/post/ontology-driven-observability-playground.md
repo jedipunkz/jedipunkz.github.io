@@ -1,132 +1,59 @@
 ---
-title: "Ontology-Driven Observability をローカルで試す: Go ADK Agent に運用知識グラフを読ませる"
-description: "Netflix の Observability Ontology を Apache Jena Fuseki と RDF/OWL/SHACL で小さく再現し、ローカル Ollama の Go ADK Agent にインシデントとデプロイを検索・記録させました"
+title: "運用知識グラフを Claude Code に読み書きさせる: Fuseki と SHACL で試す Ontology-Driven Observability"
+description: "Netflix の Ontology-Driven Observability を参考に、Apache Jena Fuseki と RDF/OWL/SHACL で小さな運用知識グラフを作り、Go の MCP server 経由で Claude Code にインシデントの調査と根因仮説の記録をさせました"
 date: 2026-11-20T12:00:00+09:00
-tags: ["Ontology", "Knowledge Graph", "Apache Jena", "ADK Go", "Ollama"]
+tags: ["Ontology", "Knowledge Graph", "Apache Jena", "MCP", "Claude Code"]
 categories: ["AI", "SRE", "Observability"]
-draft: false
+draft: true
 ---
-
 こんにちは。[ジェダイパンくず🍞](https://x.com/jedipunkz) です。
 
-Netflix の [Ontology-Driven Observability](https://netflixtechblog.com/ontology-driven-observability-building-an-end-to-end-knowledge-graph-at-netflix-scale-421392cf5adf) という記事を読みました。メトリクス、ログ、トレース、デプロイ履歴、インシデント時の会話を、共通の語彙を持つ知識グラフに入れて、Agentic Root Cause Analysis（AutoRCA）から検索する仕組みです。
+Netflix TechBlog の [Ontology-Driven Observability](https://netflixtechblog.com/ontology-driven-observability-building-an-end-to-end-knowledge-graph-at-netflix-scale-421392cf5adf) を読みました。運用データを共通の語彙 (ontology) を持つ知識グラフにまとめ、根因分析をするエージェントがそのグラフを検索する、という内容です。グラフを保存する QuipuDB は Netflix 社内の実装で、公開されていません。
 
-最初に気になったのは QuipuDB でした。Netflix はこれを自社製の RDF graph database、redb を基盤にした distributed quad store と説明しています。「これを Docker Compose で立ち上げて、手元の SRE Agent につないだら、どんな読み書きになるのだろう」と思いました。
+そこで同じ考え方を、公開されている標準と OSS で小さく作りました。グラフの保存には Apache Jena Fuseki、語彙には RDF/OWL、書き込みの検証には SHACL を使いました。エージェントには Claude Code を使い、Go で書いた MCP server を経由してグラフを読み書きさせています。
 
-## 先に結論
+動作確認のために書いたコードは下記に置いてあります。
 
-QuipuDB のソースコードやローカル起動手順は、Netflix の記事にはありません。そこで QuipuDB 自体を動かすのではなく、同じ考え方を Apache Jena Fuseki と RDF/OWL/SHACL/SPARQL で小さく作りました。
+https://github.com/jedipunkz/ops-ontology-playground
 
-作ったものは [ops-ontology-playground](https://github.com/jedipunkz/ops-ontology-playground) です。Go ADK Agent が Fuseki から incident と deployment を検索し、根因の「仮説」を SHACL で検証してからグラフに記録します。LLM はローカル Ollama の `qwen3:4b` を使うので、Gemini API key も Google Cloud project も不要です。
+検証したバージョンは Apache Jena Fuseki 6.2.0、[MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk) v1.8.0、Claude Code 2.1.325、Go 1.27.4 です。環境は WSL2 の Ubuntu 26.04 で、Fuseki は Docker Compose (Docker 29.1.3、Compose 2.40.3) で動かしました。
 
-| Netflix の構成 | 今回の playground |
+## 作ったもの
+
+エージェントは次の 3 つのことをします。
+
+1. グラフから ontology を読み、どんな型と関係があるかを知る
+2. インシデントとデプロイを検索し、根因の仮説を立てる
+3. 仮説をグラフに書き込む。書き込みは SHACL の検証を通ったものだけが入る
+
+書き込んだ仮説は、次に調査するエージェントが読めます。2 回目のエージェントは前回の仮説を見つけ、同じ仮説を重複して書きませんでした。
+
+| Netflix の記事 | この playground |
 |---|---|
-| Observability Ontology | 小さな RDF/OWL の `ops` ontology |
-| QuipuDB | Apache Jena Fuseki / TDB2 |
-| enrichers と correlation engine | synthetic な Turtle データと SPARQL |
-| AutoRCA の specialist agents | Go ADK の `llmagent` と function tools |
-| incident discussion も含む運用データ | checkout の incident と deployment |
+| Observability の ontology | 小さな RDF/OWL の `ops` ontology |
+| QuipuDB | Apache Jena Fuseki (TDB2) |
+| 運用システムからのデータ収集 | 手書きの Turtle ファイル (synthetic data) |
+| 根因分析のエージェント | Claude Code と MCP server |
 
-Netflix の production system を再現するものではありません。目的は、Agent が運用知識グラフをどう読むか、どういう制約を通して書くかをローカルで確かめることです。
+Netflix の production system を再現するものではありません。確かめたかったのは、エージェントが運用知識グラフをどう読み、どういう制約を通して書くかです。
 
-## Ontology とグラフ DB は別のもの
+## Ontology と RDF/OWL/SHACL
 
-記事を読む前は「QuipuDB がオントロジー DB なのかな」と考えていました。正確には、ontology は「何を Application、Incident、Deployment と呼び、それらがどう関係するか」というモデルです。RDF が事実を triple で表し、OWL で語彙や関係を定義し、SHACL でデータの形を検証し、SPARQL で検索します。QuipuDB はその RDF knowledge graph を保存する Netflix 内部の実装です。
+ontology は「何を Application、Incident、Deployment と呼び、それらがどう関係するか」を定めたモデルです。今回使った W3C の標準は、それぞれ次の役割を持ちます。
 
-例えば、運用上の事実を次のように書けます。
+| 標準 | 役割 |
+|---|---|
+| RDF | 事実を「主語・述語・目的語」の triple で表す |
+| OWL | クラスと property (関係) を定義する |
+| SHACL | データが満たすべき形 (必須の property、型、値の範囲) を定義し、検証する |
+| SPARQL | グラフを検索・更新する |
+
+運用上の事実は Turtle 形式で次のように書きます。
 
 ```turtle
 @prefix ops: <https://example.com/ops#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
-ops:checkout a ops:Application ;
-    ops:ownedBy "Commerce" ;
-    ops:deployedIn "us-east-1" .
-
-ops:incident-5377 a ops:Incident ;
-    ops:affects ops:checkout ;
-    ops:severity "SEV-2" ;
-    ops:summary "Checkout latency increased after the latest deployment." .
-```
-
-「`incident-5377` が `checkout` に影響した」という関係は `ops:affects` の triple です。アプリケーションの ID が監視ツール、deploy tool、incident management tool で食い違うと、RCA の前に人間が名前の対応表を頭の中で作ることになります。Ontology は、その対応関係を機械が読める形で明示する役割を持ちます。
-
-Netflix の記事では、Raw telemetry や incident discussion を typed triples に変換し、entity の型や命名、software catalog との照合を通してから graph に入れています。ログや Slack のテキストをそのまま LLM に渡すだけでなく、データの意味と制約をモデルにしておくのがポイントです。
-
-## ローカル構成
-
-今回の構成は次のとおりです。
-
-```mermaid
-flowchart LR
-  U[質問] --> A[Go ADK Agent]
-  A -->|search_operational_graph| Q[SPARQL query]
-  Q --> F[Fuseki / TDB2]
-  A -->|record_root_cause_hypothesis| V[Go validation]
-  V -->|candidate graph| S[SHACL]
-  S -->|conforms| F
-  A <-->|OpenAI-compatible API| O[Ollama / qwen3:4b]
-```
-
-- Fuseki 6.2.0 は RDF graph を TDB2 に保存します。
-- Go ADK Agent は `search_operational_graph` と `record_root_cause_hypothesis` の 2 つの function tool を持ちます。
-- Ollama は `qwen3:4b` をローカルで動かします。Agent の既定モデルをローカルにしたため、外部の API key は使いません。
-- `docker compose` の port mapping と Ollama server は loopback に bind し、ネットワークへ公開しない構成です。
-
-ADK Go の OpenAI-compatible model connector は experimental です。Ollama の OpenAI-compatible `/v1/chat/completions` endpoint を使い、コードでは `APIChatCompletions` を選びます。Ollama は local API key の値を認証には使わず無視します。ADK のクライアントには空でない値が必要なため、コード中の `"ollama"` は固定の dummy value です。秘密情報ではありません。
-
-モデル設定は `internal/modelconfig/config.go` にまとめました。既定値は Ollama なので Gemini の key を読まず、Gemini を使う場合だけ `MODEL_PROVIDER=gemini` を明示します。
-
-```go
-llm, err := openaimodel.NewModel(ctx, modelName, &openaimodel.ClientConfig{
-    APIKey:  "ollama", // Ollama local API ignores this placeholder.
-    BaseURL: "http://127.0.0.1:11434/v1",
-    API:     openaimodel.APIChatCompletions,
-    HTTPClient: &http.Client{
-        Timeout: 5 * time.Minute,
-        CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-            return http.ErrUseLastResponse
-        },
-    },
-})
-```
-
-URL の host は `localhost` か loopback IP だけを許可しています。API key を空で送ると Go の OpenAI client が環境変数の値を参照するため、local endpoint に誤って別の key を送らないよう、loopback と redirect 無効化も設定しています。
-
-## 試す
-
-動作確認に使った修正は [ops-ontology-playground の PR #2](https://github.com/jedipunkz/ops-ontology-playground/pull/2) にあります。PR merge 前に試す場合は、`fix/fuseki-tdb2-config` branch を使います。merge 後は `main` で同じ手順を実行できます。
-
-```sh
-git clone --branch fix/fuseki-tdb2-config \
-  https://github.com/jedipunkz/ops-ontology-playground.git
-cd ops-ontology-playground
-```
-
-リポジトリの README にある手順では、Ollama と Fuseki を別々に起動します。
-
-```sh
-# Ollama server を別 terminal で起動した後
-ollama pull qwen3:4b
-
-# Fuseki を Docker Compose で起動
-docker compose up --build -d
-
-# ontology と synthetic data を投入
-go run ./cmd/seed
-
-# API key なしで Go ADK Agent を起動
-go run ./cmd/agent console
-```
-
-この環境では Docker と Docker Compose を利用できませんでした。そのため今回の動作確認では、公式 Apache Jena Fuseki 6.2.0 binary と Temurin JRE を一時領域に展開し、`--localhost` で Fuseki を直接起動しました。`docker compose up` 自体はこの環境では実行していません。Fuseki のデータサービス設定、Go の seed client、Ollama、Agent の tool 呼び出しは実動作で確認しました。
-
-Ollama と Fuseki はどちらも `127.0.0.1` だけに bind しました。Fuseki のサンプルには認証がないため、port を外部 network に公開してはいけません。
-
-## グラフに入れたデータ
-
-`ontology/observability.ttl` で `Application`、`Deployment`、`Incident`、`Hypothesis` とその関係を定義し、`ontology/sample-ops.ttl` に試験データを入れました。
-
-```turtle
 ops:checkout-v42 a ops:Deployment ;
     ops:target ops:checkout ;
     ops:version "v42" ;
@@ -139,123 +66,151 @@ ops:incident-5377 a ops:Incident ;
     ops:startedAt "2026-11-18T10:23:00Z"^^xsd:dateTime .
 ```
 
-実データではなく、動きが分かるように作った synthetic data です。`incident-5377` は `checkout-v42` の 8 分後に始まっています。`checkout-v41` も入れてあり、「最新 deployment」と「前の deployment」を SPARQL で並べられます。
+「`incident-5377` は `checkout` に影響した」は `ops:affects` の triple 1 つです。監視ツール、デプロイツール、インシデント管理ツールでアプリケーションの名前が食い違うと、調査する人はまず名前の対応を頭の中で作ることになります。ontology があれば、その対応を機械が読める形で持てます。
 
-Agent の検索 tool は LLM に自由な SPARQL を書かせません。`checkout` のような lowercase slug を受け取り、Go 側で固定 query を組み立てます。検索結果には incident の `startedAt` と deployment の `deployedAt` を含めます。
+### なぜ RDB や Neo4j ではなく Fuseki か
 
-```sparql
-PREFIX ops: <https://example.com/ops#>
-SELECT ?incident ?severity ?incidentSummary ?incidentStartedAt
-       ?deployment ?version ?deployedAt
-WHERE {
-  ops:checkout a ops:Application .
-  OPTIONAL {
-    ?incident a ops:Incident ;
-              ops:affects ops:checkout ;
-              ops:severity ?severity ;
-              ops:summary ?incidentSummary ;
-              ops:startedAt ?incidentStartedAt .
-  }
-  OPTIONAL {
-    ?deployment a ops:Deployment ;
-                ops:target ops:checkout ;
-                ops:version ?version ;
-                ops:deployedAt ?deployedAt .
-  }
-}
-ORDER BY DESC(?deployedAt)
-LIMIT 100
+データを入れるだけなら、RDB でも Neo4j でもできます。今回 Fuseki を選んだ理由は次の 2 つです。
+
+1. ontology (スキーマ) 自体がグラフ内のデータです。エージェントは SPARQL で ontology を検索して、どんな型と関係があるかを知れます。プロンプトにスキーマを書く必要がありません
+2. Fuseki は SHACL の検証を endpoint として標準で持っています。エージェントの書き込みを検証する仕組みを、別のツールを足さずに作れます
+
+Neo4j は property graph のデータベースで、RDF の取り込みや SHACL の検証はプラグイン (neosemantics) で行います。LLM が Cypher を書くことに慣れている点は Neo4j の利点です。ただ、今回はエージェントに query を書かせない設計にしたため、その利点は使いません。
+
+## 構成
+
+```mermaid
+flowchart LR
+  U[人] --> C[Claude Code]
+  C -->|MCP stdio| M[ops-mcp<br/>Go]
+  M -->|固定の SPARQL query| F[Fuseki / TDB2]
+  M -->|staging graph に書く| F
+  M -->|SHACL で検証| F
+  M -->|検証を通ったら promote| F
 ```
 
-この query の結果から Agent は次の情報を受け取ります。
+- Fuseki は `127.0.0.1:3030` だけで待ち受けます。サンプルには認証がないため、外部のネットワークに公開してはいけません
+- `ops-mcp` は stdio で動く MCP server です。Claude Code が子プロセスとして起動します
+- MCP server は loopback の Fuseki URL しか受け付けません
+
+MCP server が持つ tool は 4 つです。
+
+| tool | 種類 | 内容 |
+|---|---|---|
+| `describe_ontology` | 読み | ontology のクラスと property を返す |
+| `search_operational_graph` | 読み | application に紐づくインシデントとデプロイを返す |
+| `list_hypotheses` | 読み | インシデントに対して記録済みの仮説を返す |
+| `record_root_cause_hypothesis` | 書き | 仮説を検証してから記録する |
+
+どの tool もエージェントから SPARQL を受け取りません。エージェントが渡すのは `checkout` や `incident-5377` のような slug と、仮説の本文だけです。query は Go 側で組み立てます。
+
+## 試す
+
+```sh
+git clone https://github.com/jedipunkz/ops-ontology-playground.git
+cd ops-ontology-playground
+
+# Fuseki を起動する
+make up
+
+# ontology と synthetic data を投入する
+make seed
+
+# Claude Code を起動する。.mcp.json の ops-ontology server を有効にするか聞かれる
+claude
+```
+
+`.mcp.json` には MCP server の起動方法を書いてあります。
+
+```json
+{
+  "mcpServers": {
+    "ops-ontology": {
+      "command": "go",
+      "args": ["run", "./cmd/ops-mcp"],
+      "env": {
+        "FUSEKI_URL": "http://127.0.0.1:3030/ops"
+      }
+    }
+  }
+}
+```
+
+Claude Code には次のように頼みます。
+
+```text
+Why did checkout have a SEV-2 incident, and which deployment is a plausible cause?
+Record a hypothesis with the evidence from the graph.
+```
+
+## 読む: ontology と運用データ
+
+エージェントが最初に呼んだのは `describe_ontology` でした。この tool は次の SPARQL で、`ops` namespace のクラスと property を返します。
+
+```sparql
+PREFIX ops:  <https://example.com/ops#>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?term ?kind ?label ?domain ?range
+WHERE {
+  VALUES ?kind { owl:Class owl:ObjectProperty owl:DatatypeProperty }
+  ?term a ?kind .
+  FILTER(STRSTARTS(STR(?term), STR(ops:)))
+  OPTIONAL { ?term rdfs:label ?label }
+  OPTIONAL { ?term rdfs:domain ?domain }
+  OPTIONAL { ?term rdfs:range ?range }
+}
+ORDER BY ?kind ?term
+LIMIT 200
+```
+
+今回の ontology では 18 件 (クラス 4 つと property 14 個) が返ります。エージェントはここで `Incident` が `affects` で `Application` を指し、`Deployment` が `target` で `Application` を指すことを知ります。
+
+次に `search_operational_graph` で `checkout` を検索しました。MCP server の tool 定義は次のとおりです。`ReadOnlyHint` を付けて、この tool がグラフを変更しないことを client に伝えています。
+
+```go
+mcp.AddTool(server, &mcp.Tool{
+    Name:        "search_operational_graph",
+    Description: "Find incidents and deployments connected to a known application in the operational knowledge graph.",
+    Annotations: readOnly,
+}, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
+    result, err := client.SearchApplication(ctx, in.Application)
+    if err != nil {
+        return nil, SearchOutput{}, err
+    }
+    return nil, SearchOutput{Application: in.Application, Rows: flatten(result)}, nil
+})
+```
+
+`SearchApplication` は引数を `^[a-z][a-z0-9-]{0,62}$` に一致する slug に制限し、固定の query に埋め込みます。そのため、引数に SPARQL を混ぜ込むことはできません。検索結果から、エージェントは次の情報を得ます。
 
 | Entity | 値 |
 |---|---|
-| Incident | `incident-5377`, `SEV-2`, 10:23 UTC |
-| 最新 deployment | `checkout-v42`, 10:15 UTC |
-| 前の deployment | `checkout-v41`, 前日 08:00 UTC |
+| Incident | `incident-5377`、`SEV-2`、2026-11-18 10:23 UTC に開始 |
+| 最新の deployment | `checkout-v42`、10:15 UTC |
+| 1 つ前の deployment | `checkout-v41`、前日 08:00 UTC |
 
-ADK の function tool は Go の関数から作ります。LLM に渡すのは `application` という slug だけで、SPARQL の組み立ては `SearchApplication` が担当します。
+## 書く: staging graph と SHACL
 
-```go
-searchTool, err := functiontool.New(
-    functiontool.Config{
-        Name:        "search_operational_graph",
-        Description: "Find incidents and deployments connected to an application.",
-    },
-    func(ctx agent.Context, args SearchArgs) (map[string]any, error) {
-        result, err := graphClient.SearchApplication(ctx, args.Application)
-        if err != nil {
-            return nil, err
-        }
-        return map[string]any{"bindings": result.Results.Bindings}, nil
-    },
-)
-```
+`record_root_cause_hypothesis` は、仮説を次の順に処理します。
 
-`SearchApplication` は slug を `^[a-z][a-z0-9-]{0,62}$` に制限し、SPARQL query に `LIMIT 100` を付けます。LLM が SPARQL syntax を誤るケースを減らし、任意 query の実行権限も与えません。
+1. incident ID と deployment ID が slug か、confidence が 0 から 1 の範囲か、本文が長さの制限内かを Go で確認する
+2. SPARQL の `ASK` で、incident と deployment が存在し、同じ application を指しているかを確認する
+3. 仮説の triple を一時的な named graph (staging graph) に書く
+4. Fuseki の SHACL endpoint で staging graph を検証する
+5. 検証を通ったら default graph に移し、staging graph を消す。通らなければ staging graph を消して終わる
 
-最初の実行では、こちらが user prompt に「8 分後」と書いてしまいました。それでは Agent が時間差をグラフから読み取った証拠になりません。また初版の検索 tool は `startedAt` を返していませんでした。そこで検索 tool に incident の開始時刻を追加し、別の空データベースに seed し直して、時間差を指示しない prompt で再実行しました。
-
-ここは記事を書く上でも大事な確認でした。LLM に正解を教えた上で tool call が成功したことと、LLM がグラフから答えを得たことは別です。
-
-### 実行した環境
-
-今回の確認に使ったバージョンは Go 1.27.3、ADK Go v2.8.0、Apache Jena Fuseki 6.2.0、Temurin JRE 21.0.13.1、Ollama 0.40.16、`qwen3:4b`（Q4_K_M）です。`GOOGLE_API_KEY` を unset した状態で agent を起動しました。
-
-この実行環境には Docker がなく、AMD GPU もこの session に device として公開されていませんでした。`/dev/kfd` と `/dev/dri` がなく、`ollama ps` は `100% CPU` を表示しました。そのため、Fuseki は公式 binary を一時領域に展開して直接起動し、Ollama は公式 Linux archive を checksum 検証後に一時領域で起動しました。**AMD GPU の利用と Docker Compose の起動は未確認**です。
-
-新規の Fuseki data directory で seed し直し、Agent を次の 2 turn で動かしました。
-
-1. checkout の遅延を調べるが、まだ仮説は記録しない。
-2. 検索結果の incident/deployment ID と時刻だけを使って、confidence 0.75 の仮説を記録する。検索結果に時刻がなければ記録しない。
-
-起動時には `GOOGLE_API_KEY` を明示的に外しました。実際に使った Agent 起動コマンドは次のとおりです。
-
-```sh
-env -u GOOGLE_API_KEY \
-  FUSEKI_URL=http://127.0.0.1:3031/ops \
-  go run ./cmd/agent console
-```
-
-最初の応答には `incident-5377` の開始時刻 `2026-11-18T10:23:00Z` と、`checkout-v42` の deploy 時刻 `2026-11-18T10:15:00Z` が出て、Agent は「8 分後」と計算しました。次の応答では `hypothesis-f0996e03-3050-471b-866e-2699892871ad` を記録したと返しました。
-
-応答文だけでは、書き込みが実データに反映された証拠になりません。Agent 実行後に SPARQL `ASK` で hypothesis、incident、deployment、confidence、summary、evidence を照合し、`true` を確認しました。さらに SHACL endpoint の report は `sh:conforms true`、named graph 検索では staging graph が 0 件でした。
-
-## Agent の読み取りと書き込み
-
-Agent にはまず「調べて、根拠を述べるが、まだ仮説は記録しない」と頼み、その後で「検索結果だけを使って仮説を記録して」と頼みました。実際の応答では、Agent が `incident-5377` と `checkout-v42` の時刻を検索結果から読み、差が 8 分であることを述べました。
-
-> `incident-5377` は `checkout-v42` がデプロイされた後、8 分後に開始された遅延インシデントを示しています。
-
-Agent は続く tool call で以下の内容を記録しました。
-
-```text
-Hypothesis ID: hypothesis-f0996e03-3050-471b-866e-2699892871ad
-Incident ID: incident-5377
-Deployment ID: checkout-v42
-Evidence: Incident started 8 minutes after checkout-v42 deployment
-Confidence: 0.75
-```
-
-Confidence はモデルが出した値で、校正済み確率ではありません。`0.75` と記録されていても「根因である確率が実験的に 75%」という意味にはなりません。仮説と根拠を graph に残し、人間が後から判断できるようにするものです。
-
-### 書き込みをそのまま通さない
-
-グラフへの書き込みは、LLM が生成した任意の SPARQL をそのまま実行する設計にはしていません。`record_root_cause_hypothesis` は構造化された値を受け取り、次の順で処理します。
-
-1. incident ID と deployment ID が slug 形式か確認する。
-2. confidence が 0〜1 の範囲で、summary と evidence が長さ制限内か確認する。
-3. SPARQL `ASK` で incident と deployment が存在し、同じ application に紐付くか確認する。
-4. 候補 triple を一時 named graph に書く。
-5. SHACL で必須 field、datatype、confidence の範囲を検証する。
-6. `sh:conforms true` の場合だけ default graph に promote し、一時 graph を削除する。
-
-今回の shape では `aboutIncident` と `relatedDeployment` をそれぞれ 1 つ必須にし、summary/evidence の長さ、confidence の datatype と 0〜1 の範囲、recordedAt の dateTime 型を検証します。
+SHACL の shape では、仮説が持つべき property と型を定義しています。一部を抜粋します。
 
 ```turtle
 ops:HypothesisShape a sh:NodeShape ;
     sh:targetClass ops:Hypothesis ;
+    sh:property [
+        sh:path ops:aboutIncident ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:class ops:Incident
+    ] ;
     sh:property [
         sh:path ops:confidence ;
         sh:minCount 1 ;
@@ -263,55 +218,86 @@ ops:HypothesisShape a sh:NodeShape ;
         sh:datatype xsd:decimal ;
         sh:minInclusive 0 ;
         sh:maxInclusive 1
-    ] ;
-    sh:property [
-        sh:path ops:aboutIncident ;
-        sh:minCount 1 ;
-        sh:maxCount 1 ;
-        sh:class ops:Incident
     ] .
 ```
 
-検証が失敗した場合は、一時 graph を削除して default graph へ promote しません。実行後に named graph を検索し、`urn:ops-ontology:staging:` の graph が残っていないことも確認しました。
+いきなり default graph に書かず staging graph を経由するのは、検証に通らなかった仮説を他のエージェントや人に読ませないためです。
 
-SHACL が確認するのはデータの形です。deployment が incident の原因であることを証明するわけではありません。時刻の前後関係や `ops:affects` は仮説の根拠になりますが、因果関係の確定には metrics、logs、traces、変更内容など別の観測が要ります。
+別の application の incident と deployment を組み合わせると、2 の確認で拒否されます。`checkout` の deployment と `payments` の incident を渡したときの tool の応答です。
 
-## 実行で見つかった実装ミス
+```json
+{"content":[{"type":"text","text":"incident and deployment must exist and refer to the same application"}],"isError":true}
+```
 
-初回の Fuseki 起動は失敗しました。例外は `NoSpecificTypeException` で、設定中の `ja:DatasetTDB2` が Jena 6.2.0 の assembler type として解決されませんでした。公式の Jena 6 設定では TDB2 dataset の型は `tdb2:DatasetTDB2`、保存先は `tdb2:location` です。設定を修正すると Fuseki が起動しました。
+SHACL が確認するのはデータの形だけです。仮説が正しいかどうかは確認しません。時刻の前後関係は仮説の根拠になりますが、因果を確かめるには metrics、ログ、trace、変更の差分といった別の観測が必要です。
 
-次に `cmd/seed` が 405 を受けました。Graph Store URL は `/ops/data?default` であるべきですが、client が `?default` を path として連結して `/ops/data%3Fdefault` にしていました。endpoint path と query string を分けて URL を組み立てるよう修正しました。
+## 読み返す: 前回の仮説を使う
 
-最後に検索 tool が `startedAt` を返さない問題を直しました。単に LLM の instruction に「時間差を計算する」と書いても、必要な値が tool response に存在しなければ graph-grounded な推論にはなりません。tool の戻り値に必要な facts が含まれているかもテスト対象にしました。
+同じ質問で Claude Code を 2 回実行しました。確認には headless モードを使い、MCP server の tool をすべて許可しています。
 
-これらの修正は [ops-ontology-playground の PR #2](https://github.com/jedipunkz/ops-ontology-playground/pull/2) にまとめています。PR が merge されるまでは、再現する場合にこの branch を使ってください。
+```sh
+claude -p --model sonnet \
+  --mcp-config .mcp.json --strict-mcp-config \
+  --allowedTools 'mcp__ops-ontology__*' \
+  "Why did checkout have a SEV-2 incident, and which deployment is a plausible cause? Record a hypothesis with the evidence from the graph. ..."
+```
 
-## Netflix の QuipuDB と同じではない
+1 回目に呼ばれた tool と応答です。
 
-この playground から分かるのは、Ontology を Agent の境界に置き、検索と書き込みを型・検証付きにする基本パターンです。次のものは再現していません。
+```text
+ツール呼び出し順: describe_ontology → search_operational_graph(checkout) → list_hypotheses(incident-5377、既存なし) → record_root_cause_hypothesis
+hypothesis_id: hypothesis-ef9b3cb4-cb14-452a-a65c-ecfcc3dc7b19（incident-5377 × checkout-v42、confidence 0.6）
+根拠: v42 は 2026-11-18T10:15Z に deploy され、8 分後の 10:23Z に SEV-2 が発生した。v41 は約 26 時間前。
+注意: 時間的近接のみで、graph に metrics や diff はない。因果は未確認。
+```
 
-- QuipuDB の分散 quad store と Netflix の scale
-- Netflix の 12 operational namespaces や production software catalog
-- Atlas、Radar、Spinnaker、incident management、Slack などからのデータ収集
-- enrichers、correlation engine、AutoRCA の specialist agents
-- production workload の性能、可用性、権限設計
+2 回目の応答です。
 
-QuipuDB を Compose で起動できたわけではありません。公開されている W3C 標準と Apache Jena で「同じ設計の一部」を試したものです。Jena Fuseki は TDB2 の SPARQL server であり、QuipuDB の代替実装や互換層ではありません。
+```text
+呼び出し順: describe_ontology → search_operational_graph(checkout) → list_hypotheses(incident-5377)。
+記録なし。incident-5377 に checkout-v42 の同一仮説（confidence 0.6）が既に存在し、重複になるため。
+既存 ID: hypothesis-ef9b3cb4-cb14-452a-a65c-ecfcc3dc7b19
+```
+
+2 回目のエージェントは `list_hypotheses` で 1 回目の仮説を読み、書き込みをしませんでした。MCP server の instructions に「記録する前に `list_hypotheses` を呼び、既存の仮説と重複するものは記録しない」と書いてあるためです。グラフはエージェント同士が調査結果を受け渡す場所としても使えます。
+
+confidence の 0.6 はモデルが出した値で、校正された確率ではありません。グラフに残しておけば、仮説を採用するかどうかを人が後から根拠と一緒に判断できます。
+
+## 人の確認を挟む
+
+<!-- TODO: 対話モードの Claude Code で、書き込み tool の実行前に許可確認が出るか、読み取り tool では出ないかを確認してから書く -->
+
+書き込み tool には `ReadOnlyHint` を付けていません。MCP の client はこの annotation を見て、書き込み tool の実行前に人の確認を求められます。
+
+## ローカル LLM をやめた経緯
+
+最初は Google の ADK for Go でエージェントを書き、LLM には Ollama でローカルの `qwen3:4b` を使っていました。API key なしで手元だけで完結させたかったためです。
+
+ところが手元の環境では Ollama が GPU を使えず、CPU で推論していました (`ollama ps` の VRAM 使用量が 0)。推論中はマシン全体が重くなり、tool 呼び出しが最後まで安定して動くかも確かめきれませんでした。
+
+記事で見せたいのはグラフへの読み書きの制約で、エージェントの実装ではありません。そこで tool を MCP server として公開し、エージェント役を Claude Code に任せる構成に変えました。MCP server は MCP に対応した他の client からも使えます。
+
+## 再現していないもの
+
+- QuipuDB の実装と Netflix の規模
+- 実際の運用システム (監視、デプロイ、インシデント管理など) からのデータ収集。今回のデータは手書きの synthetic data です
+- 複数の専門エージェントによる根因分析
+- 本番運用で必要な認証、権限設計、可用性
+
+Fuseki は SPARQL server で、QuipuDB の代替実装でも互換層でもありません。
 
 ## まとめ
 
-Ontology-Driven Observability の中心は、単に graph database を導入することではありません。Application、Incident、Deployment、Team の意味と関係を定義し、複数の運用システムから来る情報を同じ語彙で検索できるようにすることです。
+Ontology-Driven Observability で大事なのは、graph database を入れること自体ではありません。運用データの意味と関係を ontology で定義し、別々のシステムから来る情報を同じ語彙で引けるようにすることです。
 
-手元の sample では Go ADK Agent が運用グラフを読み、時刻差を根拠として仮説を書き、SHACL が形を検証しました。モデルが出した仮説は未確認のまま残し、人間が graph 上の根拠を追えます。
+手元の playground では、エージェントが ontology を読んでからグラフを検索し、根拠付きの仮説を SHACL の検証を通して書き込みました。次のエージェントはその仮説を読んで、重複した記録を避けました。エージェントには SPARQL を書かせず、型の決まった tool だけを渡しています。こうすると、エージェントが読み書きできる範囲をコードと SHACL の shape で決められます。
 
-QuipuDB の内部実装は動かせませんでした。それでも標準化された RDF/OWL/SHACL/SPARQL と local model を使えば、記事の設計パターンを小さな実験に落とし込めます。次に試すなら、OpenTelemetry の trace と deploy 情報を取り込み、SPARQL の relation を実際の計測値と incident に結び付けたいです。
+次は OpenTelemetry の trace とデプロイの履歴を自動でグラフに取り込み、synthetic data ではない入力で試してみたいです。
 
 ## 参考資料
 
 - [Netflix TechBlog: Ontology-Driven Observability](https://netflixtechblog.com/ontology-driven-observability-building-an-end-to-end-knowledge-graph-at-netflix-scale-421392cf5adf)
 - [Apache Jena: Fuseki configuration](https://jena.apache.org/documentation/fuseki2/fuseki-configuration.html)
-- [Apache Jena: TDB2 with Fuseki](https://jena.apache.org/documentation/tdb2/tdb2_fuseki.html)
 - [Apache Jena: SHACL](https://jena.apache.org/documentation/shacl)
-- [ADK Go OpenAI-compatible model connector](https://adk.dev/agents/models/openai/)
-- [Ollama OpenAI-compatible API](https://docs.ollama.com/api/openai-compatibility)
-- [Ollama Qwen3 models](https://ollama.com/library/qwen3)
+- [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk)
+- [Claude Code: MCP](https://code.claude.com/docs/en/mcp)
