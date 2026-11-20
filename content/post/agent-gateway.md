@@ -40,7 +40,7 @@ AI エージェントが外とやりとりする通信は、大きく次の 3 �
 
 どの製品も「Agent Card の URL を gateway に書き換えて、以降の呼び出しを gateway に向けさせる」という同じ発想で作られています。API7 の記事 [A2A Protocol 1.0 at the Gateway](https://api7.ai/blog/a2a-protocol-gateway-layer) では、A2A 1.0 で署名付き Agent Card やテナントのルーティングが仕様に入ったと書かれていました。ただし「どの署名者を信頼するか」「どの入力でテナントを決めるか」は仕様では決まらず、運用者が決めます。この記事は、運用者の決定を強制する場所が gateway だと主張しています。
 
-## サンプル環境の構成
+## 構成図
 
 エージェント、MCP server、LLM はすべて Go で書きました。LLM は OpenAI 互換の API で応答する fake LLM です。
 
@@ -63,17 +63,14 @@ flowchart LR
   GW -. OTLP/HTTP .-> T[traceview :4318]
 ```
 
-planner は受け取ったメッセージを worker に転送するだけのエージェントで、worker は MCP の tool と LLM を呼んで返事を作ります。planner から worker への呼び出しも gateway を経由させています。
+図の各要素の動作です。agentgateway の枠内の 3 つは 1 つの gateway プロセスが開く listener で、枠外のエージェント・MCP server・fake LLM・traceview はそれぞれ別プロセスです。
 
-| パス | 内容 |
-|---|---|
-| `cmd/agent` | A2A v1.0 (JSON-RPC) エージェント。`-peer` で転送役、`-mcp` / `-llm` で tool と LLM を呼ぶ。`-send` で client として動く |
-| `cmd/mcpserver` | Streamable HTTP の MCP server |
-| `cmd/fakellm` | OpenAI 互換の `/v1/chat/completions` を返す fake LLM |
-| `cmd/jwt` | シナリオ用の ES256 鍵と JWT を作る |
-| `cmd/mcpcall` | MCP の `tools/list` と `tools/call` を行う client |
-| `cmd/traceview` | OTLP/HTTP で受けた span をツリー表示する簡易 backend |
-| `scenarios/` | シナリオごとの gateway 設定と実行スクリプト |
+- routes (a2a policy): `:3000` で A2A を受ける listener。`/planner` と `/worker` のパスで backend のエージェントに振り分け、Agent Card の URL を gateway の URL に書き換え、`SendMessage` などのメソッドや task の状態をログに出す
+- mcp (jwtAuth / mcpAuthorization / mcpGuardrails): `:3001/mcp` で MCP を受ける listener。docs と ops の 2 つの MCP server を 1 つの MCP server に見せ、JWT の検証、tool 単位の認可、引数を見た guardrail を適用する
+- llm (apiKey / localRateLimit): `:4000` で OpenAI 互換 API を受ける listener。API key で認証し、team ごとの token rate limit をかけて fake LLM に転送する
+- planner agent: client からメッセージを受け、worker に転送するだけのエージェント。worker の呼び出しも gateway の `/worker` を経由させる
+- worker agent: planner からメッセージを受け、gateway 経由で MCP の tool と LLM を呼んで返事を作るエージェント
+- traceview: gateway から OTLP/HTTP で受けた span をツリー表示する簡易 backend
 
 agentgateway は GitHub Releases のバイナリをそのまま使います。`scripts/setup.sh` がバイナリの取得と Go のビルドを行い、各シナリオは `run.sh` を実行するだけで再現できます。
 
@@ -99,7 +96,7 @@ gateways:
     bindAddress: 127.0.0.1
 ```
 
-`config.session.key` はセッション ID の暗号化に使う鍵で、未指定のまま起動すると agentgateway が鍵を生成して設定ファイルに追記します。気付かずに commit すると鍵がリポジトリに入るので注意が必要です。値に `$SESSION_KEY` と書けば環境変数から読まれます。環境変数が無い場合は起動時にエラーになります。
+`config.session.key` はセッション ID の暗号化に使う鍵で、未指定のまま起動すると agentgateway が鍵を生成して設定ファイルに追記します。気付かずに commit すると鍵がリポジトリに入ります。値に `$SESSION_KEY` と書けば環境変数から読まれます。環境変数が無い場合は起動時にエラーになります。
 
 ## シナリオ 01: A2A エージェントを gateway の配下に並べる
 
@@ -436,7 +433,7 @@ trace 060470cb44a14a16e8ec4c68974468c4 (39 spans)
                         - [agentgateway] POST
 ```
 
-client から LLM の呼び出しまでが 1 本の trace につながりました。gateway は受けた `traceparent` を引き継いで自分の span を作り、backend に転送するときにも `traceparent` を付けています。A2A の span には `a2a.method`、MCP の span には `gen_ai.tool.name`、LLM の span には token 数が付きます。そのため trace を見るだけで「planner がどのエージェントを呼び、そのエージェントがどの tool を呼び、LLM に何 token 使ったか」が分かります。シナリオ 01 で見たとおり context ID はエージェントごとに別になるので、エージェントをまたいだ追跡は trace ID で行うことになります。
+client から LLM の呼び出しまでが 1 本の trace につながりました。gateway は受けた `traceparent` を引き継いで自分の span を作り、backend に転送するときにも `traceparent` を付けています。A2A の span には `a2a.method`、MCP の span には `gen_ai.tool.name`、LLM の span には token 数が付きます。そのため trace を見るだけで「planner がどのエージェントを呼び、そのエージェントがどの tool を呼び、LLM に何 token 使ったか」が分かります。シナリオ 01 で見たとおり context ID はエージェントごとに別になるので、エージェントをまたいだ追跡は trace ID で行います。
 
 trace からは multiplex のコストも見えます。worker は `ops_get_status` を 1 回呼んだだけですが、`server/discover`、`initialize`、`notifications/initialized`、セッション終了の `DELETE` は docs と ops の両方に送られています。束ねる MCP server が増えると、セッションを張るたびに送られるリクエストも、その数に比例して増えます。
 
